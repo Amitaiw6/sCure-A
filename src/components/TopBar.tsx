@@ -1,74 +1,129 @@
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft,
-  ArrowLeftRight,
   Clock,
   Bell,
   Settings,
-  Wifi,
+  Globe,
   Thermometer,
   Nfc,
+  DoorOpen,
+  DoorClosed,
 } from 'lucide-react'
+import { useHardware } from '@/context/HardwareContext'
+import { useAlerts } from '@/context/AlertsContext'
 
 export default function TopBar() {
   const navigate = useNavigate()
   const location = useLocation()
   const isHome = location.pathname === '/'
+  const isCuring = location.pathname === '/cure-process'
+  const { state: hw, setDoorClosed } = useHardware()
+  const { alertCount, criticalAlerts } = useAlerts()
+  const [heatingLong, setHeatingLong] = useState(false)
+
+  // Track if heating has been on for more than 10 seconds
+  useEffect(() => {
+    if (!hw.isHeating || !hw.heatingStartTime) {
+      setHeatingLong(false)
+      return
+    }
+    const remaining = 10000 - (Date.now() - hw.heatingStartTime)
+    if (remaining <= 0) {
+      setHeatingLong(true)
+      return
+    }
+    const timer = setTimeout(() => setHeatingLong(true), remaining)
+    return () => clearTimeout(timer)
+  }, [hw.isHeating, hw.heatingStartTime])
 
   return (
-    <header className="flex items-center justify-between px-4 py-2 bg-[#1a1a1a] shrink-0">
+    <header className="flex items-center justify-between px-3 py-2 bg-secondary shrink-0">
       {/* Left side - Logo + Status */}
-      <div className="flex items-center gap-3">
-        {!isHome && (
+      <div className="flex items-center gap-2">
+        {!isHome && !isCuring && (
           <button
             onClick={() => navigate(-1)}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground hover:text-white active:bg-accent transition-colors touch-manipulation"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={22} />
           </button>
         )}
-        <h1 className="text-xl font-bold text-white tracking-wide">sCure</h1>
-        <button className="text-gray-400 hover:text-white transition-colors">
-          <ArrowLeftRight size={18} />
-        </button>
+        <h1 className="text-xl font-bold text-white tracking-wide">{hw.systemName}</h1>
       </div>
 
-      {/* Center - Door Status + Temperature */}
-      <div className="flex items-center gap-3">
-        <span className="bg-sky-500 text-white text-xs font-medium px-3 py-1 rounded-full">
-          Door Closed
-        </span>
-        <div className="flex items-center gap-2 border border-[#333] rounded-xl px-4 py-1.5">
-          <div className="text-center">
-            <p className="text-[10px] text-gray-400">Chamber Temperature</p>
-            <div className="flex items-center justify-center gap-1">
-              <Thermometer size={14} className="text-gray-400" />
-              <span className="text-white font-semibold text-base">24.0°C</span>
+      {/* Center - Door + Temperature */}
+      <div className="flex items-center gap-2">
+        {/* Door + Temperature combined */}
+        <div className="flex items-center bg-secondary rounded-xl overflow-hidden">
+          <button
+            onClick={() => !isCuring && hw.doorClosed && setDoorClosed(false)}
+            disabled={isCuring || !hw.doorClosed}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors touch-manipulation border-r border-border ${
+              !hw.doorClosed
+                ? 'bg-orange-500/15 text-orange-400'
+                : isCuring
+                  ? 'text-muted-foreground opacity-50'
+                  : 'text-foreground hover:bg-accent active:scale-95'
+            }`}
+          >
+            {hw.doorClosed ? <DoorClosed size={24} /> : <DoorOpen size={24} />}
+            {hw.doorClosed ? 'Open' : 'Opened'}
+          </button>
+          <div className="flex items-center gap-2 px-4 py-1.5">
+            <Thermometer size={22} className={heatingLong ? 'text-red-500' : 'text-muted-foreground'} />
+            <div className="flex flex-col items-end">
+              <span className={`font-bold text-base leading-tight ${heatingLong ? 'text-red-500' : 'text-white'}`}>{hw.chamberTemp.toFixed(1)}°C</span>
+              {hw.targetTemp !== null && (
+                <span className="text-orange-400 text-[10px] leading-tight">Target: {hw.targetTemp}°C</span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Right side - Icons */}
-      <div className="flex items-center gap-2">
-        <PlainIcon><Clock size={18} /></PlainIcon>
-        <CircledIcon><span className="text-xs font-bold">N₂</span></CircledIcon>
-        <CircledIcon><Nfc size={16} /></CircledIcon>
-        <PlainIcon><Bell size={18} /></PlainIcon>
-        <PlainIcon onClick={() => navigate('/settings')}>
-          <Settings size={18} />
-        </PlainIcon>
-        <PlainIcon><Wifi size={18} /></PlainIcon>
+      {/* Right side - Icons (min 44x44 touch targets) */}
+      <div className="flex items-center gap-1.5">
+        <TouchIcon><Clock size={24} /></TouchIcon>
+        <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation">
+          <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-colors ${
+            hw.nitrogenMode
+              ? hw.nitrogenActive
+                ? 'border-white bg-white/20 text-white animate-pulse'
+                : 'border-white text-white'
+              : 'border-[#444] text-muted-foreground'
+          }`}>
+            <span className="text-sm font-bold">N₂</span>
+          </div>
+        </button>
+        {hw.nfcEnabled && <CircledIcon><Nfc size={22} /></CircledIcon>}
+        <TouchIcon onClick={() => navigate('/alerts')}>
+          <div className="relative">
+            <Bell size={24} className={criticalAlerts.length > 0 ? 'text-red-500' : alertCount > 0 ? 'text-orange-400' : undefined} />
+            {alertCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">
+                {alertCount}
+              </span>
+            )}
+          </div>
+        </TouchIcon>
+        <TouchIcon onClick={() => navigate('/settings')}><Settings size={24} /></TouchIcon>
+        <TouchIcon onClick={() => navigate('/network')}>
+          <Globe size={24} className={
+            !hw.networkConnected ? 'text-destructive' : 'text-white'
+          } />
+        </TouchIcon>
       </div>
     </header>
   )
 }
 
-function PlainIcon({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+function TouchIcon({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+      className="w-12 h-12 rounded-xl flex items-center justify-center text-muted-foreground hover:text-white active:bg-accent transition-colors touch-manipulation"
     >
       {children}
     </button>
@@ -77,8 +132,10 @@ function PlainIcon({ children, onClick }: { children: React.ReactNode; onClick?:
 
 function CircledIcon({ children }: { children: React.ReactNode }) {
   return (
-    <div className="w-8 h-8 rounded-full border border-[#444] flex items-center justify-center text-gray-400">
-      {children}
-    </div>
+    <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation">
+      <div className="w-10 h-10 rounded-full border-2 border-[#444] flex items-center justify-center text-muted-foreground">
+        {children}
+      </div>
+    </button>
   )
 }

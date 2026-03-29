@@ -1,4 +1,8 @@
 import CircularGauge from './CircularGauge'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
+import { cn } from '@/lib/utils'
 
 export type PhaseType = 'heating' | 'drying' | 'cure' | 'cooling'
 export type PhaseStatus = 'active' | 'completed' | 'pending'
@@ -21,178 +25,100 @@ interface PhaseCardProps {
 }
 
 const phaseConfig = {
-  heating: {
-    label: 'Heating',
-    icon: '🔥',
-    color: 'stroke-orange-500',
-    borderColor: 'border-orange-500',
-    badgeBg: 'bg-orange-500',
-    barColor: 'bg-orange-500',
-    dotColor: 'bg-orange-500',
-  },
-  drying: {
-    label: 'Drying Phase',
-    icon: '⏱',
-    color: 'stroke-blue-500',
-    borderColor: 'border-blue-500',
-    badgeBg: 'bg-blue-500',
-    barColor: 'bg-blue-500',
-    dotColor: 'bg-blue-500',
-  },
-  cure: {
-    label: 'Cure',
-    icon: '✦',
-    color: 'stroke-purple-500',
-    borderColor: 'border-purple-500',
-    badgeBg: 'bg-purple-500',
-    barColor: 'bg-purple-500',
-    dotColor: 'bg-purple-500',
-  },
-  cooling: {
-    label: 'Cooling',
-    icon: '❄',
-    color: 'stroke-teal-500',
-    borderColor: 'border-teal-500',
-    badgeBg: 'bg-teal-500',
-    barColor: 'bg-teal-500',
-    dotColor: 'bg-teal-500',
-  },
+  heating: { label: 'Heating', icon: '🔥', color: 'stroke-orange-500', borderColor: 'border-orange-500', badgeBg: 'bg-orange-500', dotColor: 'bg-orange-500' },
+  drying: { label: 'Drying', icon: '⏱', color: 'stroke-blue-500', borderColor: 'border-blue-500', badgeBg: 'bg-blue-500', dotColor: 'bg-blue-500' },
+  cure: { label: 'Cure', icon: '✦', color: 'stroke-purple-500', borderColor: 'border-purple-500', badgeBg: 'bg-purple-500', dotColor: 'bg-purple-500' },
+  cooling: { label: 'Cooling', icon: '❄', color: 'stroke-teal-500', borderColor: 'border-teal-500', badgeBg: 'bg-teal-500', dotColor: 'bg-teal-500' },
 }
 
+const GAUGE_SIZE = 90
+
 export default function PhaseCard({
-  type,
-  status,
-  gaugeValue,
-  gaugeLabel,
-  gaugeProgress,
-  timeLeft,
-  rangeStart,
-  rangeEnd,
-  rangeProgress,
-  statusText,
-  minElapsed,
-  secElapsed,
-  percentComplete,
-  onAbort,
+  type, status, gaugeValue, gaugeLabel, gaugeProgress, timeLeft,
+  rangeStart, rangeEnd, rangeProgress, statusText,
+  minElapsed, secElapsed, percentComplete, onAbort,
 }: PhaseCardProps) {
   const config = phaseConfig[type]
   const isActive = status === 'active'
   const isPending = status === 'pending'
+  const r = GAUGE_SIZE / 2 - 3
 
   return (
-    <div
-      className={`rounded-2xl p-5 flex flex-col items-center relative min-w-[220px] flex-1 ${
-        isActive
-          ? `border-2 ${config.borderColor} bg-[#111]`
-          : isPending
-            ? 'border border-dashed border-[#333] bg-[#0e0e0e]'
-            : `border-2 ${config.borderColor} bg-[#111]`
-      }`}
-    >
+    <div className={cn(
+      'rounded-xl p-3 flex flex-col items-center min-w-[170px] flex-1 bg-card',
+      isActive && `border-2 ${config.borderColor}`,
+      isPending && 'border border-dashed border-border',
+      !isActive && !isPending && `border-2 ${config.borderColor}`
+    )}>
       {/* Phase badge */}
-      <div className={`absolute -top-4 left-4 px-4 py-1 rounded-full text-sm font-semibold flex items-center gap-1.5 ${
-        isPending ? 'bg-[#222] text-gray-400' : `${config.badgeBg} text-white`
-      }`}>
+      <Badge className={cn(
+        'gap-1 h-7 px-3 py-0 rounded-full text-xs whitespace-nowrap mb-2',
+        isPending ? 'bg-secondary text-muted-foreground' : `${config.badgeBg} text-white`
+      )}>
         <span>{config.icon}</span>
         <span>{config.label}</span>
-      </div>
+      </Badge>
 
       {/* Gauge */}
-      <div className={`mt-6 ${isPending ? 'opacity-40' : ''}`}>
-        {type === 'cure' ? (
-          <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
-            <svg width={140} height={140} className="-rotate-90">
-              <circle cx={70} cy={70} r={62} fill="none" stroke="#374151" strokeWidth={8} />
+      <div className={cn(isPending && 'opacity-40')}>
+        {type === 'cure' || type === 'cooling' ? (
+          <div className="relative flex items-center justify-center" style={{ width: GAUGE_SIZE, height: GAUGE_SIZE }}>
+            <svg width={GAUGE_SIZE} height={GAUGE_SIZE} className="-rotate-90">
+              <circle cx={GAUGE_SIZE / 2} cy={GAUGE_SIZE / 2} r={r} fill="none" stroke="#222" strokeWidth={6} />
               {!isPending && (
-                <circle cx={70} cy={70} r={62} fill="none" className={config.color} strokeWidth={8}
-                  strokeDasharray={2 * Math.PI * 62} strokeDashoffset={2 * Math.PI * 62 - (gaugeProgress / 100) * 2 * Math.PI * 62} strokeLinecap="round" />
+                <circle cx={GAUGE_SIZE / 2} cy={GAUGE_SIZE / 2} r={r} fill="none" className={config.color} strokeWidth={6}
+                  strokeDasharray={2 * Math.PI * r} strokeDashoffset={2 * Math.PI * r - (gaugeProgress / 100) * 2 * Math.PI * r} strokeLinecap="round" />
               )}
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="w-16 h-0.5 bg-gray-500 mb-1" />
-              <span className="text-xs text-gray-400 uppercase">UV + HEAT</span>
-            </div>
-          </div>
-        ) : type === 'cooling' ? (
-          <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
-            <svg width={140} height={140} className="-rotate-90">
-              <circle cx={70} cy={70} r={62} fill="none" stroke="#374151" strokeWidth={8} />
-              {!isPending && (
-                <circle cx={70} cy={70} r={62} fill="none" className={config.color} strokeWidth={8}
-                  strokeDasharray={2 * Math.PI * 62} strokeDashoffset={2 * Math.PI * 62 - (gaugeProgress / 100) * 2 * Math.PI * 62} strokeLinecap="round" />
-              )}
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="w-16 h-0.5 bg-gray-500 mb-1" />
-              <span className="text-xs text-gray-400 uppercase">COOL</span>
+              <div className="w-10 h-0.5 bg-muted-foreground mb-0.5" />
+              <span className="text-[9px] text-muted-foreground uppercase">{type === 'cure' ? 'UV + HEAT' : 'COOL'}</span>
             </div>
           </div>
         ) : (
-          <CircularGauge
-            value={gaugeValue}
-            label={gaugeLabel}
-            progress={isPending ? 0 : gaugeProgress}
-            color={config.color}
-          />
+          <CircularGauge value={gaugeValue} label={gaugeLabel} progress={isPending ? 0 : gaugeProgress} color={config.color} size={GAUGE_SIZE} />
         )}
       </div>
 
       {/* Time left */}
-      <p className={`mt-3 text-sm ${isPending ? 'text-gray-600' : 'text-gray-400'}`}>
-        Time left: <span className={`font-bold ${isPending ? 'text-gray-600' : 'text-white'}`}>{timeLeft}</span>
+      <p className={cn('mt-1.5 text-xs', isPending ? 'text-muted-foreground/40' : 'text-muted-foreground')}>
+        Time left: <span className={cn('font-bold', isPending ? 'text-muted-foreground/40' : 'text-foreground')}>{timeLeft}</span>
       </p>
 
       {/* Range bar */}
-      <div className={`w-full mt-3 ${isPending ? 'opacity-30' : ''}`}>
-        <div className="flex justify-between text-xs text-gray-500 mb-1">
+      <div className={cn('w-full mt-1.5', isPending && 'opacity-30')}>
+        <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5">
           <span>{rangeStart}</span>
           <span>{rangeEnd}</span>
         </div>
-        <div className="w-full h-1.5 bg-[#222] rounded-full">
-          <div
-            className={`h-full rounded-full ${config.barColor}`}
-            style={{ width: `${rangeProgress}%` }}
-          />
-        </div>
+        <Progress value={rangeProgress} className="h-1" />
       </div>
 
       {/* Status text */}
-      <p className={`mt-3 text-sm ${isPending ? 'text-gray-600' : 'text-gray-400'}`}>{statusText}</p>
+      <p className={cn('mt-1.5 text-[10px] truncate w-full text-center', isPending ? 'text-muted-foreground/40' : 'text-muted-foreground')}>{statusText}</p>
 
-      {/* Dots */}
-      <div className="flex gap-1.5 mt-2">
-        {[0, 1, 2, 3].map(i => (
-          <div key={i} className={`w-2 h-2 rounded-full ${
-            isPending ? 'bg-[#222]' : i === 0 ? config.dotColor : 'bg-gray-600'
-          }`} />
-        ))}
-      </div>
-
-      {/* Abort button (heating only when active) */}
-      {type === 'heating' && isActive && onAbort && (
-        <button
-          onClick={onAbort}
-          className="mt-3 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold px-5 py-2 rounded-xl transition-colors"
-        >
-          Abort Process
-        </button>
+      {/* Abort button */}
+      {isActive && onAbort && (
+        <Button variant="destructive" size="xs" onClick={onAbort} className="mt-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90 text-[10px]">
+          Abort
+        </Button>
       )}
 
       {/* Bottom stats */}
-      <div className={`flex items-center gap-0 mt-4 text-xs w-full border-t border-[#222] pt-3 ${isPending ? 'text-gray-700' : 'text-gray-500'}`}>
+      <div className={cn('flex items-center gap-0 mt-2 text-[10px] w-full border-t border-border pt-1.5', isPending ? 'text-border' : 'text-muted-foreground')}>
         <div className="flex-1 text-center">
-          <p className={`text-lg font-bold ${isPending ? 'text-gray-700' : 'text-white'}`}>{minElapsed}</p>
-          <p className="uppercase text-[10px]">MIN ELAPSED</p>
+          <p className={cn('text-sm font-bold', isPending ? 'text-border' : 'text-foreground')}>{minElapsed}</p>
+          <p className="uppercase text-[8px]">MIN</p>
         </div>
-        <div className="w-px h-8 bg-[#222]" />
+        <div className="w-px h-6 bg-border" />
         <div className="flex-1 text-center">
-          <p className={`text-lg font-bold ${isPending ? 'text-gray-700' : 'text-white'}`}>{secElapsed}</p>
-          <p className="uppercase text-[10px]">SEC</p>
+          <p className={cn('text-sm font-bold', isPending ? 'text-border' : 'text-foreground')}>{secElapsed}</p>
+          <p className="uppercase text-[8px]">SEC</p>
         </div>
-        <div className="w-px h-8 bg-[#222]" />
+        <div className="w-px h-6 bg-border" />
         <div className="flex-1 text-center">
-          <p className={`text-lg font-bold ${isPending ? 'text-gray-700' : 'text-white'}`}>{percentComplete}</p>
-          <p className="uppercase text-[10px]">COMPLETE</p>
+          <p className={cn('text-sm font-bold', isPending ? 'text-border' : 'text-foreground')}>{percentComplete}</p>
+          <p className="uppercase text-[8px]">DONE</p>
         </div>
       </div>
     </div>

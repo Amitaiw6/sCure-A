@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Plus, Menu, ArrowRight } from 'lucide-react'
-import StepCard from '../components/StepCard'
-import StepModal from '../components/StepModal'
-import ImportCsvModal from '../components/ImportCsvModal'
-import OnScreenKeyboard from '../components/OnScreenKeyboard'
-import type { StepData, ProcessType } from '../components/StepCard'
+import { Plus, ArrowRight } from 'lucide-react'
+import StepCard from '@/components/StepCard'
+import StepModal from '@/components/StepModal'
+import ImportCsvModal from '@/components/ImportCsvModal'
+import OnScreenKeyboard from '@/components/OnScreenKeyboard'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import type { StepData } from '@/components/StepCard'
 
 export default function MaterialEditorPage() {
   const [materialName, setMaterialName] = useState('Untitled')
@@ -50,75 +52,59 @@ export default function MaterialEditorPage() {
     setEditingStep(null)
   }
 
-  const handleImport = (_file: File) => {
-    // CSV parsing would go here
-    const sampleSteps: StepData[] = [
-      { id: crypto.randomUUID(), stepNumber: 1, processType: 'Heating' as ProcessType, temperature: 40, time: 10 },
-      { id: crypto.randomUUID(), stepNumber: 2, processType: 'Drying' as ProcessType, temperature: 40, intensity: 30, time: 10 },
-      { id: crypto.randomUUID(), stepNumber: 3, processType: 'Cure' as ProcessType, intensity: 30, time: 10 },
-      { id: crypto.randomUUID(), stepNumber: 4, processType: 'Cooling' as ProcessType, temperature: 25, time: 5 },
-    ]
-    setSteps(sampleSteps)
-    setShowImportModal(false)
-  }
-
-  // Reverse display order (highest step number first, left to right)
   const displaySteps = [...steps].reverse()
 
   return (
     <main className="px-4 pb-16">
       {/* Material Name */}
       <div className="flex items-center gap-4 mt-6">
-        <span className="text-gray-500 text-sm whitespace-nowrap">Material Name:</span>
+        <span className="text-muted-foreground text-sm whitespace-nowrap">Material Name:</span>
         <div
-          className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 text-white cursor-pointer flex items-center justify-between"
+          className="flex-1 cursor-pointer flex items-center justify-between"
           onClick={() => setShowKeyboard(true)}
         >
-          <span>{materialName}</span>
-          <Menu size={18} className="text-gray-400" />
+          <Input readOnly value={materialName} className="cursor-pointer" />
         </div>
       </div>
 
       {/* Add CSV button */}
-      <button
+      <Button
         onClick={() => setShowImportModal(true)}
-        className="mt-5 bg-sky-500 hover:bg-sky-400 text-white text-sm font-semibold px-5 py-2 rounded-full transition-colors"
+        className="mt-5 rounded-full"
       >
         + Add CSV
-      </button>
+      </Button>
 
       {/* Process Sequence */}
-      <h3 className="text-gray-500 text-sm mt-8 mb-4">Process Sequence</h3>
+      <h3 className="text-muted-foreground text-sm mt-8 mb-4">Process Sequence</h3>
 
       <div className="flex items-center gap-3 overflow-x-auto pb-4">
         {displaySteps.map((step, index) => (
           <div key={step.id} className="flex items-center gap-3">
             <StepCard step={step} onEdit={handleEditStep} />
             {index < displaySteps.length - 1 && (
-              <ArrowRight size={16} className="text-gray-600 flex-shrink-0" />
+              <ArrowRight size={16} className="text-muted-foreground flex-shrink-0" />
             )}
           </div>
         ))}
 
-        {/* Arrow before add button (if steps exist) */}
         {steps.length > 0 && (
-          <ArrowRight size={16} className="text-gray-600 flex-shrink-0" />
+          <ArrowRight size={16} className="text-muted-foreground flex-shrink-0" />
         )}
 
-        {/* Add step button */}
         <button
           onClick={handleAddStep}
-          className="w-20 h-20 rounded-full border-2 border-dashed border-[#333] flex items-center justify-center text-gray-500 hover:border-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
+          className="w-20 h-20 rounded-full border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
         >
           <Plus size={28} />
         </button>
       </div>
 
       {/* Save Program button */}
-      <div className="fixed bottom-6 right-6">
-        <button className="bg-sky-500 hover:bg-sky-400 text-white font-semibold px-6 py-3 rounded-2xl shadow-lg transition-all active:scale-95">
+      <div className="fixed bottom-4 right-4">
+        <Button className="rounded-2xl px-6 py-3 shadow-lg">
           Save Program
-        </button>
+        </Button>
       </div>
 
       {/* Modals */}
@@ -134,7 +120,6 @@ export default function MaterialEditorPage() {
       <ImportCsvModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
-        onImport={handleImport}
       />
 
       <OnScreenKeyboard
