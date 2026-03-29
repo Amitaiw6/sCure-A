@@ -1,12 +1,13 @@
 import { Play } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export default function StartCureButton() {
   return (
-    <div className="fixed bottom-6 right-6">
-      <button className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold px-6 py-3 rounded-2xl shadow-lg shadow-sky-600/30 transition-all hover:shadow-sky-500/40 active:scale-95">
-        <span>Start Cure</span>
-        <Play size={18} fill="currentColor" />
-      </button>
+    <div className="fixed bottom-4 right-4">
+      <Button className="gap-2 rounded-xl px-5 py-2.5 shadow-lg">
+        Start Cure
+        <Play size={16} fill="currentColor" />
+      </Button>
     </div>
   )
 }

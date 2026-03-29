@@ -1,0 +1,90 @@
+[
+  {
+    "id": "log-001",
+    "printName": "Print #008",
+    "materialName": "st45",
+    "printerName": "OR200001",
+    "date": "2026-03-29T10:30:00",
+    "duration": 20,
+    "status": "completed",
+    "steps": 3,
+    "csvFile": "presets/st45.csv"
+  },
+  {
+    "id": "log-002",
+    "printName": "Print #007",
+    "materialName": "Carbon Fiber",
+    "printerName": "OR200001",
+    "date": "2026-03-28T14:15:00",
+    "duration": 48,
+    "status": "completed",
+    "steps": 4,
+    "csvFile": "presets/carbon_fiber.csv"
+  },
+  {
+    "id": "log-003",
+    "printName": "Print #006",
+    "materialName": "Fiberglass",
+    "printerName": "OR200001",
+    "date": "2026-03-27T09:00:00",
+    "duration": 35,
+    "status": "aborted",
+    "steps": 4,
+    "csvFile": "presets/fiberglass.csv"
+  },
+  {
+    "id": "log-004",
+    "printName": "Print #005",
+    "materialName": "st45",
+    "printerName": "OR200001",
+    "date": "2026-03-26T16:45:00",
+    "duration": 20,
+    "status": "completed",
+    "steps": 3,
+    "csvFile": "presets/st45.csv"
+  },
+  {
+    "id": "log-005",
+    "printName": "Print #004",
+    "materialName": "Carbon Fiber",
+    "printerName": "OR200002",
+    "date": "2026-03-25T11:20:00",
+    "duration": 48,
+    "status": "completed",
+    "steps": 4,
+    "csvFile": "presets/carbon_fiber.csv"
+  },
+  {
+    "id": "log-006",
+    "printName": "Print #003",
+    "materialName": "Fiberglass",
+    "printerName": "OR200001",
+    "date": "2026-03-24T08:00:00",
+    "duration": 35,
+    "status": "completed",
+    "steps": 4,
+    "csvFile": "presets/fiberglass.csv"
+  },
+  {
+    "id": "log-007",
+    "printName": "Print #002",
+    "materialName": "st45",
+    "printerName": "OR200001",
+    "date": "2026-03-23T13:30:00",
+    "duration": 20,
+    "status": "error",
+    "steps": 3,
+    "csvFile": "presets/st45.csv"
+  },
+  {
+    "id": "log-008",
+    "printName": "Print #001",
+    "materialName": "Carbon Fiber",
+    "printerName": "OR200002",
+    "date": "2026-03-22T10:00:00",
+    "duration": 48,
+    "status": "completed",
+    "steps": 4,
+    "csvFile": "presets/carbon_fiber.csv"
+  }
+]

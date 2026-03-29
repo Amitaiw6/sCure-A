@@ -1,50 +1,185 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import SectionHeader from '../components/SectionHeader'
-import MaterialItem from '../components/MaterialItem'
-import { Play } from 'lucide-react'
+import MaterialItem from '@/components/MaterialItem'
+import CsvBuilderModal from '@/components/CsvBuilderModal'
+import ImportCsvModal from '@/components/ImportCsvModal'
+import PrintHistoryModal from '@/components/PrintHistoryModal'
+import { Button } from '@/components/ui/button'
+import { Play, Upload, Trash2, Pencil, ChevronRight, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useMaterials } from '@/context/MaterialContext'
+import { usePrintHistory } from '@/context/PrintHistoryContext'
+import type { Material } from '@/context/MaterialContext'
+import type { PrintLog } from '@/context/PrintHistoryContext'
+
+function SmallStatusIcon({ status }: { status: PrintLog['status'] }) {
+  switch (status) {
+    case 'completed': return <CheckCircle size={14} className="text-green-500 shrink-0" />
+    case 'aborted': return <AlertTriangle size={14} className="text-yellow-500 shrink-0" />
+    case 'error': return <XCircle size={14} className="text-destructive shrink-0" />
+  }
+}
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(1)
+  const { materials, selectedMaterialId, setSelectedMaterialId, removeMaterial, isLoading } = useMaterials()
+  const { recentLogs } = usePrintHistory()
+  const [showBuilder, setShowBuilder] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null)
+  const [selectedPrintId, setSelectedPrintId] = useState<string | null>(null)
 
-  const materials = [
-    { label: 'st45', duration: '20min' },
-    { label: 'Label text', duration: '30min' },
-    { label: 'Label text', duration: '⌘C', isCommand: true },
-    { label: 'Label text', duration: '⌘C', isCommand: true },
-    { label: 'Label text' },
-  ]
+  const handleEdit = (mat: Material) => {
+    setEditingMaterial(mat)
+    setShowBuilder(true)
+  }
+
+  const handleCloseBuilder = () => {
+    setShowBuilder(false)
+    setEditingMaterial(null)
+  }
 
   return (
     <main className="px-4 pb-16 relative">
-      {/* NFC Section */}
-      <SectionHeader title="NFC" />
-      <MaterialItem label="Label text" duration="15min" />
+      {/* Recent Prints Section */}
+      <div className="flex items-center justify-between mb-3 mt-4">
+        <h2 className="text-white text-base font-semibold">Recent Prints</h2>
+        <Button variant="ghost" size="sm" onClick={() => setShowHistory(true)} className="gap-1 text-xs text-muted-foreground">
+          View All <ChevronRight size={14} />
+        </Button>
+      </div>
+
+      {recentLogs.length === 0 ? (
+        <p className="text-muted-foreground text-sm py-3">No prints yet.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {recentLogs.map(log => {
+            const matchingMaterial = materials.find(m => m.name === log.materialName)
+            return (
+              <div key={log.id} className={cn(
+                  'flex items-center gap-3 rounded-xl px-4 py-2.5 cursor-pointer transition-colors',
+                  selectedPrintId === log.id ? 'bg-primary/10 border border-primary/40' : 'bg-card border border-transparent hover:bg-accent'
+                )}
+                onClick={() => {
+                  if (selectedPrintId === log.id) {
+                    setSelectedPrintId(null)
+                  } else {
+                    setSelectedPrintId(log.id)
+                    setSelectedMaterialId(null)
+                  }
+                }}
+              >
+                <SmallStatusIcon status={log.status} />
+                <div className="flex-1 min-w-0">
+                  <span className="text-foreground text-sm font-medium block truncate">{log.printName}</span>
+                  <span className="text-muted-foreground text-xs block truncate">{log.materialName}</span>
+                </div>
+                <span className="text-cyan-400 text-xs shrink-0">{log.duration}min</span>
+                <span className="text-muted-foreground text-xs shrink-0">{timeAgo(log.date)}</span>
+                <span className="text-muted-foreground/50 text-[10px] shrink-0">{log.printerName}</span>
+                {matchingMaterial && (
+                  <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Material List Section */}
-      <SectionHeader title="Material List" showActions />
-      {materials.map((mat, i) => (
-        <MaterialItem
-          key={i}
-          label={mat.label}
-          duration={mat.duration}
-          isCommand={mat.isCommand}
-          isSelected={selectedIndex === i}
-          onClick={() => setSelectedIndex(i)}
-        />
-      ))}
+      <div className="flex items-center justify-between mb-3 mt-5">
+        <h2 className="text-white text-base font-semibold">
+          Material List
+          <span className="text-muted-foreground text-xs font-normal ml-2">({materials.length})</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {materials.length > 0 && (
+            <Button
+              variant={editMode ? 'destructive' : 'ghost'}
+              size="sm"
+              onClick={() => setEditMode(!editMode)}
+              className="text-xs"
+            >
+              {editMode ? 'Done' : 'Edit'}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setShowImport(true)} className="gap-1 text-xs">
+            <Upload size={14} />
+            CSV
+          </Button>
+          <Button size="sm" onClick={() => { setEditingMaterial(null); setShowBuilder(true) }} className="gap-1 text-xs">
+            + New
+          </Button>
+        </div>
+      </div>
+
+      {/* Material list */}
+      {isLoading ? (
+        <p className="text-muted-foreground text-sm text-center py-8">Loading materials...</p>
+      ) : materials.length === 0 ? (
+        <p className="text-muted-foreground text-sm text-center py-8">
+          No materials yet. Upload a CSV or create a new program.
+        </p>
+      ) : (
+        materials.map(mat => (
+          <div key={mat.id} className="flex items-center gap-2">
+            <div className="flex-1">
+              <MaterialItem
+                label={mat.name}
+                duration={`${mat.totalDuration}min`}
+                isSelected={selectedMaterialId === mat.id}
+                isPreset={mat.isPreset}
+                onClick={() => { setSelectedMaterialId(mat.id); setSelectedPrintId(null) }}
+              />
+            </div>
+            {editMode && !mat.isPreset && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => handleEdit(mat)}
+                  className="shrink-0 mb-2"
+                >
+                  <Pencil size={16} className="text-primary" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => removeMaterial(mat.id)}
+                  className="shrink-0 mb-2"
+                >
+                  <Trash2 size={16} className="text-destructive" />
+                </Button>
+              </>
+            )}
+          </div>
+        ))
+      )}
 
       {/* Start Cure Button */}
       <div className="fixed bottom-4 right-4">
-        <button
-          onClick={() => navigate('/cure-process')}
-          className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-sky-600/30 transition-all active:scale-95 text-sm"
-        >
-          <span>Start Cure</span>
+        <Button onClick={() => navigate('/cure-process')} className="gap-2 rounded-xl px-5 py-2.5 text-sm">
+          Start Cure
           <Play size={16} fill="currentColor" />
-        </button>
+        </Button>
       </div>
+
+      {/* Modals */}
+      <CsvBuilderModal isOpen={showBuilder} onClose={handleCloseBuilder} editMaterial={editingMaterial} />
+      <ImportCsvModal isOpen={showImport} onClose={() => setShowImport(false)} />
+      <PrintHistoryModal isOpen={showHistory} onClose={() => setShowHistory(false)} />
     </main>
   )
 }

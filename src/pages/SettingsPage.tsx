@@ -1,118 +1,285 @@
 import { useState } from 'react'
-import { Settings, Pencil } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { TouchNumber } from '@/components/ui/touch-number'
+import { Progress } from '@/components/ui/progress'
+import { useHardware } from '@/context/HardwareContext'
+import { Download, Upload, Fan, Zap } from 'lucide-react'
+import { useSystemConfig } from '@/context/SystemConfigContext'
+import { systemReboot, systemShutdown, exportLogs } from '@/services/hardware-api'
+import UpdateModal from '@/components/UpdateModal'
+import OnScreenKeyboard from '@/components/OnScreenKeyboard'
+import { Pencil } from 'lucide-react'
 
 export default function SettingsPage() {
-  const [timezone] = useState('None')
-  const [networkTime, setNetworkTime] = useState(true)
+  const { state: hw, setChamberTemp, setNitrogenMode, setNitrogenDuration, setNfcEnabled, setSystemName } = useHardware()
+  const { config } = useSystemConfig()
+
+  const [ledCoolingAirflow, setLedCoolingAirflow] = useState(0)
+  const [chamberIntakeFan, setChamberIntakeFan] = useState(0)
+  const [chamberHeatingFan, setChamberHeatingFan] = useState(0)
+  const [chamberHeating, setChamberHeatingLocal] = useState(62)
+  const [damperOpen, setDamperOpen] = useState(false)
+  const [bofaControl, setBofaControl] = useState(true)
+  const [fanTestRunning, setFanTestRunning] = useState(false)
+  const [fanSpeed, setFanSpeed] = useState<number | null>(null)
+  const [ledTestRunning, setLedTestRunning] = useState(false)
+  const [ledResults, setLedResults] = useState<string[] | null>(null)
+  const [logsStatus, setLogsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [showUpdate, setShowUpdate] = useState(false)
+  const [showNameKeyboard, setShowNameKeyboard] = useState(false)
+  const [editingName, setEditingName] = useState(hw.systemName)
+
+  const handleExportLogs = async () => {
+    setLogsStatus('loading')
+    const res = await exportLogs()
+    setLogsStatus(res.ok ? 'success' : 'error')
+    setTimeout(() => setLogsStatus('idle'), 3000)
+  }
+
+  const handleFanTest = () => {
+    setFanTestRunning(true)
+    setFanSpeed(null)
+    setTimeout(() => { setFanSpeed(2850); setFanTestRunning(false) }, 2000)
+  }
+
+  const handleLedTest = () => {
+    setLedTestRunning(true)
+    setLedResults(null)
+    setTimeout(() => {
+      setLedResults(['Font LED: 62°C', 'Left LED: 62°C', 'Door LED: 62°C', 'Right LED: 62°C'])
+      setLedTestRunning(false)
+    }, 3000)
+  }
+
+  const handleChamberHeatingChange = (val: number | null) => {
+    const v = val ?? 25
+    setChamberHeatingLocal(v)
+    setChamberTemp(v)
+  }
 
   return (
-    <main className="px-4 pb-4">
-      {/* Date & Time header */}
-      <div className="bg-[#111] rounded-2xl p-5 mt-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-gray-500 text-sm">Date & time</p>
-            <h2 className="text-white text-lg font-semibold mt-1">Time zone</h2>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-gray-400 text-sm">Mar 2026,12:21 AM</span>
-            <button className="text-gray-500 hover:text-white transition-colors">
-              <Settings size={20} />
-            </button>
-          </div>
-        </div>
-      </div>
+    <main className="overflow-y-auto scroll-hidden h-full p-3">
+      <div className="grid grid-cols-[1fr_220px] gap-3 h-full">
 
-      <div className="grid grid-cols-2 gap-6 mt-6">
-        {/* Left column */}
-        <div className="space-y-4">
-          {/* Support */}
-          <div className="bg-[#111] rounded-2xl p-5">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-[#1a1a1a] rounded-xl flex items-center justify-center">
-                <Settings size={24} className="text-gray-400" />
-              </div>
-              <span className="text-gray-400">Support</span>
-              <button className="ml-auto bg-sky-500 hover:bg-sky-400 text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors">
-                Dump Logs (USB)
-              </button>
-            </div>
+        {/* ===== LEFT ===== */}
+        <div className="flex flex-col gap-2">
 
-            <div className="mt-4 border-t border-[#222] pt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 text-sm">Firmware Version</span>
-                <span className="text-white text-sm font-medium">0.63.0-35676c1e-dev</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 text-sm">Last Boot Time</span>
-                <span className="text-white text-sm font-medium">2/25/2026, 8:23 AM</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Name */}
-          <div className="bg-[#111] rounded-2xl p-5">
+          {/* System Name */}
+          <Card>
             <div className="flex items-center justify-between">
-              <span className="text-white font-semibold">Name:</span>
+              <Label>System Name</Label>
               <div className="flex items-center gap-2">
-                <span className="text-white">Amitai</span>
-                <button className="text-gray-500 hover:text-white transition-colors">
-                  <Pencil size={16} />
+                <span className="text-foreground text-sm font-bold">{hw.systemName}</span>
+                <button
+                  onClick={() => { setEditingName(hw.systemName); setShowNameKeyboard(true) }}
+                  className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground active:bg-accent transition-colors touch-manipulation"
+                >
+                  <Pencil size={12} />
                 </button>
               </div>
             </div>
+          </Card>
+
+          {/* Row 1: Power + Damper side by side */}
+          <div className="flex gap-2">
+            <Card className="flex-1">
+              <Label>Power Options</Label>
+              <div className="flex gap-2 mt-1">
+                <Btn muted onClick={() => { if (confirm('Reboot device?')) systemReboot() }}>REBOOT</Btn>
+                <Btn red onClick={() => {
+                  if (confirm('Shutdown device?')) {
+                    systemShutdown()
+                    sessionStorage.setItem('scure-shutdown', 'true')
+                    window.location.reload()
+                  }
+                }}>SHUTDOWN</Btn>
+              </div>
+            </Card>
+            <Card className="flex-1">
+              <Label>Damper</Label>
+              <div className="flex gap-2 mt-1">
+                <Btn active={damperOpen} onClick={() => setDamperOpen(true)}>OPEN</Btn>
+                <Btn active={!damperOpen} onClick={() => setDamperOpen(false)}>CLOSE</Btn>
+              </div>
+            </Card>
           </div>
+
+          {/* Row 2: Fan controls */}
+          <Card>
+            <div className="space-y-2">
+              <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={setLedCoolingAirflow} />
+              <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={setChamberIntakeFan} />
+              <div className="flex items-center gap-2">
+                <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={setChamberHeatingFan} />
+                <Button variant="outline" size="sm" className="text-[10px] h-6 px-2 gap-1 shrink-0" onClick={handleFanTest} disabled={fanTestRunning}>
+                  <Fan size={10} className={fanTestRunning ? 'animate-spin' : ''} />
+                  Test
+                </Button>
+                {fanSpeed !== null && <span className="text-green-400 text-[10px] shrink-0 whitespace-nowrap">{fanSpeed} RPM <b>OK</b></span>}
+              </div>
+            </div>
+          </Card>
+
+          {/* Row 3: Heating full width */}
+          <Card>
+            <div className="flex items-center gap-3">
+              <Label className="shrink-0">Chamber Heating</Label>
+              <div className="flex-1 h-4 bg-gradient-to-r from-blue-500 via-yellow-500 to-orange-500 rounded-full relative">
+                <input type="range" min={20} max={80} value={chamberHeating}
+                  onChange={e => handleChamberHeatingChange(Number(e.target.value))}
+                  className="absolute inset-0 w-full opacity-0 cursor-pointer touch-manipulation" />
+                <div className="absolute top-1/2 w-5 h-5 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none"
+                  style={{ left: `${((chamberHeating - 20) / 60) * 100}%`, transform: 'translate(-50%, -50%)' }} />
+              </div>
+              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={20} max={80} step={1} suffix="°C" className="w-[100px]" />
+            </div>
+          </Card>
+
+          {/* Row 4: LED Test */}
+          <Card>
+            <div className="flex items-center gap-3">
+              <Label className="shrink-0">LED Test</Label>
+              <Button size="sm" className="text-[10px] h-7 px-3 gap-1" onClick={handleLedTest} disabled={ledTestRunning}>
+                <Zap size={11} />
+                {ledTestRunning ? 'Testing...' : 'Run Diagnostic'}
+              </Button>
+              {ledResults && (
+                <div className="flex gap-3 flex-wrap">
+                  {ledResults.map((r, i) => (
+                    <span key={i} className="text-[9px] text-muted-foreground">{r} <span className="text-green-400 font-bold">OK</span></span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Row 4: Info grid */}
+          <Card>
+            <div className="grid grid-cols-3 gap-x-6 gap-y-1.5">
+              <InfoItem label="Lead On Time" value={`${config.leadOnTimeHours} hours`} />
+              <InfoItem label="N₂ Pressure" value="2.0 bar" />
+              <div className="flex items-center justify-between">
+                <Label>
+                  Nitrogen Mode
+                  {hw.n2LinePressure < 6 && (
+                    <span className="text-destructive text-[9px] ml-1">(min 6 bar)</span>
+                  )}
+                </Label>
+                <Switch
+                  checked={hw.nitrogenMode}
+                  onCheckedChange={v => {
+                    if (v && hw.n2LinePressure < 6) return
+                    setNitrogenMode(v)
+                  }}
+                  disabled={!hw.nitrogenMode && hw.n2LinePressure < 6}
+                />
+              </div>
+              <ToggleItem label="NFC" checked={hw.nfcEnabled} onChange={setNfcEnabled} />
+              <ToggleItem label="BOFA Control" checked={bofaControl} onChange={setBofaControl} />
+            </div>
+          </Card>
         </div>
 
-        {/* Right column - Date & Time */}
-        <div className="bg-[#111] rounded-2xl p-5">
-          <h3 className="text-white font-bold mb-4">Date & Time</h3>
+        {/* ===== RIGHT ===== */}
+        <div className="flex flex-col gap-2">
+          <Card>
+            <InfoItem label="S.N" value={config.serialNumber} />
+          </Card>
 
-          <div className="space-y-4">
-            {/* Time Zone */}
-            <div>
-              <label className="text-gray-400 text-sm block mb-2">Time Zone</label>
-              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2.5 text-white text-sm text-center">
-                {timezone}
-              </div>
-            </div>
+          <Card>
+            <Label>Dump Logs <span className="text-muted-foreground/60">(USB)</span></Label>
+            <Button variant="outline" size="sm" className="w-full text-[10px] h-8 gap-1 mt-1.5" onClick={handleExportLogs} disabled={logsStatus === 'loading'}>
+              <Download size={13} className={logsStatus === 'loading' ? 'animate-bounce' : ''} />
+              {logsStatus === 'loading' ? 'Exporting...' : logsStatus === 'success' ? '✓ Done!' : logsStatus === 'error' ? '✗ No USB found' : 'Export LOGS'}
+            </Button>
+          </Card>
 
-            {/* Automatic Sync */}
-            <div className="flex items-center justify-between">
-              <span className="text-gray-400 text-sm">Automatic Sync</span>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={networkTime}
-                  onChange={e => setNetworkTime(e.target.checked)}
-                  className="w-4 h-4 rounded border-[#333] bg-[#1a1a1a] text-sky-500 focus:ring-sky-500"
-                />
-                <span className="text-white text-sm">Network time</span>
-              </label>
-            </div>
+          <Card>
+            <Label>Software Update <span className="text-muted-foreground/60">(USB)</span></Label>
+            <Button variant="outline" size="sm" className="w-full text-[10px] h-8 gap-1 mt-1.5" onClick={() => setShowUpdate(true)}>
+              <Upload size={13} /> Update Software
+            </Button>
+          </Card>
 
-            {/* Date / Time inputs */}
-            <div className="flex gap-3">
-              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2.5 text-gray-300 text-sm">
-                1 Mar 2026
-              </div>
-              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-2.5 text-gray-300 text-sm">
-                12:17 AM
-              </div>
+          <Card>
+            <div className="space-y-1.5">
+              <InfoItem label="Firmware" value={config.firmware} />
+              <InfoItem label="Last Boot" value={new Date(config.lastBoot).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} />
+              <InfoItem label="Device" value={config.deviceName} />
             </div>
+          </Card>
 
-            {/* Buttons */}
-            <div className="flex gap-3 mt-4">
-              <button className="flex-1 py-2.5 rounded-xl bg-gray-600 text-white font-semibold hover:bg-gray-500 transition-colors">
-                Cancel
-              </button>
-              <button className="flex-1 py-2.5 rounded-xl bg-orange-400 text-white font-semibold hover:bg-orange-300 transition-colors">
-                Save
-              </button>
-            </div>
-          </div>
         </div>
       </div>
+      <UpdateModal isOpen={showUpdate} onClose={() => setShowUpdate(false)} />
+      <OnScreenKeyboard
+        isOpen={showNameKeyboard}
+        value={editingName}
+        onChange={setEditingName}
+        onClose={() => { setSystemName(editingName); setShowNameKeyboard(false) }}
+      />
     </main>
+  )
+}
+
+/* ---------- Small helpers ---------- */
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`bg-card rounded-lg p-2.5 ${className}`}>{children}</div>
+}
+
+function Label({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <span className={`text-muted-foreground text-[11px] ${className}`}>{children}</span>
+}
+
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <Label>{label}</Label>
+      <span className="text-foreground text-[11px] font-semibold">{value}</span>
+    </div>
+  )
+}
+
+function ToggleItem({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between">
+      <Label>{label}</Label>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+function Btn({ children, active, muted, red, onClick }: {
+  children: React.ReactNode; active?: boolean; muted?: boolean; red?: boolean; onClick: () => void
+}) {
+  const cls = red
+    ? 'bg-red-600 hover:bg-red-500 text-white'
+    : muted
+      ? 'bg-secondary text-muted-foreground hover:bg-accent'
+      : active
+        ? 'bg-primary text-white'
+        : 'bg-secondary text-muted-foreground hover:bg-accent'
+  return (
+    <button onClick={onClick} className={`text-[10px] font-medium px-3 h-7 rounded-lg transition-colors touch-manipulation ${cls}`}>
+      {children}
+    </button>
+  )
+}
+
+function FanRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2 flex-1">
+      <span className="text-muted-foreground text-[10px] w-[130px] shrink-0">{label}</span>
+      <span className="text-muted-foreground text-[9px] w-5 text-right">{value}%</span>
+      <div className="flex-1 relative h-5 flex items-center">
+        <Progress value={value} className="h-1.5 w-full" />
+        <input type="range" min={0} max={100} value={value}
+          onChange={e => onChange(Number(e.target.value))}
+          className="absolute inset-0 w-full opacity-0 cursor-pointer touch-manipulation" />
+      </div>
+      <span className="text-muted-foreground text-[9px] w-14 text-right">100% PWM</span>
+    </div>
   )
 }

@@ -1,0 +1,5 @@
+Step,Process,Temperature,Intensity,Time
+1,Heating,60,,8
+2,Drying,60,40,15
+3,Cure,,70,20
+4,Cooling,25,,5

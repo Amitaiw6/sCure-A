@@ -1,0 +1,228 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "lastUpdated": "2026-03-30",
+    "description": "sCure Error & Warning Definitions. CS team can edit descriptions, troubleshooting steps, and support links. Error codes and severity levels are system-defined and should not be changed.",
+    "editableFields": ["description", "troubleshooting", "supportUrl"],
+    "systemFields": ["code", "title", "severity", "category"]
+  },
+
+  "support": {
+    "email": "support@scure.com",
+    "phone": "+1-800-123-4567",
+    "chat": "https://scure.com/support/chat",
+    "docsBase": "https://docs.scure.com/errors"
+  },
+
+  "errors": [
+    {
+      "code": "E-101",
+      "title": "Laser Temperature too High",
+      "severity": "critical",
+      "category": "temperature",
+      "description": "The laser temperature has exceeded the safe operating limit. This may be due to cooling failure or excessive usage.",
+      "troubleshooting": [
+        "Turn off the machine",
+        "Check the cooling fan",
+        "Clean the air filter",
+        "Wait 10 minutes before restarting"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-101"
+    },
+    {
+      "code": "E-102",
+      "title": "Chamber Overheat",
+      "severity": "critical",
+      "category": "temperature",
+      "description": "The chamber temperature has exceeded the maximum safe limit of 85°C. The heater has been automatically shut off.",
+      "troubleshooting": [
+        "Allow the chamber to cool down naturally",
+        "Check the temperature sensor connection",
+        "Verify the heater relay is functioning",
+        "Inspect the chamber insulation"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-102"
+    },
+    {
+      "code": "E-103",
+      "title": "System Motor Failure",
+      "severity": "critical",
+      "category": "mechanical",
+      "description": "The damper motor has failed to respond. This prevents proper airflow control during the curing process.",
+      "troubleshooting": [
+        "Power cycle the machine",
+        "Check motor cable connections",
+        "Listen for motor engagement sound",
+        "Contact support if motor is silent"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-103"
+    },
+    {
+      "code": "E-104",
+      "title": "Door Lock Failure",
+      "severity": "critical",
+      "category": "safety",
+      "description": "The door lock mechanism has failed. The curing process cannot start without a secure door lock.",
+      "troubleshooting": [
+        "Close the door firmly",
+        "Check the door alignment",
+        "Inspect the lock solenoid",
+        "Clean the door latch mechanism"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-104"
+    },
+    {
+      "code": "E-105",
+      "title": "UV LED Failure",
+      "severity": "critical",
+      "category": "electrical",
+      "description": "One or more UV LEDs have failed the diagnostic test. Curing quality may be compromised.",
+      "troubleshooting": [
+        "Run LED diagnostic from Settings",
+        "Check LED connections",
+        "Inspect LED panel for damage",
+        "Replace LED module if needed"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-105"
+    },
+    {
+      "code": "E-106",
+      "title": "N₂ Pressure Critical",
+      "severity": "critical",
+      "category": "gas",
+      "description": "Nitrogen line pressure has dropped below the minimum required level during an active cure process.",
+      "troubleshooting": [
+        "Check the N₂ supply tank level",
+        "Inspect the gas line for leaks",
+        "Verify the regulator setting (minimum 6 bar)",
+        "Replace empty N₂ tank"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-106"
+    },
+    {
+      "code": "E-107",
+      "title": "Power Supply Fault",
+      "severity": "critical",
+      "category": "electrical",
+      "description": "The main power supply voltage is outside the acceptable range. System operation may be unreliable.",
+      "troubleshooting": [
+        "Check the power cable connection",
+        "Verify the wall outlet voltage",
+        "Try a different power outlet",
+        "Inspect the internal power supply unit"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-107"
+    },
+    {
+      "code": "E-108",
+      "title": "Communication Error",
+      "severity": "critical",
+      "category": "system",
+      "description": "The control board has lost communication with the hardware interface. No hardware commands can be executed.",
+      "troubleshooting": [
+        "Reboot the system",
+        "Check internal cable connections",
+        "Verify the control board LED indicators",
+        "Reflash firmware if issue persists"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/E-108"
+    },
+
+    {
+      "code": "W-301",
+      "title": "Filter Needs Cleaning",
+      "severity": "warning",
+      "category": "maintenance",
+      "description": "The air filter has reached its recommended service interval. Cleaning or replacement is recommended to maintain optimal performance.",
+      "troubleshooting": [
+        "Remove and inspect the air filter",
+        "Clean with compressed air",
+        "Replace if visibly damaged",
+        "Reset the filter timer in Settings"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-301"
+    },
+    {
+      "code": "W-302",
+      "title": "Fan Speed Low",
+      "severity": "warning",
+      "category": "mechanical",
+      "description": "The cooling fan is running below expected RPM. This may indicate dust buildup or bearing wear.",
+      "troubleshooting": [
+        "Run fan test from Settings",
+        "Clean the fan blades",
+        "Check for obstructions",
+        "Replace fan if RPM remains low"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-302"
+    },
+    {
+      "code": "W-303",
+      "title": "N₂ Pressure Low",
+      "severity": "warning",
+      "category": "gas",
+      "description": "Nitrogen line pressure is below the recommended level. Nitrogen mode may not activate properly.",
+      "troubleshooting": [
+        "Check the N₂ tank gauge",
+        "Verify pressure is at least 6 bar",
+        "Check for slow leaks in the gas line"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-303"
+    },
+    {
+      "code": "W-304",
+      "title": "High Lead On Time",
+      "severity": "warning",
+      "category": "maintenance",
+      "description": "The UV LED modules have exceeded 500 hours of operation. Performance may gradually decrease.",
+      "troubleshooting": [
+        "Run LED diagnostic to verify output",
+        "Plan LED module replacement",
+        "Contact support for replacement parts"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-304"
+    },
+    {
+      "code": "W-305",
+      "title": "Software Update Available",
+      "severity": "warning",
+      "category": "system",
+      "description": "A new software version is available. Update to get the latest features and bug fixes.",
+      "troubleshooting": [
+        "Download the update from the support portal",
+        "Copy the .scu file to a USB drive",
+        "Go to Settings → Update Software",
+        "Follow the on-screen instructions"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-305"
+    },
+    {
+      "code": "W-306",
+      "title": "Network Disconnected",
+      "severity": "warning",
+      "category": "network",
+      "description": "The ethernet connection has been lost. Remote monitoring and cloud features are unavailable.",
+      "troubleshooting": [
+        "Check the ethernet cable",
+        "Verify the router/switch is powered on",
+        "Try a different network port",
+        "Check network settings"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-306"
+    },
+    {
+      "code": "W-307",
+      "title": "Door Sensor Misaligned",
+      "severity": "warning",
+      "category": "safety",
+      "description": "The door sensor readings are intermittent. The door may not be sealing properly.",
+      "troubleshooting": [
+        "Open and close the door firmly",
+        "Check the door hinges",
+        "Clean the sensor area",
+        "Adjust the door alignment"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/W-307"
+    }
+  ]
+}

@@ -1,5 +1,21 @@
 import { useState, useEffect } from 'react'
 import type { ProcessType, StepData } from './StepCard'
+import { Button } from '@/components/ui/button'
+import { TouchNumber } from '@/components/ui/touch-number'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface StepModalProps {
   isOpen: boolean
@@ -10,154 +26,144 @@ interface StepModalProps {
   stepNumber: number
 }
 
-const processTypes: ProcessType[] = ['Cooling', 'Cure', 'Drying', 'Heating']
+const processTypes: ProcessType[] = ['Heating', 'Drying', 'Cure', 'Cooling']
 
 export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep, stepNumber }: StepModalProps) {
   const [processType, setProcessType] = useState<ProcessType>('Cooling')
-  const [secondValue, setSecondValue] = useState('')
-  const [time, setTime] = useState('10')
-  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [tempValue, setTempValue] = useState<number | null>(25)
+  const [intensityValue, setIntensityValue] = useState<number | null>(null)
+  const [time, setTime] = useState<number>(10)
 
   useEffect(() => {
     if (editStep) {
       setProcessType(editStep.processType)
-      setSecondValue(
-        editStep.temperature !== undefined
-          ? String(editStep.temperature)
-          : editStep.intensity !== undefined
-            ? String(editStep.intensity)
-            : ''
-      )
-      setTime(String(editStep.time))
+      setTempValue(editStep.temperature ?? null)
+      setIntensityValue(editStep.intensity ?? null)
+      setTime(editStep.time)
     } else {
       setProcessType('Cooling')
-      setSecondValue('25')
-      setTime('10')
+      setTempValue(25)
+      setIntensityValue(null)
+      setTime(10)
     }
   }, [editStep, isOpen])
 
-  if (!isOpen) return null
-
   const isEdit = !!editStep
 
-  const getSecondFieldLabel = () => {
-    switch (processType) {
-      case 'Cooling': return 'Temperature (°C)'
-      case 'Heating': return 'Temperature'
-      case 'Cure': return 'Intensity:'
-      case 'Drying': return 'Intensity:'
+  const handleProcessChange = (v: string) => {
+    const proc = v as ProcessType
+    setProcessType(proc)
+    if (proc === 'Heating' || proc === 'Cooling') {
+      setTempValue(prev => prev ?? 40)
+      setIntensityValue(null)
+    } else if (proc === 'Drying') {
+      setTempValue(prev => prev ?? 40)
+      setIntensityValue(prev => prev ?? 30)
+    } else {
+      setTempValue(null)
+      setIntensityValue(prev => prev ?? 30)
     }
   }
 
-  const getSecondFieldPlaceholder = () => {
-    switch (processType) {
-      case 'Cooling': return '25'
-      case 'Heating': return '50 Deg'
-      case 'Cure': return '30%'
-      case 'Drying': return '50 Deg'
-    }
-  }
+  const showTemp = processType !== 'Cure'
+  const showIntensity = processType === 'Drying' || processType === 'Cure'
 
   const handleSave = () => {
     const data: Omit<StepData, 'id'> = {
       stepNumber,
       processType,
-      time: parseInt(time) || 10,
+      time,
     }
-    if (processType === 'Cooling' || processType === 'Heating') {
-      data.temperature = parseInt(secondValue) || 25
-    } else {
-      data.intensity = parseInt(secondValue) || 30
-    }
+    if (showTemp && tempValue !== null) data.temperature = tempValue
+    if (showIntensity && intensityValue !== null) data.intensity = intensityValue
     onSave(data)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-[#141414] rounded-2xl p-6 w-[400px] mx-4">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[380px] p-6" showCloseButton={false}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-sky-400">{isEdit ? 'Edit Step' : 'Add Step'}</h2>
-          <span className="text-gray-400 text-sm">Step {stepNumber}</span>
-        </div>
+        <DialogHeader className="flex-row items-center justify-between">
+          <DialogTitle className="text-primary text-lg">{isEdit ? 'Edit Step' : 'Add Step'}</DialogTitle>
+          <span className="text-muted-foreground text-sm">Step {stepNumber}</span>
+        </DialogHeader>
 
-        {/* Process Type */}
-        <div className="flex items-center justify-between mb-4 relative">
-          <label className="text-gray-300 text-sm">Process Type</label>
-          <div className="relative">
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-white text-sm min-w-[150px] text-left flex items-center justify-between"
-            >
-              {processType}
-              <span className="text-gray-400 text-xs ml-2">⌃</span>
-            </button>
-            {dropdownOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-xl z-10 overflow-hidden">
+        {/* Fields */}
+        <div className="space-y-4 mt-2">
+          {/* Process Type */}
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-foreground text-sm whitespace-nowrap">Process Type</label>
+            <Select value={processType} onValueChange={handleProcessChange}>
+              <SelectTrigger className="w-[160px] h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
                 {processTypes.map(pt => (
-                  <button
-                    key={pt}
-                    onClick={() => { setProcessType(pt); setDropdownOpen(false) }}
-                    className="w-full text-left px-4 py-2.5 text-gray-800 text-sm hover:bg-gray-100 transition-colors"
-                  >
-                    {pt}
-                  </button>
+                  <SelectItem key={pt} value={pt}>{pt}</SelectItem>
                 ))}
-              </div>
-            )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Temperature */}
+          {showTemp && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Temperature</label>
+              <TouchNumber
+                value={tempValue}
+                onChange={setTempValue}
+                min={20}
+                max={80}
+                step={5}
+                suffix="deg"
+                className="w-[160px]"
+              />
+            </div>
+          )}
+
+          {/* Intensity */}
+          {showIntensity && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Intensity:</label>
+              <TouchNumber
+                value={intensityValue}
+                onChange={setIntensityValue}
+                min={0}
+                max={100}
+                step={5}
+                suffix="%"
+                className="w-[160px]"
+              />
+            </div>
+          )}
+
+          {/* Time */}
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-foreground text-sm whitespace-nowrap">Time (Min):</label>
+            <TouchNumber
+              value={time}
+              onChange={v => setTime(v ?? 1)}
+              min={1}
+              max={120}
+              step={1}
+              suffix="min"
+              className="w-[160px]"
+            />
           </div>
         </div>
 
-        {/* Second field */}
-        <div className="flex items-center justify-between mb-4">
-          <label className="text-gray-300 text-sm">{getSecondFieldLabel()}</label>
-          <input
-            type="text"
-            value={secondValue}
-            onChange={e => setSecondValue(e.target.value)}
-            placeholder={getSecondFieldPlaceholder()}
-            className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-white text-sm min-w-[150px] outline-none focus:border-sky-500"
-          />
-        </div>
-
-        {/* Time */}
-        <div className="flex items-center justify-between mb-6">
-          <label className="text-gray-300 text-sm">Time (Min):</label>
-          <input
-            type="text"
-            value={time}
-            onChange={e => setTime(e.target.value)}
-            placeholder="10 min"
-            className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-white text-sm min-w-[150px] outline-none focus:border-sky-500"
-          />
-        </div>
-
         {/* Buttons */}
-        <div className="flex items-center gap-3">
+        <DialogFooter className="flex-row gap-3 mt-4">
           {isEdit && onDelete && (
-            <button
-              onClick={onDelete}
-              className="px-4 py-2.5 rounded-xl border border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500/10 transition-colors"
-            >
+            <Button variant="destructive" onClick={onDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 border border-destructive">
               Delete
-            </button>
+            </Button>
           )}
           <div className="flex-1" />
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-xl border border-[#333] text-gray-400 text-sm font-semibold hover:bg-[#222] transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-6 py-2.5 rounded-xl bg-sky-500 text-white text-sm font-semibold hover:bg-sky-400 transition-colors"
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
+          <Button variant="outline" onClick={onClose} className="min-w-[90px]">Cancel</Button>
+          <Button onClick={handleSave} className="min-w-[90px]">Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
