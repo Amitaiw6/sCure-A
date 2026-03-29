@@ -83,15 +83,15 @@ export default function PhaseCard({
     <div
       className={`rounded-2xl p-5 flex flex-col items-center relative min-w-[220px] flex-1 ${
         isActive
-          ? `border-2 ${config.borderColor} bg-gray-900/80`
+          ? `border-2 ${config.borderColor} bg-[#111]`
           : isPending
-            ? 'border border-dashed border-gray-600 bg-gray-900/40'
-            : `border-2 ${config.borderColor} bg-gray-900/80`
+            ? 'border border-dashed border-[#333] bg-[#0e0e0e]'
+            : `border-2 ${config.borderColor} bg-[#111]`
       }`}
     >
       {/* Phase badge */}
       <div className={`absolute -top-4 left-4 px-4 py-1 rounded-full text-sm font-semibold flex items-center gap-1.5 ${
-        isPending ? 'bg-gray-700 text-gray-400' : `${config.badgeBg} text-white`
+        isPending ? 'bg-[#222] text-gray-400' : `${config.badgeBg} text-white`
       }`}>
         <span>{config.icon}</span>
         <span>{config.label}</span>
@@ -148,7 +148,7 @@ export default function PhaseCard({
           <span>{rangeStart}</span>
           <span>{rangeEnd}</span>
         </div>
-        <div className="w-full h-1.5 bg-gray-700 rounded-full">
+        <div className="w-full h-1.5 bg-[#222] rounded-full">
           <div
             className={`h-full rounded-full ${config.barColor}`}
             style={{ width: `${rangeProgress}%` }}
@@ -163,7 +163,7 @@ export default function PhaseCard({
       <div className="flex gap-1.5 mt-2">
         {[0, 1, 2, 3].map(i => (
           <div key={i} className={`w-2 h-2 rounded-full ${
-            isPending ? 'bg-gray-700' : i === 0 ? config.dotColor : 'bg-gray-600'
+            isPending ? 'bg-[#222]' : i === 0 ? config.dotColor : 'bg-gray-600'
           }`} />
         ))}
       </div>
@@ -179,17 +179,17 @@ export default function PhaseCard({
       )}
 
       {/* Bottom stats */}
-      <div className={`flex items-center gap-0 mt-4 text-xs w-full border-t border-gray-700 pt-3 ${isPending ? 'text-gray-700' : 'text-gray-500'}`}>
+      <div className={`flex items-center gap-0 mt-4 text-xs w-full border-t border-[#222] pt-3 ${isPending ? 'text-gray-700' : 'text-gray-500'}`}>
         <div className="flex-1 text-center">
           <p className={`text-lg font-bold ${isPending ? 'text-gray-700' : 'text-white'}`}>{minElapsed}</p>
           <p className="uppercase text-[10px]">MIN ELAPSED</p>
         </div>
-        <div className="w-px h-8 bg-gray-700" />
+        <div className="w-px h-8 bg-[#222]" />
         <div className="flex-1 text-center">
           <p className={`text-lg font-bold ${isPending ? 'text-gray-700' : 'text-white'}`}>{secElapsed}</p>
           <p className="uppercase text-[10px]">SEC</p>
         </div>
-        <div className="w-px h-8 bg-gray-700" />
+        <div className="w-px h-8 bg-[#222]" />
         <div className="flex-1 text-center">
           <p className={`text-lg font-bold ${isPending ? 'text-gray-700' : 'text-white'}`}>{percentComplete}</p>
           <p className="uppercase text-[10px]">COMPLETE</p>

@@ -26,13 +26,13 @@ export default function CureProcessPage() {
   const nextPhaseName = nextPhaseIndex < 4 ? phases[nextPhaseIndex] : '-----'
 
   return (
-    <main className="px-6 pb-8">
+    <main className="px-4 pb-4">
       {/* Cure Sequence Header */}
-      <div className="bg-gray-900/60 rounded-2xl p-5 mt-4">
+      <div className="bg-[#111] rounded-2xl p-4 mt-2">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <h2 className="text-white text-lg font-bold">Cure Sequence</h2>
-            <div className="flex items-center gap-2 bg-gray-800 rounded-full px-4 py-1.5">
+            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-full px-4 py-1.5">
               <span className="text-gray-400 text-sm">Step {currentStep} of 4</span>
               <div className="flex gap-1 ml-1">
                 {[0, 1, 2, 3].map(i => (
@@ -78,7 +78,7 @@ export default function CureProcessPage() {
       </div>
 
       {/* Next Phase */}
-      <div className="flex items-center justify-between bg-gray-900/40 rounded-xl px-5 py-3 mt-4 border-l-4 border-cyan-500">
+      <div className="flex items-center justify-between bg-[#111] rounded-xl px-5 py-3 mt-4 border-l-4 border-cyan-500">
         <div className="flex items-center gap-3">
           <span className="text-cyan-400 text-sm">Next Phase:</span>
           <span className="text-white font-bold text-lg">{nextPhaseName}</span>
@@ -88,7 +88,7 @@ export default function CureProcessPage() {
       </div>
 
       {/* Phase Cards */}
-      <div className="flex gap-4 mt-8 overflow-x-auto pb-4">
+      <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
         <PhaseCard
           type="heating"
           status={getPhaseStatus(0)}

@@ -75,7 +75,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-[#2a2a3e] rounded-2xl p-6 w-[400px] mx-4">
+      <div className="relative bg-[#141414] rounded-2xl p-6 w-[400px] mx-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-sky-400">{isEdit ? 'Edit Step' : 'Add Step'}</h2>
@@ -88,7 +88,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
           <div className="relative">
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white text-sm min-w-[150px] text-left flex items-center justify-between"
+              className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-white text-sm min-w-[150px] text-left flex items-center justify-between"
             >
               {processType}
               <span className="text-gray-400 text-xs ml-2">⌃</span>
@@ -117,7 +117,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             value={secondValue}
             onChange={e => setSecondValue(e.target.value)}
             placeholder={getSecondFieldPlaceholder()}
-            className="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white text-sm min-w-[150px] outline-none focus:border-sky-500"
+            className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-white text-sm min-w-[150px] outline-none focus:border-sky-500"
           />
         </div>
 
@@ -129,7 +129,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             value={time}
             onChange={e => setTime(e.target.value)}
             placeholder="10 min"
-            className="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white text-sm min-w-[150px] outline-none focus:border-sky-500"
+            className="bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2 text-white text-sm min-w-[150px] outline-none focus:border-sky-500"
           />
         </div>
 
@@ -146,7 +146,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
           <div className="flex-1" />
           <button
             onClick={onClose}
-            className="px-6 py-2.5 rounded-xl border border-gray-600 text-gray-400 text-sm font-semibold hover:bg-gray-700 transition-colors"
+            className="px-6 py-2.5 rounded-xl border border-[#333] text-gray-400 text-sm font-semibold hover:bg-[#222] transition-colors"
           >
             Cancel
           </button>

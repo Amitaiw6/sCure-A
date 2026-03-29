@@ -66,12 +66,12 @@ export default function MaterialEditorPage() {
   const displaySteps = [...steps].reverse()
 
   return (
-    <main className="px-6 pb-24">
+    <main className="px-4 pb-16">
       {/* Material Name */}
       <div className="flex items-center gap-4 mt-6">
         <span className="text-gray-500 text-sm whitespace-nowrap">Material Name:</span>
         <div
-          className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2.5 text-white cursor-pointer flex items-center justify-between"
+          className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-lg px-4 py-2.5 text-white cursor-pointer flex items-center justify-between"
           onClick={() => setShowKeyboard(true)}
         >
           <span>{materialName}</span>
@@ -108,7 +108,7 @@ export default function MaterialEditorPage() {
         {/* Add step button */}
         <button
           onClick={handleAddStep}
-          className="w-20 h-20 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500 hover:border-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
+          className="w-20 h-20 rounded-full border-2 border-dashed border-[#333] flex items-center justify-center text-gray-500 hover:border-gray-400 hover:text-gray-300 transition-colors flex-shrink-0"
         >
           <Plus size={28} />
         </button>
