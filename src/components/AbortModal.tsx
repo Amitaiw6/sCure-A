@@ -15,7 +15,7 @@ export default function AbortModal({ isOpen, onClose, onAbort }: AbortModalProps
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-[#2a2a3e] rounded-2xl p-8 max-w-md w-full mx-4 text-center">
+      <div className="relative bg-[#141414] rounded-2xl p-8 max-w-md w-full mx-4 text-center">
         {/* Warning icon */}
         <div className="flex justify-center mb-4">
           <div className="w-16 h-16 bg-yellow-400 rounded-xl flex items-center justify-center">
@@ -37,7 +37,7 @@ export default function AbortModal({ isOpen, onClose, onAbort }: AbortModalProps
         <div className="flex gap-4">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-gray-600 text-white font-semibold hover:bg-gray-700 transition-colors"
+            className="flex-1 py-3 rounded-xl border border-[#333] text-white font-semibold hover:bg-[#222] transition-colors"
           >
             Keep Running
           </button>

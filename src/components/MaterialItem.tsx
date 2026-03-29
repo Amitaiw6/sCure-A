@@ -4,22 +4,31 @@ interface MaterialItemProps {
   label: string
   duration?: string
   isCommand?: boolean
+  isSelected?: boolean
+  onClick?: () => void
 }
 
-export default function MaterialItem({ label, duration, isCommand }: MaterialItemProps) {
+export default function MaterialItem({ label, duration, isCommand, isSelected, onClick }: MaterialItemProps) {
   return (
-    <div className="flex items-center justify-between bg-gray-800/80 rounded-2xl px-5 py-4 mb-3 hover:bg-gray-700/80 transition-colors cursor-pointer group">
+    <div
+      onClick={onClick}
+      className={`flex items-center justify-between rounded-2xl px-4 py-3 mb-2 transition-colors cursor-pointer group ${
+        isSelected
+          ? 'bg-[#1a1a1a] border border-sky-500/60'
+          : 'bg-[#141414] border border-[#222] hover:bg-[#1a1a1a]'
+      }`}
+    >
       <div className="flex items-center gap-3">
-        <PlusCircle size={22} className="text-gray-500" />
-        <span className="text-gray-300 text-base">{label}</span>
+        <PlusCircle size={20} className="text-gray-500" />
+        <span className="text-gray-300 text-sm">{label}</span>
       </div>
       <div className="flex items-center gap-2">
         {duration && (
-          <span className={`text-sm font-medium ${isCommand ? 'text-cyan-400' : 'text-cyan-400'}`}>
+          <span className={`text-xs font-medium ${isCommand ? 'text-cyan-400' : 'text-cyan-400'}`}>
             {duration}
           </span>
         )}
-        <ChevronRight size={18} className="text-gray-500 group-hover:text-gray-300 transition-colors" />
+        <ChevronRight size={16} className="text-gray-500 group-hover:text-gray-300 transition-colors" />
       </div>
     </div>
   )

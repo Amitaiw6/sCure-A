@@ -28,11 +28,11 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
   const tempOrIntensity = step.temperature ?? step.intensity
 
   return (
-    <div className={`border ${config.color} rounded-xl p-4 min-w-[170px] bg-gray-900/60`}>
+    <div className={`border ${config.color} rounded-xl p-4 min-w-[170px] bg-[#111]`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-400 border border-gray-600 rounded-full w-5 h-5 flex items-center justify-center">
+          <span className="text-xs text-gray-400 border border-[#333] rounded-full w-5 h-5 flex items-center justify-center">
             {step.stepNumber}
           </span>
           <span className="text-sm">{config.icon}</span>
@@ -50,7 +50,7 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
       </div>
 
       {/* Progress bar */}
-      <div className="mt-3 w-full h-1 bg-gray-700 rounded-full">
+      <div className="mt-3 w-full h-1 bg-[#222] rounded-full">
         <div className={`h-full rounded-full ${config.barColor}`} style={{ width: '15%' }} />
       </div>
     </div>

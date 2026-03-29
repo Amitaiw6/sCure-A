@@ -26,7 +26,7 @@ export default function ImportCsvModal({ isOpen, onClose, onImport }: ImportCsvM
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-[#2a2a3e] rounded-2xl p-6 w-[560px] mx-4">
+      <div className="relative bg-[#141414] rounded-2xl p-6 w-[560px] mx-4">
         <h2 className="text-xl font-bold text-white mb-2">Import from CSV</h2>
         <p className="text-gray-400 text-sm mb-5">
           Upload a CSV file with step definitions. The file will be parsed and steps added to the current sequence.
@@ -36,7 +36,7 @@ export default function ImportCsvModal({ isOpen, onClose, onImport }: ImportCsvM
         <div
           onDragOver={e => e.preventDefault()}
           onDrop={handleDrop}
-          className="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center mb-5 hover:border-gray-400 transition-colors cursor-pointer"
+          className="border-2 border-dashed border-[#333] rounded-xl p-8 text-center mb-5 hover:border-gray-400 transition-colors cursor-pointer"
           onClick={() => fileInputRef.current?.click()}
         >
           <Folder size={48} className="mx-auto mb-3 text-yellow-400" />
@@ -53,7 +53,7 @@ export default function ImportCsvModal({ isOpen, onClose, onImport }: ImportCsvM
         </div>
 
         {/* Expected format */}
-        <div className="border border-gray-600 rounded-xl p-4 mb-5">
+        <div className="border border-[#333] rounded-xl p-4 mb-5">
           <h3 className="text-gray-400 text-sm font-semibold mb-3">Expected Csv Format</h3>
           <table className="w-full text-sm">
             <thead>
@@ -78,13 +78,13 @@ export default function ImportCsvModal({ isOpen, onClose, onImport }: ImportCsvM
         <div className="flex gap-4">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-400 font-semibold hover:bg-gray-700 transition-colors"
+            className="flex-1 py-3 rounded-xl border border-[#333] text-gray-400 font-semibold hover:bg-[#222] transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-400 font-semibold hover:bg-gray-700 transition-colors"
+            className="flex-1 py-3 rounded-xl border border-[#333] text-gray-400 font-semibold hover:bg-[#222] transition-colors"
           >
             Import Steps
           </button>
