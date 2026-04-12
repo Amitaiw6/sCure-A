@@ -6,6 +6,7 @@ import { PrintHistoryProvider } from '@/context/PrintHistoryContext'
 import { HardwareProvider } from '@/context/HardwareContext'
 import { SystemConfigProvider } from '@/context/SystemConfigContext'
 import { AlertsProvider } from '@/context/AlertsContext'
+import { CureHistoryProvider } from '@/context/CureHistoryContext'
 import './index.css'
 import App from './App.tsx'
 
@@ -15,11 +16,13 @@ createRoot(document.getElementById('root')!).render(
       <SystemConfigProvider>
         <HardwareProvider>
           <AlertsProvider>
-            <MaterialProvider>
-              <PrintHistoryProvider>
-                <App />
-              </PrintHistoryProvider>
-            </MaterialProvider>
+            <CureHistoryProvider>
+              <MaterialProvider>
+                <PrintHistoryProvider>
+                  <App />
+                </PrintHistoryProvider>
+              </MaterialProvider>
+            </CureHistoryProvider>
           </AlertsProvider>
         </HardwareProvider>
       </SystemConfigProvider>

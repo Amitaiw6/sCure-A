@@ -16,9 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { useMaterials } from '@/context/MaterialContext'
-import type { CureStep, Material } from '@/context/MaterialContext'
+import type { CureStep, Material, TimerMode, UvStartMode } from '@/context/MaterialContext'
 
 interface CsvBuilderModalProps {
   isOpen: boolean
@@ -26,7 +27,7 @@ interface CsvBuilderModalProps {
   editMaterial?: Material | null
 }
 
-type ProcessType = 'Heating' | 'Drying' | 'Cure' | 'Cooling'
+type ProcessType = 'Heating' | 'Drying' | 'Cure' | 'Cooling' | 'Bleacher'
 
 const emptyStep = (stepNum: number): CureStep => ({
   step: stepNum,
@@ -71,8 +72,9 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         return {
           ...s,
           process: proc,
-          temperature: (proc === 'Heating' || proc === 'Cooling' || proc === 'Drying') ? (s.temperature ?? 40) : null,
-          intensity: (proc === 'Drying' || proc === 'Cure') ? (s.intensity ?? 30) : null,
+          temperature: proc !== 'Cooling' ? (s.temperature ?? 40) : null,
+          intensity: (proc === 'Cure' || proc === 'Bleacher') ? (s.intensity ?? 30) : null,
+          coolingRate: proc === 'Cooling' ? (s.coolingRate ?? 5) : null,
         }
       }
       return { ...s, [field]: value }
@@ -184,15 +186,26 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Heating">Heating</SelectItem>
                     <SelectItem value="Drying">Drying</SelectItem>
-                    <SelectItem value="Cure">Cure</SelectItem>
+                    <SelectItem value="Heating">Heating</SelectItem>
+                    <SelectItem value="Cure">Cure (405nm)</SelectItem>
+                    <SelectItem value="Bleacher">Bleaching (450nm)</SelectItem>
                     <SelectItem value="Cooling">Cooling</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {step.process !== 'Cure' && (
+              {step.process === 'Cooling' ? (
+                <div className="flex items-center justify-between gap-4">
+                  <label className="text-foreground text-sm">Cooling rate</label>
+                  <TouchNumber
+                    value={step.coolingRate ?? 5}
+                    onChange={v => updateStep(i, 'coolingRate', v)}
+                    min={1} max={20} step={1} suffix="°C/m"
+                    className="w-[160px]"
+                  />
+                </div>
+              ) : (
                 <div className="flex items-center justify-between gap-4">
                   <label className="text-foreground text-sm">Temperature</label>
                   <TouchNumber
@@ -204,7 +217,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                 </div>
               )}
 
-              {(step.process === 'Drying' || step.process === 'Cure') && (
+              {false && (step.process === 'Cure' || step.process === 'Bleacher') && (
                 <div className="flex items-center justify-between gap-4">
                   <label className="text-foreground text-sm">Intensity:</label>
                   <TouchNumber
@@ -225,6 +238,60 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                   className="w-[160px]"
                 />
               </div>
+
+              {/* Cure/Bleacher options */}
+              {(step.process === 'Cure' || step.process === 'Bleacher') && (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="text-foreground text-sm">Timer start:</label>
+                    <Select value={step.timerMode ?? 'on-target'} onValueChange={v => updateStep(i, 'timerMode', v)}>
+                      <SelectTrigger className="w-[160px] h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="on-target">At temperature</SelectItem>
+                        <SelectItem value="on-ramp">On ramp start</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="text-foreground text-sm">UV Intensity:</label>
+                    <TouchNumber
+                      value={step.uvIntensity ?? 30}
+                      onChange={v => updateStep(i, 'uvIntensity', v)}
+                      min={5} max={100} step={5} suffix="%"
+                      className="w-[160px]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="text-foreground text-sm">UV starts:</label>
+                    <Select value={step.uvStartMode ?? 'at-target'} onValueChange={v => updateStep(i, 'uvStartMode', v)}>
+                      <SelectTrigger className="w-[160px] h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="at-start">Immediately</SelectItem>
+                        <SelectItem value="at-target">At temperature</SelectItem>
+                        <SelectItem value="at-ramp-percent">At ramp %</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {step.uvStartMode === 'at-ramp-percent' && (
+                    <div className="flex items-center justify-between gap-4">
+                      <label className="text-foreground text-sm">Ramp %:</label>
+                      <TouchNumber
+                        value={step.uvRampPercent ?? 50}
+                        onChange={v => updateStep(i, 'uvRampPercent', v)}
+                        min={10} max={100} step={10} suffix="%"
+                        className="w-[160px]"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ))}
         </div>

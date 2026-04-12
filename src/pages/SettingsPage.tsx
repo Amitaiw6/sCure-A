@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { TouchNumber } from '@/components/ui/touch-number'
 import { Progress } from '@/components/ui/progress'
 import { useHardware } from '@/context/HardwareContext'
-import { Download, Upload, Fan, Zap } from 'lucide-react'
+import { Download, Upload, Fan, Zap, Building2, Unlink } from 'lucide-react'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import { systemReboot, systemShutdown, exportLogs } from '@/services/hardware-api'
 import UpdateModal from '@/components/UpdateModal'
@@ -13,8 +13,19 @@ import { Pencil } from 'lucide-react'
 
 export default function SettingsPage() {
   const { state: hw, setChamberTemp, setNitrogenMode, setNitrogenDuration, setNfcEnabled, setSystemName } = useHardware()
-  const { config } = useSystemConfig()
+  const { config, setOrganization, resetSetup } = useSystemConfig()
+  const orgFileInputRef = useRef<HTMLInputElement>(null)
+  const [orgError, setOrgError] = useState<string | null>(null)
 
+  const [dateTime, setDateTime] = useState(() => {
+    const now = new Date()
+    return {
+      date: now.toISOString().split('T')[0],
+      time: now.toTimeString().slice(0, 5),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      autoSync: true,
+    }
+  })
   const [ledCoolingAirflow, setLedCoolingAirflow] = useState(0)
   const [chamberIntakeFan, setChamberIntakeFan] = useState(0)
   const [chamberHeatingFan, setChamberHeatingFan] = useState(0)
@@ -29,6 +40,7 @@ export default function SettingsPage() {
   const [showUpdate, setShowUpdate] = useState(false)
   const [showNameKeyboard, setShowNameKeyboard] = useState(false)
   const [editingName, setEditingName] = useState(hw.systemName)
+  const [factoryTaps, setFactoryTaps] = useState(0)
 
   const handleExportLogs = async () => {
     setLogsStatus('loading')
@@ -130,9 +142,9 @@ export default function SettingsPage() {
                   onChange={e => handleChamberHeatingChange(Number(e.target.value))}
                   className="absolute inset-0 w-full opacity-0 cursor-pointer touch-manipulation" />
                 <div className="absolute top-1/2 w-5 h-5 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none"
-                  style={{ left: `${((chamberHeating - 20) / 60) * 100}%`, transform: 'translate(-50%, -50%)' }} />
+                  style={{ left: `calc(10px + (100% - 20px) * ${(chamberHeating - 20) / 60})`, transform: 'translate(-50%, -50%)' }} />
               </div>
-              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={20} max={80} step={1} suffix="°C" className="w-[100px]" />
+              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={20} max={80} step={1} suffix="°C" className="w-[120px] shrink-0" />
             </div>
           </Card>
 
@@ -183,6 +195,62 @@ export default function SettingsPage() {
 
         {/* ===== RIGHT ===== */}
         <div className="flex flex-col gap-2">
+          {/* Date & Time */}
+          <Card>
+            <Label>Date & Time</Label>
+            <div className="mt-1.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground text-[10px]">Auto Sync</span>
+                <Switch checked={dateTime.autoSync} onCheckedChange={v => setDateTime(prev => ({ ...prev, autoSync: v }))} />
+              </div>
+
+              {dateTime.autoSync ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-[10px]">Date</span>
+                    <span className="text-foreground text-[11px] font-mono">{new Date(dateTime.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-[10px]">Time</span>
+                    <span className="text-foreground text-[11px] font-mono">{dateTime.time}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-[10px]">Timezone</span>
+                    <span className="text-foreground text-[10px] font-mono truncate max-w-[130px]">{dateTime.timezone}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground text-[10px] shrink-0">Date</span>
+                    <input
+                      type="date"
+                      value={dateTime.date}
+                      onChange={e => setDateTime(prev => ({ ...prev, date: e.target.value }))}
+                      className="bg-secondary border border-border rounded-md px-2 py-1 text-[11px] text-foreground font-mono w-[130px] touch-manipulation"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground text-[10px] shrink-0">Time</span>
+                    <input
+                      type="time"
+                      value={dateTime.time}
+                      onChange={e => setDateTime(prev => ({ ...prev, time: e.target.value }))}
+                      className="bg-secondary border border-border rounded-md px-2 py-1 text-[11px] text-foreground font-mono w-[130px] touch-manipulation"
+                    />
+                  </div>
+                  <Button variant="outline" size="sm" className="w-full text-[10px] h-7 mt-1" onClick={() => {
+                    // In production: call API to set system clock
+                    // sudo date -s "YYYY-MM-DD HH:MM"
+                    console.log(`[DateTime] Set to ${dateTime.date} ${dateTime.time}`)
+                  }}>
+                    Apply
+                  </Button>
+                </>
+              )}
+            </div>
+          </Card>
+
           <Card>
             <InfoItem label="S.N" value={config.serialNumber} />
           </Card>
@@ -203,7 +271,65 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
-            <div className="space-y-1.5">
+            <Label>Organization</Label>
+            {config.organizationId ? (
+              <div className="mt-1.5 space-y-1.5">
+                <div className="bg-secondary rounded-md px-2 py-1.5">
+                  <span className="text-[8px] text-muted-foreground font-mono break-all leading-tight block">{config.organizationId}</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="flex-1 text-[10px] h-7 gap-1" onClick={() => orgFileInputRef.current?.click()}>
+                    <Building2 size={11} /> Change
+                  </Button>
+                  <Button variant="outline" size="sm" className="text-[10px] h-7 gap-1 text-destructive hover:text-destructive" onClick={() => resetSetup()}>
+                    <Unlink size={11} />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="w-full text-[10px] h-8 gap-1 mt-1.5" onClick={() => orgFileInputRef.current?.click()}>
+                <Building2 size={13} /> Link Organization
+              </Button>
+            )}
+            {orgError && <p className="text-destructive text-[9px] mt-1">{orgError}</p>}
+            <input
+              ref={orgFileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                setOrgError(null)
+                const reader = new FileReader()
+                reader.onload = (ev) => {
+                  const text = ev.target?.result as string
+                  const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+                  if (match) {
+                    setOrganization(match[0])
+                    setOrgError(null)
+                  } else {
+                    setOrgError('No valid ID found')
+                  }
+                }
+                reader.readAsText(file)
+                e.target.value = ''
+              }}
+            />
+          </Card>
+
+          <Card>
+            <div
+              className="space-y-1.5"
+              onClick={() => {
+                const next = factoryTaps + 1
+                setFactoryTaps(next)
+                if (next >= 10) {
+                  setFactoryTaps(0)
+                  resetSetup()
+                }
+              }}
+            >
               <InfoItem label="Firmware" value={config.firmware} />
               <InfoItem label="Last Boot" value={new Date(config.lastBoot).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} />
               <InfoItem label="Device" value={config.deviceName} />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { ProcessType, StepData } from './StepCard'
+import type { ProcessType, StepData, TimerMode, UvStartMode } from './StepCard'
 import { Button } from '@/components/ui/button'
 import { TouchNumber } from '@/components/ui/touch-number'
 import {
@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 
 interface StepModalProps {
   isOpen: boolean
@@ -26,13 +27,18 @@ interface StepModalProps {
   stepNumber: number
 }
 
-const processTypes: ProcessType[] = ['Heating', 'Drying', 'Cure', 'Cooling']
+const processTypes: ProcessType[] = ['Drying', 'Heating', 'Cure', 'Bleacher', 'Cooling']
 
 export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep, stepNumber }: StepModalProps) {
   const [processType, setProcessType] = useState<ProcessType>('Cooling')
   const [tempValue, setTempValue] = useState<number | null>(25)
   const [intensityValue, setIntensityValue] = useState<number | null>(null)
   const [time, setTime] = useState<number>(10)
+  const [uvIntensity, setUvIntensity] = useState<number | null>(null)
+  const [timerMode, setTimerMode] = useState<TimerMode>('on-target')
+  const [uvStartMode, setUvStartMode] = useState<UvStartMode>('at-target')
+  const [uvRampPercent, setUvRampPercent] = useState<number>(50)
+  const [coolingRate, setCoolingRate] = useState<number>(5)
 
   useEffect(() => {
     if (editStep) {
@@ -40,11 +46,21 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setTempValue(editStep.temperature ?? null)
       setIntensityValue(editStep.intensity ?? null)
       setTime(editStep.time)
+      setUvIntensity(editStep.uvIntensity ?? null)
+      setTimerMode(editStep.timerMode ?? 'on-target')
+      setUvStartMode(editStep.uvStartMode ?? 'at-target')
+      setUvRampPercent(editStep.uvRampPercent ?? 50)
+      setCoolingRate(editStep.coolingRate ?? 5)
     } else {
       setProcessType('Cooling')
       setTempValue(25)
       setIntensityValue(null)
       setTime(10)
+      setUvIntensity(null)
+      setTimerMode('on-target')
+      setUvStartMode('at-target')
+      setUvRampPercent(50)
+      setCoolingRate(5)
     }
   }, [editStep, isOpen])
 
@@ -53,20 +69,27 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
   const handleProcessChange = (v: string) => {
     const proc = v as ProcessType
     setProcessType(proc)
-    if (proc === 'Heating' || proc === 'Cooling') {
+    if (proc === 'Heating') {
       setTempValue(prev => prev ?? 40)
       setIntensityValue(null)
+      setUvIntensity(null)
+    } else if (proc === 'Cooling') {
+      setTempValue(null)
+      setIntensityValue(null)
+      setUvIntensity(null)
+      setCoolingRate(prev => prev ?? 5)
     } else if (proc === 'Drying') {
       setTempValue(prev => prev ?? 40)
-      setIntensityValue(prev => prev ?? 30)
+      setIntensityValue(null)
+      setUvIntensity(null)
     } else {
-      setTempValue(null)
+      setTempValue(prev => prev ?? 40)
       setIntensityValue(prev => prev ?? 30)
     }
   }
 
-  const showTemp = processType !== 'Cure'
-  const showIntensity = processType === 'Drying' || processType === 'Cure'
+  const isCureOrBleacher = processType === 'Cure' || processType === 'Bleacher'
+  const showIntensity = processType === 'Cure' || processType === 'Bleacher'
 
   const handleSave = () => {
     const data: Omit<StepData, 'id'> = {
@@ -74,8 +97,15 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       processType,
       time,
     }
-    if (showTemp && tempValue !== null) data.temperature = tempValue
+    if (processType !== 'Cooling' && tempValue !== null) data.temperature = tempValue
+    if (processType === 'Cooling') data.coolingRate = coolingRate
     if (showIntensity && intensityValue !== null) data.intensity = intensityValue
+    if (isCureOrBleacher) {
+      data.timerMode = timerMode
+      data.uvIntensity = uvIntensity ?? 30
+      data.uvStartMode = uvStartMode
+      if (uvStartMode === 'at-ramp-percent') data.uvRampPercent = uvRampPercent
+    }
     onSave(data)
   }
 
@@ -99,14 +129,27 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
               </SelectTrigger>
               <SelectContent>
                 {processTypes.map(pt => (
-                  <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                  <SelectItem key={pt} value={pt}>{pt === 'Bleacher' ? 'Bleaching (450nm)' : pt === 'Cure' ? 'Cure (405nm)' : pt}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Temperature */}
-          {showTemp && (
+          {/* Temperature or Cooling Rate */}
+          {processType === 'Cooling' ? (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Cooling rate</label>
+              <TouchNumber
+                value={coolingRate}
+                onChange={v => setCoolingRate(v ?? 5)}
+                min={1}
+                max={20}
+                step={1}
+                suffix="°C/m"
+                className="w-[160px]"
+              />
+            </div>
+          ) : (
             <div className="flex items-center justify-between gap-4">
               <label className="text-foreground text-sm whitespace-nowrap">Temperature</label>
               <TouchNumber
@@ -115,14 +158,14 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
                 min={20}
                 max={80}
                 step={5}
-                suffix="deg"
+                suffix="°C"
                 className="w-[160px]"
               />
             </div>
           )}
 
-          {/* Intensity */}
-          {showIntensity && (
+          {/* Intensity - hidden, UV Intensity used instead */}
+          {false && showIntensity && (
             <div className="flex items-center justify-between gap-4">
               <label className="text-foreground text-sm whitespace-nowrap">Intensity:</label>
               <TouchNumber
@@ -150,6 +193,68 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
               className="w-[160px]"
             />
           </div>
+
+          {/* Heating-only options */}
+          {isCureOrBleacher && (
+            <>
+              {/* Timer Mode */}
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-foreground text-sm whitespace-nowrap">Timer start:</label>
+                <Select value={timerMode} onValueChange={v => setTimerMode(v as TimerMode)}>
+                  <SelectTrigger className="w-[160px] h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="on-target">At temperature</SelectItem>
+                    <SelectItem value="on-ramp">On ramp start</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* UV intensity + start mode */}
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-foreground text-sm whitespace-nowrap">UV Intensity:</label>
+                <TouchNumber
+                  value={uvIntensity ?? 30}
+                  onChange={v => setUvIntensity(v)}
+                  min={5}
+                  max={100}
+                  step={5}
+                  suffix="%"
+                  className="w-[160px]"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-foreground text-sm whitespace-nowrap">UV starts:</label>
+                <Select value={uvStartMode} onValueChange={v => setUvStartMode(v as UvStartMode)}>
+                  <SelectTrigger className="w-[160px] h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="at-start">Immediately</SelectItem>
+                    <SelectItem value="at-target">At temperature</SelectItem>
+                    <SelectItem value="at-ramp-percent">At ramp %</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {uvStartMode === 'at-ramp-percent' && (
+                <div className="flex items-center justify-between gap-4">
+                  <label className="text-foreground text-sm whitespace-nowrap">Ramp %:</label>
+                  <TouchNumber
+                    value={uvRampPercent}
+                    onChange={v => setUvRampPercent(v ?? 50)}
+                    min={10}
+                    max={100}
+                    step={10}
+                    suffix="%"
+                    className="w-[160px]"
+                  />
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Buttons */}

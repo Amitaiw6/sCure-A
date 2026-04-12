@@ -249,6 +249,13 @@ int run_fan_test() {
 } // namespace scure
 
 // ============================================================
+// Temperature Controller (include the header-only implementation)
+// ============================================================
+#include "temperature_control.hpp"
+
+static scure::TemperatureController* g_temp_ctrl = nullptr;
+
+// ============================================================
 // Python bindings (pybind11)
 // Uncomment when building as Python extension
 // ============================================================
@@ -256,6 +263,7 @@ int run_fan_test() {
 /*
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 namespace py = pybind11;
 
 PYBIND11_MODULE(hw_driver, m) {
@@ -285,6 +293,47 @@ PYBIND11_MODULE(hw_driver, m) {
             "uvIntensity"_a = s.uv_intensity,
             "damperOpen"_a = s.damper_open
         );
+    });
+
+    // Temperature Controller bindings
+    m.def("temp_start", [](float target) {
+        if (!g_temp_ctrl) {
+            scure::TemperatureController::IO io;
+            io.read_temp_c = []() -> float {
+                // Read from hardware
+                // TODO: Replace with real SPI thermocouple read
+                std::lock_guard<std::mutex> lock(scure::g_mutex);
+                return scure::g_state.chamber_temp;
+            };
+            io.heater_on = []() { scure::set_heater(true); };
+            io.heater_off = []() { scure::set_heater(false); };
+            io.set_fan = [](int speed) { scure::set_fan_speed("chamber_heating", speed); };
+
+            g_temp_ctrl = new scure::TemperatureController(io);
+            g_temp_ctrl->set_update_callback([](float temp, float target, bool at_temp, bool heating) {
+                std::lock_guard<std::mutex> lock(scure::g_mutex);
+                scure::g_state.chamber_temp = temp;
+                scure::g_state.target_temp = target;
+                scure::g_state.heating = heating;
+            });
+        }
+        g_temp_ctrl->start(target);
+    });
+
+    m.def("temp_stop", []() {
+        if (g_temp_ctrl) g_temp_ctrl->stop();
+    });
+
+    m.def("temp_set_target", [](float target) {
+        if (g_temp_ctrl) g_temp_ctrl->set_target(target);
+    });
+
+    m.def("temp_is_at_target", []() -> bool {
+        return g_temp_ctrl ? g_temp_ctrl->is_at_temp() : false;
+    });
+
+    m.def("temp_is_running", []() -> bool {
+        return g_temp_ctrl ? g_temp_ctrl->is_running() : false;
     });
 }
 */

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import SCureLogo from '@/components/SCureLogo'
 
 interface WakeScreenProps {
   onWake: () => void
@@ -17,9 +18,10 @@ export default function WakeScreen({ onWake }: WakeScreenProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[99999] bg-black flex flex-col items-center justify-center touch-manipulation"
+      className="fixed inset-0 z-[99999] bg-black flex flex-col items-center justify-center gap-4 touch-manipulation"
       onClick={handleTap}
     >
+      <SCureLogo size={64} color="#ffffff" className="opacity-40" />
       <div className="text-muted-foreground/30 text-sm">
         {tapCount === 0 ? 'Tap to wake' : 'Tap again to start'}
       </div>

@@ -1,5 +1,5 @@
-Step,Process,Temperature,Intensity,Time
-1,Heating,50,,5
-2,Drying,50,30,10
-3,Cure,,60,15
-4,Cooling,25,,5
+Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent
+1,Drying,45,,8,,,,,
+2,Heating,55,,5,,,,,
+3,Cure,55,60,15,,20,on-ramp,at-ramp-percent,50
+4,Cooling,,,5,4,,,,

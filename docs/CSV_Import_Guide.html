@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>S-Cure CSV Import Guide</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; line-height: 1.6; padding: 40px; max-width: 800px; margin: 0 auto; }
+
+  .header { display: flex; align-items: center; gap: 20px; border-bottom: 3px solid #0ea5e9; padding-bottom: 20px; margin-bottom: 30px; }
+  .logo-box { width: 60px; height: 60px; background: #0a0a0a; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+  .header h1 { font-size: 24px; color: #0a0a0a; }
+  .header p { font-size: 13px; color: #666; margin-top: 2px; }
+
+  h2 { font-size: 18px; color: #0ea5e9; margin: 28px 0 12px; border-left: 4px solid #0ea5e9; padding-left: 12px; }
+  h3 { font-size: 15px; color: #333; margin: 20px 0 8px; }
+  p, li { font-size: 13px; color: #333; }
+  ul, ol { padding-left: 24px; margin: 8px 0; }
+  li { margin: 4px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+  th { background: #0a0a0a; color: #fff; padding: 8px 12px; text-align: left; font-weight: 600; }
+  td { padding: 7px 12px; border-bottom: 1px solid #e0e0e0; }
+  tr:nth-child(even) { background: #f8f9fa; }
+
+  .example { background: #0a0a0a; color: #e0e0e0; padding: 16px; border-radius: 8px; font-family: 'Consolas', monospace; font-size: 12px; margin: 12px 0; overflow-x: auto; white-space: pre; }
+  .example .header-line { color: #0ea5e9; }
+  .example .comment { color: #666; }
+
+  .warn-box { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+  .warn-box .title { font-weight: 700; color: #92400e; font-size: 13px; }
+  .warn-box p { color: #78350f; font-size: 12px; margin-top: 4px; }
+
+  .error-box { background: #fef2f2; border: 1px solid #ef4444; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+  .error-box .title { font-weight: 700; color: #991b1b; font-size: 13px; }
+  .error-box ul { margin-top: 6px; }
+  .error-box li { color: #991b1b; font-size: 12px; }
+
+  .ok-box { background: #f0fdf4; border: 1px solid #22c55e; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+  .ok-box .title { font-weight: 700; color: #166534; font-size: 13px; }
+  .ok-box ul { margin-top: 6px; }
+  .ok-box li { color: #166534; font-size: 12px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-required { background: #ef4444; color: #fff; }
+  .badge-optional { background: #6b7280; color: #fff; }
+  .badge-cure { background: #a855f7; color: #fff; }
+  .badge-bleacher { background: #22d3ee; color: #000; }
+  .badge-cooling { background: #14b8a6; color: #fff; }
+
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #ddd; font-size: 11px; color: #999; text-align: center; }
+
+  @media print {
+    body { padding: 0; }
+    .page-break { page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo-box">
+    <svg viewBox="-3 -7 106 141" width="40" height="40" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="100">
+      <path d="M0 45 L50 0 L100 45" />
+      <path d="M0 90 L50 126 L100 90" />
+      <line x1="50" y1="0" x2="50" y2="126" />
+      <line x1="0" y1="45" x2="100" y2="45" />
+      <line x1="0" y1="90" x2="100" y2="90" />
+      <line x1="0" y1="45" x2="50" y2="90" />
+      <line x1="50" y1="45" x2="100" y2="90" />
+      <line x1="100" y1="45" x2="77.6" y2="69.9" />
+      <line x1="0" y1="90" x2="22.4" y2="65.1" />
+    </svg>
+  </div>
+  <div>
+    <h1>S-Cure CSV Import Guide</h1>
+    <p>How to create and import cure programs via CSV files</p>
+  </div>
+</div>
+
+<!-- SECTION 1 -->
+<h2>1. Overview</h2>
+<p>
+  The S-Cure system allows you to create custom cure programs by importing CSV (Comma-Separated Values) files.
+  Each CSV file defines a sequence of process steps that the machine will execute in order.
+  This guide explains the required format, valid parameters, and common errors to avoid.
+</p>
+
+<!-- SECTION 2 -->
+<h2>2. CSV File Structure</h2>
+<p>The CSV file must contain a <strong>header row</strong> followed by one or more <strong>data rows</strong>. Each row represents one process step.</p>
+
+<h3>2.1 Required Columns</h3>
+<table>
+  <tr>
+    <th>Column</th>
+    <th>Name</th>
+    <th>Description</th>
+    <th>Status</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td><strong>Step</strong></td>
+    <td>Step number (1, 2, 3...)</td>
+    <td><span class="badge badge-required">Required</span></td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><strong>Process</strong></td>
+    <td>Process type (see Section 3)</td>
+    <td><span class="badge badge-required">Required</span></td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><strong>Temperature</strong></td>
+    <td>Target temperature in &deg;C (20&ndash;80)</td>
+    <td><span class="badge badge-required">Required*</span></td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><strong>Intensity</strong></td>
+    <td>UV light intensity in % (0&ndash;100)</td>
+    <td><span class="badge badge-cure">Cure/Bleacher only</span></td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><strong>Time</strong></td>
+    <td>Duration in minutes (1&ndash;120)</td>
+    <td><span class="badge badge-required">Required</span></td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><strong>CoolingRate</strong></td>
+    <td>Cooling rate in &deg;C/min (1&ndash;20)</td>
+    <td><span class="badge badge-cooling">Cooling only</span></td>
+  </tr>
+</table>
+<p style="font-size:12px; color:#666;">* Temperature is required for Drying, Heating, Cure, and Bleacher. Leave empty for Cooling.</p>
+
+<h3>2.2 Optional Columns (Cure &amp; Bleacher only)</h3>
+<table>
+  <tr>
+    <th>Column</th>
+    <th>Name</th>
+    <th>Description</th>
+    <th>Valid Values</th>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td><strong>UvIntensity</strong></td>
+    <td>Additional UV intensity during heating</td>
+    <td>0&ndash;100 (%)</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td><strong>TimerMode</strong></td>
+    <td>When the timer starts counting</td>
+    <td><code>on-ramp</code> or <code>on-target</code></td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td><strong>UvStartMode</strong></td>
+    <td>When UV turns on</td>
+    <td><code>at-start</code>, <code>at-target</code>, or <code>at-ramp-percent</code></td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td><strong>UvRampPercent</strong></td>
+    <td>Ramp % at which UV turns on</td>
+    <td>10&ndash;100 (%) &mdash; only when UvStartMode = at-ramp-percent</td>
+  </tr>
+</table>
+
+<!-- SECTION 3 -->
+<h2>3. Process Types</h2>
+<table>
+  <tr>
+    <th>Process</th>
+    <th>Description</th>
+    <th>Required Fields</th>
+    <th>Light Source</th>
+  </tr>
+  <tr>
+    <td><strong>Drying</strong></td>
+    <td>Removes moisture from the part using heat</td>
+    <td>Temperature, Time</td>
+    <td>None</td>
+  </tr>
+  <tr>
+    <td><strong>Heating</strong></td>
+    <td>Heats the chamber to target temperature</td>
+    <td>Temperature, Time</td>
+    <td>None</td>
+  </tr>
+  <tr>
+    <td><strong>Cure</strong></td>
+    <td>UV curing with 405nm LED light</td>
+    <td>Temperature, Intensity, Time</td>
+    <td>405nm UV</td>
+  </tr>
+  <tr>
+    <td><strong>Bleacher</strong></td>
+    <td>Bleaching with 450nm LED light</td>
+    <td>Temperature, Intensity, Time</td>
+    <td>450nm Visible</td>
+  </tr>
+  <tr>
+    <td><strong>Cooling</strong></td>
+    <td>Controlled cooling at a specified rate</td>
+    <td>Time, CoolingRate</td>
+    <td>None</td>
+  </tr>
+</table>
+
+<!-- SECTION 4 -->
+<h2>4. Example CSV Files</h2>
+
+<h3>4.1 Basic Program (4 steps)</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent</span>
+1,Drying,50,,10,,,,,
+2,Heating,70,,5,,,,,
+3,Cure,70,80,20,,,,,
+4,Cooling,,,8,3,,,,</div>
+
+<h3>4.2 Advanced Program with Bleacher &amp; UV Options</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent</span>
+1,Drying,45,,8,,,,,
+2,Heating,65,,5,,,,,
+3,Cure,65,70,15,,30,on-target,at-ramp-percent,50
+4,Bleacher,60,40,10,,,on-target,,
+5,Cooling,,,6,4,,,,</div>
+
+<h3>4.3 Minimal Program (Cure only)</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Intensity,Time,CoolingRate</span>
+1,Cure,60,50,20,
+2,Cooling,,,5,5</div>
+
+<!-- SECTION 5 -->
+<h2>5. Parameter Limits</h2>
+<table>
+  <tr>
+    <th>Parameter</th>
+    <th>Minimum</th>
+    <th>Maximum</th>
+    <th>Unit</th>
+  </tr>
+  <tr><td>Temperature</td><td>20</td><td>80</td><td>&deg;C</td></tr>
+  <tr><td>Intensity</td><td>0</td><td>100</td><td>%</td></tr>
+  <tr><td>Time</td><td>1</td><td>120</td><td>minutes</td></tr>
+  <tr><td>CoolingRate</td><td>1</td><td>20</td><td>&deg;C/min</td></tr>
+  <tr><td>UvIntensity</td><td>0</td><td>100</td><td>%</td></tr>
+  <tr><td>UvRampPercent</td><td>10</td><td>100</td><td>%</td></tr>
+</table>
+
+<!-- SECTION 6 -->
+<div class="page-break"></div>
+<h2>6. What Will Be Rejected</h2>
+<p>The system will <strong>not import</strong> a CSV file if any of the following errors are found:</p>
+
+<div class="error-box">
+  <div class="title">Common Rejection Reasons</div>
+  <ul>
+    <li><strong>Missing header row</strong> &mdash; The first row must contain column names including "Step" or "Process"</li>
+    <li><strong>Less than 5 columns</strong> &mdash; Each data row must have at least 5 comma-separated values</li>
+    <li><strong>Invalid process type</strong> &mdash; Must be exactly: Drying, Heating, Cure, Bleacher, or Cooling (case-sensitive)</li>
+    <li><strong>Temperature out of range</strong> &mdash; Must be between 20&deg;C and 80&deg;C</li>
+    <li><strong>Intensity on non-Cure/Bleacher step</strong> &mdash; Drying, Heating, and Cooling must not have intensity values</li>
+    <li><strong>Time out of range</strong> &mdash; Must be between 1 and 120 minutes</li>
+    <li><strong>Cooling rate out of range</strong> &mdash; Must be between 1 and 20 &deg;C/min</li>
+    <li><strong>Invalid TimerMode</strong> &mdash; Must be <code>on-ramp</code> or <code>on-target</code></li>
+    <li><strong>Invalid UvStartMode</strong> &mdash; Must be <code>at-start</code>, <code>at-target</code>, or <code>at-ramp-percent</code></li>
+    <li><strong>UvRampPercent out of range</strong> &mdash; Must be between 10% and 100%</li>
+    <li><strong>Empty file or no valid steps</strong> &mdash; At least one valid data row is required</li>
+  </ul>
+</div>
+
+<div class="warn-box">
+  <div class="title">Important Notes</div>
+  <p>
+    &bull; Process names are <strong>case-sensitive</strong>: use "Heating" not "heating" or "HEATING".<br>
+    &bull; Empty optional fields should be left blank (not "0" or "null") &mdash; just leave nothing between the commas.<br>
+    &bull; The file must have a <strong>.csv</strong> extension.<br>
+    &bull; UTF-8 encoding is recommended. Avoid special characters in file names.
+  </p>
+</div>
+
+<!-- SECTION 7 -->
+<h2>7. Timer Mode Explained</h2>
+<table>
+  <tr>
+    <th>Mode</th>
+    <th>Behavior</th>
+  </tr>
+  <tr>
+    <td><code>on-target</code> (default)</td>
+    <td>The step timer starts counting <strong>only after</strong> the chamber reaches the target temperature. The ramp-up time is not included in the step duration.</td>
+  </tr>
+  <tr>
+    <td><code>on-ramp</code></td>
+    <td>The step timer starts counting <strong>immediately</strong> when the machine begins heating. The ramp-up time is included in the total step duration.</td>
+  </tr>
+</table>
+
+<h2>8. UV Start Mode Explained</h2>
+<table>
+  <tr>
+    <th>Mode</th>
+    <th>Behavior</th>
+  </tr>
+  <tr>
+    <td><code>at-start</code></td>
+    <td>UV light turns on <strong>immediately</strong> when the step begins, even during ramp-up.</td>
+  </tr>
+  <tr>
+    <td><code>at-target</code> (default)</td>
+    <td>UV light turns on <strong>only after</strong> reaching the target temperature.</td>
+  </tr>
+  <tr>
+    <td><code>at-ramp-percent</code></td>
+    <td>UV light turns on when the temperature reaches a specified percentage of the ramp. Requires <code>UvRampPercent</code> column (e.g., 50 = UV on at 50% of ramp-up).</td>
+  </tr>
+</table>
+
+<!-- SECTION 8 -->
+<h2>9. Quick Checklist</h2>
+<div class="ok-box">
+  <div class="title">Before importing, verify:</div>
+  <ul>
+    <li>File has .csv extension</li>
+    <li>First row is the header with column names</li>
+    <li>Each row has at least 5 columns</li>
+    <li>Process types are spelled correctly (case-sensitive)</li>
+    <li>Temperature is 20&ndash;80&deg;C for all non-Cooling steps</li>
+    <li>Intensity is only set for Cure and Bleacher steps</li>
+    <li>CoolingRate is only set for Cooling steps</li>
+    <li>Time is between 1&ndash;120 minutes</li>
+    <li>Optional columns (7&ndash;10) are only used with Cure or Bleacher</li>
+  </ul>
+</div>
+
+<div class="footer">
+  S-Cure CSV Import Guide &bull; S-Cure Ltd. &bull; For support: support@scure.com
+</div>
+
+</body>
+</html>

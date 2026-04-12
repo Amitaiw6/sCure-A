@@ -2,7 +2,10 @@ import { Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export type ProcessType = 'Cooling' | 'Cure' | 'Drying' | 'Heating'
+export type ProcessType = 'Cooling' | 'Cure' | 'Drying' | 'Heating' | 'Bleacher'
+
+export type TimerMode = 'on-ramp' | 'on-target'
+export type UvStartMode = 'at-start' | 'at-target' | 'at-ramp-percent'
 
 export interface StepData {
   id: string
@@ -11,6 +14,11 @@ export interface StepData {
   temperature?: number
   intensity?: number
   time: number
+  uvIntensity?: number
+  timerMode?: TimerMode
+  uvStartMode?: UvStartMode
+  uvRampPercent?: number
+  coolingRate?: number | null
 }
 
 interface StepCardProps {
@@ -23,6 +31,7 @@ const typeConfig: Record<ProcessType, { icon: string; borderColor: string; barCo
   Cure: { icon: '✦', borderColor: 'border-purple-500/60', barColor: 'bg-purple-500', textColor: 'text-purple-400' },
   Drying: { icon: '◇', borderColor: 'border-blue-500/60', barColor: 'bg-blue-500', textColor: 'text-blue-400' },
   Heating: { icon: '🔥', borderColor: 'border-orange-500/60', barColor: 'bg-orange-500', textColor: 'text-orange-400' },
+  Bleacher: { icon: '☀', borderColor: 'border-cyan-400/60', barColor: 'bg-cyan-400', textColor: 'text-cyan-300' },
 }
 
 export default function StepCard({ step, onEdit }: StepCardProps) {
@@ -52,13 +61,21 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
 
       {/* Info */}
       <div className="text-[11px] text-muted-foreground space-y-0.5">
-        {step.temperature != null && (
+        {step.processType === 'Cooling' && step.coolingRate != null ? (
+          <p>Rate: <span className="text-foreground font-semibold">{step.coolingRate}°C/min</span></p>
+        ) : step.temperature != null && (
           <p>Temp: <span className="text-foreground font-semibold">{step.temperature}°C</span></p>
         )}
         {step.intensity != null && (
           <p>Int: <span className="text-foreground font-semibold">{step.intensity}%</span></p>
         )}
+        {(step.processType === 'Cure' || step.processType === 'Bleacher') && step.uvIntensity != null && step.uvIntensity > 0 && (
+          <p>UV: <span className="text-purple-400 font-semibold">{step.uvIntensity}%</span></p>
+        )}
         <p>Time: <span className="text-foreground font-semibold">{step.time} min</span></p>
+        {(step.processType === 'Cure' || step.processType === 'Bleacher') && step.timerMode === 'on-ramp' && (
+          <p className="text-[9px] text-orange-400">Timer: on ramp start</p>
+        )}
       </div>
 
       {/* Progress bar */}

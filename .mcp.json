@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "miro": {
+      "command": "npx",
+      "args": ["-y", "@my-best-code/netzschule-miro-mcp"],
+      "env": {
+        "MIRO_OAUTH_TOKEN": "eyJtaXJvLm9yaWdpbiI6ImV1MDEifQ_WoMIrqfObpgW1uLRxIKRL5B0T-k"
+      }
+    }
+  }
+}

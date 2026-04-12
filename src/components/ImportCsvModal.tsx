@@ -19,6 +19,7 @@ interface ImportCsvModalProps {
 interface ImportResult {
   name: string
   success: boolean
+  errors: string[]
 }
 
 export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps) {
@@ -39,8 +40,8 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
         const reader = new FileReader()
         reader.onload = (event) => {
           const csvContent = event.target?.result as string
-          const success = addMaterialFromCsv(file.name, csvContent)
-          setResults(prev => [...prev, { name: file.name, success }])
+          const result = addMaterialFromCsv(file.name, csvContent)
+          setResults(prev => [...prev, { name: file.name, success: result.success, errors: result.errors }])
         }
         reader.readAsText(file)
       }
@@ -58,8 +59,8 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
       const reader = new FileReader()
       reader.onload = (event) => {
         const csvContent = event.target?.result as string
-        const success = addMaterialFromCsv(file.name, csvContent)
-        setResults(prev => [...prev, { name: file.name, success }])
+        const result = addMaterialFromCsv(file.name, csvContent)
+        setResults(prev => [...prev, { name: file.name, success: result.success, errors: result.errors }])
       }
       reader.readAsText(file)
     }
@@ -98,7 +99,7 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
           {/* Right: Format example */}
           <div className="flex-1 border border-border rounded-xl p-3">
             <h3 className="text-muted-foreground text-xs font-semibold mb-2">Expected CSV Format</h3>
-            <table className="w-full text-[11px]">
+            <table className="w-full text-[10px]">
               <thead>
                 <tr className="text-muted-foreground">
                   <th className="text-left py-0.5 font-medium">Step</th>
@@ -106,31 +107,43 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
                   <th className="text-left py-0.5 font-medium">Temp</th>
                   <th className="text-left py-0.5 font-medium">Int</th>
                   <th className="text-left py-0.5 font-medium">Time</th>
+                  <th className="text-left py-0.5 font-medium">Rate</th>
                 </tr>
               </thead>
               <tbody className="text-foreground/80">
-                <tr><td className="py-0.5 text-muted-foreground">1</td><td>Heating</td><td>40</td><td></td><td>10</td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">2</td><td className="font-bold">Drying</td><td className="font-bold">40</td><td>30</td><td className="font-bold">10</td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">3</td><td>Cure</td><td></td><td></td><td>10</td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">4</td><td>Cooling</td><td>25</td><td></td><td>5</td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">1</td><td>Heating</td><td>40</td><td></td><td>10</td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">2</td><td>Drying</td><td>40</td><td></td><td>10</td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">3</td><td>Cure</td><td>60</td><td>30</td><td>10</td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">4</td><td>Bleacher</td><td>60</td><td>40</td><td>10</td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">5</td><td>Cooling</td><td></td><td></td><td>5</td><td>5</td></tr>
               </tbody>
             </table>
+            <p className="text-[9px] text-muted-foreground/60 mt-1.5">Temp: 20-80°C · Int: 0-100% · Time: 1-120min · Rate: 1-20°C/min</p>
           </div>
         </div>
 
         {/* Import results */}
         {results.length > 0 && (
-          <div className="space-y-1">
+          <div className="space-y-2 max-h-[120px] overflow-y-auto scroll-hidden">
             {results.map((r, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                {r.success ? (
-                  <CheckCircle size={14} className="text-green-500 shrink-0" />
-                ) : (
-                  <XCircle size={14} className="text-destructive shrink-0" />
+              <div key={i}>
+                <div className="flex items-center gap-2 text-xs">
+                  {r.success ? (
+                    <CheckCircle size={14} className="text-green-500 shrink-0" />
+                  ) : (
+                    <XCircle size={14} className="text-destructive shrink-0" />
+                  )}
+                  <span className={r.success ? 'text-foreground' : 'text-destructive'}>
+                    {r.name} {r.success ? '— Added' : '— Failed'}
+                  </span>
+                </div>
+                {r.errors.length > 0 && (
+                  <div className="ml-6 mt-0.5 space-y-0.5">
+                    {r.errors.map((err, j) => (
+                      <p key={j} className="text-[10px] text-destructive/80">{err}</p>
+                    ))}
+                  </div>
                 )}
-                <span className={r.success ? 'text-foreground' : 'text-destructive'}>
-                  {r.name} {r.success ? '— Added' : '— Invalid format'}
-                </span>
               </div>
             ))}
           </div>
@@ -138,7 +151,7 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
 
         <DialogFooter className="flex-row gap-3">
           <Button variant="outline" onClick={handleClose} className="flex-1 h-9 text-xs">Cancel</Button>
-          <Button onClick={handleClose} disabled={results.length === 0} className="flex-1 h-9 text-xs">Done</Button>
+          <Button onClick={handleClose} disabled={results.length === 0 || results.some(r => !r.success)} className="flex-1 h-9 text-xs">Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

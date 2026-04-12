@@ -4,7 +4,9 @@
   "lastBoot": "2026-03-29T08:23:00",
   "deviceName": "OR200001",
   "leadOnTimeHours": 10,
-  "model": "sCure-A",
+  "model": "S-Cure A",
   "hardwareRevision": "CM5-rev1.0",
-  "manufacturer": "sCure Ltd."
+  "manufacturer": "S-Cure Ltd.",
+  "organizationId": "",
+  "setupComplete": false
 }

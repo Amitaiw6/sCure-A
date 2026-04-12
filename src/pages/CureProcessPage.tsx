@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { usePrintHistory } from '@/context/PrintHistoryContext'
 import { useMaterials } from '@/context/MaterialContext'
 import { useHardware } from '@/context/HardwareContext'
+import { useCureHistory } from '@/context/CureHistoryContext'
 import type { PhaseType } from '@/components/PhaseCard'
 
 const phaseColorMap: Record<string, string> = {
@@ -40,6 +41,8 @@ export default function CureProcessPage() {
   const { removeLogs } = usePrintHistory()
   const { materials, selectedMaterialId } = useMaterials()
   const { state: hw, setChamberTemp, setTargetTemp, setHeating, setCooling, setUv, setDoorClosed, setNitrogenActive } = useHardware()
+  const { startCure, completeCure, abortCure } = useCureHistory()
+  const [cureLogId, setCureLogId] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState(0)
   const [showAbort, setShowAbort] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
@@ -173,6 +176,8 @@ export default function CureProcessPage() {
         setIsRunning(false)
         setIsComplete(true)
         setNitrogenActive(false)
+        if (cureLogId) completeCure(cureLogId)
+
         if (pendingLogIds.length > 0) {
           removeLogs(pendingLogIds)
           sessionStorage.removeItem('scure-pending-cure-logs')
@@ -206,8 +211,16 @@ export default function CureProcessPage() {
 
   // Auto-start on mount
   useEffect(() => {
-    if (!isRunning && !isComplete && phases.length > 0 && phaseElapsed.length > 0) {
+    if (!isRunning && !isComplete && phases.length > 0 && phaseElapsed.length > 0 && !cureLogId) {
       setIsRunning(true)
+      // Log cure start
+      const id = startCure(
+        selectedMaterial?.name ?? 'Unknown',
+        phases.length,
+        phases.map(p => p.name),
+        phases[0]?.temp ?? null
+      )
+      setCureLogId(id)
       if (phases[0]?.type === 'heating') {
         setIsRamping(true)
         setRampElapsed(0)
@@ -228,6 +241,7 @@ export default function CureProcessPage() {
     setCooling(false)
     setUv(false)
     setNitrogenActive(false)
+    if (cureLogId) abortCure(cureLogId, activePhase)
     setTargetTemp(null)
     navigate('/')
   }
@@ -308,10 +322,10 @@ export default function CureProcessPage() {
   }
 
   return (
-    <main className="px-3 pb-2">
+    <main className="px-3 h-full flex flex-col overflow-hidden">
       {/* Cure Sequence Header */}
-      <div className="bg-card rounded-xl p-3 mt-1">
-        <div className="flex items-center justify-between mb-2">
+      <div className="bg-card rounded-xl p-2 mt-1 shrink-0">
+        <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-3">
             <h2 className="text-foreground text-sm font-bold">
               Cure
@@ -334,8 +348,8 @@ export default function CureProcessPage() {
           <span className="text-green-400 font-bold text-sm">{overallProgress}%</span>
         </div>
 
-        <div className="flex items-center gap-2 mb-2">
-          <Progress value={overallProgress} className="flex-1 h-1.5" />
+        <div className="flex items-center gap-2 mb-1">
+          <Progress value={overallProgress} className="flex-1 h-1" />
         </div>
 
         <div className="flex justify-between">
@@ -357,7 +371,7 @@ export default function CureProcessPage() {
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center justify-between bg-card rounded-lg px-3 py-2 mt-2 border-l-4 border-cyan-500">
+      <div className="flex items-center justify-between bg-card rounded-lg px-3 py-1.5 mt-1 border-l-4 border-cyan-500 shrink-0">
         <div className="flex items-center gap-2">
           {isComplete ? (
             <>
@@ -394,7 +408,7 @@ export default function CureProcessPage() {
       </div>
 
       {/* Phase Cards */}
-      <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+      <div className="flex gap-2 mt-1 flex-1 min-h-0 overflow-x-auto overflow-y-hidden scroll-hidden items-stretch" style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}>
         {phases.map((phase, i) => {
           const gauge = getGaugeInfo(phase, i)
           const elapsed = phaseElapsed[i] ?? 0
@@ -427,10 +441,6 @@ export default function CureProcessPage() {
         })}
       </div>
 
-      <div className="text-center mt-1">
-        <span className="text-muted-foreground text-[10px]">{formatTime(totalElapsed)} / {formatTime(totalSeconds)}</span>
-        {isRamping && <span className="text-orange-400 text-[10px] ml-1">(ramping)</span>}
-      </div>
 
       {/* Completion Screen */}
       {isComplete && (

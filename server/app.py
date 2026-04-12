@@ -35,6 +35,24 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
+# Temperature controller
+temp_controller = None
+try:
+    from temperature_control import TemperatureController
+    from io_board import IOBoard
+    io_board = IOBoard()
+    temp_controller = TemperatureController(io_board)
+
+    def on_temp_update(temp, target, at_temp, heating):
+        hw.chamber_temp = temp
+        hw.target_temp = target
+        hw.heating = heating
+
+    temp_controller.set_update_callback(on_temp_update)
+    print("[API] Temperature controller connected")
+except ImportError:
+    print("[API] Temperature controller not available (simulation mode)")
+
 # ============================================================
 # Hardware abstraction - calls C++ driver or simulates
 # ============================================================
@@ -214,7 +232,16 @@ def door_open():
 def set_temperature():
     target = float(request.args.get('target', 25))
     hw.set_target_temp(target)
+    if temp_controller:
+        temp_controller.start(target)
     return jsonify({'ok': True, 'message': f'Target set to {target}°C'})
+
+@app.route('/api/chamber/stop', methods=['POST'])
+def stop_heating():
+    if temp_controller:
+        temp_controller.stop()
+    hw.heating = False
+    return jsonify({'ok': True, 'message': 'Heating stopped'})
 
 
 @app.route('/api/fans/<fan>', methods=['POST'])

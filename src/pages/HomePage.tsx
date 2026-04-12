@@ -5,10 +5,11 @@ import CsvBuilderModal from '@/components/CsvBuilderModal'
 import ImportCsvModal from '@/components/ImportCsvModal'
 import PrintHistoryModal from '@/components/PrintHistoryModal'
 import { Button } from '@/components/ui/button'
-import { Play, Upload, Trash2, Pencil, ChevronRight, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { Play, Upload, Trash2, Pencil, ChevronRight, CheckCircle, XCircle, AlertTriangle, Building2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMaterials } from '@/context/MaterialContext'
 import { usePrintHistory } from '@/context/PrintHistoryContext'
+import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { Material } from '@/context/MaterialContext'
 import type { PrintLog } from '@/context/PrintHistoryContext'
 
@@ -34,6 +35,8 @@ export default function HomePage() {
   const navigate = useNavigate()
   const { materials, selectedMaterialId, setSelectedMaterialId, removeMaterial, isLoading } = useMaterials()
   const { recentLogs } = usePrintHistory()
+  const { config } = useSystemConfig()
+  const hasOrg = !!config.organizationId
   const [showBuilder, setShowBuilder] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -56,12 +59,22 @@ export default function HomePage() {
       {/* Recent Prints Section */}
       <div className="flex items-center justify-between mb-3 mt-4">
         <h2 className="text-white text-base font-semibold">Recent Prints</h2>
-        <Button variant="ghost" size="sm" onClick={() => setShowHistory(true)} className="gap-1 text-xs text-muted-foreground">
-          View All <ChevronRight size={14} />
-        </Button>
+        {hasOrg && (
+          <Button variant="ghost" size="sm" onClick={() => setShowHistory(true)} className="gap-1 text-xs text-muted-foreground">
+            View All <ChevronRight size={14} />
+          </Button>
+        )}
       </div>
 
-      {recentLogs.length === 0 ? (
+      {!hasOrg ? (
+        <div className="bg-card rounded-xl px-4 py-4 flex items-center gap-3">
+          <Building2 size={18} className="text-muted-foreground/50 shrink-0" />
+          <div>
+            <p className="text-muted-foreground text-sm">No organization</p>
+            <p className="text-muted-foreground/50 text-[10px]">Connect to an organization in Settings to view print history</p>
+          </div>
+        </div>
+      ) : recentLogs.length === 0 ? (
         <p className="text-muted-foreground text-sm py-3">No prints yet.</p>
       ) : (
         <div className="space-y-1.5">

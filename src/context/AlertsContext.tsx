@@ -73,14 +73,23 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     if (errorDefs.length === 0) return
     const stored = localStorage.getItem('scure-active-alerts')
     if (stored) {
-      setActiveAlerts(JSON.parse(stored))
-    } else {
-      // Default demo alerts
-      setActiveAlerts([
-        { id: crypto.randomUUID(), code: 'W-301', timestamp: new Date().toISOString(), dismissed: false },
-        { id: crypto.randomUUID(), code: 'W-305', timestamp: new Date().toISOString(), dismissed: false },
-      ])
+      const parsed: ActiveAlert[] = JSON.parse(stored)
+      const hasActive = parsed.some(a => !a.dismissed)
+      if (hasActive) {
+        setActiveAlerts(parsed)
+        return
+      }
     }
+    // Load demo alerts when no active alerts exist
+    localStorage.removeItem('scure-active-alerts')
+    const now = new Date()
+    setActiveAlerts([
+      { id: crypto.randomUUID(), code: 'E-101', timestamp: new Date(now.getTime() - 120000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 'E-102', timestamp: new Date(now.getTime() - 60000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 'W-301', timestamp: new Date(now.getTime() - 300000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 'W-305', timestamp: new Date(now.getTime() - 180000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 'W-302', timestamp: new Date(now.getTime() - 600000).toISOString(), dismissed: false },
+    ])
   }, [errorDefs])
 
   // Persist

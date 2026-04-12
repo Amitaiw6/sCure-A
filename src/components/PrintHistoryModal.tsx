@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { usePrintHistory } from '@/context/PrintHistoryContext'
 import { useMaterials } from '@/context/MaterialContext'
+import { useSystemConfig } from '@/context/SystemConfigContext'
 import { cn } from '@/lib/utils'
 import type { PrintLog } from '@/context/PrintHistoryContext'
 
@@ -37,6 +38,8 @@ export default function PrintHistoryModal({ isOpen, onClose }: PrintHistoryModal
   const navigate = useNavigate()
   const { logs } = usePrintHistory()
   const { materials, setSelectedMaterialId } = useMaterials()
+  const { config } = useSystemConfig()
+  const hasOrg = !!config.organizationId
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const selectedLogs = logs.filter(l => selectedIds.has(l.id))
@@ -160,7 +163,7 @@ export default function PrintHistoryModal({ isOpen, onClose }: PrintHistoryModal
                   </div>
                   <span className="text-muted-foreground text-xs shrink-0">{formatDate(log.date)}</span>
                   <span className="text-cyan-400 text-xs shrink-0">{log.duration} min</span>
-                  <span className="text-muted-foreground/50 text-[10px] shrink-0">{log.printerName}</span>
+                  {hasOrg && <span className="text-muted-foreground/50 text-[10px] shrink-0">{log.printerName}</span>}
                   {!isSelected && hasMaterial && selectedIds.size === 0 && (
                     <ChevronRight size={14} className="text-muted-foreground shrink-0" />
                   )}

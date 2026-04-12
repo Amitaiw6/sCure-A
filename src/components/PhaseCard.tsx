@@ -29,6 +29,7 @@ const phaseConfig = {
   drying: { label: 'Drying', icon: '⏱', color: 'stroke-blue-500', borderColor: 'border-blue-500', badgeBg: 'bg-blue-500', dotColor: 'bg-blue-500' },
   cure: { label: 'Cure', icon: '✦', color: 'stroke-purple-500', borderColor: 'border-purple-500', badgeBg: 'bg-purple-500', dotColor: 'bg-purple-500' },
   cooling: { label: 'Cooling', icon: '❄', color: 'stroke-teal-500', borderColor: 'border-teal-500', badgeBg: 'bg-teal-500', dotColor: 'bg-teal-500' },
+  bleacher: { label: 'Bleaching', icon: '☀', color: 'stroke-cyan-400', borderColor: 'border-cyan-400', badgeBg: 'bg-cyan-400', dotColor: 'bg-cyan-400' },
 }
 
 const GAUGE_SIZE = 90
@@ -45,7 +46,7 @@ export default function PhaseCard({
 
   return (
     <div className={cn(
-      'rounded-xl p-3 flex flex-col items-center min-w-[170px] flex-1 bg-card',
+      'rounded-xl p-3 flex flex-col items-center w-[200px] shrink-0 bg-card snap-start',
       isActive && `border-2 ${config.borderColor}`,
       isPending && 'border border-dashed border-border',
       !isActive && !isPending && `border-2 ${config.borderColor}`

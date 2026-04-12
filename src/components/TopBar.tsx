@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft,
-  Clock,
   Bell,
   Settings,
   Globe,
@@ -10,9 +9,11 @@ import {
   Nfc,
   DoorOpen,
   DoorClosed,
+  History,
 } from 'lucide-react'
 import { useHardware } from '@/context/HardwareContext'
 import { useAlerts } from '@/context/AlertsContext'
+import SCureLogo from '@/components/SCureLogo'
 
 export default function TopBar() {
   const navigate = useNavigate()
@@ -50,6 +51,7 @@ export default function TopBar() {
             <ArrowLeft size={22} />
           </button>
         )}
+        <SCureLogo size={28} color="#ffffff" />
         <h1 className="text-xl font-bold text-white tracking-wide">{hw.systemName}</h1>
       </div>
 
@@ -85,7 +87,6 @@ export default function TopBar() {
 
       {/* Right side - Icons (min 44x44 touch targets) */}
       <div className="flex items-center gap-1.5">
-        <TouchIcon><Clock size={24} /></TouchIcon>
         <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation">
           <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-colors ${
             hw.nitrogenMode
@@ -98,7 +99,10 @@ export default function TopBar() {
           </div>
         </button>
         {hw.nfcEnabled && <CircledIcon><Nfc size={22} /></CircledIcon>}
-        <TouchIcon onClick={() => navigate('/alerts')}>
+        <TouchIcon onClick={() => { if (location.pathname !== '/cure-history') navigate('/cure-history', { replace: location.pathname !== '/' }) }}>
+          <History size={24} />
+        </TouchIcon>
+        <TouchIcon onClick={() => { if (location.pathname !== '/alerts') navigate('/alerts', { replace: location.pathname !== '/' }) }}>
           <div className="relative">
             <Bell size={24} className={criticalAlerts.length > 0 ? 'text-red-500' : alertCount > 0 ? 'text-orange-400' : undefined} />
             {alertCount > 0 && (
@@ -108,8 +112,8 @@ export default function TopBar() {
             )}
           </div>
         </TouchIcon>
-        <TouchIcon onClick={() => navigate('/settings')}><Settings size={24} /></TouchIcon>
-        <TouchIcon onClick={() => navigate('/network')}>
+        <TouchIcon onClick={() => { if (location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' }) }}><Settings size={24} /></TouchIcon>
+        <TouchIcon onClick={() => { if (location.pathname !== '/network') navigate('/network', { replace: location.pathname !== '/' }) }}>
           <Globe size={24} className={
             !hw.networkConnected ? 'text-destructive' : 'text-white'
           } />

@@ -48,7 +48,7 @@ const defaultState: HardwareState = {
   nitrogenActive: false,
   nitrogenDuration: 60,
   n2LinePressure: 6.0,          // simulated, from sensor in production
-  systemName: localStorage.getItem('scure-system-name') || 'sCure',
+  systemName: localStorage.getItem('scure-system-name') || 'S-Cure',
   nfcEnabled: true,
   networkConnected: navigator.onLine,
   apiConnected: false,
