@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { ArrowRight, DoorOpen, CheckCircle } from 'lucide-react'
+import { ArrowRight, DoorOpen, CheckCircle, AlertTriangle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import PhaseCard from '@/components/PhaseCard'
 import AbortModal from '@/components/AbortModal'
@@ -17,6 +17,7 @@ const phaseColorMap: Record<string, string> = {
   Drying: 'text-blue-400',
   Cure: 'text-purple-400',
   Cooling: 'text-teal-400',
+  Nitrogen: 'text-white',
 }
 
 const dotColorMap: Record<string, string> = {
@@ -24,6 +25,7 @@ const dotColorMap: Record<string, string> = {
   Drying: 'bg-blue-500',
   Cure: 'bg-purple-500',
   Cooling: 'bg-teal-500',
+  Nitrogen: 'bg-white',
 }
 
 function formatTime(totalSeconds: number) {
@@ -56,6 +58,14 @@ export default function CureProcessPage() {
   const [n2Purging, setN2Purging] = useState(false)
   const [n2Elapsed, setN2Elapsed] = useState(0)
 
+  // Temperature stall detection (heating + cooling)
+  const [tempRetries, setTempRetries] = useState(0)
+  const lastCheckTemp = useRef(0)
+  const stallCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [showTempWarning, setShowTempWarning] = useState(false)
+  const MAX_TEMP_RETRIES = 5
+  const STALL_CHECK_INTERVAL = 300000 // 5 minutes
+
   // Elapsed seconds per phase (only counts AFTER ramp)
   const [phaseElapsed, setPhaseElapsed] = useState<number[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -80,14 +90,17 @@ export default function CureProcessPage() {
         { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1 },
       ]
     }
-    return steps.map(s => ({
-      name: s.process,
-      type: s.process.toLowerCase() as PhaseType,
-      temp: s.temperature,
-      intensity: s.intensity,
-      time: s.time,
-    }))
-  }, [steps])
+    // Skip Nitrogen steps if nitrogen is not enabled on the system
+    return steps
+      .filter(s => s.process !== 'Nitrogen' || hw.nitrogenMode)
+      .map(s => ({
+        name: s.process,
+        type: s.process.toLowerCase() as PhaseType,
+        temp: s.temperature,
+        intensity: s.intensity,
+        time: s.time,
+      }))
+  }, [steps, hw.nitrogenMode])
 
   // Calculate ramp duration for first heating phase
   const firstHeatingPhase = phases[0]
@@ -102,10 +115,10 @@ export default function CureProcessPage() {
   const totalSteps = phases.length
   const currentPhaseElapsed = phaseElapsed[activePhase] ?? 0
 
-  // Overall progress (ramp time not counted in phase time)
-  const totalSeconds = phases.reduce((sum, p) => sum + p.time * 60, 0)
-  const totalElapsed = phaseElapsed.reduce((sum, e) => sum + e, 0)
-  const overallProgress = Math.min(100, Math.round((totalElapsed / totalSeconds) * 100))
+  // Overall progress (includes N2 duration)
+  const totalSeconds = phases.reduce((sum, p) => sum + (p.type === 'nitrogen' ? hw.nitrogenDuration : p.time * 60), 0)
+  const totalElapsed = phaseElapsed.reduce((sum, e, i) => sum + (phases[i]?.type === 'nitrogen' ? n2Elapsed : e), 0)
+  const overallProgress = totalSeconds > 0 ? Math.min(100, Math.round((totalElapsed / totalSeconds) * 100)) : 0
 
   // Timer tick
   const tick = useCallback(() => {
@@ -154,22 +167,76 @@ export default function CureProcessPage() {
     })
   }, [activePhase, phases, isRamping, rampDuration, targetTemp, n2Purging, hw.nitrogenDuration, setChamberTemp, setHeating, setNitrogenActive])
 
-  // Check if current phase is done → advance (with N2 purge after drying)
+  // Temperature stall detection: every 1 min during ramp or cooling, check progress
+  const isInTempPhase = isRamping || (isRunning && phases[activePhase]?.type === 'cooling')
+  useEffect(() => {
+    if (!isInTempPhase || showTempWarning) {
+      if (stallCheckRef.current) { clearInterval(stallCheckRef.current); stallCheckRef.current = null }
+      return
+    }
+    lastCheckTemp.current = hw.chamberTemp
+    stallCheckRef.current = setInterval(() => {
+      const isCooling = phases[activePhase]?.type === 'cooling'
+      const diff = isCooling
+        ? lastCheckTemp.current - hw.chamberTemp   // cooling: should drop ≥1°C
+        : hw.chamberTemp - lastCheckTemp.current    // heating: should rise ≥1°C
+      const progressed = diff >= 1
+      if (!progressed) {
+        setTempRetries(prev => {
+          const next = prev + 1
+          if (next >= MAX_TEMP_RETRIES) {
+            setShowTempWarning(true)
+            // Pause the process while warning is shown
+          }
+          return next
+        })
+      } else {
+        setTempRetries(0)
+      }
+      lastCheckTemp.current = hw.chamberTemp
+    }, STALL_CHECK_INTERVAL)
+    return () => { if (stallCheckRef.current) { clearInterval(stallCheckRef.current); stallCheckRef.current = null } }
+  }, [isInTempPhase, showTempWarning, hw.chamberTemp, activePhase, phases])
+
+  const handleTempWarningContinue = () => {
+    setShowTempWarning(false)
+    setTempRetries(0)
+    // Process continues from where it was
+  }
+
+  const handleTempWarningAbort = () => {
+    setShowTempWarning(false)
+    setIsRunning(false)
+    setIsRamping(false)
+    setHeating(false)
+    setCooling(false)
+    setUv(false)
+    if (cureLogId) abortCure(cureLogId, activePhase)
+    navigate('/')
+  }
+
+  // When entering a Nitrogen phase, start N2 purge automatically
+  useEffect(() => {
+    if (!isRunning || isComplete || isRamping || n2Purging) return
+    const currentPhase = phases[activePhase]
+    if (currentPhase?.type === 'nitrogen') {
+      setN2Purging(true)
+      setN2Elapsed(0)
+      setNitrogenActive(true)
+    }
+  }, [activePhase, isRunning, isComplete, isRamping, n2Purging, phases])
+
+  // Check if current phase is done → advance
   useEffect(() => {
     if (!isRunning || isComplete || isRamping || n2Purging) return
 
-    const maxSec = (phases[activePhase]?.time ?? 1) * 60
+    const currentPhase = phases[activePhase]
+    // Nitrogen phases are handled by N2 purge logic, skip here
+    if (currentPhase?.type === 'nitrogen') return
+
+    const maxSec = (currentPhase?.time ?? 1) * 60
 
     if (currentPhaseElapsed >= maxSec) {
-      // If drying just finished and nitrogen mode is on → start N2 purge
-      const currentPhase = phases[activePhase]
-      if (currentPhase?.type === 'drying' && hw.nitrogenMode) {
-        setN2Purging(true)
-        setN2Elapsed(0)
-        setNitrogenActive(true)
-        return // Don't advance yet, wait for N2 to finish
-      }
-
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
       } else {
@@ -186,15 +253,24 @@ export default function CureProcessPage() {
     }
   }, [currentPhaseElapsed, activePhase, totalSteps, phases, isRunning, isComplete, isRamping, n2Purging, hw.nitrogenMode, pendingLogIds, removeLogs, setNitrogenActive])
 
-  // After N2 purge finishes → advance to next phase
+  // After N2 purge finishes → advance to next phase or complete
   useEffect(() => {
     if (!n2Purging && n2Elapsed > 0 && n2Elapsed >= hw.nitrogenDuration) {
       setN2Elapsed(0)
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
+      } else {
+        setIsRunning(false)
+        setIsComplete(true)
+        setNitrogenActive(false)
+        if (cureLogId) completeCure(cureLogId)
+        if (pendingLogIds.length > 0) {
+          removeLogs(pendingLogIds)
+          sessionStorage.removeItem('scure-pending-cure-logs')
+        }
       }
     }
-  }, [n2Purging, n2Elapsed, hw.nitrogenDuration, activePhase, totalSteps])
+  }, [n2Purging, n2Elapsed, hw.nitrogenDuration, activePhase, totalSteps, cureLogId, completeCure, pendingLogIds, removeLogs, setNitrogenActive])
 
   // Start/stop timer
   useEffect(() => {
@@ -300,19 +376,34 @@ export default function CureProcessPage() {
         statusText: status === 'active' ? `UV curing at ${phase.intensity}% ...` : status === 'completed' ? 'Done' : 'Waiting ...',
       }
     }
+    if (phase.type === 'nitrogen') {
+      const n2Progress = n2Purging ? Math.min(100, (n2Elapsed / hw.nitrogenDuration) * 100) : status === 'completed' ? 100 : 0
+      return {
+        gaugeValue: n2Purging ? `${hw.nitrogenDuration - n2Elapsed}` : status === 'completed' ? '0' : '',
+        gaugeLabel: 'SEC',
+        gaugeProgress: n2Progress,
+        rangeStart: '0s',
+        rangeEnd: `${hw.nitrogenDuration}s`,
+        statusText: status === 'active' && n2Purging ? `N₂ purging ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+      }
+    }
+    // Cooling (default)
     return {
       gaugeValue: '',
       gaugeLabel: '',
       gaugeProgress: status === 'completed' ? 100 : progress,
       rangeStart: `${phase.temp ?? 80}°C`,
       rangeEnd: `${AMBIENT_TEMP}°C`,
-      statusText: status === 'active' ? `Cooling to ${AMBIENT_TEMP}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+      statusText: status === 'active' ? `Cooling to ${phase.temp ?? AMBIENT_TEMP}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
     }
   }
 
   // Heating phase shows ramp time remaining, then hold time
   const getTimeLeft = (phase: typeof phases[0], index: number) => {
     const elapsed = phaseElapsed[index] ?? 0
+    if (phase.type === 'nitrogen') {
+      return formatTime(Math.max(0, hw.nitrogenDuration - n2Elapsed))
+    }
     if (index === 0 && phase.type === 'heating' && isRamping && getPhaseStatus(index) === 'active') {
       const rampRemain = Math.max(0, rampDuration - rampElapsed)
       const holdRemain = phase.time * 60
@@ -412,12 +503,14 @@ export default function CureProcessPage() {
         {phases.map((phase, i) => {
           const gauge = getGaugeInfo(phase, i)
           const elapsed = phaseElapsed[i] ?? 0
-          const totalRampAndElapsed = (i === 0 && isRamping) ? rampElapsed : elapsed
+          const totalRampAndElapsed = phase.type === 'nitrogen' ? n2Elapsed : (i === 0 && isRamping) ? rampElapsed : elapsed
           const minE = Math.floor(totalRampAndElapsed / 60)
           const secE = totalRampAndElapsed % 60
-          const phaseProgress = (i === 0 && isRamping && getPhaseStatus(i) === 'active')
-            ? rampProgress
-            : Math.min(100, (elapsed / (phase.time * 60)) * 100)
+          const phaseProgress = phase.type === 'nitrogen'
+            ? (n2Purging ? Math.min(100, (n2Elapsed / hw.nitrogenDuration) * 100) : getPhaseStatus(i) === 'completed' ? 100 : 0)
+            : (i === 0 && isRamping && getPhaseStatus(i) === 'active')
+              ? rampProgress
+              : phase.time > 0 ? Math.min(100, (elapsed / (phase.time * 60)) * 100) : 0
 
           return (
             <PhaseCard
@@ -441,6 +534,38 @@ export default function CureProcessPage() {
         })}
       </div>
 
+
+      {/* Temperature Warning - model distortion risk */}
+      {showTempWarning && (
+        <div className="fixed inset-0 z-50 bg-background/95 flex flex-col items-center justify-center gap-5">
+          <div className="w-20 h-20 rounded-full bg-yellow-500/20 flex items-center justify-center">
+            <AlertTriangle size={48} className="text-yellow-500" />
+          </div>
+          <h2 className="text-foreground text-xl font-bold">Temperature Warning</h2>
+          <p className="text-muted-foreground text-sm text-center max-w-xs">
+            The system is unable to reach the target temperature of <span className="text-foreground font-semibold">{targetTemp}°C</span>.
+            Current temperature: <span className="text-foreground font-semibold">{hw.chamberTemp}°C</span>
+          </p>
+          <p className="text-yellow-400 text-sm text-center max-w-xs font-medium">
+            Continuing may cause distortions in the models.
+          </p>
+          <p className="text-muted-foreground text-xs text-center">Do you want to continue?</p>
+          <div className="flex gap-4 mt-2">
+            <button
+              onClick={handleTempWarningAbort}
+              className="flex items-center gap-2 bg-destructive text-destructive-foreground px-6 py-3 rounded-2xl font-semibold active:scale-95 transition-transform touch-manipulation"
+            >
+              Abort
+            </button>
+            <button
+              onClick={handleTempWarningContinue}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-2xl font-semibold active:scale-95 transition-transform touch-manipulation"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Completion Screen */}
       {isComplete && (

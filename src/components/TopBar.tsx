@@ -87,24 +87,27 @@ export default function TopBar() {
 
       {/* Right side - Icons (min 44x44 touch targets) */}
       <div className="flex items-center gap-1.5">
-        <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation">
-          <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-colors ${
+        <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation relative">
+          <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-colors ${
             hw.nitrogenMode
               ? hw.nitrogenActive
                 ? 'border-white bg-white/20 text-white animate-pulse'
                 : 'border-white text-white'
               : 'border-[#444] text-muted-foreground'
           }`}>
-            <span className="text-sm font-bold">N₂</span>
+            <span className="text-xs font-bold leading-none">N₂</span>
           </div>
+          {hw.nitrogenMode && (
+            <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${hw.nitrogenActive ? 'bg-green-400 animate-pulse' : 'bg-white'}`} />
+          )}
         </button>
         {hw.nfcEnabled && <CircledIcon><Nfc size={22} /></CircledIcon>}
-        <TouchIcon onClick={() => { if (location.pathname !== '/cure-history') navigate('/cure-history', { replace: location.pathname !== '/' }) }}>
-          <History size={24} />
+        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/cure-history') navigate('/cure-history', { replace: location.pathname !== '/' }) }}>
+          <History size={24} className={isCuring ? 'opacity-30' : undefined} />
         </TouchIcon>
-        <TouchIcon onClick={() => { if (location.pathname !== '/alerts') navigate('/alerts', { replace: location.pathname !== '/' }) }}>
+        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/alerts') navigate('/alerts', { replace: location.pathname !== '/' }) }}>
           <div className="relative">
-            <Bell size={24} className={criticalAlerts.length > 0 ? 'text-red-500' : alertCount > 0 ? 'text-orange-400' : undefined} />
+            <Bell size={24} className={isCuring ? 'opacity-30' : criticalAlerts.length > 0 ? 'text-red-500' : alertCount > 0 ? 'text-orange-400' : undefined} />
             {alertCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">
                 {alertCount}
@@ -112,10 +115,10 @@ export default function TopBar() {
             )}
           </div>
         </TouchIcon>
-        <TouchIcon onClick={() => { if (location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' }) }}><Settings size={24} /></TouchIcon>
-        <TouchIcon onClick={() => { if (location.pathname !== '/network') navigate('/network', { replace: location.pathname !== '/' }) }}>
+        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' }) }}><Settings size={24} className={isCuring ? 'opacity-30' : undefined} /></TouchIcon>
+        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/network') navigate('/network', { replace: location.pathname !== '/' }) }}>
           <Globe size={24} className={
-            !hw.networkConnected ? 'text-destructive' : 'text-white'
+            isCuring ? 'opacity-30' : !hw.networkConnected ? 'text-destructive' : 'text-white'
           } />
         </TouchIcon>
       </div>

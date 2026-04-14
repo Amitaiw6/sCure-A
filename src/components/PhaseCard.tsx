@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 
-export type PhaseType = 'heating' | 'drying' | 'cure' | 'cooling'
+export type PhaseType = 'heating' | 'drying' | 'cure' | 'cooling' | 'bleacher' | 'nitrogen'
 export type PhaseStatus = 'active' | 'completed' | 'pending'
 
 interface PhaseCardProps {
@@ -30,6 +30,7 @@ const phaseConfig = {
   cure: { label: 'Cure', icon: '✦', color: 'stroke-purple-500', borderColor: 'border-purple-500', badgeBg: 'bg-purple-500', dotColor: 'bg-purple-500' },
   cooling: { label: 'Cooling', icon: '❄', color: 'stroke-teal-500', borderColor: 'border-teal-500', badgeBg: 'bg-teal-500', dotColor: 'bg-teal-500' },
   bleacher: { label: 'Bleaching', icon: '☀', color: 'stroke-cyan-400', borderColor: 'border-cyan-400', badgeBg: 'bg-cyan-400', dotColor: 'bg-cyan-400' },
+  nitrogen: { label: 'N₂ Purge', icon: 'N₂', color: 'stroke-white', borderColor: 'border-white', badgeBg: 'bg-white', dotColor: 'bg-white' },
 }
 
 const GAUGE_SIZE = 90

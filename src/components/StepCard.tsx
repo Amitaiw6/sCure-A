@@ -2,10 +2,11 @@ import { Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export type ProcessType = 'Cooling' | 'Cure' | 'Drying' | 'Heating' | 'Bleacher'
+export type ProcessType = 'Cooling' | 'Cure' | 'Drying' | 'Heating' | 'Bleacher' | 'Nitrogen'
 
 export type TimerMode = 'on-ramp' | 'on-target'
 export type UvStartMode = 'at-start' | 'at-target' | 'at-ramp-percent'
+export type CoolingMode = 'fast' | 'medium' | 'slow'
 
 export interface StepData {
   id: string
@@ -18,7 +19,7 @@ export interface StepData {
   timerMode?: TimerMode
   uvStartMode?: UvStartMode
   uvRampPercent?: number
-  coolingRate?: number | null
+  coolingMode?: CoolingMode
 }
 
 interface StepCardProps {
@@ -32,6 +33,7 @@ const typeConfig: Record<ProcessType, { icon: string; borderColor: string; barCo
   Drying: { icon: '◇', borderColor: 'border-blue-500/60', barColor: 'bg-blue-500', textColor: 'text-blue-400' },
   Heating: { icon: '🔥', borderColor: 'border-orange-500/60', barColor: 'bg-orange-500', textColor: 'text-orange-400' },
   Bleacher: { icon: '☀', borderColor: 'border-cyan-400/60', barColor: 'bg-cyan-400', textColor: 'text-cyan-300' },
+  Nitrogen: { icon: 'N₂', borderColor: 'border-white/60', barColor: 'bg-white', textColor: 'text-white' },
 }
 
 export default function StepCard({ step, onEdit }: StepCardProps) {
@@ -61,10 +63,11 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
 
       {/* Info */}
       <div className="text-[11px] text-muted-foreground space-y-0.5">
-        {step.processType === 'Cooling' && step.coolingRate != null ? (
-          <p>Rate: <span className="text-foreground font-semibold">{step.coolingRate}°C/min</span></p>
-        ) : step.temperature != null && (
-          <p>Temp: <span className="text-foreground font-semibold">{step.temperature}°C</span></p>
+        {step.temperature != null && (
+          <p>{step.processType === 'Cooling' ? 'Target' : 'Temp'}: <span className="text-foreground font-semibold">{step.temperature}°C</span></p>
+        )}
+        {step.processType === 'Cooling' && step.coolingMode && (
+          <p>Mode: <span className="text-foreground font-semibold capitalize">{step.coolingMode}</span></p>
         )}
         {step.intensity != null && (
           <p>Int: <span className="text-foreground font-semibold">{step.intensity}%</span></p>

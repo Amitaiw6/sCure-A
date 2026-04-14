@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { useMaterials } from '@/context/MaterialContext'
 import { usePrintHistory } from '@/context/PrintHistoryContext'
 import { useSystemConfig } from '@/context/SystemConfigContext'
+import { useHardware } from '@/context/HardwareContext'
 import type { Material } from '@/context/MaterialContext'
 import type { PrintLog } from '@/context/PrintHistoryContext'
 
@@ -36,8 +37,10 @@ export default function HomePage() {
   const { materials, selectedMaterialId, setSelectedMaterialId, removeMaterial, isLoading } = useMaterials()
   const { recentLogs } = usePrintHistory()
   const { config } = useSystemConfig()
+  const { state: hw } = useHardware()
   const hasOrg = !!config.organizationId
   const [showBuilder, setShowBuilder] = useState(false)
+  const [n2Error, setN2Error] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -52,6 +55,18 @@ export default function HomePage() {
   const handleCloseBuilder = () => {
     setShowBuilder(false)
     setEditingMaterial(null)
+  }
+
+  const handleStartCure = () => {
+    const mat = materials.find(m => m.id === selectedMaterialId)
+    if (!mat) return
+    // If all non-nitrogen steps would be empty after filtering, can't run
+    const nonN2Steps = mat.steps.filter(s => s.process !== 'Nitrogen')
+    if (nonN2Steps.length === 0 && !hw.nitrogenMode) {
+      setN2Error(true)
+      return
+    }
+    navigate('/cure-process')
   }
 
   return (
@@ -183,7 +198,7 @@ export default function HomePage() {
 
       {/* Start Cure Button */}
       <div className="fixed bottom-4 right-4">
-        <Button onClick={() => navigate('/cure-process')} className="gap-2 rounded-xl px-5 py-2.5 text-sm">
+        <Button onClick={handleStartCure} disabled={!selectedMaterialId} className="gap-2 rounded-xl px-5 py-2.5 text-sm">
           Start Cure
           <Play size={16} fill="currentColor" />
         </Button>
@@ -193,6 +208,28 @@ export default function HomePage() {
       <CsvBuilderModal isOpen={showBuilder} onClose={handleCloseBuilder} editMaterial={editingMaterial} />
       <ImportCsvModal isOpen={showImport} onClose={() => setShowImport(false)} />
       <PrintHistoryModal isOpen={showHistory} onClose={() => setShowHistory(false)} />
+
+      {/* N2 Error Dialog */}
+      {n2Error && (
+        <div className="fixed inset-0 z-50 bg-background/95 flex flex-col items-center justify-center gap-5">
+          <div className="w-20 h-20 rounded-full bg-destructive/20 flex items-center justify-center">
+            <AlertTriangle size={48} className="text-destructive" />
+          </div>
+          <h2 className="text-foreground text-xl font-bold">Cannot Start Program</h2>
+          <p className="text-muted-foreground text-sm text-center max-w-xs">
+            This program contains only nitrogen purge steps, but nitrogen is not enabled on the system.
+          </p>
+          <p className="text-muted-foreground text-xs text-center max-w-xs">
+            Enable nitrogen in Settings or choose a different program.
+          </p>
+          <button
+            onClick={() => setN2Error(false)}
+            className="bg-primary text-primary-foreground px-6 py-3 rounded-2xl font-semibold active:scale-95 transition-transform touch-manipulation mt-2"
+          >
+            OK
+          </button>
+        </div>
+      )}
     </main>
   )
 }

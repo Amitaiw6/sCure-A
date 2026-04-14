@@ -18,6 +18,13 @@ export interface HardwareState {
   nfcEnabled: boolean           // NFC reader enabled
   networkConnected: boolean     // Ethernet/network available
   apiConnected: boolean         // Python API reachable
+  counters: {
+    led405: number              // hours of 405nm LED usage
+    led450: number              // hours of 450nm LED usage
+    coolingFan: number          // hours of cooling fan usage
+    heater: number              // hours of heater usage
+    heaterFan: number           // hours of heater fan usage
+  }
 }
 
 interface HardwareContextType {
@@ -46,12 +53,19 @@ const defaultState: HardwareState = {
   uvIntensity: 0,
   nitrogenMode: false,
   nitrogenActive: false,
-  nitrogenDuration: 60,
+  nitrogenDuration: 120,
   n2LinePressure: 6.0,          // simulated, from sensor in production
   systemName: localStorage.getItem('scure-system-name') || 'S-Cure',
   nfcEnabled: true,
   networkConnected: navigator.onLine,
   apiConnected: false,
+  counters: {
+    led405: 124.5,
+    led450: 87.2,
+    coolingFan: 312.8,
+    heater: 198.3,
+    heaterFan: 245.6,
+  },
 }
 
 const HardwareContext = createContext<HardwareContextType | null>(null)

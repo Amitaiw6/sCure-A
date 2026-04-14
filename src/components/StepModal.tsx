@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { ProcessType, StepData, TimerMode, UvStartMode } from './StepCard'
+import type { ProcessType, StepData, TimerMode, UvStartMode, CoolingMode } from './StepCard'
 import { Button } from '@/components/ui/button'
 import { TouchNumber } from '@/components/ui/touch-number'
 import {
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
+
 
 interface StepModalProps {
   isOpen: boolean
@@ -25,11 +25,13 @@ interface StepModalProps {
   onDelete?: () => void
   editStep?: StepData | null
   stepNumber: number
+  minTemp?: number
+  maxCoolingTemp?: number
 }
 
-const processTypes: ProcessType[] = ['Drying', 'Heating', 'Cure', 'Bleacher', 'Cooling']
+const processTypes: ProcessType[] = ['Drying', 'Heating', 'Cure', 'Bleacher', 'Cooling', 'Nitrogen']
 
-export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep, stepNumber }: StepModalProps) {
+export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep, stepNumber, minTemp = 20, maxCoolingTemp = 75 }: StepModalProps) {
   const [processType, setProcessType] = useState<ProcessType>('Cooling')
   const [tempValue, setTempValue] = useState<number | null>(25)
   const [intensityValue, setIntensityValue] = useState<number | null>(null)
@@ -38,7 +40,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
   const [timerMode, setTimerMode] = useState<TimerMode>('on-target')
   const [uvStartMode, setUvStartMode] = useState<UvStartMode>('at-target')
   const [uvRampPercent, setUvRampPercent] = useState<number>(50)
-  const [coolingRate, setCoolingRate] = useState<number>(5)
+  const [coolingMode, setCoolingMode] = useState<CoolingMode>('medium')
 
   useEffect(() => {
     if (editStep) {
@@ -50,7 +52,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setTimerMode(editStep.timerMode ?? 'on-target')
       setUvStartMode(editStep.uvStartMode ?? 'at-target')
       setUvRampPercent(editStep.uvRampPercent ?? 50)
-      setCoolingRate(editStep.coolingRate ?? 5)
+      setCoolingMode(editStep.coolingMode ?? 'medium')
     } else {
       setProcessType('Cooling')
       setTempValue(25)
@@ -60,7 +62,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setTimerMode('on-target')
       setUvStartMode('at-target')
       setUvRampPercent(50)
-      setCoolingRate(5)
+      setCoolingMode('medium')
     }
   }, [editStep, isOpen])
 
@@ -74,10 +76,14 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setIntensityValue(null)
       setUvIntensity(null)
     } else if (proc === 'Cooling') {
+      setTempValue(prev => prev ?? 25)
+      setIntensityValue(null)
+      setUvIntensity(null)
+      setCoolingMode(prev => prev ?? 'medium')
+    } else if (proc === 'Nitrogen') {
       setTempValue(null)
       setIntensityValue(null)
       setUvIntensity(null)
-      setCoolingRate(prev => prev ?? 5)
     } else if (proc === 'Drying') {
       setTempValue(prev => prev ?? 40)
       setIntensityValue(null)
@@ -97,8 +103,8 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       processType,
       time,
     }
-    if (processType !== 'Cooling' && tempValue !== null) data.temperature = tempValue
-    if (processType === 'Cooling') data.coolingRate = coolingRate
+    if (tempValue !== null) data.temperature = tempValue
+    if (processType === 'Cooling') data.coolingMode = coolingMode
     if (showIntensity && intensityValue !== null) data.intensity = intensityValue
     if (isCureOrBleacher) {
       data.timerMode = timerMode
@@ -135,32 +141,45 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             </Select>
           </div>
 
-          {/* Temperature or Cooling Rate */}
-          {processType === 'Cooling' ? (
+          {/* Temperature (hidden for Nitrogen) */}
+          {processType !== 'Nitrogen' && (
             <div className="flex items-center justify-between gap-4">
-              <label className="text-foreground text-sm whitespace-nowrap">Cooling rate</label>
-              <TouchNumber
-                value={coolingRate}
-                onChange={v => setCoolingRate(v ?? 5)}
-                min={1}
-                max={20}
-                step={1}
-                suffix="°C/m"
-                className="w-[160px]"
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-4">
-              <label className="text-foreground text-sm whitespace-nowrap">Temperature</label>
+              <label className="text-foreground text-sm whitespace-nowrap">
+                {processType === 'Cooling' ? 'Target Temp' : 'Temperature'}
+              </label>
               <TouchNumber
                 value={tempValue}
                 onChange={setTempValue}
-                min={20}
-                max={80}
+                min={processType === 'Cooling' ? 20 : minTemp}
+                max={processType === 'Cooling' ? maxCoolingTemp : 80}
                 step={5}
                 suffix="°C"
                 className="w-[160px]"
               />
+            </div>
+          )}
+
+          {/* Nitrogen info */}
+          {processType === 'Nitrogen' && (
+            <div className="text-muted-foreground text-xs px-1">
+              N₂ purge will run automatically if nitrogen is enabled. Skipped otherwise.
+            </div>
+          )}
+
+          {/* Cooling Mode */}
+          {processType === 'Cooling' && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Cooling Mode</label>
+              <Select value={coolingMode} onValueChange={v => setCoolingMode(v as CoolingMode)}>
+                <SelectTrigger className="w-[160px] h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fast">Fast</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="slow">Slow</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -180,19 +199,21 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             </div>
           )}
 
-          {/* Time */}
-          <div className="flex items-center justify-between gap-4">
-            <label className="text-foreground text-sm whitespace-nowrap">Time (Min):</label>
-            <TouchNumber
-              value={time}
-              onChange={v => setTime(v ?? 1)}
-              min={1}
-              max={120}
-              step={1}
-              suffix="min"
-              className="w-[160px]"
-            />
-          </div>
+          {/* Time - not shown for Cooling/Nitrogen */}
+          {processType !== 'Cooling' && processType !== 'Nitrogen' && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Time:</label>
+              <TouchNumber
+                value={time}
+                onChange={v => setTime(v ?? 1)}
+                min={1}
+                max={120}
+                step={1}
+                suffix="min"
+                className="w-[160px]"
+              />
+            </div>
+          )}
 
           {/* Heating-only options */}
           {isCureOrBleacher && (

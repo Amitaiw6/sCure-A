@@ -115,6 +115,21 @@ export default function MaterialEditorPage() {
         onDelete={editingStep ? handleDeleteStep : undefined}
         editStep={editingStep}
         stepNumber={editingStep ? editingStep.stepNumber : steps.length + 1}
+        minTemp={(() => {
+          const idx = editingStep ? editingStep.stepNumber - 1 : steps.length
+          for (let i = idx - 1; i >= 0; i--) {
+            if (steps[i].processType === 'Cooling') return 20
+            if (steps[i].temperature != null) return steps[i].temperature!
+          }
+          return 20
+        })()}
+        maxCoolingTemp={(() => {
+          const idx = editingStep ? editingStep.stepNumber - 1 : steps.length
+          for (let i = idx - 1; i >= 0; i--) {
+            if (steps[i].temperature != null) return steps[i].temperature! - 5
+          }
+          return 75
+        })()}
       />
 
       <ImportCsvModal

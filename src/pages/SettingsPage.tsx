@@ -11,6 +11,10 @@ import UpdateModal from '@/components/UpdateModal'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { Pencil } from 'lucide-react'
 
+function formatHours(h: number): string {
+  return `${h.toFixed(1)}h`
+}
+
 export default function SettingsPage() {
   const { state: hw, setChamberTemp, setNitrogenMode, setNitrogenDuration, setNfcEnabled, setSystemName } = useHardware()
   const { config, setOrganization, resetSetup } = useSystemConfig()
@@ -166,7 +170,19 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          {/* Row 4: Info grid */}
+          {/* Row 4: Counters */}
+          <Card>
+            <Label>Component Counters</Label>
+            <div className="grid grid-cols-3 gap-x-6 gap-y-1.5 mt-1.5">
+              <InfoItem label="LED 405nm" value={formatHours(hw.counters?.led405 ?? 0)} />
+              <InfoItem label="LED 450nm" value={formatHours(hw.counters?.led450 ?? 0)} />
+              <InfoItem label="Cooling Fan" value={formatHours(hw.counters?.coolingFan ?? 0)} />
+              <InfoItem label="Heater" value={formatHours(hw.counters?.heater ?? 0)} />
+              <InfoItem label="Heater Fan" value={formatHours(hw.counters?.heaterFan ?? 0)} />
+            </div>
+          </Card>
+
+          {/* Row 5: Info grid */}
           <Card>
             <div className="grid grid-cols-3 gap-x-6 gap-y-1.5">
               <InfoItem label="Lead On Time" value={`${config.leadOnTimeHours} hours`} />

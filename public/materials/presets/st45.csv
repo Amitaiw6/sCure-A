@@ -1,5 +1,0 @@
-Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent
-1,Drying,60,,10,,,,,
-2,Heating,80,,5,,,,,
-3,Cure,80,50,10,,30,on-target,at-target,
-4,Cooling,,,5,5,,,,

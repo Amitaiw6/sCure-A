@@ -1,8 +1,0 @@
-[
-  { "name": "st45", "file": "st45.csv" },
-  { "name": "Carbon Fiber", "file": "carbon_fiber.csv" },
-  { "name": "Fiberglass", "file": "fiberglass.csv" },
-  { "name": "ABS-Like", "file": "abs_like.csv" },
-  { "name": "Dental Model", "file": "dental_model.csv" },
-  { "name": "Flexible", "file": "flexible.csv" }
-]

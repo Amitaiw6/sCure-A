@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 export interface PrintLog {
@@ -21,24 +21,29 @@ interface PrintHistoryContextType {
   isLoading: boolean
 }
 
-const STORAGE_KEY = 'scure-print-history-v3'
+const API_BASE = 'http://localhost:3001'
 
-function loadFromStorage(): PrintLog[] | null {
+async function loadPrintHistory(): Promise<PrintLog[]> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return JSON.parse(stored)
-  } catch { /* ignore */ }
-  return null
-}
-
-async function loadFromJson(): Promise<PrintLog[]> {
+    const res = await fetch(`${API_BASE}/api/print-history`)
+    if (res.ok) return await res.json()
+  } catch { /* API not available */ }
+  // Fallback: static file (dev mode)
   try {
     const res = await fetch('/materials/print_history.json')
-    if (!res.ok) return []
-    return await res.json()
-  } catch {
-    return []
-  }
+    if (res.ok) return await res.json()
+  } catch { /* ignore */ }
+  return []
+}
+
+async function savePrintHistory(logs: PrintLog[]) {
+  try {
+    await fetch(`${API_BASE}/api/print-history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(logs),
+    })
+  } catch { /* API not available in dev mode */ }
 }
 
 const PrintHistoryContext = createContext<PrintHistoryContextType | null>(null)
@@ -46,16 +51,12 @@ const PrintHistoryContext = createContext<PrintHistoryContextType | null>(null)
 export function PrintHistoryProvider({ children }: { children: ReactNode }) {
   const [logs, setLogs] = useState<PrintLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const saveRef = useRef(false)
 
   useEffect(() => {
     async function load() {
-      const stored = loadFromStorage()
-      if (stored && stored.length > 0) {
-        setLogs(stored)
-      } else {
-        const fromJson = await loadFromJson()
-        setLogs(fromJson)
-      }
+      const data = await loadPrintHistory()
+      setLogs(data)
       setIsLoading(false)
     }
     load()
@@ -63,7 +64,8 @@ export function PrintHistoryProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isLoading) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(logs))
+      if (!saveRef.current) { saveRef.current = true; return }
+      savePrintHistory(logs)
     }
   }, [logs, isLoading])
 

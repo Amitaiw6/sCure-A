@@ -129,6 +129,25 @@ class HardwareController:
 hw = HardwareController()
 
 # ============================================================
+# Materials data path
+# ============================================================
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'public', 'materials')
+USER_MATERIALS_FILE = os.path.join(DATA_DIR, 'user_materials.json')
+PRINT_HISTORY_FILE = os.path.join(DATA_DIR, 'print_history.json')
+
+def load_json_file(path):
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_json_file(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+# ============================================================
 # API Endpoints
 # ============================================================
 
@@ -202,6 +221,32 @@ def network_diagnostics():
         return jsonify({'ok': True, 'result': result})
     except Exception as e:
         return jsonify({'ok': False, 'result': str(e)})
+
+
+@app.route('/api/materials/user', methods=['GET'])
+def get_user_materials():
+    """Get all user-created materials"""
+    return jsonify(load_json_file(USER_MATERIALS_FILE))
+
+
+@app.route('/api/materials/user', methods=['POST'])
+def save_all_user_materials():
+    """Save all user materials (full replace)"""
+    save_json_file(USER_MATERIALS_FILE, request.json)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/print-history', methods=['GET'])
+def get_print_history():
+    """Get print history"""
+    return jsonify(load_json_file(PRINT_HISTORY_FILE))
+
+
+@app.route('/api/print-history', methods=['POST'])
+def save_print_history():
+    """Save print history (full replace)"""
+    save_json_file(PRINT_HISTORY_FILE, request.json)
+    return jsonify({'ok': True})
 
 
 @app.route('/api/system/reboot', methods=['POST'])

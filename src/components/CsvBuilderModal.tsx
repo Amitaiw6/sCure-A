@@ -19,7 +19,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { useMaterials } from '@/context/MaterialContext'
-import type { CureStep, Material, TimerMode, UvStartMode } from '@/context/MaterialContext'
+import type { CureStep, Material, TimerMode, UvStartMode, CoolingMode } from '@/context/MaterialContext'
 
 interface CsvBuilderModalProps {
   isOpen: boolean
@@ -27,7 +27,7 @@ interface CsvBuilderModalProps {
   editMaterial?: Material | null
 }
 
-type ProcessType = 'Heating' | 'Drying' | 'Cure' | 'Cooling' | 'Bleacher'
+type ProcessType = 'Heating' | 'Drying' | 'Cure' | 'Cooling' | 'Bleacher' | 'Nitrogen'
 
 const emptyStep = (stepNum: number): CureStep => ({
   step: stepNum,
@@ -72,22 +72,108 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         return {
           ...s,
           process: proc,
-          temperature: proc !== 'Cooling' ? (s.temperature ?? 40) : null,
+          temperature: proc === 'Nitrogen' ? null : proc === 'Cooling' ? (s.temperature ?? 25) : (s.temperature ?? 40),
           intensity: (proc === 'Cure' || proc === 'Bleacher') ? (s.intensity ?? 30) : null,
-          coolingRate: proc === 'Cooling' ? (s.coolingRate ?? 5) : null,
+          coolingMode: proc === 'Cooling' ? (s.coolingMode ?? 'medium') : undefined,
+          time: proc === 'Cooling' || proc === 'Nitrogen' ? 0 : (s.time || 10),
         }
       }
       return { ...s, [field]: value }
     }))
   }
 
-  const totalDuration = steps.reduce((sum, s) => sum + (s.time || 0), 0)
+  // Min temperature for a step: must be >= last non-cooling step's temp
+  // A Cooling step in between resets the minimum back to 20
+  const getMinTemp = (index: number): number => {
+    for (let i = index - 1; i >= 0; i--) {
+      if (steps[i].process === 'Cooling') return 20
+      if (steps[i].temperature != null) return steps[i].temperature!
+    }
+    return 20
+  }
+
+  // For Cooling steps: max temp must be < the previous step's temperature
+  const getCoolingMaxTemp = (index: number): number => {
+    for (let i = index - 1; i >= 0; i--) {
+      if (steps[i].temperature != null) return steps[i].temperature! - 5
+    }
+    return 75
+  }
+
+  // When temperature changes, also fix any following steps that are now below the new min
+  const updateStepTemp = (index: number, value: number) => {
+    setSteps(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], temperature: value }
+      // Push up temperatures of following non-cooling steps (until a Cooling step)
+      for (let i = index + 1; i < next.length; i++) {
+        if (next[i].process === 'Cooling') break
+        if (next[i].temperature != null && next[i].temperature! < value) {
+          next[i] = { ...next[i], temperature: value }
+        }
+      }
+      return next
+    })
+  }
+
+  const totalDuration = steps.reduce((sum, s) => sum + (s.process === 'Cooling' || s.process === 'Nitrogen' ? 0 : (s.time || 0)), 0)
+
+  // Nitrogen validation
+  const nitrogenCount = steps.filter(s => s.process === 'Nitrogen').length
+  const MAX_NITROGEN = 2
+
+  // Get which processes are allowed after the previous step
+  // Check if there was a Cooling step since the last Nitrogen
+  const hadCoolingSinceLastN2 = (index: number): boolean => {
+    for (let i = index - 1; i >= 0; i--) {
+      if (steps[i].process === 'Cooling') return true
+      if (steps[i].process === 'Nitrogen') return false
+    }
+    return true // no previous Nitrogen, so it's allowed
+  }
+
+  const getAllowedProcesses = (index: number): ProcessType[] => {
+    const all: ProcessType[] = ['Drying', 'Heating', 'Cure', 'Bleacher', 'Cooling', 'Nitrogen']
+    const prev = index > 0 ? steps[index - 1] : null
+
+    // After Nitrogen: only Heating, Cure, or Bleacher allowed
+    if (prev?.process === 'Nitrogen') {
+      return ['Heating', 'Cure', 'Bleacher']
+    }
+
+    // Nitrogen only allowed after Cooling (and need Cooling between two N2 steps)
+    if (!hadCoolingSinceLastN2(index)) {
+      return all.filter(p => p !== 'Nitrogen')
+    }
+
+    return all
+  }
+
+  // Check if Nitrogen can be added (max 2 + must be after cooling)
+  const canAddNitrogen = (index: number): boolean => {
+    const currentIsNitrogen = steps[index]?.process === 'Nitrogen'
+    if (currentIsNitrogen) return true
+    if (nitrogenCount >= MAX_NITROGEN) return false
+    if (!hadCoolingSinceLastN2(index)) return false
+    return true
+  }
 
   const generateCsv = () => {
-    const header = 'Step,Process,Temperature,Intensity,Time'
-    const rows = steps.map(s =>
-      `${s.step},${s.process},${s.temperature ?? ''},${s.intensity ?? ''},${s.time}`
-    )
+    const header = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode'
+    const rows = steps.map(s => {
+      const isCureOrBleacher = s.process === 'Cure' || s.process === 'Bleacher'
+      return [
+        s.step,
+        s.process,
+        s.process === 'Nitrogen' ? '' : (s.temperature ?? ''),
+        s.process === 'Cooling' || s.process === 'Nitrogen' ? '' : s.time,
+        isCureOrBleacher ? (s.timerMode ?? 'on-target') : '',
+        isCureOrBleacher ? (s.uvIntensity ?? 30) : '',
+        isCureOrBleacher ? (s.uvStartMode ?? 'at-target') : '',
+        isCureOrBleacher && s.uvStartMode === 'at-ramp-percent' ? (s.uvRampPercent ?? 50) : '',
+        s.process === 'Cooling' ? (s.coolingMode ?? 'medium') : '',
+      ].join(',')
+    })
     return [header, ...rows].join('\n')
   }
 
@@ -102,25 +188,32 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     URL.revokeObjectURL(url)
   }
 
+  // After every N₂, there must be a Cooling or Drying step before program ends
+  const hasN2WithoutCoolingOrDrying = (() => {
+    let needsCoolingOrDrying = false
+    for (const s of steps) {
+      if (s.process === 'Nitrogen') needsCoolingOrDrying = true
+      if (needsCoolingOrDrying && (s.process === 'Cooling' || s.process === 'Drying')) needsCoolingOrDrying = false
+    }
+    return needsCoolingOrDrying
+  })()
+
   const handleSave = () => {
     if (!name.trim()) return
     if (steps.length === 0) return
-
-    const csvContent = generateCsv()
+    if (hasN2WithoutCoolingOrDrying) return
 
     if (isEditing && editMaterial) {
       updateMaterial(editMaterial.id, {
         name: name.trim(),
         steps,
         totalDuration,
-        csvContent,
       })
     } else {
       addMaterial({
         name: name.trim(),
         steps,
         totalDuration,
-        csvContent,
       })
     }
 
@@ -186,32 +279,55 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Drying">Drying</SelectItem>
-                    <SelectItem value="Heating">Heating</SelectItem>
-                    <SelectItem value="Cure">Cure (405nm)</SelectItem>
-                    <SelectItem value="Bleacher">Bleaching (450nm)</SelectItem>
-                    <SelectItem value="Cooling">Cooling</SelectItem>
+                    {getAllowedProcesses(i).map(proc => (
+                      <SelectItem
+                        key={proc}
+                        value={proc}
+                        disabled={proc === 'Nitrogen' && !canAddNitrogen(i)}
+                      >
+                        {proc === 'Cure' ? 'Cure (405nm)' : proc === 'Bleacher' ? 'Bleaching (450nm)' : proc === 'Nitrogen' ? 'N₂ Purge' : proc}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {step.process === 'Cooling' ? (
-                <div className="flex items-center justify-between gap-4">
-                  <label className="text-foreground text-sm">Cooling rate</label>
-                  <TouchNumber
-                    value={step.coolingRate ?? 5}
-                    onChange={v => updateStep(i, 'coolingRate', v)}
-                    min={1} max={20} step={1} suffix="°C/m"
-                    className="w-[160px]"
-                  />
+              {step.process === 'Nitrogen' ? (
+                <div className="text-muted-foreground text-xs px-1">
+                  N₂ purge will run automatically if nitrogen is enabled on the system. Skipped otherwise.
                 </div>
+              ) : step.process === 'Cooling' ? (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="text-foreground text-sm">Target Temp</label>
+                    <TouchNumber
+                      value={step.temperature ?? 25}
+                      onChange={v => updateStep(i, 'temperature', v)}
+                      min={20} max={getCoolingMaxTemp(i)} step={5} suffix="°C"
+                      className="w-[160px]"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="text-foreground text-sm">Cooling Mode</label>
+                    <Select value={step.coolingMode ?? 'medium'} onValueChange={v => updateStep(i, 'coolingMode', v)}>
+                      <SelectTrigger className="w-[160px] h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fast">Fast</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="slow">Slow</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               ) : (
                 <div className="flex items-center justify-between gap-4">
                   <label className="text-foreground text-sm">Temperature</label>
                   <TouchNumber
                     value={step.temperature}
-                    onChange={v => updateStep(i, 'temperature', v)}
-                    min={20} max={80} step={5} suffix="°C"
+                    onChange={v => updateStepTemp(i, v ?? getMinTemp(i))}
+                    min={getMinTemp(i)} max={80} step={5} suffix="°C"
                     className="w-[160px]"
                   />
                 </div>
@@ -229,15 +345,17 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                 </div>
               )}
 
-              <div className="flex items-center justify-between gap-4">
-                <label className="text-foreground text-sm">Time (Min):</label>
-                <TouchNumber
-                  value={step.time}
-                  onChange={v => updateStep(i, 'time', v ?? 1)}
-                  min={1} max={120} step={1} suffix=" min"
-                  className="w-[160px]"
-                />
-              </div>
+              {step.process !== 'Cooling' && step.process !== 'Nitrogen' && (
+                <div className="flex items-center justify-between gap-4">
+                  <label className="text-foreground text-sm">Time:</label>
+                  <TouchNumber
+                    value={step.time}
+                    onChange={v => updateStep(i, 'time', v ?? 1)}
+                    min={1} max={120} step={1} suffix=" min"
+                    className="w-[160px]"
+                  />
+                </div>
+              )}
 
               {/* Cure/Bleacher options */}
               {(step.process === 'Cure' || step.process === 'Bleacher') && (
@@ -311,7 +429,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
           </Button>
           <div className="flex-1" />
           <Button variant="outline" onClick={handleClose} className="min-w-[90px]">Cancel</Button>
-          <Button onClick={handleSave} disabled={!name.trim() || steps.length === 0} className="min-w-[90px]">
+          <Button onClick={handleSave} disabled={!name.trim() || steps.length === 0 || hasN2WithoutCoolingOrDrying} className="min-w-[90px]">
             {isEditing ? 'Update' : 'Save Program'}
           </Button>
         </DialogFooter>
