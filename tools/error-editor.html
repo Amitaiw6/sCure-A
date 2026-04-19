@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sCure - Error & Warning Editor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+
+  .header { background: #111; border-bottom: 2px solid #00bcd4; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .header h1 { font-size: 20px; color: #00bcd4; }
+  .header .subtitle { font-size: 12px; color: #888; margin-top: 2px; }
+  .header-actions { display: flex; gap: 10px; }
+
+  .btn { padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+  .btn-primary { background: #00bcd4; color: #000; }
+  .btn-primary:hover { background: #00e5ff; }
+  .btn-secondary { background: #333; color: #fff; border: 1px solid #555; }
+  .btn-secondary:hover { background: #444; }
+  .btn-danger { background: #d32f2f; color: #fff; }
+  .btn-danger:hover { background: #f44336; }
+  .btn-success { background: #2e7d32; color: #fff; }
+  .btn-success:hover { background: #43a047; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: #181818; border-radius: 12px; padding: 4px; }
+  .tab { padding: 10px 24px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 500; color: #888; transition: all 0.2s; }
+  .tab.active { background: #00bcd4; color: #000; }
+  .tab:hover:not(.active) { background: #222; color: #fff; }
+  .tab .count { background: rgba(255,255,255,0.2); padding: 1px 7px; border-radius: 10px; font-size: 11px; margin-right: 6px; }
+  .tab.active .count { background: rgba(0,0,0,0.2); }
+
+  .support-bar { background: #1a1a2e; border: 1px solid #333; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .support-field label { display: block; font-size: 10px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .support-field input { width: 100%; background: #111; border: 1px solid #333; border-radius: 6px; padding: 7px 10px; color: #fff; font-size: 13px; direction: ltr; }
+  .support-field input:focus { outline: none; border-color: #00bcd4; }
+
+  .error-card { background: #151515; border: 1px solid #2a2a2a; border-radius: 12px; margin-bottom: 12px; overflow: hidden; transition: border-color 0.2s; }
+  .error-card:hover { border-color: #444; }
+  .error-card.critical { border-right: 4px solid #f44336; }
+  .error-card.warning { border-right: 4px solid #ff9800; }
+
+  .error-header { display: flex; align-items: center; padding: 14px 18px; cursor: pointer; user-select: none; }
+  .error-header:hover { background: #1a1a1a; }
+
+  .error-code { display: flex; gap: 4px; margin-left: 14px; }
+  .code-prefix { background: #d32f2f; color: #fff; padding: 3px 8px; border-radius: 6px 0 0 6px; font-size: 12px; font-weight: 700; font-family: monospace; }
+  .warning .code-prefix { background: #e65100; }
+  .code-number { background: #333; color: #fff; padding: 3px 8px; border-radius: 0 6px 6px 0; font-size: 12px; font-weight: 700; font-family: monospace; }
+
+  .error-title { flex: 1; font-size: 14px; font-weight: 600; margin: 0 14px; }
+  .error-category { background: #222; color: #888; padding: 3px 10px; border-radius: 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .error-expand { color: #555; font-size: 18px; transition: transform 0.2s; margin-right: 6px; }
+  .error-card.open .error-expand { transform: rotate(180deg); }
+
+  .error-body { display: none; padding: 0 18px 18px; }
+  .error-card.open .error-body { display: block; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 11px; color: #00bcd4; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field label .hint { color: #555; font-weight: 400; text-transform: none; letter-spacing: 0; margin-right: 6px; }
+  .field textarea, .field input[type="text"] { width: 100%; background: #111; border: 1px solid #333; border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; font-family: inherit; resize: vertical; direction: ltr; text-align: left; }
+  .field textarea:focus, .field input[type="text"]:focus { outline: none; border-color: #00bcd4; }
+  .field textarea { min-height: 70px; }
+
+  .steps-list { list-style: none; counter-reset: step; }
+  .step-item { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+  .step-item::before { counter-increment: step; content: counter(step); background: #00bcd4; color: #000; min-width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; margin-top: 7px; }
+  .step-item input { flex: 1; background: #111; border: 1px solid #333; border-radius: 6px; padding: 7px 10px; color: #fff; font-size: 13px; direction: ltr; text-align: left; }
+  .step-item input:focus { outline: none; border-color: #00bcd4; }
+  .step-remove { background: none; border: none; color: #555; cursor: pointer; font-size: 18px; padding: 5px; margin-top: 3px; }
+  .step-remove:hover { color: #f44336; }
+  .add-step { background: #1a1a1a; border: 1px dashed #444; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer; color: #888; font-size: 12px; transition: all 0.2s; margin-top: 6px; }
+  .add-step:hover { border-color: #00bcd4; color: #00bcd4; }
+
+  .system-fields { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid #222; margin-top: 10px; }
+  .sys-tag { background: #1a1a1a; padding: 3px 10px; border-radius: 6px; font-size: 10px; color: #555; }
+  .sys-tag b { color: #777; }
+
+  .drop-zone { border: 2px dashed #333; border-radius: 12px; padding: 40px; text-align: center; margin-bottom: 20px; transition: all 0.2s; cursor: pointer; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #00bcd4; background: rgba(0,188,212,0.05); }
+  .drop-zone p { color: #888; font-size: 14px; }
+  .drop-zone .icon { font-size: 36px; margin-bottom: 10px; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #2e7d32; color: #fff; padding: 12px 24px; border-radius: 10px; font-size: 13px; font-weight: 600; z-index: 100; display: none; animation: fadeIn 0.3s; }
+  .toast.error { background: #d32f2f; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+  .info-box { background: #1a1a2e; border: 1px solid #333; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+  .info-box h3 { color: #00bcd4; font-size: 14px; margin-bottom: 8px; }
+  .info-box p { color: #999; font-size: 12px; line-height: 1.7; }
+  .info-box code { background: #222; padding: 2px 6px; border-radius: 4px; color: #00bcd4; font-size: 11px; direction: ltr; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>sCure - Error & Warning Editor</h1>
+    <div class="subtitle">Edit error descriptions and troubleshooting steps. System fields (code, severity) cannot be changed.</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-secondary" onclick="loadFile()">Load errors.json</button>
+    <button class="btn btn-success" onclick="saveFile()">Save errors.json</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="info-box">
+    <h3>How to use this editor</h3>
+    <p>
+      1. Click <b>"Load errors.json"</b> to open the current error definitions file<br>
+      2. Edit the <b>Description</b>, <b>Troubleshooting steps</b>, and <b>Support URL</b> for each error<br>
+      3. Click <b>"Save errors.json"</b> to download the updated file<br>
+      4. Copy the downloaded file to <code>public/config/errors.json</code> in the project<br><br>
+      Error codes are split into two parts: <b>Prefix</b> (E = Critical Error, W = Warning) and <b>Number</b> (unique ID)
+    </p>
+  </div>
+
+  <div class="drop-zone" id="dropZone" onclick="loadFile()">
+    <div class="icon">📂</div>
+    <p>Click to load <b>errors.json</b> or drag & drop the file here</p>
+  </div>
+
+  <!-- Support Info -->
+  <div class="support-bar" id="supportBar" style="display:none">
+    <div class="support-field">
+      <label>Support Email</label>
+      <input type="text" id="supportEmail">
+    </div>
+    <div class="support-field">
+      <label>Support Phone</label>
+      <input type="text" id="supportPhone">
+    </div>
+    <div class="support-field">
+      <label>Live Chat URL</label>
+      <input type="text" id="supportChat">
+    </div>
+    <div class="support-field">
+      <label>Docs Base URL</label>
+      <input type="text" id="supportDocs">
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs" id="tabs" style="display:none">
+    <div class="tab active" onclick="switchTab('critical')">
+      Critical Errors <span class="count" id="criticalCount">0</span>
+    </div>
+    <div class="tab" onclick="switchTab('warning')">
+      Warnings <span class="count" id="warningCount">0</span>
+    </div>
+  </div>
+
+  <!-- Error Cards -->
+  <div id="errorList"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFile(event)">
+
+<script>
+let data = null;
+let currentTab = 'critical';
+
+// Drag & drop
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+});
+
+function loadFile() {
+  document.getElementById('fileInput').click();
+}
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) readFile(file);
+  e.target.value = '';
+}
+
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      data = JSON.parse(ev.target.result);
+      renderAll();
+      showToast('File loaded successfully!');
+    } catch (err) {
+      showToast('Invalid JSON file!', true);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderAll() {
+  if (!data) return;
+
+  document.getElementById('dropZone').style.display = 'none';
+  document.getElementById('supportBar').style.display = 'grid';
+  document.getElementById('tabs').style.display = 'flex';
+
+  // Support
+  document.getElementById('supportEmail').value = data.support?.email || '';
+  document.getElementById('supportPhone').value = data.support?.phone || '';
+  document.getElementById('supportChat').value = data.support?.chat || '';
+  document.getElementById('supportDocs').value = data.support?.docsBase || '';
+
+  // Counts
+  const critical = data.errors.filter(e => e.severity === 'critical');
+  const warnings = data.errors.filter(e => e.severity === 'warning');
+  document.getElementById('criticalCount').textContent = critical.length;
+  document.getElementById('warningCount').textContent = warnings.length;
+
+  renderErrors();
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'critical') || (i === 1 && tab === 'warning'));
+  });
+  renderErrors();
+}
+
+function renderErrors() {
+  const list = document.getElementById('errorList');
+  const severity = currentTab === 'critical' ? 'critical' : 'warning';
+  const errors = data.errors.filter(e => e.severity === severity);
+
+  list.innerHTML = errors.map((err, idx) => {
+    const globalIdx = data.errors.indexOf(err);
+    const parts = err.code.split('-');
+    const prefix = parts[0];
+    const number = parts[1];
+
+    return `
+    <div class="error-card ${err.severity}" id="card-${globalIdx}">
+      <div class="error-header" onclick="toggleCard(${globalIdx})">
+        <span class="error-expand">&#9660;</span>
+        <div class="error-code">
+          <span class="code-prefix">${prefix}</span>
+          <span class="code-number">${number}</span>
+        </div>
+        <span class="error-title">${err.title}</span>
+        <span class="error-category">${err.category}</span>
+      </div>
+      <div class="error-body">
+        <div class="field">
+          <label>Description <span class="hint">(shown to the user)</span></label>
+          <textarea onchange="updateField(${globalIdx}, 'description', this.value)">${err.description || ''}</textarea>
+        </div>
+
+        <div class="field">
+          <label>Troubleshooting Steps <span class="hint">(numbered list - one per line)</span></label>
+          <ol class="steps-list" id="steps-${globalIdx}">
+            ${(err.troubleshooting || []).map((step, si) => `
+              <li class="step-item">
+                <input type="text" value="${escapeHtml(step)}" onchange="updateStep(${globalIdx}, ${si}, this.value)">
+                <button class="step-remove" onclick="removeStep(${globalIdx}, ${si})">&#10005;</button>
+              </li>
+            `).join('')}
+          </ol>
+          <div class="add-step" onclick="addStep(${globalIdx})">+ Add Step</div>
+        </div>
+
+        <div class="field">
+          <label>Support URL <span class="hint">(link to documentation page)</span></label>
+          <input type="text" value="${err.supportUrl || ''}" onchange="updateField(${globalIdx}, 'supportUrl', this.value)">
+        </div>
+
+        <div class="system-fields">
+          <span class="sys-tag"><b>Code:</b> ${err.code}</span>
+          <span class="sys-tag"><b>Title:</b> ${err.title}</span>
+          <span class="sys-tag"><b>Severity:</b> ${err.severity}</span>
+          <span class="sys-tag"><b>Category:</b> ${err.category}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleCard(idx) {
+  document.getElementById(`card-${idx}`).classList.toggle('open');
+}
+
+function updateField(idx, field, value) {
+  data.errors[idx][field] = value;
+}
+
+function updateStep(errIdx, stepIdx, value) {
+  data.errors[errIdx].troubleshooting[stepIdx] = value;
+}
+
+function addStep(errIdx) {
+  if (!data.errors[errIdx].troubleshooting) data.errors[errIdx].troubleshooting = [];
+  data.errors[errIdx].troubleshooting.push('New step...');
+  renderErrors();
+  // Re-open the card
+  document.getElementById(`card-${errIdx}`).classList.add('open');
+}
+
+function removeStep(errIdx, stepIdx) {
+  data.errors[errIdx].troubleshooting.splice(stepIdx, 1);
+  renderErrors();
+  document.getElementById(`card-${errIdx}`).classList.add('open');
+}
+
+function saveFile() {
+  if (!data) { showToast('No file loaded!', true); return; }
+
+  // Update support info
+  data.support.email = document.getElementById('supportEmail').value;
+  data.support.phone = document.getElementById('supportPhone').value;
+  data.support.chat = document.getElementById('supportChat').value;
+  data.support.docsBase = document.getElementById('supportDocs').value;
+  data._meta.lastUpdated = new Date().toISOString().split('T')[0];
+
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'errors.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('File saved! Copy it to public/config/errors.json');
+}
+
+function escapeHtml(str) {
+  return str.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function showToast(msg, isError) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast' + (isError ? ' error' : '');
+  toast.style.display = 'block';
+  setTimeout(() => toast.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>
