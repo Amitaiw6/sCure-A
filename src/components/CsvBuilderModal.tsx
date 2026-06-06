@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, Trash2, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TouchNumber } from '@/components/ui/touch-number'
@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -42,6 +41,8 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
   const [name, setName] = useState('')
   const [showKeyboard, setShowKeyboard] = useState(false)
   const [steps, setSteps] = useState<CureStep[]>([emptyStep(1)])
+  const [showSaveError, setShowSaveError] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   const isEditing = !!editMaterial
 
@@ -56,8 +57,24 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     }
   }, [editMaterial, isOpen])
 
+  const scrollToStep = useCallback((index: number) => {
+    requestAnimationFrame(() => {
+      const container = scrollRef.current
+      if (!container) return
+      const cards = container.querySelectorAll<HTMLElement>('[data-step-card]')
+      const card = cards[index]
+      if (!card) return
+      const scrollLeft = card.offsetLeft - (container.clientWidth / 2) + (card.clientWidth / 2)
+      container.scrollTo({ left: scrollLeft, behavior: 'smooth' })
+    })
+  }, [])
+
   const addNewStep = () => {
-    setSteps(prev => [...prev, emptyStep(prev.length + 1)])
+    setSteps(prev => {
+      const next = [...prev, emptyStep(prev.length + 1)]
+      scrollToStep(next.length - 1)
+      return next
+    })
   }
 
   const removeStep = (index: number) => {
@@ -170,7 +187,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         isCureOrBleacher ? (s.timerMode ?? 'on-target') : '',
         isCureOrBleacher ? (s.uvIntensity ?? 30) : '',
         isCureOrBleacher ? (s.uvStartMode ?? 'at-target') : '',
-        isCureOrBleacher && s.uvStartMode === 'at-ramp-percent' ? (s.uvRampPercent ?? 50) : '',
+        '',
         s.process === 'Cooling' ? (s.coolingMode ?? 'medium') : '',
       ].join(',')
     })
@@ -188,20 +205,31 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     URL.revokeObjectURL(url)
   }
 
-  // After every N₂, there must be a Cooling or Drying step before program ends
-  const hasN2WithoutCoolingOrDrying = (() => {
-    let needsCoolingOrDrying = false
+  const hasNitrogen = steps.some(s => s.process === 'Nitrogen')
+  const hasCooling = steps.some(s => s.process === 'Cooling')
+
+  // After N₂, must have at least one Heating/Cure/Bleaching step
+  const hasProcessAfterN2 = (() => {
+    if (!hasNitrogen) return true
+    let afterN2 = false
     for (const s of steps) {
-      if (s.process === 'Nitrogen') needsCoolingOrDrying = true
-      if (needsCoolingOrDrying && (s.process === 'Cooling' || s.process === 'Drying')) needsCoolingOrDrying = false
+      if (s.process === 'Nitrogen') afterN2 = true
+      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) return true
     }
-    return needsCoolingOrDrying
+    return false
+  })()
+
+  // Validation error message
+  const saveError = (() => {
+    if (!name.trim()) return 'Enter a program name'
+    if (steps.length === 0) return 'Add at least one step'
+    if (hasNitrogen && !hasProcessAfterN2) return 'Add a Heating, Cure, or Bleaching step after N₂ purge'
+    if (hasNitrogen && !hasCooling) return 'Nitrogen must be vented — add a Cooling step to save the program'
+    return null
   })()
 
   const handleSave = () => {
-    if (!name.trim()) return
-    if (steps.length === 0) return
-    if (hasN2WithoutCoolingOrDrying) return
+    if (saveError) return
 
     if (isEditing && editMaterial) {
       updateMaterial(editMaterial.id, {
@@ -241,18 +269,17 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto scroll-hidden p-6" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle className="text-xl text-primary">
-            {isEditing ? 'Edit Program' : 'Build Cure Program'}
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* Material Name */}
-        <div className="flex items-center gap-4">
-          <label className="text-foreground text-sm whitespace-nowrap">Name:</label>
+      <DialogContent className="!w-[550px] !max-w-[550px] h-[460px] max-h-[460px] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
+        {/* Top bar */}
+        <div className="flex items-center gap-4 px-4 py-2 shrink-0 border-b border-border">
+          <DialogHeader className="p-0">
+            <DialogTitle className="text-lg text-primary whitespace-nowrap">
+              {isEditing ? 'Edit Program' : 'Build Cure Program'}
+            </DialogTitle>
+          </DialogHeader>
+          <label className="text-foreground text-sm whitespace-nowrap ml-auto">Name:</label>
           <div
-            className="flex-1 h-10 flex items-center rounded-lg border border-input bg-transparent px-3 cursor-pointer hover:bg-accent/50 transition-colors"
+            className="w-[260px] h-10 flex items-center rounded-lg border border-input bg-transparent px-3 cursor-pointer hover:bg-accent/50 transition-colors"
             onClick={() => setShowKeyboard(true)}
           >
             <span className={name ? 'text-foreground text-sm' : 'text-muted-foreground text-sm'}>
@@ -261,178 +288,183 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
           </div>
         </div>
 
-        {/* Steps */}
-        <div className="space-y-4">
-          {steps.map((step, i) => (
-            <div key={i} className="border border-border rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-primary text-sm font-medium">Step {step.step}</span>
-                <Button variant="ghost" size="icon-xs" onClick={() => removeStep(i)} disabled={steps.length <= 1}>
-                  <Trash2 size={14} className="text-destructive" />
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between gap-4">
-                <label className="text-foreground text-sm">Process Type</label>
-                <Select value={step.process} onValueChange={v => updateStep(i, 'process', v)}>
-                  <SelectTrigger className="w-[160px] h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAllowedProcesses(i).map(proc => (
-                      <SelectItem
-                        key={proc}
-                        value={proc}
-                        disabled={proc === 'Nitrogen' && !canAddNitrogen(i)}
-                      >
-                        {proc === 'Cure' ? 'Cure (405nm)' : proc === 'Bleacher' ? 'Bleaching (450nm)' : proc === 'Nitrogen' ? 'N₂ Purge' : proc}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {step.process === 'Nitrogen' ? (
-                <div className="text-muted-foreground text-xs px-1">
-                  N₂ purge will run automatically if nitrogen is enabled on the system. Skipped otherwise.
+        {/* Steps - horizontal scroll */}
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden scroll-hidden px-4 py-3" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}>
+          <div className="flex gap-3 h-full items-center">
+            {steps.map((step, i) => (
+              <div key={i} data-step-card className="border border-border rounded-xl p-3 shrink-0 w-[240px] overflow-y-auto scroll-hidden max-h-full">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-primary text-sm font-medium">Step {step.step}</span>
+                  <Button variant="ghost" size="icon-xs" onClick={() => removeStep(i)} disabled={steps.length <= 1}>
+                    <Trash2 size={14} className="text-destructive" />
+                  </Button>
                 </div>
-              ) : step.process === 'Cooling' ? (
-                <>
-                  <div className="flex items-center justify-between gap-4">
-                    <label className="text-foreground text-sm">Target Temp</label>
-                    <TouchNumber
-                      value={step.temperature ?? 25}
-                      onChange={v => updateStep(i, 'temperature', v)}
-                      min={20} max={getCoolingMaxTemp(i)} step={5} suffix="°C"
-                      className="w-[160px]"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <label className="text-foreground text-sm">Cooling Mode</label>
-                    <Select value={step.coolingMode ?? 'medium'} onValueChange={v => updateStep(i, 'coolingMode', v)}>
-                      <SelectTrigger className="w-[160px] h-10">
+
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-foreground text-sm">Process</label>
+                    <Select value={step.process} onValueChange={v => updateStep(i, 'process', v)}>
+                      <SelectTrigger className="w-[140px] h-9">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="fast">Fast</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="slow">Slow</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-between gap-4">
-                  <label className="text-foreground text-sm">Temperature</label>
-                  <TouchNumber
-                    value={step.temperature}
-                    onChange={v => updateStepTemp(i, v ?? getMinTemp(i))}
-                    min={getMinTemp(i)} max={80} step={5} suffix="°C"
-                    className="w-[160px]"
-                  />
-                </div>
-              )}
-
-              {false && (step.process === 'Cure' || step.process === 'Bleacher') && (
-                <div className="flex items-center justify-between gap-4">
-                  <label className="text-foreground text-sm">Intensity:</label>
-                  <TouchNumber
-                    value={step.intensity}
-                    onChange={v => updateStep(i, 'intensity', v)}
-                    min={0} max={100} step={5} suffix="%"
-                    className="w-[160px]"
-                  />
-                </div>
-              )}
-
-              {step.process !== 'Cooling' && step.process !== 'Nitrogen' && (
-                <div className="flex items-center justify-between gap-4">
-                  <label className="text-foreground text-sm">Time:</label>
-                  <TouchNumber
-                    value={step.time}
-                    onChange={v => updateStep(i, 'time', v ?? 1)}
-                    min={1} max={120} step={1} suffix=" min"
-                    className="w-[160px]"
-                  />
-                </div>
-              )}
-
-              {/* Cure/Bleacher options */}
-              {(step.process === 'Cure' || step.process === 'Bleacher') && (
-                <>
-                  <div className="flex items-center justify-between gap-4">
-                    <label className="text-foreground text-sm">Timer start:</label>
-                    <Select value={step.timerMode ?? 'on-target'} onValueChange={v => updateStep(i, 'timerMode', v)}>
-                      <SelectTrigger className="w-[160px] h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="on-target">At temperature</SelectItem>
-                        <SelectItem value="on-ramp">On ramp start</SelectItem>
+                        {getAllowedProcesses(i).map(proc => (
+                          <SelectItem
+                            key={proc}
+                            value={proc}
+                            disabled={proc === 'Nitrogen' && !canAddNitrogen(i)}
+                          >
+                            {proc === 'Cure' ? 'Cure (405nm)' : proc === 'Bleacher' ? 'Bleaching (450nm)' : proc === 'Nitrogen' ? 'N₂ Purge' : proc}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4">
-                    <label className="text-foreground text-sm">UV Intensity:</label>
-                    <TouchNumber
-                      value={step.uvIntensity ?? 30}
-                      onChange={v => updateStep(i, 'uvIntensity', v)}
-                      min={5} max={100} step={5} suffix="%"
-                      className="w-[160px]"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between gap-4">
-                    <label className="text-foreground text-sm">UV starts:</label>
-                    <Select value={step.uvStartMode ?? 'at-target'} onValueChange={v => updateStep(i, 'uvStartMode', v)}>
-                      <SelectTrigger className="w-[160px] h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="at-start">Immediately</SelectItem>
-                        <SelectItem value="at-target">At temperature</SelectItem>
-                        <SelectItem value="at-ramp-percent">At ramp %</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {step.uvStartMode === 'at-ramp-percent' && (
-                    <div className="flex items-center justify-between gap-4">
-                      <label className="text-foreground text-sm">Ramp %:</label>
+                  {step.process === 'Nitrogen' ? (
+                    <div className="text-muted-foreground text-xs px-1">
+                      N₂ purge runs automatically if nitrogen is enabled.
+                    </div>
+                  ) : step.process === 'Cooling' ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-foreground text-sm">Target Temp</label>
+                        <TouchNumber
+                          value={step.temperature ?? 25}
+                          onChange={v => updateStep(i, 'temperature', v)}
+                          min={20} max={getCoolingMaxTemp(i)} step={5} suffix="°C"
+                          className="w-[140px]"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-foreground text-sm">Cooling Mode</label>
+                        <Select value={step.coolingMode ?? 'medium'} onValueChange={v => updateStep(i, 'coolingMode', v)}>
+                          <SelectTrigger className="w-[140px] h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="fast">Fast</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="slow">Slow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-foreground text-sm">Temperature</label>
                       <TouchNumber
-                        value={step.uvRampPercent ?? 50}
-                        onChange={v => updateStep(i, 'uvRampPercent', v)}
-                        min={10} max={100} step={10} suffix="%"
-                        className="w-[160px]"
+                        value={step.temperature}
+                        onChange={v => updateStepTemp(i, v ?? getMinTemp(i))}
+                        min={getMinTemp(i)} max={80} step={5} suffix="°C"
+                        className="w-[140px]"
                       />
                     </div>
                   )}
-                </>
-              )}
-            </div>
-          ))}
+
+                  {false && (step.process === 'Cure' || step.process === 'Bleacher') && (
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-foreground text-sm">Intensity:</label>
+                      <TouchNumber
+                        value={step.intensity}
+                        onChange={v => updateStep(i, 'intensity', v)}
+                        min={0} max={100} step={5} suffix="%"
+                        className="w-[140px]"
+                      />
+                    </div>
+                  )}
+
+                  {step.process !== 'Cooling' && step.process !== 'Nitrogen' && (
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-foreground text-sm">Time:</label>
+                      <TouchNumber
+                        value={step.time}
+                        onChange={v => updateStep(i, 'time', v ?? 1)}
+                        min={1} max={120} step={1} suffix=" min"
+                        className="w-[140px]"
+                      />
+                    </div>
+                  )}
+
+                  {/* Cure/Bleacher options */}
+                  {(step.process === 'Cure' || step.process === 'Bleacher') && (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-foreground text-sm">Timer start:</label>
+                        <Select value={step.timerMode ?? 'on-target'} onValueChange={v => updateStep(i, 'timerMode', v)}>
+                          <SelectTrigger className="w-[140px] h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="on-ramp">On ramp start</SelectItem>
+                            <SelectItem value="on-target">At temperature</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-foreground text-sm">UV Intensity:</label>
+                        <TouchNumber
+                          value={step.uvIntensity ?? 30}
+                          onChange={v => updateStep(i, 'uvIntensity', v)}
+                          min={5} max={100} step={5} suffix="%"
+                          className="w-[140px]"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-foreground text-sm">UV starts:</label>
+                        <Select value={step.uvStartMode ?? 'at-target'} onValueChange={v => updateStep(i, 'uvStartMode', v)}>
+                          <SelectTrigger className="w-[140px] h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="at-start">On ramp start</SelectItem>
+                            <SelectItem value="at-target">At temperature</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Add Step */}
+            <button
+              onClick={addNewStep}
+              className="border border-dashed border-border rounded-xl shrink-0 w-[70px] self-stretch flex flex-col items-center justify-center gap-2 hover:border-primary/50 hover:bg-accent/30 transition-colors touch-manipulation"
+            >
+              <Plus size={20} className="text-muted-foreground" />
+              <span className="text-muted-foreground text-[10px]">Add Step</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <Button variant="outline" onClick={addNewStep} className="gap-1">
-            <Plus size={14} /> Add Step
-          </Button>
-          <span className="text-muted-foreground text-sm">
-            <span className="text-foreground font-semibold">{steps.length}</span> steps · <span className="text-foreground font-semibold">{totalDuration} min</span>
-          </span>
+        {/* Bottom bar */}
+        <div className="shrink-0 border-t border-border px-4 py-2">
+          {showSaveError && saveError && (
+            <div className="text-destructive text-xs text-center mb-1.5">{saveError}</div>
+          )}
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={handleDownloadCsv} className="gap-1">
+              <Download size={14} /> CSV
+            </Button>
+            <span className="text-muted-foreground text-sm whitespace-nowrap">
+              <span className="text-foreground font-semibold">{steps.length}</span> steps · <span className="text-foreground font-semibold">{totalDuration} min</span>
+            </span>
+            <div className="flex-1" />
+            <Button variant="outline" onClick={handleClose} className="min-w-[90px]">Cancel</Button>
+            <Button
+              onClick={() => { if (saveError) { setShowSaveError(true) } else { handleSave() } }}
+              onPointerDown={() => { if (saveError) setShowSaveError(true) }}
+              onPointerLeave={() => setShowSaveError(false)}
+              className={`min-w-[120px] ${saveError ? 'opacity-50' : ''}`}
+            >
+              {isEditing ? 'Update' : 'Save Program'}
+            </Button>
+          </div>
         </div>
-
-        <DialogFooter className="flex-row gap-3">
-          <Button variant="outline" size="sm" onClick={handleDownloadCsv} className="gap-1">
-            <Download size={14} /> CSV
-          </Button>
-          <div className="flex-1" />
-          <Button variant="outline" onClick={handleClose} className="min-w-[90px]">Cancel</Button>
-          <Button onClick={handleSave} disabled={!name.trim() || steps.length === 0 || hasN2WithoutCoolingOrDrying} className="min-w-[90px]">
-            {isEditing ? 'Update' : 'Save Program'}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

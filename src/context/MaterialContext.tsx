@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import type { ReactNode } from 'react'
 
 export type TimerMode = 'on-ramp' | 'on-target'
-export type UvStartMode = 'at-start' | 'at-target' | 'at-ramp-percent'
+export type UvStartMode = 'at-start' | 'at-target'
 export type CoolingMode = 'fast' | 'medium' | 'slow'
 
 export interface CureStep {
@@ -54,7 +54,7 @@ export function stepsToCsv(steps: CureStep[]): string {
       isCureOrBleacher ? (s.timerMode ?? 'on-target') : '',
       isCureOrBleacher ? (s.uvIntensity ?? 30) : '',
       isCureOrBleacher ? (s.uvStartMode ?? 'at-target') : '',
-      isCureOrBleacher && s.uvStartMode === 'at-ramp-percent' ? (s.uvRampPercent ?? 50) : '',
+      '',
       s.process === 'Cooling' ? (s.coolingMode ?? 'medium') : '',
     ].join(',')
   })
@@ -64,7 +64,7 @@ export function stepsToCsv(steps: CureStep[]): string {
 // CSV parsing — only used for user import
 const VALID_PROCESSES = ['Heating', 'Drying', 'Cure', 'Cooling', 'Bleacher', 'Nitrogen'] as const
 const VALID_TIMER_MODES: TimerMode[] = ['on-ramp', 'on-target']
-const VALID_UV_START: UvStartMode[] = ['at-start', 'at-target', 'at-ramp-percent']
+const VALID_UV_START: UvStartMode[] = ['at-start', 'at-target']
 
 export interface CsvParseResult {
   steps: CureStep[] | null
@@ -190,27 +190,14 @@ export function parseCsv(csvContent: string): CsvParseResult {
       }
     }
 
-    // Nitrogen only after Cooling (except first step)
-    if (s.process === 'Nitrogen' && prev && prev.process !== 'Cooling') {
-      // Check if there was a cooling since last N2
-      let hadCooling = false
-      for (let j = i - 1; j >= 0; j--) {
-        if (steps[j].process === 'Cooling') { hadCooling = true; break }
-        if (steps[j].process === 'Nitrogen') break
-      }
-      if (!hadCooling && prev) {
-        errors.push(`Step ${s.step}: Nitrogen purge requires a Cooling step before it`)
-      }
-    }
-
-    // After Nitrogen: only Heating, Cure, or Bleacher
+    // After Nitrogen: only Heating, Cure, Bleacher, or Cooling
     if (prev?.process === 'Nitrogen') {
-      if (s.process === 'Cooling' || s.process === 'Drying' || s.process === 'Nitrogen') {
-        errors.push(`Step ${s.step}: After nitrogen, only Heating, Cure, or Bleacher is allowed`)
+      if (s.process === 'Drying' || s.process === 'Nitrogen') {
+        errors.push(`Step ${s.step}: After nitrogen, only Heating, Cure, Bleacher, or Cooling is allowed`)
       }
     }
 
-    // Track N2 → must have Cooling/Drying before end
+    // Track N2 → must have a Heating/Cure/Bleacher after it, and a Cooling step somewhere
     if (s.process === 'Nitrogen') needsCoolingOrDrying = true
     if (needsCoolingOrDrying && (s.process === 'Cooling' || s.process === 'Drying')) needsCoolingOrDrying = false
 
@@ -225,7 +212,21 @@ export function parseCsv(csvContent: string): CsvParseResult {
   }
 
   if (needsCoolingOrDrying) {
-    errors.push('After nitrogen purge, a Cooling or Drying step is required before the end of the program')
+    errors.push('Nitrogen must be vented — add a Cooling step after the N₂ purge')
+  }
+
+  // If program has N₂, must have at least one Heating/Cure/Bleacher after it
+  const hasNitrogen = steps.some(s => s.process === 'Nitrogen')
+  if (hasNitrogen) {
+    let foundProcessAfterN2 = false
+    let afterN2 = false
+    for (const s of steps) {
+      if (s.process === 'Nitrogen') afterN2 = true
+      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) { foundProcessAfterN2 = true; break }
+    }
+    if (!foundProcessAfterN2) {
+      errors.push('Add a Heating, Cure, or Bleaching step after N₂ purge')
+    }
   }
 
   if (errors.length > 0) {

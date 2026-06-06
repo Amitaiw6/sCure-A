@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 export type ProcessType = 'Cooling' | 'Cure' | 'Drying' | 'Heating' | 'Bleacher' | 'Nitrogen'
 
 export type TimerMode = 'on-ramp' | 'on-target'
-export type UvStartMode = 'at-start' | 'at-target' | 'at-ramp-percent'
+export type UvStartMode = 'at-start' | 'at-target'
 export type CoolingMode = 'fast' | 'medium' | 'slow'
 
 export interface StepData {

@@ -26,7 +26,6 @@
 
   .example { background: #0a0a0a; color: #e0e0e0; padding: 16px; border-radius: 8px; font-family: 'Consolas', monospace; font-size: 12px; margin: 12px 0; overflow-x: auto; white-space: pre; }
   .example .header-line { color: #0ea5e9; }
-  .example .comment { color: #666; }
 
   .warn-box { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
   .warn-box .title { font-weight: 700; color: #92400e; font-size: 13px; }
@@ -42,12 +41,18 @@
   .ok-box ul { margin-top: 6px; }
   .ok-box li { color: #166534; font-size: 12px; }
 
+  .n2-box { background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+  .n2-box .title { font-weight: 700; color: #0c4a6e; font-size: 13px; }
+  .n2-box ul { margin-top: 6px; }
+  .n2-box li { color: #0c4a6e; font-size: 12px; }
+
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
   .badge-required { background: #ef4444; color: #fff; }
   .badge-optional { background: #6b7280; color: #fff; }
   .badge-cure { background: #a855f7; color: #fff; }
   .badge-bleacher { background: #22d3ee; color: #000; }
   .badge-cooling { background: #14b8a6; color: #fff; }
+  .badge-nitrogen { background: #64748b; color: #fff; }
 
   .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #ddd; font-size: 11px; color: #999; text-align: center; }
 
@@ -91,11 +96,14 @@
 <h2>2. CSV File Structure</h2>
 <p>The CSV file must contain a <strong>header row</strong> followed by one or more <strong>data rows</strong>. Each row represents one process step.</p>
 
-<h3>2.1 Required Columns</h3>
+<h3>2.1 Header Format</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span></div>
+
+<h3>2.2 Column Reference</h3>
 <table>
   <tr>
+    <th>#</th>
     <th>Column</th>
-    <th>Name</th>
     <th>Description</th>
     <th>Status</th>
   </tr>
@@ -119,58 +127,45 @@
   </tr>
   <tr>
     <td>4</td>
-    <td><strong>Intensity</strong></td>
-    <td>UV light intensity in % (0&ndash;100)</td>
-    <td><span class="badge badge-cure">Cure/Bleacher only</span></td>
+    <td><strong>Time</strong></td>
+    <td>Duration in minutes (1&ndash;120)</td>
+    <td><span class="badge badge-required">Required**</span></td>
   </tr>
   <tr>
     <td>5</td>
-    <td><strong>Time</strong></td>
-    <td>Duration in minutes (1&ndash;120)</td>
-    <td><span class="badge badge-required">Required</span></td>
+    <td><strong>TimerMode</strong></td>
+    <td>When the timer starts counting</td>
+    <td><span class="badge badge-cure">Cure/Bleacher</span></td>
   </tr>
   <tr>
     <td>6</td>
-    <td><strong>CoolingRate</strong></td>
-    <td>Cooling rate in &deg;C/min (1&ndash;20)</td>
-    <td><span class="badge badge-cooling">Cooling only</span></td>
-  </tr>
-</table>
-<p style="font-size:12px; color:#666;">* Temperature is required for Drying, Heating, Cure, and Bleacher. Leave empty for Cooling.</p>
-
-<h3>2.2 Optional Columns (Cure &amp; Bleacher only)</h3>
-<table>
-  <tr>
-    <th>Column</th>
-    <th>Name</th>
-    <th>Description</th>
-    <th>Valid Values</th>
+    <td><strong>UVIntensity</strong></td>
+    <td>UV light intensity in % (5&ndash;100)</td>
+    <td><span class="badge badge-cure">Cure/Bleacher</span></td>
   </tr>
   <tr>
     <td>7</td>
-    <td><strong>UvIntensity</strong></td>
-    <td>Additional UV intensity during heating</td>
-    <td>0&ndash;100 (%)</td>
+    <td><strong>UVStart</strong></td>
+    <td>When UV turns on</td>
+    <td><span class="badge badge-cure">Cure/Bleacher</span></td>
   </tr>
   <tr>
     <td>8</td>
-    <td><strong>TimerMode</strong></td>
-    <td>When the timer starts counting</td>
-    <td><code>on-ramp</code> or <code>on-target</code></td>
+    <td><strong>UVRampPercent</strong></td>
+    <td>Ramp % at which UV turns on</td>
+    <td><span class="badge badge-optional">Optional</span></td>
   </tr>
   <tr>
     <td>9</td>
-    <td><strong>UvStartMode</strong></td>
-    <td>When UV turns on</td>
-    <td><code>at-start</code>, <code>at-target</code>, or <code>at-ramp-percent</code></td>
-  </tr>
-  <tr>
-    <td>10</td>
-    <td><strong>UvRampPercent</strong></td>
-    <td>Ramp % at which UV turns on</td>
-    <td>10&ndash;100 (%) &mdash; only when UvStartMode = at-ramp-percent</td>
+    <td><strong>CoolingMode</strong></td>
+    <td>Cooling speed: <code>fast</code>, <code>medium</code>, or <code>slow</code></td>
+    <td><span class="badge badge-cooling">Cooling only</span></td>
   </tr>
 </table>
+<p style="font-size:12px; color:#666;">
+  * Temperature is required for Drying, Heating, Cure, Bleacher, and Cooling. Leave empty for Nitrogen.<br>
+  ** Time is required for Drying, Heating, Cure, and Bleacher. Leave empty for Cooling and Nitrogen.
+</p>
 
 <!-- SECTION 3 -->
 <h2>3. Process Types</h2>
@@ -179,65 +174,104 @@
     <th>Process</th>
     <th>Description</th>
     <th>Required Fields</th>
-    <th>Light Source</th>
+    <th>Notes</th>
   </tr>
   <tr>
     <td><strong>Drying</strong></td>
     <td>Removes moisture from the part using heat</td>
     <td>Temperature, Time</td>
-    <td>None</td>
+    <td>&mdash;</td>
   </tr>
   <tr>
     <td><strong>Heating</strong></td>
     <td>Heats the chamber to target temperature</td>
     <td>Temperature, Time</td>
-    <td>None</td>
+    <td>&mdash;</td>
   </tr>
   <tr>
     <td><strong>Cure</strong></td>
     <td>UV curing with 405nm LED light</td>
-    <td>Temperature, Intensity, Time</td>
-    <td>405nm UV</td>
+    <td>Temperature, Time</td>
+    <td>Supports TimerMode, UVIntensity, UVStart</td>
   </tr>
   <tr>
     <td><strong>Bleacher</strong></td>
     <td>Bleaching with 450nm LED light</td>
-    <td>Temperature, Intensity, Time</td>
-    <td>450nm Visible</td>
+    <td>Temperature, Time</td>
+    <td>Supports TimerMode, UVIntensity, UVStart</td>
   </tr>
   <tr>
     <td><strong>Cooling</strong></td>
-    <td>Controlled cooling at a specified rate</td>
-    <td>Time, CoolingRate</td>
-    <td>None</td>
+    <td>Controlled cooling to target temperature</td>
+    <td>Temperature</td>
+    <td>CoolingMode: fast / medium / slow (default: medium)</td>
+  </tr>
+  <tr>
+    <td><strong>Nitrogen</strong></td>
+    <td>N&#8322; purge of the chamber</td>
+    <td>&mdash;</td>
+    <td>No temperature or time needed. Runs automatically if N&#8322; is enabled on the system.</td>
   </tr>
 </table>
 
-<!-- SECTION 4 -->
-<h2>4. Example CSV Files</h2>
+<!-- SECTION 4: Nitrogen Rules -->
+<h2>4. Nitrogen (N&#8322;) Purge Rules</h2>
+<p>Nitrogen purge steps have specific placement rules that must be followed:</p>
 
-<h3>4.1 Basic Program (4 steps)</h3>
-<div class="example"><span class="header-line">Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent</span>
-1,Drying,50,,10,,,,,
-2,Heating,70,,5,,,,,
-3,Cure,70,80,20,,,,,
-4,Cooling,,,8,3,,,,</div>
-
-<h3>4.2 Advanced Program with Bleacher &amp; UV Options</h3>
-<div class="example"><span class="header-line">Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent</span>
-1,Drying,45,,8,,,,,
-2,Heating,65,,5,,,,,
-3,Cure,65,70,15,,30,on-target,at-ramp-percent,50
-4,Bleacher,60,40,10,,,on-target,,
-5,Cooling,,,6,4,,,,</div>
-
-<h3>4.3 Minimal Program (Cure only)</h3>
-<div class="example"><span class="header-line">Step,Process,Temperature,Intensity,Time,CoolingRate</span>
-1,Cure,60,50,20,
-2,Cooling,,,5,5</div>
+<div class="n2-box">
+  <div class="title">N&#8322; Purge Requirements</div>
+  <ul>
+    <li><strong>Maximum 2 Nitrogen steps</strong> per program</li>
+    <li><strong>After Nitrogen</strong>, the next step must be one of: <strong>Heating</strong>, <strong>Cure</strong>, <strong>Bleacher</strong>, or <strong>Cooling</strong></li>
+    <li><strong>A Cooling step is required</strong> somewhere after the Nitrogen step to vent the nitrogen from the chamber</li>
+    <li>At least one <strong>Heating, Cure, or Bleaching</strong> step must follow the N&#8322; purge</li>
+    <li>If N&#8322; is not enabled on the system, Nitrogen steps will be skipped automatically during the cure process</li>
+  </ul>
+</div>
 
 <!-- SECTION 5 -->
-<h2>5. Parameter Limits</h2>
+<h2>5. Example CSV Files</h2>
+
+<h3>5.1 Basic Program (Heating + Cooling)</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
+1,Heating,40,10,,,,,
+2,Cooling,25,,,,,,medium</div>
+
+<h3>5.2 Standard Cure Program</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
+1,Drying,50,8,,,,,
+2,Heating,65,5,,,,,
+3,Cure,65,15,on-target,30,at-target,,
+4,Cooling,25,,,,,,medium</div>
+
+<h3>5.3 Cure + Bleaching with UV Options</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
+1,Drying,45,8,,,,,
+2,Heating,65,5,,,,,
+3,Cure,65,15,on-target,50,at-target,,
+4,Bleacher,60,10,on-target,30,at-start,,
+5,Cooling,25,,,,,,fast</div>
+
+<h3>5.4 Program with Nitrogen Purge</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
+1,Heating,40,10,,,,,
+2,Nitrogen,,,,,,,
+3,Heating,60,10,,,,,
+4,Cure,60,15,on-target,30,at-target,,
+5,Cooling,25,,,,,,medium</div>
+
+<h3>5.5 Advanced: Dual Nitrogen Purge</h3>
+<div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
+1,Heating,40,10,,,,,
+2,Nitrogen,,,,,,,
+3,Cure,40,15,on-target,50,at-target,,
+4,Cooling,30,,,,,,medium
+5,Nitrogen,,,,,,,
+6,Heating,60,10,,,,,
+7,Cooling,25,,,,,,fast</div>
+
+<!-- SECTION 6 -->
+<h2>6. Parameter Limits</h2>
 <table>
   <tr>
     <th>Parameter</th>
@@ -246,47 +280,37 @@
     <th>Unit</th>
   </tr>
   <tr><td>Temperature</td><td>20</td><td>80</td><td>&deg;C</td></tr>
-  <tr><td>Intensity</td><td>0</td><td>100</td><td>%</td></tr>
   <tr><td>Time</td><td>1</td><td>120</td><td>minutes</td></tr>
-  <tr><td>CoolingRate</td><td>1</td><td>20</td><td>&deg;C/min</td></tr>
-  <tr><td>UvIntensity</td><td>0</td><td>100</td><td>%</td></tr>
-  <tr><td>UvRampPercent</td><td>10</td><td>100</td><td>%</td></tr>
+  <tr><td>UVIntensity</td><td>5</td><td>100</td><td>%</td></tr>
+  <tr><td>UVRampPercent</td><td>10</td><td>100</td><td>%</td></tr>
 </table>
 
-<!-- SECTION 6 -->
+<!-- SECTION 7 -->
 <div class="page-break"></div>
-<h2>6. What Will Be Rejected</h2>
+<h2>7. What Will Be Rejected</h2>
 <p>The system will <strong>not import</strong> a CSV file if any of the following errors are found:</p>
 
 <div class="error-box">
   <div class="title">Common Rejection Reasons</div>
   <ul>
     <li><strong>Missing header row</strong> &mdash; The first row must contain column names including "Step" or "Process"</li>
-    <li><strong>Less than 5 columns</strong> &mdash; Each data row must have at least 5 comma-separated values</li>
-    <li><strong>Invalid process type</strong> &mdash; Must be exactly: Drying, Heating, Cure, Bleacher, or Cooling (case-sensitive)</li>
+    <li><strong>Less than 4 columns</strong> &mdash; Each data row must have at least 4 comma-separated values</li>
+    <li><strong>Invalid process type</strong> &mdash; Must be exactly: Drying, Heating, Cure, Bleacher, Cooling, or Nitrogen (case-sensitive)</li>
     <li><strong>Temperature out of range</strong> &mdash; Must be between 20&deg;C and 80&deg;C</li>
-    <li><strong>Intensity on non-Cure/Bleacher step</strong> &mdash; Drying, Heating, and Cooling must not have intensity values</li>
     <li><strong>Time out of range</strong> &mdash; Must be between 1 and 120 minutes</li>
-    <li><strong>Cooling rate out of range</strong> &mdash; Must be between 1 and 20 &deg;C/min</li>
     <li><strong>Invalid TimerMode</strong> &mdash; Must be <code>on-ramp</code> or <code>on-target</code></li>
-    <li><strong>Invalid UvStartMode</strong> &mdash; Must be <code>at-start</code>, <code>at-target</code>, or <code>at-ramp-percent</code></li>
-    <li><strong>UvRampPercent out of range</strong> &mdash; Must be between 10% and 100%</li>
+    <li><strong>Invalid UVStart</strong> &mdash; Must be <code>at-start</code> or <code>at-target</code></li>
+    <li><strong>Invalid CoolingMode</strong> &mdash; Must be <code>fast</code>, <code>medium</code>, or <code>slow</code></li>
+    <li><strong>More than 2 Nitrogen steps</strong> &mdash; Maximum 2 N&#8322; purge steps per program</li>
+    <li><strong>Nitrogen without process after</strong> &mdash; A Heating, Cure, or Bleaching step must follow N&#8322;</li>
+    <li><strong>Nitrogen without Cooling</strong> &mdash; A Cooling step is required to vent the nitrogen</li>
+    <li><strong>Temperature decreases without Cooling</strong> &mdash; Temperature can only increase between steps unless a Cooling step resets it</li>
     <li><strong>Empty file or no valid steps</strong> &mdash; At least one valid data row is required</li>
   </ul>
 </div>
 
-<div class="warn-box">
-  <div class="title">Important Notes</div>
-  <p>
-    &bull; Process names are <strong>case-sensitive</strong>: use "Heating" not "heating" or "HEATING".<br>
-    &bull; Empty optional fields should be left blank (not "0" or "null") &mdash; just leave nothing between the commas.<br>
-    &bull; The file must have a <strong>.csv</strong> extension.<br>
-    &bull; UTF-8 encoding is recommended. Avoid special characters in file names.
-  </p>
-</div>
-
-<!-- SECTION 7 -->
-<h2>7. Timer Mode Explained</h2>
+<!-- SECTION 8 -->
+<h2>8. Timer Mode Explained</h2>
 <table>
   <tr>
     <th>Mode</th>
@@ -302,7 +326,7 @@
   </tr>
 </table>
 
-<h2>8. UV Start Mode Explained</h2>
+<h2>9. UV Start Mode Explained</h2>
 <table>
   <tr>
     <th>Mode</th>
@@ -316,27 +340,58 @@
     <td><code>at-target</code> (default)</td>
     <td>UV light turns on <strong>only after</strong> reaching the target temperature.</td>
   </tr>
+</table>
+
+<h2>10. Cooling Mode Explained</h2>
+<table>
   <tr>
-    <td><code>at-ramp-percent</code></td>
-    <td>UV light turns on when the temperature reaches a specified percentage of the ramp. Requires <code>UvRampPercent</code> column (e.g., 50 = UV on at 50% of ramp-up).</td>
+    <th>Mode</th>
+    <th>Behavior</th>
+  </tr>
+  <tr>
+    <td><code>fast</code></td>
+    <td>Maximum fan speed for rapid cooling. Use when speed matters more than gradual temperature change.</td>
+  </tr>
+  <tr>
+    <td><code>medium</code> (default)</td>
+    <td>Balanced cooling speed. Recommended for most materials.</td>
+  </tr>
+  <tr>
+    <td><code>slow</code></td>
+    <td>Gentle cooling for sensitive materials that may warp with rapid temperature change.</td>
   </tr>
 </table>
 
-<!-- SECTION 8 -->
-<h2>9. Quick Checklist</h2>
+<!-- SECTION 11 -->
+<h2>11. Quick Checklist</h2>
 <div class="ok-box">
   <div class="title">Before importing, verify:</div>
   <ul>
-    <li>File has .csv extension</li>
+    <li>File has <strong>.csv</strong> extension</li>
     <li>First row is the header with column names</li>
-    <li>Each row has at least 5 columns</li>
+    <li>Each row has at least 4 columns</li>
     <li>Process types are spelled correctly (case-sensitive)</li>
-    <li>Temperature is 20&ndash;80&deg;C for all non-Cooling steps</li>
-    <li>Intensity is only set for Cure and Bleacher steps</li>
-    <li>CoolingRate is only set for Cooling steps</li>
-    <li>Time is between 1&ndash;120 minutes</li>
-    <li>Optional columns (7&ndash;10) are only used with Cure or Bleacher</li>
+    <li>Temperature is 20&ndash;80&deg;C for Heating, Drying, Cure, Bleacher, and Cooling steps</li>
+    <li>Temperature and Time are left empty for Nitrogen steps</li>
+    <li>Time is left empty for Cooling steps</li>
+    <li>Time is between 1&ndash;120 minutes for all other steps</li>
+    <li>TimerMode, UVIntensity, and UVStart are only used with Cure or Bleacher</li>
+    <li>CoolingMode is only used with Cooling steps</li>
+    <li>Maximum 2 Nitrogen steps per program</li>
+    <li>After Nitrogen: must have a Heating, Cure, or Bleaching step</li>
+    <li>If using Nitrogen: must have a Cooling step to vent N&#8322;</li>
   </ul>
+</div>
+
+<div class="warn-box">
+  <div class="title">Important Notes</div>
+  <p>
+    &bull; Process names are <strong>case-sensitive</strong>: use "Heating" not "heating" or "HEATING".<br>
+    &bull; Empty optional fields should be left blank (not "0" or "null") &mdash; just leave nothing between the commas.<br>
+    &bull; The file must have a <strong>.csv</strong> extension.<br>
+    &bull; UTF-8 encoding is recommended. Avoid special characters in file names.<br>
+    &bull; If N&#8322; is not enabled on the system, Nitrogen steps are automatically skipped during cure.
+  </p>
 </div>
 
 <div class="footer">

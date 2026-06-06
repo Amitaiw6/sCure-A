@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
 
+export interface TelemetrySample {
+  t: number                     // seconds since start
+  chamberTemp: number
+  uvOn: boolean
+  uvType?: '405nm' | '450nm' | null  // Cure=405nm, Bleacher=450nm
+  ledTemps?: { right: number; left: number; door: number; back: number }
+}
+
 export interface CureLog {
   id: string
   materialName: string
@@ -12,15 +20,18 @@ export interface CureLog {
   status: 'running' | 'completed' | 'aborted' | 'error'
   phases: string[]              // e.g. ["Drying", "Heating", "Cure", "Cooling"]
   targetTemp: number | null
+  serialNumber?: string
+  telemetry?: TelemetrySample[]
 }
 
 interface CureHistoryContextType {
   logs: CureLog[]
   activeLog: CureLog | null
-  startCure: (materialName: string, steps: number, phases: string[], targetTemp: number | null) => string
+  startCure: (materialName: string, steps: number, phases: string[], targetTemp: number | null, serialNumber?: string) => string
   completeCure: (id: string) => void
   abortCure: (id: string, stepsCompleted: number) => void
   errorCure: (id: string, stepsCompleted: number) => void
+  recordTelemetry: (id: string, sample: TelemetrySample) => void
 }
 
 const STORAGE_KEY = 'scure-cure-history'
@@ -44,7 +55,7 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
 
   const activeLog = logs.find(l => l.status === 'running') ?? null
 
-  const startCure = useCallback((materialName: string, steps: number, phases: string[], targetTemp: number | null) => {
+  const startCure = useCallback((materialName: string, steps: number, phases: string[], targetTemp: number | null, serialNumber?: string) => {
     const id = crypto.randomUUID()
     const log: CureLog = {
       id,
@@ -57,6 +68,7 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
       status: 'running',
       phases,
       targetTemp,
+      serialNumber,
     }
     setLogs(prev => [log, ...prev])
     return id
@@ -71,6 +83,14 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  const recordTelemetry = useCallback((id: string, sample: TelemetrySample) => {
+    setLogs(prev => prev.map(l => {
+      if (l.id !== id) return l
+      const telemetry = [...(l.telemetry ?? []), sample]
+      return { ...l, telemetry }
+    }))
+  }, [])
+
   const completeCure = useCallback((id: string) => {
     const log = logs.find(l => l.id === id)
     finishCure(id, 'completed', log?.steps ?? 0)
@@ -79,7 +99,7 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
   const errorCure = useCallback((id: string, stepsCompleted: number) => finishCure(id, 'error', stepsCompleted), [finishCure])
 
   return (
-    <CureHistoryContext.Provider value={{ logs, activeLog, startCure, completeCure, abortCure, errorCure }}>
+    <CureHistoryContext.Provider value={{ logs, activeLog, startCure, completeCure, abortCure, errorCure, recordTelemetry }}>
       {children}
     </CureHistoryContext.Provider>
   )

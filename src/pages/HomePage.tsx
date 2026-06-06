@@ -57,14 +57,23 @@ export default function HomePage() {
     setEditingMaterial(null)
   }
 
+  // Resolve material from print selection or direct selection
+  const selectedPrint = recentLogs.find(l => l.id === selectedPrintId)
+  const materialFromPrint = selectedPrint ? materials.find(m => m.name === selectedPrint.materialName) : null
+  const activeMaterialId = selectedMaterialId ?? materialFromPrint?.id ?? null
+
   const handleStartCure = () => {
-    const mat = materials.find(m => m.id === selectedMaterialId)
+    const mat = materials.find(m => m.id === activeMaterialId)
     if (!mat) return
     // If all non-nitrogen steps would be empty after filtering, can't run
     const nonN2Steps = mat.steps.filter(s => s.process !== 'Nitrogen')
     if (nonN2Steps.length === 0 && !hw.nitrogenMode) {
       setN2Error(true)
       return
+    }
+    // Ensure the material is selected in context before navigating
+    if (activeMaterialId !== selectedMaterialId) {
+      setSelectedMaterialId(activeMaterialId)
     }
     navigate('/cure-process')
   }
@@ -117,9 +126,7 @@ export default function HomePage() {
                 <span className="text-cyan-400 text-xs shrink-0">{log.duration}min</span>
                 <span className="text-muted-foreground text-xs shrink-0">{timeAgo(log.date)}</span>
                 <span className="text-muted-foreground/50 text-[10px] shrink-0">{log.printerName}</span>
-                {matchingMaterial && (
-                  <ChevronRight size={14} className="text-muted-foreground shrink-0" />
-                )}
+                <ChevronRight size={14} className="text-muted-foreground shrink-0" />
               </div>
             )
           })}
@@ -198,7 +205,7 @@ export default function HomePage() {
 
       {/* Start Cure Button */}
       <div className="fixed bottom-4 right-4">
-        <Button onClick={handleStartCure} disabled={!selectedMaterialId} className="gap-2 rounded-xl px-5 py-2.5 text-sm">
+        <Button onClick={handleStartCure} disabled={!activeMaterialId} className="gap-2 rounded-xl px-5 py-2.5 text-sm">
           Start Cure
           <Play size={16} fill="currentColor" />
         </Button>

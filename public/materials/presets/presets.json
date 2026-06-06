@@ -25,7 +25,7 @@
     "steps": [
       { "step": 1, "process": "Drying", "temperature": 45, "intensity": null, "time": 8 },
       { "step": 2, "process": "Heating", "temperature": 55, "intensity": null, "time": 5 },
-      { "step": 3, "process": "Cure", "temperature": 55, "intensity": null, "time": 15, "uvIntensity": 20, "timerMode": "on-ramp", "uvStartMode": "at-ramp-percent", "uvRampPercent": 50 },
+      { "step": 3, "process": "Cure", "temperature": 55, "intensity": null, "time": 15, "uvIntensity": 20, "timerMode": "on-target", "uvStartMode": "at-target" },
       { "step": 4, "process": "Cooling", "temperature": 25, "coolingMode": "medium" },
       { "step": 5, "process": "Drying", "temperature": 30, "intensity": null, "time": 5 }
     ]
@@ -57,7 +57,7 @@
     "steps": [
       { "step": 1, "process": "Drying", "temperature": 35, "intensity": null, "time": 8 },
       { "step": 2, "process": "Heating", "temperature": 45, "intensity": null, "time": 5 },
-      { "step": 3, "process": "Cure", "temperature": 45, "intensity": null, "time": 25, "uvIntensity": 15, "timerMode": "on-ramp", "uvStartMode": "at-target" },
+      { "step": 3, "process": "Cure", "temperature": 45, "intensity": null, "time": 25, "uvIntensity": 15, "timerMode": "on-target", "uvStartMode": "at-target" },
       { "step": 4, "process": "Cooling", "temperature": 25, "coolingMode": "slow" },
       { "step": 5, "process": "Nitrogen", "temperature": null, "intensity": null },
       { "step": 6, "process": "Bleacher", "temperature": 40, "intensity": null, "time": 10, "uvIntensity": 20, "timerMode": "on-target", "uvStartMode": "at-target" },

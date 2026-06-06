@@ -47,7 +47,7 @@ export default function PhaseCard({
 
   return (
     <div className={cn(
-      'rounded-xl p-3 flex flex-col items-center w-[200px] shrink-0 bg-card snap-start',
+      'rounded-xl p-3 flex flex-col items-center w-[240px] min-w-[240px] shrink-0 bg-card snap-start',
       isActive && `border-2 ${config.borderColor}`,
       isPending && 'border border-dashed border-border',
       !isActive && !isPending && `border-2 ${config.borderColor}`
@@ -82,10 +82,6 @@ export default function PhaseCard({
         )}
       </div>
 
-      {/* Time left */}
-      <p className={cn('mt-1.5 text-xs', isPending ? 'text-muted-foreground/40' : 'text-muted-foreground')}>
-        Time left: <span className={cn('font-bold', isPending ? 'text-muted-foreground/40' : 'text-foreground')}>{timeLeft}</span>
-      </p>
 
       {/* Range bar */}
       <div className={cn('w-full mt-1.5', isPending && 'opacity-30')}>

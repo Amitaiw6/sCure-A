@@ -105,20 +105,21 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
                   <th className="text-left py-0.5 font-medium">Step</th>
                   <th className="text-left py-0.5 font-medium">Process</th>
                   <th className="text-left py-0.5 font-medium">Temp</th>
-                  <th className="text-left py-0.5 font-medium">Int</th>
                   <th className="text-left py-0.5 font-medium">Time</th>
-                  <th className="text-left py-0.5 font-medium">Rate</th>
+                  <th className="text-left py-0.5 font-medium">UV%</th>
+                  <th className="text-left py-0.5 font-medium">Mode</th>
                 </tr>
               </thead>
               <tbody className="text-foreground/80">
-                <tr><td className="py-0.5 text-muted-foreground">1</td><td>Heating</td><td>40</td><td></td><td>10</td><td></td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">2</td><td>Drying</td><td>40</td><td></td><td>10</td><td></td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">3</td><td>Cure</td><td>60</td><td>30</td><td>10</td><td></td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">4</td><td>Bleacher</td><td>60</td><td>40</td><td>10</td><td></td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">5</td><td>Cooling</td><td></td><td></td><td>5</td><td>5</td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">1</td><td>Drying</td><td>40</td><td>10</td><td></td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">2</td><td>Heating</td><td>60</td><td>5</td><td></td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">3</td><td>Nitrogen</td><td></td><td></td><td></td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">4</td><td>Cure</td><td>60</td><td>15</td><td>30</td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">5</td><td>Bleacher</td><td>60</td><td>10</td><td>40</td><td></td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">6</td><td>Cooling</td><td>25</td><td></td><td></td><td>medium</td></tr>
               </tbody>
             </table>
-            <p className="text-[9px] text-muted-foreground/60 mt-1.5">Temp: 20-80°C · Int: 0-100% · Time: 1-120min · Rate: 1-20°C/min</p>
+            <p className="text-[9px] text-muted-foreground/60 mt-1.5">Temp: 20-80°C · Time: 1-120min · UV: 5-100% · Mode: fast/medium/slow</p>
           </div>
         </div>
 

@@ -110,7 +110,6 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       data.timerMode = timerMode
       data.uvIntensity = uvIntensity ?? 30
       data.uvStartMode = uvStartMode
-      if (uvStartMode === 'at-ramp-percent') data.uvRampPercent = uvRampPercent
     }
     onSave(data)
   }
@@ -226,8 +225,8 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="on-target">At temperature</SelectItem>
                     <SelectItem value="on-ramp">On ramp start</SelectItem>
+                    <SelectItem value="on-target">At temperature</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -253,27 +252,11 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="at-start">Immediately</SelectItem>
+                    <SelectItem value="at-start">On ramp start</SelectItem>
                     <SelectItem value="at-target">At temperature</SelectItem>
-                    <SelectItem value="at-ramp-percent">At ramp %</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
-              {uvStartMode === 'at-ramp-percent' && (
-                <div className="flex items-center justify-between gap-4">
-                  <label className="text-foreground text-sm whitespace-nowrap">Ramp %:</label>
-                  <TouchNumber
-                    value={uvRampPercent}
-                    onChange={v => setUvRampPercent(v ?? 50)}
-                    min={10}
-                    max={100}
-                    step={10}
-                    suffix="%"
-                    className="w-[160px]"
-                  />
-                </div>
-              )}
             </>
           )}
         </div>

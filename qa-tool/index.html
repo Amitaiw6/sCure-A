@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sCure QA Tool</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+
+  .header { background: #111; border-bottom: 2px solid #f44336; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .header h1 { font-size: 18px; color: #f44336; }
+  .header .version { font-size: 11px; color: #666; margin-top: 2px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .status-dot.connected { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .status-dot.disconnected { background: #f44336; }
+  .status-label { font-size: 11px; color: #888; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+  .config-bar { background: #151515; border: 1px solid #222; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 14px; }
+  .config-bar label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .config-bar input { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; color: #fff; font-size: 13px; width: 250px; }
+  .config-bar input:focus { outline: none; border-color: #f44336; }
+
+  .btn { padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+  .btn:active { transform: scale(0.97); }
+  .btn-run { background: #f44336; color: #fff; }
+  .btn-run:hover { background: #e53935; }
+  .btn-run:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-stop { background: #ff9800; color: #000; }
+  .btn-outline { background: transparent; border: 1px solid #444; color: #ccc; }
+  .btn-outline:hover { border-color: #888; color: #fff; }
+  .btn-small { padding: 5px 12px; font-size: 11px; border-radius: 6px; }
+
+  .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+  .summary-card { background: #151515; border: 1px solid #222; border-radius: 10px; padding: 14px; text-align: center; }
+  .summary-card .num { font-size: 28px; font-weight: 700; line-height: 1; }
+  .summary-card .label { font-size: 10px; color: #888; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.5px; }
+  .num.pass { color: #4caf50; }
+  .num.fail { color: #f44336; }
+  .num.warn { color: #ff9800; }
+  .num.skip { color: #666; }
+  .num.total { color: #fff; }
+
+  .progress-bar { width: 100%; height: 6px; background: #1a1a1a; border-radius: 4px; margin-bottom: 20px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s; background: linear-gradient(90deg, #f44336, #ff9800, #4caf50); }
+
+  .category { margin-bottom: 16px; }
+  .category-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #151515; border: 1px solid #222; border-radius: 10px 10px 0 0; cursor: pointer; user-select: none; }
+  .category-header:hover { background: #1a1a1a; }
+  .category-header h3 { font-size: 14px; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .category-header .cat-icon { font-size: 16px; }
+  .category-header .cat-stats { font-size: 11px; color: #666; }
+  .category-header .expand { color: #555; transition: transform 0.2s; }
+  .category.open .expand { transform: rotate(180deg); }
+
+  .test-list { border: 1px solid #222; border-top: none; border-radius: 0 0 10px 10px; overflow: hidden; }
+  .category:not(.open) .test-list { display: none; }
+
+  .test-row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #1a1a1a; transition: background 0.15s; }
+  .test-row:last-child { border-bottom: none; }
+  .test-row:hover { background: #131313; }
+  .test-row.running { background: rgba(244, 67, 54, 0.05); }
+
+  .test-status { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; shrink: 0; }
+  .test-status.pending { background: #1a1a1a; color: #444; }
+  .test-status.running { background: #f44336; color: #fff; animation: pulse 1s infinite; }
+  .test-status.pass { background: #1b5e20; color: #4caf50; }
+  .test-status.fail { background: #b71c1c; color: #f44336; }
+  .test-status.warn { background: #e65100; color: #ff9800; }
+  .test-status.skip { background: #1a1a1a; color: #555; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  .test-info { flex: 1; }
+  .test-name { font-size: 12px; color: #ddd; }
+  .test-desc { font-size: 10px; color: #555; margin-top: 1px; }
+
+  .test-result { font-size: 11px; font-family: monospace; color: #888; max-width: 300px; text-align: right; }
+  .test-result.pass { color: #4caf50; }
+  .test-result.fail { color: #f44336; }
+  .test-result.warn { color: #ff9800; }
+
+  .test-time { font-size: 10px; color: #444; font-family: monospace; width: 50px; text-align: right; }
+
+  .log-section { margin-top: 20px; }
+  .log-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .log-header h3 { font-size: 13px; color: #888; }
+  .log-box { background: #0d0d0d; border: 1px solid #222; border-radius: 10px; padding: 12px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 11px; line-height: 1.6; }
+  .log-line { color: #555; }
+  .log-line.info { color: #888; }
+  .log-line.pass { color: #4caf50; }
+  .log-line.fail { color: #f44336; }
+  .log-line.warn { color: #ff9800; }
+  .log-line .ts { color: #333; margin-right: 8px; }
+
+  .report-modal { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; }
+  .report-modal.open { display: flex; }
+  .report-content { background: #151515; border: 1px solid #333; border-radius: 14px; padding: 24px; width: 600px; max-height: 80vh; overflow-y: auto; }
+  .report-content h2 { color: #fff; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>sCure QA Tool</h1>
+    <div class="version">v1.0.0 - Hardware & Software Quality Assurance</div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot disconnected" id="statusDot"></div>
+    <span class="status-label" id="statusLabel">Disconnected</span>
+    <button class="btn btn-outline btn-small" onclick="exportReport()">Export Report</button>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Config -->
+  <div class="config-bar">
+    <label>API URL:</label>
+    <input type="text" id="apiUrl" value="http://localhost:3001" onchange="checkConnection()">
+    <button class="btn btn-outline btn-small" onclick="checkConnection()">Connect</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-run" id="runAllBtn" onclick="runAllTests()" disabled>Run All Tests</button>
+    <button class="btn btn-stop btn-small" id="stopBtn" onclick="stopTests()" style="display:none">Stop</button>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <div class="summary-card"><div class="num total" id="sumTotal">0</div><div class="label">Total</div></div>
+    <div class="summary-card"><div class="num pass" id="sumPass">0</div><div class="label">Passed</div></div>
+    <div class="summary-card"><div class="num fail" id="sumFail">0</div><div class="label">Failed</div></div>
+    <div class="summary-card"><div class="num warn" id="sumWarn">0</div><div class="label">Warnings</div></div>
+    <div class="summary-card"><div class="num skip" id="sumSkip">0</div><div class="label">Skipped</div></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+
+  <!-- Test Categories -->
+  <div id="testCategories"></div>
+
+  <!-- Log -->
+  <div class="log-section">
+    <div class="log-header">
+      <h3>Test Log</h3>
+      <button class="btn btn-outline btn-small" onclick="clearLog()">Clear</button>
+    </div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+</div>
+
+<!-- Report Modal -->
+<div class="report-modal" id="reportModal">
+  <div class="report-content" id="reportContent"></div>
+</div>
+
+<script>
+// ============================================================
+// Test Definitions
+// ============================================================
+const TEST_CATEGORIES = [
+  {
+    id: 'api',
+    name: 'API Connectivity',
+    icon: '🌐',
+    tests: [
+      { id: 'api_state', name: 'GET /api/state', desc: 'Verify hardware state endpoint responds', endpoint: '/api/state', method: 'GET', expect: 'chamberTemp' },
+      { id: 'api_network', name: 'GET /api/network/status', desc: 'Verify network status endpoint', endpoint: '/api/network/status', method: 'GET', expect: 'connected' },
+      { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
+      { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
+    ]
+  },
+  {
+    id: 'temperature',
+    name: 'Temperature System',
+    icon: '🌡',
+    tests: [
+      { id: 'temp_read', name: 'Temperature Sensor Read', desc: 'Read current chamber temperature', endpoint: '/api/state', method: 'GET', check: 'temp_range' },
+      { id: 'temp_set', name: 'Set Target Temperature', desc: 'Set target to 40°C and verify', endpoint: '/api/chamber/temperature?target=40', method: 'POST', check: 'temp_set' },
+      { id: 'temp_stop', name: 'Stop Heating', desc: 'Stop heating and verify', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
+    ]
+  },
+  {
+    id: 'fans',
+    name: 'Fan System',
+    icon: '💨',
+    tests: [
+      { id: 'fan_led', name: 'LED Cooling Fan', desc: 'Set LED cooling fan to 50% and verify', endpoint: '/api/fans/led_cooling?speed=50', method: 'POST', expect: 'ok' },
+      { id: 'fan_intake', name: 'Chamber Intake Fan', desc: 'Set chamber intake fan to 50%', endpoint: '/api/fans/chamber_intake?speed=50', method: 'POST', expect: 'ok' },
+      { id: 'fan_heating', name: 'Chamber Heating Fan', desc: 'Set heating fan to 50%', endpoint: '/api/fans/chamber_heating?speed=50', method: 'POST', expect: 'ok' },
+      { id: 'fan_test', name: 'Fan Diagnostic Test', desc: 'Run fan RPM test', endpoint: '/api/diagnostics/fan-test', method: 'POST', check: 'fan_rpm' },
+      { id: 'fan_stop', name: 'Stop All Fans', desc: 'Set all fans to 0%', endpoint: '/api/fans/led_cooling?speed=0', method: 'POST', expect: 'ok' },
+    ]
+  },
+  {
+    id: 'leds',
+    name: 'UV LED System',
+    icon: '💡',
+    tests: [
+      { id: 'led_test', name: 'LED Diagnostic', desc: 'Run full LED diagnostic test', endpoint: '/api/diagnostics/led-test', method: 'POST', check: 'led_results' },
+    ]
+  },
+  {
+    id: 'mechanical',
+    name: 'Mechanical Systems',
+    icon: '⚙',
+    tests: [
+      { id: 'door_open', name: 'Door Open', desc: 'Open the door', endpoint: '/api/door/open', method: 'POST', expect: 'ok' },
+      { id: 'damper_open', name: 'Damper Open', desc: 'Open the damper', endpoint: '/api/damper/open', method: 'POST', expect: 'ok' },
+      { id: 'damper_close', name: 'Damper Close', desc: 'Close the damper', endpoint: '/api/damper/close', method: 'POST', expect: 'ok' },
+    ]
+  },
+  {
+    id: 'config',
+    name: 'Configuration Files',
+    icon: '📁',
+    tests: [
+      { id: 'cfg_presets', name: 'Presets JSON', desc: 'Validate presets.json loads and has materials', url: '/materials/presets/presets.json', check: 'presets' },
+      { id: 'cfg_errors', name: 'Errors JSON', desc: 'Validate errors.json structure', url: '/config/errors.json', check: 'errors' },
+      { id: 'cfg_system', name: 'System JSON', desc: 'Validate system.json config', url: '/config/system.json', check: 'system' },
+    ]
+  },
+  {
+    id: 'network',
+    name: 'Network Diagnostics',
+    icon: '📡',
+    tests: [
+      { id: 'net_ping', name: 'Ping Test (8.8.8.8)', desc: 'Ping Google DNS', endpoint: '/api/network/diagnostics', method: 'POST', body: { tool: 'ping', address: '8.8.8.8' }, expect: 'ok' },
+      { id: 'net_dns', name: 'DNS Lookup', desc: 'Resolve google.com', endpoint: '/api/network/diagnostics', method: 'POST', body: { tool: 'nslookup', address: 'google.com' }, expect: 'ok' },
+    ]
+  },
+  {
+    id: 'system',
+    name: 'System Functions',
+    icon: '🖥',
+    tests: [
+      { id: 'sys_logs', name: 'Export Logs', desc: 'Test log export function', endpoint: '/api/system/export-logs', method: 'POST', expect: 'ok' },
+    ]
+  },
+  {
+    id: 'program_validation',
+    name: 'Program Validation (Cure Builder)',
+    icon: '📋',
+    tests: [
+      { id: 'pv_empty_name', name: 'Empty Name Blocked', desc: 'Program without a name cannot be saved', check: 'pv_empty_name' },
+      { id: 'pv_no_steps', name: 'No Steps Blocked', desc: 'Program with zero steps cannot be saved', check: 'pv_no_steps' },
+      { id: 'pv_valid_simple', name: 'Simple Valid Program', desc: 'Heating → Cooling program passes validation', check: 'pv_valid_simple' },
+      { id: 'pv_n2_no_process', name: 'N₂ Without Process After', desc: 'N₂ without Heating/Cure/Bleaching after it is blocked', check: 'pv_n2_no_process' },
+      { id: 'pv_n2_with_heating', name: 'N₂ + Heating Passes', desc: 'N₂ followed by Heating passes the process check', check: 'pv_n2_with_heating' },
+      { id: 'pv_n2_with_cure', name: 'N₂ + Cure Passes', desc: 'N₂ followed by Cure passes the process check', check: 'pv_n2_with_cure' },
+      { id: 'pv_n2_with_bleacher', name: 'N₂ + Bleaching Passes', desc: 'N₂ followed by Bleaching passes the process check', check: 'pv_n2_with_bleacher' },
+      { id: 'pv_n2_no_cooling', name: 'N₂ + Process But No Cooling', desc: 'N₂ with Heating but no Cooling step is blocked', check: 'pv_n2_no_cooling' },
+      { id: 'pv_n2_with_cooling', name: 'N₂ + Process + Cooling Passes', desc: 'N₂ → Heating → Cooling passes all validations', check: 'pv_n2_with_cooling' },
+      { id: 'pv_n2_cure_cooling', name: 'N₂ + Cure + Cooling Passes', desc: 'N₂ → Cure → Cooling is a fully valid program', check: 'pv_n2_cure_cooling' },
+      { id: 'pv_only_cooling', name: 'Only Cooling Blocked', desc: 'Program with only Cooling (no Cure/Heating) is blocked', check: 'pv_only_cooling' },
+    ]
+  },
+  {
+    id: 'csv_import',
+    name: 'CSV Import Validation',
+    icon: '📄',
+    tests: [
+      { id: 'csv_valid_basic', name: 'Valid Basic CSV', desc: 'Heating → Cooling CSV parses correctly', check: 'csv_valid_basic' },
+      { id: 'csv_valid_n2', name: 'Valid N₂ CSV', desc: 'Heating → N₂ → Cure → Cooling CSV parses correctly', check: 'csv_valid_n2' },
+      { id: 'csv_valid_full', name: 'Valid Full CSV', desc: 'All 6 process types CSV parses correctly', check: 'csv_valid_full' },
+      { id: 'csv_invalid_process', name: 'Invalid Process Rejected', desc: 'Unknown process type is rejected', check: 'csv_invalid_process' },
+      { id: 'csv_bad_temp', name: 'Bad Temperature Rejected', desc: 'Temperature >80 is rejected', check: 'csv_bad_temp' },
+      { id: 'csv_bad_time', name: 'Bad Time Rejected', desc: 'Time >120 is rejected', check: 'csv_bad_time' },
+      { id: 'csv_n2_no_process', name: 'N₂ Without Process Rejected', desc: 'N₂ → Cooling without Heating/Cure after is rejected', check: 'csv_n2_no_process' },
+      { id: 'csv_n2_no_cooling', name: 'N₂ Without Cooling Rejected', desc: 'N₂ + Heating without Cooling step is rejected', check: 'csv_n2_no_cooling' },
+      { id: 'csv_n2_max3', name: 'Max 2 N₂ Steps', desc: '3 Nitrogen steps are rejected', check: 'csv_n2_max3' },
+      { id: 'csv_temp_decrease', name: 'Temp Decrease Rejected', desc: 'Temperature drop without Cooling is rejected', check: 'csv_temp_decrease' },
+      { id: 'csv_cooling_mode', name: 'CoolingMode Parsed', desc: 'CoolingMode fast/medium/slow parsed correctly', check: 'csv_cooling_mode' },
+      { id: 'csv_empty', name: 'Empty CSV Rejected', desc: 'CSV with only header is rejected', check: 'csv_empty' },
+    ]
+  },
+  {
+    id: 'csv_format',
+    name: 'CSV Format & Columns',
+    icon: '📐',
+    tests: [
+      { id: 'fmt_header', name: 'Header Format', desc: 'Exported CSV has correct 9-column header', check: 'fmt_header' },
+      { id: 'fmt_nitrogen_row', name: 'Nitrogen Row Format', desc: 'Nitrogen row has empty temp and time', check: 'fmt_nitrogen_row' },
+      { id: 'fmt_cooling_row', name: 'Cooling Row Format', desc: 'Cooling row has CoolingMode in column 9', check: 'fmt_cooling_row' },
+      { id: 'fmt_cure_row', name: 'Cure Row Format', desc: 'Cure row has TimerMode, UVIntensity, UVStart', check: 'fmt_cure_row' },
+      { id: 'fmt_roundtrip', name: 'Export→Import Roundtrip', desc: 'Exported CSV can be re-imported without errors', check: 'fmt_roundtrip' },
+    ]
+  },
+  {
+    id: 'performance',
+    name: 'Performance & Stress',
+    icon: '⚡',
+    tests: [
+      { id: 'perf_state_latency', name: 'API Latency (state)', desc: 'Average response time over 10 calls to /api/state', check: 'perf_latency', endpoint: '/api/state', method: 'GET', iterations: 10 },
+      { id: 'perf_burst', name: 'API Burst (20 requests)', desc: 'Fire 20 simultaneous requests and check all succeed', check: 'perf_burst', endpoint: '/api/state', method: 'GET', iterations: 20 },
+      { id: 'perf_materials_load', name: 'Materials Load Time', desc: 'Time to load all materials (presets + user)', check: 'perf_multi_load' },
+      { id: 'perf_temp_response', name: 'Heater Response Time', desc: 'Set target temp and measure time until acknowledged', endpoint: '/api/chamber/temperature?target=30', method: 'POST', check: 'perf_simple' },
+      { id: 'perf_fan_response', name: 'Fan Command Response', desc: 'Set fan speed and measure response time', endpoint: '/api/fans/led_cooling?speed=25', method: 'POST', check: 'perf_simple' },
+      { id: 'perf_stop_cleanup', name: 'Cleanup (stop heater/fan)', desc: 'Stop heater and reset fan to 0', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
+    ]
+  },
+];
+
+// ============================================================
+// State
+// ============================================================
+let isConnected = false;
+let isRunning = false;
+let shouldStop = false;
+let testResults = {};
+let logLines = [];
+let startTime = null;
+
+// ============================================================
+// Init
+// ============================================================
+function init() {
+  renderCategories();
+  checkConnection();
+}
+
+// ============================================================
+// Connection
+// ============================================================
+async function checkConnection() {
+  const url = document.getElementById('apiUrl').value;
+  const dot = document.getElementById('statusDot');
+  const label = document.getElementById('statusLabel');
+  const btn = document.getElementById('runAllBtn');
+
+  try {
+    const res = await fetch(url + '/api/state', { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      isConnected = true;
+      dot.className = 'status-dot connected';
+      label.textContent = 'Connected';
+      btn.disabled = false;
+      log('info', 'Connected to API at ' + url);
+    } else {
+      throw new Error('Bad response');
+    }
+  } catch (e) {
+    isConnected = false;
+    dot.className = 'status-dot disconnected';
+    label.textContent = 'Disconnected';
+    btn.disabled = true;
+    log('fail', 'Cannot connect to API at ' + url);
+  }
+}
+
+// ============================================================
+// Render
+// ============================================================
+function renderCategories() {
+  const container = document.getElementById('testCategories');
+  let totalTests = 0;
+
+  container.innerHTML = TEST_CATEGORIES.map(cat => {
+    totalTests += cat.tests.length;
+    return `
+    <div class="category open" id="cat-${cat.id}">
+      <div class="category-header" onclick="toggleCategory('${cat.id}')">
+        <h3><span class="cat-icon">${cat.icon}</span> ${cat.name}</h3>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="cat-stats" id="cat-stats-${cat.id}">${cat.tests.length} tests</span>
+          <button class="btn btn-outline btn-small" onclick="event.stopPropagation();runCategory('${cat.id}')">Run</button>
+          <span class="expand">&#9660;</span>
+        </div>
+      </div>
+      <div class="test-list">
+        ${cat.tests.map(t => `
+          <div class="test-row" id="row-${t.id}">
+            <div class="test-status pending" id="status-${t.id}">-</div>
+            <div class="test-info">
+              <div class="test-name">${t.name}</div>
+              <div class="test-desc">${t.desc}</div>
+            </div>
+            <div class="test-result" id="result-${t.id}"></div>
+            <div class="test-time" id="time-${t.id}"></div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('sumTotal').textContent = totalTests;
+}
+
+function toggleCategory(id) {
+  document.getElementById('cat-' + id).classList.toggle('open');
+}
+
+function updateSummary() {
+  const values = Object.values(testResults);
+  const pass = values.filter(r => r === 'pass').length;
+  const fail = values.filter(r => r === 'fail').length;
+  const warn = values.filter(r => r === 'warn').length;
+  const skip = values.filter(r => r === 'skip').length;
+  const total = TEST_CATEGORIES.reduce((s, c) => s + c.tests.length, 0);
+
+  document.getElementById('sumPass').textContent = pass;
+  document.getElementById('sumFail').textContent = fail;
+  document.getElementById('sumWarn').textContent = warn;
+  document.getElementById('sumSkip').textContent = skip;
+
+  const done = pass + fail + warn + skip;
+  document.getElementById('progressFill').style.width = Math.round((done / total) * 100) + '%';
+
+  // Update category stats
+  TEST_CATEGORIES.forEach(cat => {
+    const catResults = cat.tests.map(t => testResults[t.id]).filter(Boolean);
+    const catPass = catResults.filter(r => r === 'pass').length;
+    const catFail = catResults.filter(r => r === 'fail').length;
+    const el = document.getElementById('cat-stats-' + cat.id);
+    if (catResults.length === 0) {
+      el.textContent = cat.tests.length + ' tests';
+    } else {
+      el.innerHTML = `<span style="color:#4caf50">${catPass}P</span> / <span style="color:#f44336">${catFail}F</span> / ${cat.tests.length}`;
+    }
+  });
+}
+
+function setTestStatus(testId, status, result, time) {
+  testResults[testId] = status;
+
+  const statusEl = document.getElementById('status-' + testId);
+  const resultEl = document.getElementById('result-' + testId);
+  const timeEl = document.getElementById('time-' + testId);
+  const rowEl = document.getElementById('row-' + testId);
+
+  const icons = { pending: '-', running: '...', pass: '✓', fail: '✗', warn: '!', skip: '—' };
+  statusEl.className = 'test-status ' + status;
+  statusEl.textContent = icons[status] || '-';
+  resultEl.textContent = result || '';
+  resultEl.className = 'test-result ' + status;
+  timeEl.textContent = time ? time + 'ms' : '';
+  rowEl.className = 'test-row' + (status === 'running' ? ' running' : '');
+
+  updateSummary();
+}
+
+// ============================================================
+// Test Runner
+// ============================================================
+async function runAllTests() {
+  if (isRunning) return;
+  isRunning = true;
+  shouldStop = false;
+  startTime = Date.now();
+
+  document.getElementById('runAllBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = '';
+
+  // Reset all
+  testResults = {};
+  TEST_CATEGORIES.forEach(cat => cat.tests.forEach(t => setTestStatus(t.id, 'pending', '', '')));
+  updateSummary();
+
+  log('info', '=== QA Test Run Started ===');
+
+  for (const cat of TEST_CATEGORIES) {
+    if (shouldStop) break;
+    log('info', `--- ${cat.name} ---`);
+    for (const test of cat.tests) {
+      if (shouldStop) { setTestStatus(test.id, 'skip', 'Stopped', ''); continue; }
+      await runSingleTest(test);
+    }
+  }
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const vals = Object.values(testResults);
+  const pass = vals.filter(r => r === 'pass').length;
+  const fail = vals.filter(r => r === 'fail').length;
+  log(fail > 0 ? 'fail' : 'pass', `=== QA Complete: ${pass} passed, ${fail} failed in ${elapsed}s ===`);
+
+  isRunning = false;
+  document.getElementById('runAllBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+}
+
+async function runCategory(catId) {
+  const cat = TEST_CATEGORIES.find(c => c.id === catId);
+  if (!cat || isRunning) return;
+  isRunning = true;
+  shouldStop = false;
+
+  log('info', `--- Running: ${cat.name} ---`);
+  for (const test of cat.tests) {
+    if (shouldStop) break;
+    await runSingleTest(test);
+  }
+  isRunning = false;
+}
+
+function stopTests() {
+  shouldStop = true;
+  log('warn', 'Test run stopped by user');
+}
+
+async function runSingleTest(test) {
+  setTestStatus(test.id, 'running', 'Running...', '');
+  const t0 = Date.now();
+  const apiUrl = document.getElementById('apiUrl').value;
+
+  try {
+    // Local validation tests (no API needed)
+    if (test.check && test.check.startsWith('csv_')) {
+      const result = runCsvImportCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('fmt_')) {
+      const result = runCsvFormatCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('pv_')) {
+      const result = runProgramValidationCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Performance tests with special logic
+    if (test.check === 'perf_latency') {
+      const times = [];
+      for (let i = 0; i < (test.iterations || 10); i++) {
+        const s = Date.now();
+        await fetch(apiUrl + test.endpoint, { signal: AbortSignal.timeout(5000) });
+        times.push(Date.now() - s);
+        setTestStatus(test.id, 'running', `${i + 1}/${test.iterations}...`, '');
+      }
+      const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+      const max = Math.max(...times);
+      const min = Math.min(...times);
+      const elapsed = Date.now() - t0;
+      const status = avg < 100 ? 'pass' : avg < 300 ? 'warn' : 'fail';
+      setTestStatus(test.id, status, `avg ${avg}ms (min ${min}, max ${max})`, elapsed);
+      log(status, `${test.name}: avg=${avg}ms min=${min}ms max=${max}ms (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+
+    if (test.check === 'perf_burst') {
+      const n = test.iterations || 20;
+      const s = Date.now();
+      const promises = Array.from({ length: n }, () =>
+        fetch(apiUrl + test.endpoint, { signal: AbortSignal.timeout(10000) }).then(r => r.ok)
+      );
+      const results = await Promise.all(promises);
+      const elapsed = Date.now() - s;
+      const ok = results.filter(Boolean).length;
+      const status = ok === n ? 'pass' : ok > n * 0.8 ? 'warn' : 'fail';
+      setTestStatus(test.id, status, `${ok}/${n} OK in ${elapsed}ms`, elapsed);
+      log(status, `${test.name}: ${ok}/${n} succeeded in ${elapsed}ms`);
+      await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+
+    if (test.check === 'perf_multi_load') {
+      const s = Date.now();
+      const [presetsRes, userRes] = await Promise.all([
+        fetch('/materials/presets/presets.json', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
+        fetch(apiUrl + '/api/materials/user', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
+      ]);
+      const elapsed = Date.now() - s;
+      const total = presetsRes.length + userRes.length;
+      const status = elapsed < 500 ? 'pass' : elapsed < 1500 ? 'warn' : 'fail';
+      setTestStatus(test.id, status, `${total} materials in ${elapsed}ms`, elapsed);
+      log(status, `${test.name}: ${presetsRes.length} presets + ${userRes.length} user = ${total} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+
+    if (test.check === 'perf_simple') {
+      const opts = { method: test.method, signal: AbortSignal.timeout(5000) };
+      const res = await fetch(apiUrl + test.endpoint, opts);
+      const data = await res.json();
+      const elapsed = Date.now() - t0;
+      const status = data.ok ? (elapsed < 200 ? 'pass' : elapsed < 500 ? 'warn' : 'fail') : 'fail';
+      setTestStatus(test.id, status, `${elapsed}ms response`, elapsed);
+      log(status, `${test.name}: ${elapsed}ms (${data.ok ? 'OK' : 'FAIL'})`);
+      await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+
+    // Standard tests
+    let res, data;
+
+    if (test.url) {
+      res = await fetch(test.url, { signal: AbortSignal.timeout(5000) });
+      data = await res.json();
+    } else {
+      const opts = { method: test.method, signal: AbortSignal.timeout(10000) };
+      if (test.body) {
+        opts.headers = { 'Content-Type': 'application/json' };
+        opts.body = JSON.stringify(test.body);
+      }
+      res = await fetch(apiUrl + test.endpoint, opts);
+      data = await res.json();
+    }
+
+    const elapsed = Date.now() - t0;
+
+    // Check result
+    if (test.expect === 'ok' && data.ok) {
+      setTestStatus(test.id, 'pass', data.message || 'OK', elapsed);
+      log('pass', `${test.name}: OK (${elapsed}ms)`);
+    } else if (test.expect && data[test.expect] !== undefined) {
+      setTestStatus(test.id, 'pass', JSON.stringify(data[test.expect]).slice(0, 50), elapsed);
+      log('pass', `${test.name}: ${test.expect} = ${JSON.stringify(data[test.expect]).slice(0, 40)} (${elapsed}ms)`);
+    } else if (test.expectArray && Array.isArray(data)) {
+      setTestStatus(test.id, 'pass', `${data.length} items`, elapsed);
+      log('pass', `${test.name}: ${data.length} items (${elapsed}ms)`);
+    } else if (test.check) {
+      const checkResult = runCheck(test.check, data);
+      setTestStatus(test.id, checkResult.status, checkResult.msg, elapsed);
+      log(checkResult.status, `${test.name}: ${checkResult.msg} (${elapsed}ms)`);
+    } else {
+      setTestStatus(test.id, 'warn', 'Unexpected response', elapsed);
+      log('warn', `${test.name}: Unexpected response`);
+    }
+  } catch (e) {
+    const elapsed = Date.now() - t0;
+    setTestStatus(test.id, 'fail', e.message, elapsed);
+    log('fail', `${test.name}: ${e.message} (${elapsed}ms)`);
+  }
+
+  // Small delay between tests
+  await new Promise(r => setTimeout(r, 100));
+}
+
+function runCheck(check, data) {
+  switch (check) {
+    case 'temp_range': {
+      const temp = data.chamberTemp;
+      if (typeof temp !== 'number') return { status: 'fail', msg: 'No temperature data' };
+      if (temp < -10 || temp > 120) return { status: 'fail', msg: `Out of range: ${temp}°C` };
+      if (temp < 15 || temp > 85) return { status: 'warn', msg: `Unusual: ${temp}°C` };
+      return { status: 'pass', msg: `${temp}°C` };
+    }
+    case 'temp_set':
+      return data.ok ? { status: 'pass', msg: 'Target set to 40°C' } : { status: 'fail', msg: 'Failed to set target' };
+    case 'fan_rpm': {
+      const rpm = data.rpm;
+      if (!rpm) return { status: 'fail', msg: 'No RPM data' };
+      if (rpm < 1000) return { status: 'fail', msg: `Low RPM: ${rpm}` };
+      if (rpm < 2000) return { status: 'warn', msg: `${rpm} RPM (low)` };
+      return { status: 'pass', msg: `${rpm} RPM` };
+    }
+    case 'led_results': {
+      const results = data.results;
+      if (!results || !Array.isArray(results)) return { status: 'fail', msg: 'No LED data' };
+      const failed = results.filter(r => r.status !== 'OK');
+      if (failed.length > 0) return { status: 'fail', msg: `${failed.length} LED(s) failed` };
+      return { status: 'pass', msg: `${results.length} LEDs OK` };
+    }
+    case 'presets': {
+      if (!Array.isArray(data)) return { status: 'fail', msg: 'Not an array' };
+      if (data.length === 0) return { status: 'warn', msg: 'No presets found' };
+      const valid = data.every(m => m.name && Array.isArray(m.steps) && m.steps.length > 0);
+      if (!valid) return { status: 'fail', msg: 'Invalid preset structure' };
+      return { status: 'pass', msg: `${data.length} presets loaded` };
+    }
+    case 'errors': {
+      if (!data.errors || !Array.isArray(data.errors)) return { status: 'fail', msg: 'No errors array' };
+      const critical = data.errors.filter(e => e.severity === 'critical').length;
+      const warnings = data.errors.filter(e => e.severity === 'warning').length;
+      return { status: 'pass', msg: `${critical} errors, ${warnings} warnings` };
+    }
+    case 'system': {
+      if (!data.serialNumber) return { status: 'fail', msg: 'No serial number' };
+      return { status: 'pass', msg: `S/N: ${data.serialNumber}` };
+    }
+    default: {
+      // Program Validation checks (pv_*)
+      if (check.startsWith('pv_')) return runProgramValidationCheck(check);
+      return { status: 'warn', msg: 'Unknown check' };
+    }
+  }
+}
+
+// ============================================================
+// Program Validation Logic (mirrors CsvBuilderModal)
+// ============================================================
+function validateProgram(name, steps) {
+  const hasNitrogen = steps.some(s => s.process === 'Nitrogen');
+  const hasCooling = steps.some(s => s.process === 'Cooling');
+  const hasCureOrHeating = steps.some(s => s.process === 'Cure' || s.process === 'Bleacher' || s.process === 'Heating');
+
+  const hasProcessAfterN2 = (() => {
+    if (!hasNitrogen) return true;
+    let afterN2 = false;
+    for (const s of steps) {
+      if (s.process === 'Nitrogen') afterN2 = true;
+      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) return true;
+    }
+    return false;
+  })();
+
+  if (!name.trim()) return 'Enter a program name';
+  if (steps.length === 0) return 'Add at least one step';
+  if (!hasCureOrHeating) return 'Program must include a Cure or Heating step';
+  if (hasNitrogen && !hasProcessAfterN2) return 'N₂ requires Heating/Cure/Bleaching after it';
+  if (hasNitrogen && !hasCooling) return 'N₂ requires a Cooling step';
+  return null;
+}
+
+function runProgramValidationCheck(check) {
+  const s = (process, temp, time) => ({ process, temperature: temp ?? null, time: time ?? 10 });
+
+  switch (check) {
+    case 'pv_empty_name': {
+      const err = validateProgram('', [s('Heating', 40)]);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block empty name' };
+    }
+    case 'pv_no_steps': {
+      const err = validateProgram('Test', []);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block empty steps' };
+    }
+    case 'pv_valid_simple': {
+      const err = validateProgram('Test', [s('Heating', 40), s('Cooling', 25)]);
+      return !err ? { status: 'pass', msg: 'Valid program accepted' } : { status: 'fail', msg: 'Rejected valid program: ' + err };
+    }
+    case 'pv_n2_no_process': {
+      const err = validateProgram('Test', [s('Heating', 40), s('Nitrogen'), s('Cooling', 25)]);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block N₂ without process after' };
+    }
+    case 'pv_n2_with_heating': {
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Heating', 60), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return !err ? { status: 'pass', msg: 'N₂ + Heating accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
+    }
+    case 'pv_n2_with_cure': {
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Cure', 40), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return !err ? { status: 'pass', msg: 'N₂ + Cure accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
+    }
+    case 'pv_n2_with_bleacher': {
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Bleacher', 40), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return !err ? { status: 'pass', msg: 'N₂ + Bleaching accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
+    }
+    case 'pv_n2_no_cooling': {
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Heating', 60)];
+      const err = validateProgram('Test', steps);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block N₂ without Cooling' };
+    }
+    case 'pv_n2_with_cooling': {
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Heating', 60), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return !err ? { status: 'pass', msg: 'Full N₂ flow accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
+    }
+    case 'pv_n2_cure_cooling': {
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Cure', 40), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return !err ? { status: 'pass', msg: 'N₂ → Cure → Cooling accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
+    }
+    case 'pv_only_cooling': {
+      const err = validateProgram('Test', [s('Cooling', 25)]);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block program without Cure/Heating' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown validation check' };
+  }
+}
+
+// ============================================================
+// CSV Import Validation (mirrors MaterialContext.parseCsv)
+// ============================================================
+const VALID_PROCESSES = ['Heating', 'Drying', 'Cure', 'Cooling', 'Bleacher', 'Nitrogen'];
+
+function parseCsvForTest(csvContent) {
+  const errors = [];
+  const lines = csvContent.trim().split('\n');
+  if (lines.length < 2) return { steps: null, errors: ['CSV must have a header row and at least one data row'] };
+
+  const header = lines[0].toLowerCase();
+  if (!header.includes('process') && !header.includes('step')) return { steps: null, errors: ['Missing required header'] };
+
+  const steps = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim());
+    if (cols.length < 4) { errors.push(`Row ${i}: Not enough columns`); continue; }
+
+    const process = cols[1];
+    if (!VALID_PROCESSES.includes(process)) { errors.push(`Row ${i}: Invalid process "${process}"`); continue; }
+
+    let time = 0;
+    if (process !== 'Cooling' && process !== 'Nitrogen') {
+      time = parseInt(cols[3]);
+      if (isNaN(time) || time < 1 || time > 120) { errors.push(`Row ${i}: Invalid time "${cols[3]}"`); continue; }
+    }
+
+    const step = { step: parseInt(cols[0]) || i, process, temperature: null, time };
+
+    if (process === 'Nitrogen') { steps.push(step); continue; }
+
+    const temp = cols[2] ? Number(cols[2]) : null;
+    if (temp !== null && (isNaN(temp) || temp < 20 || temp > 80)) { errors.push(`Row ${i}: Invalid temperature "${cols[2]}"`); continue; }
+    step.temperature = temp ?? (process === 'Cooling' ? 25 : 40);
+
+    if (process === 'Cooling') {
+      step.coolingMode = cols[8] || 'medium';
+    }
+    if (process === 'Cure' || process === 'Bleacher') {
+      step.timerMode = cols[4] || '';
+      step.uvIntensity = cols[5] ? Number(cols[5]) : null;
+      step.uvStartMode = cols[6] || '';
+    }
+    steps.push(step);
+  }
+
+  if (steps.length === 0) return { steps: null, errors: errors.length > 0 ? errors : ['No valid steps found'] };
+
+  // Sequence validation
+  let n2Count = 0, needsCoolingOrDrying = false, lastTemp = null;
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i], prev = i > 0 ? steps[i - 1] : null;
+    if (s.process === 'Nitrogen') { n2Count++; if (n2Count > 2) errors.push(`Step ${s.step}: Maximum 2 nitrogen steps`); }
+    if (prev?.process === 'Nitrogen' && (s.process === 'Drying' || s.process === 'Nitrogen')) {
+      errors.push(`Step ${s.step}: After nitrogen, only Heating, Cure, Bleacher, or Cooling`);
+    }
+    if (s.process === 'Nitrogen') needsCoolingOrDrying = true;
+    if (needsCoolingOrDrying && (s.process === 'Cooling' || s.process === 'Drying')) needsCoolingOrDrying = false;
+    if (s.process !== 'Cooling' && s.process !== 'Nitrogen' && s.temperature != null) {
+      if (lastTemp !== null && s.temperature < lastTemp) errors.push(`Step ${s.step}: Temperature cannot decrease without Cooling`);
+      lastTemp = s.temperature;
+    }
+    if (s.process === 'Cooling') lastTemp = null;
+  }
+  if (needsCoolingOrDrying) errors.push('Nitrogen must be vented — add a Cooling step');
+
+  const hasNitrogen = steps.some(s => s.process === 'Nitrogen');
+  if (hasNitrogen) {
+    let found = false, afterN2 = false;
+    for (const s of steps) {
+      if (s.process === 'Nitrogen') afterN2 = true;
+      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) { found = true; break; }
+    }
+    if (!found) errors.push('Add a Heating, Cure, or Bleaching step after N₂ purge');
+  }
+
+  return { steps, errors };
+}
+
+function runCsvImportCheck(check) {
+  const H = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode';
+
+  switch (check) {
+    case 'csv_valid_basic': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Cooling,25,,,,,,medium`);
+      return r.errors.length === 0 ? { status: 'pass', msg: `${r.steps.length} steps parsed` } : { status: 'fail', msg: r.errors[0] };
+    }
+    case 'csv_valid_n2': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Nitrogen,,,,,,,\n3,Cure,40,15,on-target,30,at-target,,\n4,Cooling,25,,,,,,medium`);
+      return r.errors.length === 0 ? { status: 'pass', msg: `${r.steps.length} steps with N₂` } : { status: 'fail', msg: r.errors[0] };
+    }
+    case 'csv_valid_full': {
+      const r = parseCsvForTest(`${H}\n1,Drying,40,10,,,,,\n2,Heating,60,5,,,,,\n3,Nitrogen,,,,,,,\n4,Cure,60,15,on-target,30,at-target,,\n5,Bleacher,60,10,on-target,40,at-start,,\n6,Cooling,25,,,,,,fast`);
+      return r.errors.length === 0 && r.steps.length === 6 ? { status: 'pass', msg: 'All 6 process types OK' } : { status: 'fail', msg: r.errors[0] || 'Wrong step count' };
+    }
+    case 'csv_invalid_process': {
+      const r = parseCsvForTest(`${H}\n1,Baking,40,10,,,,,`);
+      return r.errors.some(e => e.includes('Invalid process')) ? { status: 'pass', msg: 'Rejected invalid process' } : { status: 'fail', msg: 'Should reject invalid process' };
+    }
+    case 'csv_bad_temp': {
+      const r = parseCsvForTest(`${H}\n1,Heating,90,10,,,,,`);
+      return r.errors.some(e => e.includes('temperature')) ? { status: 'pass', msg: 'Rejected temp 90°C' } : { status: 'fail', msg: 'Should reject temp >80' };
+    }
+    case 'csv_bad_time': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,150,,,,,`);
+      return r.errors.some(e => e.includes('time')) ? { status: 'pass', msg: 'Rejected time 150min' } : { status: 'fail', msg: 'Should reject time >120' };
+    }
+    case 'csv_n2_no_process': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Nitrogen,,,,,,,\n3,Cooling,25,,,,,,medium`);
+      return r.errors.length > 0 ? { status: 'pass', msg: 'Blocked: ' + r.errors[0] } : { status: 'fail', msg: 'Should block N₂ → Cooling without process' };
+    }
+    case 'csv_n2_no_cooling': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Nitrogen,,,,,,,\n3,Heating,60,10,,,,,`);
+      return r.errors.some(e => e.toLowerCase().includes('cool') || e.toLowerCase().includes('vent')) ? { status: 'pass', msg: 'Blocked: missing cooling' } : { status: 'fail', msg: 'Should block N₂ without Cooling' };
+    }
+    case 'csv_n2_max3': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Nitrogen,,,,,,,\n3,Cure,40,10,,,,,\n4,Cooling,25,,,,,,medium\n5,Nitrogen,,,,,,,\n6,Heating,60,10,,,,,\n7,Cooling,25,,,,,,medium\n8,Nitrogen,,,,,,,\n9,Heating,60,10,,,,,\n10,Cooling,25,,,,,,medium`);
+      return r.errors.some(e => e.includes('Maximum 2')) ? { status: 'pass', msg: 'Blocked 3rd N₂' } : { status: 'fail', msg: 'Should block >2 N₂ steps' };
+    }
+    case 'csv_temp_decrease': {
+      const r = parseCsvForTest(`${H}\n1,Heating,60,10,,,,,\n2,Heating,40,10,,,,,`);
+      return r.errors.some(e => e.includes('decrease') || e.includes('lower')) ? { status: 'pass', msg: 'Blocked temp decrease' } : { status: 'fail', msg: 'Should block temp 60→40 without Cooling' };
+    }
+    case 'csv_cooling_mode': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Cooling,25,,,,,,fast`);
+      if (r.errors.length > 0) return { status: 'fail', msg: r.errors[0] };
+      const cooling = r.steps.find(s => s.process === 'Cooling');
+      return cooling?.coolingMode === 'fast' ? { status: 'pass', msg: 'CoolingMode=fast parsed' } : { status: 'fail', msg: 'CoolingMode not parsed: ' + cooling?.coolingMode };
+    }
+    case 'csv_empty': {
+      const r = parseCsvForTest(`${H}`);
+      return r.steps === null || r.errors.length > 0 ? { status: 'pass', msg: 'Empty CSV rejected' } : { status: 'fail', msg: 'Should reject empty CSV' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown CSV check' };
+  }
+}
+
+// ============================================================
+// CSV Format Tests (export format verification)
+// ============================================================
+function runCsvFormatCheck(check) {
+  const H = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode';
+
+  switch (check) {
+    case 'fmt_header': {
+      const expected = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode';
+      const cols = expected.split(',');
+      return cols.length === 9 ? { status: 'pass', msg: '9 columns: ' + cols.join(', ') } : { status: 'fail', msg: 'Expected 9 columns, got ' + cols.length };
+    }
+    case 'fmt_nitrogen_row': {
+      const row = '2,Nitrogen,,,,,,,';
+      const cols = row.split(',');
+      const temp = cols[2], time = cols[3];
+      return (temp === '' && time === '') ? { status: 'pass', msg: 'N₂ row: empty temp & time' } : { status: 'fail', msg: `N₂ has temp="${temp}" time="${time}"` };
+    }
+    case 'fmt_cooling_row': {
+      const row = '5,Cooling,25,,,,,,medium';
+      const cols = row.split(',');
+      const mode = cols[8], time = cols[3];
+      return (time === '' && ['fast', 'medium', 'slow'].includes(mode)) ? { status: 'pass', msg: `CoolingMode="${mode}", no time` } : { status: 'fail', msg: `mode="${mode}" time="${time}"` };
+    }
+    case 'fmt_cure_row': {
+      const row = '3,Cure,60,15,on-target,30,at-target,,';
+      const cols = row.split(',');
+      const tm = cols[4], uv = cols[5], us = cols[6];
+      const ok = ['on-ramp', 'on-target'].includes(tm) && Number(uv) >= 5 && ['at-start', 'at-target'].includes(us);
+      return ok ? { status: 'pass', msg: `TimerMode=${tm} UV=${uv}% UVStart=${us}` } : { status: 'fail', msg: `tm=${tm} uv=${uv} us=${us}` };
+    }
+    case 'fmt_roundtrip': {
+      const csv = `${H}\n1,Drying,40,10,,,,,\n2,Heating,60,5,,,,,\n3,Nitrogen,,,,,,,\n4,Cure,60,15,on-target,30,at-target,,\n5,Cooling,25,,,,,,medium`;
+      const r = parseCsvForTest(csv);
+      return r.errors.length === 0 && r.steps.length === 5 ? { status: 'pass', msg: '5 steps roundtripped OK' } : { status: 'fail', msg: r.errors[0] || 'Wrong step count' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown format check' };
+  }
+}
+
+// ============================================================
+// Logging
+// ============================================================
+function log(level, msg) {
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  logLines.push({ ts, level, msg });
+  const logBox = document.getElementById('logBox');
+  logBox.innerHTML += `<div class="log-line ${level}"><span class="ts">[${ts}]</span>${msg}</div>`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function clearLog() {
+  logLines = [];
+  document.getElementById('logBox').innerHTML = '';
+}
+
+// ============================================================
+// Report Export
+// ============================================================
+function exportReport() {
+  const now = new Date();
+  const results = Object.values(testResults);
+  const pass = results.filter(r => r === 'pass').length;
+  const fail = results.filter(r => r === 'fail').length;
+  const warn = results.filter(r => r === 'warn').length;
+
+  let report = `sCure QA Report\n`;
+  report += `${'='.repeat(50)}\n`;
+  report += `Date: ${now.toLocaleString()}\n`;
+  report += `API: ${document.getElementById('apiUrl').value}\n`;
+  report += `Duration: ${startTime ? ((Date.now() - startTime) / 1000).toFixed(1) + 's' : 'N/A'}\n\n`;
+  report += `Summary: ${pass} PASS / ${fail} FAIL / ${warn} WARN\n`;
+  report += `${'='.repeat(50)}\n\n`;
+
+  TEST_CATEGORIES.forEach(cat => {
+    report += `[${cat.name}]\n`;
+    cat.tests.forEach(t => {
+      const status = (testResults[t.id] || 'pending').toUpperCase();
+      const resultEl = document.getElementById('result-' + t.id);
+      const timeEl = document.getElementById('time-' + t.id);
+      report += `  ${status.padEnd(6)} ${t.name} — ${resultEl?.textContent || ''} ${timeEl?.textContent || ''}\n`;
+    });
+    report += '\n';
+  });
+
+  report += `\nLog:\n${'─'.repeat(50)}\n`;
+  logLines.forEach(l => {
+    report += `[${l.ts}] ${l.msg}\n`;
+  });
+
+  const blob = new Blob([report], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `scure-qa-report-${now.toISOString().slice(0, 10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Init
+init();
+</script>
+</body>
+</html>

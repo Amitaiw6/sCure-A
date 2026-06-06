@@ -1,7 +1,8 @@
-import { CheckCircle, XCircle, AlertTriangle, Clock, Play } from 'lucide-react'
+import { CheckCircle, XCircle, AlertTriangle, Clock, Play, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCureHistory } from '@/context/CureHistoryContext'
 import type { CureLog } from '@/context/CureHistoryContext'
+import { generateCureReport } from '@/lib/cure-report'
 
 function StatusIcon({ status }: { status: CureLog['status'] }) {
   switch (status) {
@@ -92,8 +93,13 @@ export default function CureHistoryPage() {
                 </span>
               </div>
 
-              {false && log.targetTemp && (
-                <span className="text-orange-400 text-[10px] shrink-0">{log.targetTemp}°C</span>
+              {log.telemetry && log.telemetry.length > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); generateCureReport(log) }}
+                  className="shrink-0 p-1.5 rounded-lg hover:bg-accent transition-colors touch-manipulation"
+                >
+                  <Download size={14} className="text-primary" />
+                </button>
               )}
             </div>
           ))}

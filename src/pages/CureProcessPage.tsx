@@ -10,6 +10,7 @@ import { usePrintHistory } from '@/context/PrintHistoryContext'
 import { useMaterials } from '@/context/MaterialContext'
 import { useHardware } from '@/context/HardwareContext'
 import { useCureHistory } from '@/context/CureHistoryContext'
+import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
 
 const phaseColorMap: Record<string, string> = {
@@ -43,7 +44,8 @@ export default function CureProcessPage() {
   const { removeLogs } = usePrintHistory()
   const { materials, selectedMaterialId } = useMaterials()
   const { state: hw, setChamberTemp, setTargetTemp, setHeating, setCooling, setUv, setDoorClosed, setNitrogenActive } = useHardware()
-  const { startCure, completeCure, abortCure } = useCureHistory()
+  const { startCure, completeCure, abortCure, recordTelemetry } = useCureHistory()
+  const { config: sysConfig } = useSystemConfig()
   const [cureLogId, setCureLogId] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState(0)
   const [showAbort, setShowAbort] = useState(false)
@@ -102,11 +104,14 @@ export default function CureProcessPage() {
       }))
   }, [steps, hw.nitrogenMode])
 
-  // Calculate ramp duration for first heating phase
-  const firstHeatingPhase = phases[0]
-  const targetTemp = firstHeatingPhase?.temp ?? 80
-  const rampDuration = Math.abs(targetTemp - AMBIENT_TEMP) * RAMP_RATE
+  // Ramp start temperature (where ramp begins from)
+  const [rampStartTemp, setRampStartTemp] = useState(AMBIENT_TEMP)
+
+  // Calculate ramp for current active phase
+  const currentPhaseTemp = phases[activePhase]?.temp ?? 80
+  const rampDuration = Math.max(1, Math.abs(currentPhaseTemp - rampStartTemp) * RAMP_RATE)
   const rampProgress = Math.min(100, (rampElapsed / rampDuration) * 100)
+  const targetTemp = currentPhaseTemp
 
   useEffect(() => {
     setPhaseElapsed(new Array(phases.length).fill(0))
@@ -133,7 +138,7 @@ export default function CureProcessPage() {
           return rampDuration
         }
         const progress = next / rampDuration
-        const temp = Math.round(AMBIENT_TEMP + (targetTemp - AMBIENT_TEMP) * progress)
+        const temp = Math.round(rampStartTemp + (targetTemp - rampStartTemp) * progress)
         setChamberTemp(temp)
         return next
       })
@@ -165,7 +170,7 @@ export default function CureProcessPage() {
       }
       return next
     })
-  }, [activePhase, phases, isRamping, rampDuration, targetTemp, n2Purging, hw.nitrogenDuration, setChamberTemp, setHeating, setNitrogenActive])
+  }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, setChamberTemp, setHeating, setNitrogenActive])
 
   // Temperature stall detection: every 1 min during ramp or cooling, check progress
   const isInTempPhase = isRamping || (isRunning && phases[activePhase]?.type === 'cooling')
@@ -215,14 +220,30 @@ export default function CureProcessPage() {
     navigate('/')
   }
 
-  // When entering a Nitrogen phase, start N2 purge automatically
+  // When entering a new phase, start ramp if needed or N2 purge
   useEffect(() => {
     if (!isRunning || isComplete || isRamping || n2Purging) return
     const currentPhase = phases[activePhase]
-    if (currentPhase?.type === 'nitrogen') {
+    if (!currentPhase) return
+
+    // Nitrogen phase → start purge
+    if (currentPhase.type === 'nitrogen') {
       setN2Purging(true)
       setN2Elapsed(0)
       setNitrogenActive(true)
+      return
+    }
+
+    // Phases with temperature that need ramp (not cooling, not nitrogen, not first phase which is handled on mount)
+    if (activePhase > 0 && currentPhase.temp != null && currentPhase.type !== 'cooling') {
+      const currentTemp = hw.chamberTemp
+      if (currentPhase.temp > currentTemp) {
+        setIsRamping(true)
+        setRampElapsed(0)
+        setRampStartTemp(currentTemp)
+        setTargetTemp(currentPhase.temp)
+        setHeating(true)
+      }
     }
   }, [activePhase, isRunning, isComplete, isRamping, n2Purging, phases])
 
@@ -285,6 +306,36 @@ export default function CureProcessPage() {
     }
   }, [isRunning, isComplete, tick])
 
+  // Telemetry recording every 5 seconds
+  const telemetryStartRef = useRef<number>(0)
+  useEffect(() => {
+    if (!isRunning || isComplete || !cureLogId) return
+    telemetryStartRef.current = Date.now()
+    const interval = setInterval(() => {
+      const elapsed = Math.round((Date.now() - telemetryStartRef.current) / 1000)
+      const currentPhase = phases[activePhase]
+      const isCure = currentPhase?.type === 'cure'
+      const isBleacher = currentPhase?.type === 'bleacher'
+      const uvOn = isCure || isBleacher
+      const uvType = isCure ? '405nm' as const : isBleacher ? '450nm' as const : null
+      // Simulate LED temps based on chamber temp
+      const base = hw.chamberTemp
+      recordTelemetry(cureLogId, {
+        t: elapsed,
+        chamberTemp: hw.chamberTemp,
+        uvOn,
+        uvType,
+        ledTemps: {
+          right: base + Math.round(Math.random() * 4 - 2),
+          left: base + Math.round(Math.random() * 4 - 2),
+          door: base + Math.round(Math.random() * 3 - 1),
+          back: base + Math.round(Math.random() * 3 - 1),
+        }
+      })
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [isRunning, isComplete, cureLogId, hw.chamberTemp, activePhase, phases, recordTelemetry])
+
   // Auto-start on mount
   useEffect(() => {
     if (!isRunning && !isComplete && phases.length > 0 && phaseElapsed.length > 0 && !cureLogId) {
@@ -294,14 +345,17 @@ export default function CureProcessPage() {
         selectedMaterial?.name ?? 'Unknown',
         phases.length,
         phases.map(p => p.name),
-        phases[0]?.temp ?? null
+        phases[0]?.temp ?? null,
+        sysConfig.serialNumber
       )
       setCureLogId(id)
-      if (phases[0]?.type === 'heating') {
+      const firstPhase = phases[0]
+      if (firstPhase?.temp != null && firstPhase.type !== 'cooling' && firstPhase.type !== 'nitrogen') {
         setIsRamping(true)
         setRampElapsed(0)
+        setRampStartTemp(AMBIENT_TEMP)
         setChamberTemp(AMBIENT_TEMP)
-        setTargetTemp(phases[0].temp ?? 80)
+        setTargetTemp(firstPhase.temp ?? 80)
         setHeating(true)
       }
     }
@@ -345,25 +399,16 @@ export default function CureProcessPage() {
     const elapsed = phaseElapsed[index] ?? 0
     const progress = Math.min(100, (elapsed / (phase.time * 60)) * 100)
 
-    if (phase.type === 'heating') {
+    if (phase.type === 'heating' || phase.type === 'drying') {
       const isActiveRamping = status === 'active' && isRamping
+      const label = phase.type === 'heating' ? 'Heating' : 'Drying'
       return {
         gaugeValue: isActiveRamping ? `${hw.chamberTemp}` : status === 'active' ? `${phase.temp}` : status === 'completed' ? `${phase.temp}` : '0',
         gaugeLabel: isActiveRamping ? 'RAMP °C' : 'HOLD °C',
         gaugeProgress: isActiveRamping ? rampProgress : status === 'completed' ? 100 : progress,
-        rangeStart: `${AMBIENT_TEMP}°C`,
+        rangeStart: `${isActiveRamping ? rampStartTemp : AMBIENT_TEMP}°C`,
         rangeEnd: `${phase.temp ?? 80}°C`,
-        statusText: isActiveRamping ? `Ramping ${hw.chamberTemp}°C → ${phase.temp}°C ...` : status === 'active' ? `Holding at ${phase.temp}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
-      }
-    }
-    if (phase.type === 'drying') {
-      return {
-        gaugeValue: status !== 'pending' ? `${phase.temp ?? 0}°` : '0°',
-        gaugeLabel: 'HOLD',
-        gaugeProgress: status === 'completed' ? 100 : progress,
-        rangeStart: '0 min',
-        rangeEnd: `${phase.time} min`,
-        statusText: status === 'active' ? `Drying at ${phase.temp}°C, ${phase.intensity ?? 0}% ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+        statusText: isActiveRamping ? `Ramping ${hw.chamberTemp}°C → ${phase.temp}°C ...` : status === 'active' ? `${label} at ${phase.temp}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
       }
     }
     if (phase.type === 'cure') {
@@ -404,10 +449,8 @@ export default function CureProcessPage() {
     if (phase.type === 'nitrogen') {
       return formatTime(Math.max(0, hw.nitrogenDuration - n2Elapsed))
     }
-    if (index === 0 && phase.type === 'heating' && isRamping && getPhaseStatus(index) === 'active') {
-      const rampRemain = Math.max(0, rampDuration - rampElapsed)
-      const holdRemain = phase.time * 60
-      return formatTime(rampRemain + holdRemain)
+    if (isRamping && getPhaseStatus(index) === 'active' && index === activePhase) {
+      return `${hw.chamberTemp}°C → ${phase.temp}°C`
     }
     return formatTime(Math.max(0, phase.time * 60 - elapsed))
   }
@@ -477,7 +520,7 @@ export default function CureProcessPage() {
             </>
           ) : isRamping ? (
             <>
-              <Badge className="bg-orange-500 text-white text-[10px]">Heating</Badge>
+              <Badge className="bg-orange-500 text-white text-[10px]">{phases[activePhase]?.name ?? 'Heating'}</Badge>
               <span className="text-foreground font-bold text-sm">{hw.chamberTemp}°C → {targetTemp}°C</span>
               <span className="text-muted-foreground text-xs">Timer starts at target</span>
             </>
@@ -499,16 +542,17 @@ export default function CureProcessPage() {
       </div>
 
       {/* Phase Cards */}
-      <div className="flex gap-2 mt-1 flex-1 min-h-0 overflow-x-auto overflow-y-hidden scroll-hidden items-stretch" style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}>
+      <div className="flex gap-3 mt-1 flex-1 min-h-0 overflow-x-auto overflow-y-hidden scroll-hidden items-stretch px-1" style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory', touchAction: 'pan-x' }}>
         {phases.map((phase, i) => {
           const gauge = getGaugeInfo(phase, i)
           const elapsed = phaseElapsed[i] ?? 0
-          const totalRampAndElapsed = phase.type === 'nitrogen' ? n2Elapsed : (i === 0 && isRamping) ? rampElapsed : elapsed
+          const isPhaseRamping = i === activePhase && isRamping && getPhaseStatus(i) === 'active'
+          const totalRampAndElapsed = phase.type === 'nitrogen' ? n2Elapsed : isPhaseRamping ? rampElapsed : elapsed
           const minE = Math.floor(totalRampAndElapsed / 60)
           const secE = totalRampAndElapsed % 60
           const phaseProgress = phase.type === 'nitrogen'
             ? (n2Purging ? Math.min(100, (n2Elapsed / hw.nitrogenDuration) * 100) : getPhaseStatus(i) === 'completed' ? 100 : 0)
-            : (i === 0 && isRamping && getPhaseStatus(i) === 'active')
+            : isPhaseRamping
               ? rampProgress
               : phase.time > 0 ? Math.min(100, (elapsed / (phase.time * 60)) * 100) : 0
 

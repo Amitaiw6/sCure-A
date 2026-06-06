@@ -19,6 +19,8 @@ export default function SetupPage() {
   const [orgId, setOrgId] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [usbVideoIdx, setUsbVideoIdx] = useState(0)
+  const usbVideos = ['/videos/usb-insert.mp4', '/videos/usb-org.mp4']
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -174,47 +176,24 @@ export default function SetupPage() {
         /* ===== STEP 2: Organization ===== */
         <div className="flex gap-6 items-center px-6">
 
-          {/* Left – USB illustration */}
-          <div className="shrink-0">
-            <svg viewBox="0 0 260 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-[200px] h-[125px]">
-              {/* Device body */}
-              <rect x="120" y="20" width="130" height="110" rx="10" fill="#111111" stroke="#333333" strokeWidth="1.5" />
-              <rect x="127" y="40" width="28" height="5" rx="2" fill="#222222" />
-              <rect x="127" y="50" width="28" height="5" rx="2" fill="#222222" />
-              <rect x="127" y="60" width="28" height="5" rx="2" fill="#222222" />
-              <rect x="127" y="70" width="28" height="5" rx="2" fill="#222222" />
-              <rect x="127" y="80" width="28" height="5" rx="2" fill="#222222" />
-              {/* USB port glow */}
-              <rect x="119" y="55" width="4" height="20" rx="1.5" fill="#0ea5e9" opacity="0.5">
-                <animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite" />
-              </rect>
-              {/* Screen */}
-              <rect x="170" y="32" width="68" height="85" rx="5" fill="#0a0a0a" stroke="#222222" strokeWidth="1" />
-              <text x="204" y="70" textAnchor="middle" fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">{deviceName}</text>
-              <text x="204" y="84" textAnchor="middle" fill="#9ca3af" fontSize="5" fontFamily="monospace">SETUP</text>
-
-              {/* USB Drive – animated */}
-              <g>
-                <animateTransform attributeName="transform" type="translate" values="-18,0;0,0;0,0" dur="2.5s" repeatCount="indefinite" keyTimes="0;0.4;1" />
-                <rect x="30" y="48" width="68" height="32" rx="5" fill="#1a1a1a" stroke="#444444" strokeWidth="1" />
-                <rect x="98" y="54" width="24" height="20" rx="2.5" fill="#888888" stroke="#666666" strokeWidth="0.8" />
-                <rect x="116" y="58" width="4" height="4" rx="0.8" fill="#aaaaaa" />
-                <rect x="116" y="66" width="4" height="4" rx="0.8" fill="#aaaaaa" />
-                <text x="64" y="68" textAnchor="middle" fill="#555555" fontSize="7" fontFamily="monospace" fontWeight="bold">ORG</text>
-                <path d="M108 64 L114 64" stroke="#0ea5e9" strokeWidth="1.5" strokeLinecap="round" opacity="0.6">
-                  <animate attributeName="opacity" values="0.2;1;0.2" dur="1.5s" repeatCount="indefinite" />
-                </path>
-              </g>
-
-              <text x="185" y="150" textAnchor="middle" fill="#555555" fontSize="6" fontFamily="sans-serif">Insert USB with organization file</text>
-            </svg>
+          {/* Left – USB video */}
+          <div className="shrink-0 w-[420px] h-[420px] flex items-center justify-center">
+            <video
+              key={usbVideoIdx}
+              src={usbVideos[usbVideoIdx]}
+              autoPlay
+              muted
+              playsInline
+              onEnded={() => setUsbVideoIdx(prev => (prev + 1) % usbVideos.length)}
+              className="w-full h-full object-cover"
+            />
           </div>
 
           {/* Right – Org content */}
-          <div className="flex flex-col gap-3 w-[340px]">
+          <div className="flex flex-col gap-4 w-[320px]">
             <div>
-              <h1 className="text-base font-bold text-foreground">Connect Organization</h1>
-              <p className="text-muted-foreground text-[10px] mt-0.5">
+              <h1 className="text-lg font-bold text-foreground">Connect Organization</h1>
+              <p className="text-muted-foreground text-xs mt-1">
                 Link <span className="text-primary font-medium">{deviceName}</span> to your organization
               </p>
             </div>
@@ -223,14 +202,14 @@ export default function SetupPage() {
               {!orgId ? (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full bg-card border border-dashed border-border rounded-lg p-2.5 flex items-center gap-3 hover:border-primary/50 transition-colors touch-manipulation active:bg-secondary"
+                  className="w-full bg-card border border-dashed border-border rounded-xl p-4 flex items-center gap-3 hover:border-primary/50 transition-colors touch-manipulation active:bg-secondary"
                 >
                   <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                     <Upload size={16} className="text-primary" />
                   </div>
                   <div className="text-left">
-                    <span className="text-foreground text-xs font-medium block">Upload Organization CSV</span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-foreground text-sm font-medium block">Upload Organization CSV</span>
+                    <span className="text-muted-foreground text-xs">
                       Select the CSV file from the USB drive
                     </span>
                   </div>
@@ -272,20 +251,20 @@ export default function SetupPage() {
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2 mt-1">
               <Button
                 onClick={handleConnect}
                 disabled={!orgId}
-                className="w-full h-8 text-xs font-semibold gap-2"
+                className="w-full h-11 text-sm font-semibold gap-2 rounded-xl"
               >
-                <Usb size={12} />
+                <Usb size={14} />
                 Assign Organization to S-Cure
-                <ArrowRight size={12} />
+                <ArrowRight size={14} />
               </Button>
 
               <button
                 onClick={handleSkip}
-                className="w-full text-muted-foreground text-[10px] py-1.5 hover:text-foreground transition-colors touch-manipulation"
+                className="w-full text-muted-foreground text-xs py-2 hover:text-foreground transition-colors touch-manipulation"
               >
                 Continue without organization
               </button>

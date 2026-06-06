@@ -104,12 +104,9 @@ export default function SettingsPage() {
               <div className="flex gap-2 mt-1">
                 <Btn muted onClick={() => { if (confirm('Reboot device?')) systemReboot() }}>REBOOT</Btn>
                 <Btn red onClick={() => {
-                  if (confirm('Shutdown device?')) {
-                    systemShutdown()
-                    sessionStorage.setItem('scure-shutdown', 'true')
-                    window.location.reload()
-                  }
-                }}>SHUTDOWN</Btn>
+                  sessionStorage.setItem('scure-shutdown', 'true')
+                  window.location.reload()
+                }}>SLEEP</Btn>
               </div>
             </Card>
             <Card className="flex-1">

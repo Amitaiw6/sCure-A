@@ -35,7 +35,7 @@
 
 **Document ID:** SRS-SCURE-2026-001
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 
 **Classification:** Confidential
 
@@ -68,6 +68,7 @@
 | 0.1.0 | March 2026 | Dev Team | Initial draft |
 | 0.9.0 | March 2026 | Dev Team | Feature complete draft |
 | 1.0.0 | April 2026 | Dev Team | Release candidate |
+| 1.1.0 | April 2026 | Dev Team | Added Nitrogen rules, CoolingMode, screensaver, CSV format update |
 
 ### Distribution List
 
@@ -109,7 +110,7 @@
    - 3.10 [Alerts & Errors](#310-alerts--errors)
    - 3.11 [Software Update](#311-software-update)
    - 3.12 [On-Screen Keyboard](#312-on-screen-keyboard)
-   - 3.13 [Wake/Sleep](#313-wakesleep)
+   - 3.13 [Wake/Sleep & Screen Saver](#313-wakesleep--screen-saver)
 4. [Non-Functional Requirements](#4-non-functional-requirements)
 5. [Data Models](#5-data-models)
 6. [API Specification](#6-api-specification)
@@ -149,7 +150,7 @@ The S-Cure software controls an industrial UV/thermal curing chamber designed fo
 | Term | Definition |
 |------|-----------|
 | Cure | UV/thermal treatment process for hardening materials |
-| Phase | A single step in a cure sequence (Heating, Drying, Cure, Bleaching, Cooling) |
+| Phase | A single step in a cure sequence (Heating, Drying, Cure, Bleaching, Cooling, Nitrogen) |
 | Material Profile | A CSV-defined sequence of cure phases for a specific material |
 | Preset | Factory-defined material profile (read-only, non-deletable) |
 | PI Controller | Proportional-Integral feedback controller for temperature regulation |
@@ -320,8 +321,9 @@ The S-Cure software is an embedded control system for a standalone curing appara
 | Printer name | e.g. "OR200001" |
 
 **Behavior:**
-1. Tapping a log SHALL select the matching material and deselect any previous selection
-2. Only one item can be selected at a time (print OR material)
+1. Tapping a log SHALL select it and deselect any previous material selection
+2. If a matching material exists (by name), Start Cure SHALL be enabled for the selected print
+3. Only one item can be selected at a time (print OR material)
 3. "View All" button SHALL open PrintHistoryModal
 4. Section hidden or shows placeholder when no organization is linked
 
@@ -352,43 +354,69 @@ The S-Cure software is an embedded control system for a standalone curing appara
 | **Component** | CsvBuilderModal |
 | **Input Method** | Touch controls only (no keyboard input for values) |
 
+**Layout:** Horizontal scrollable cards (left-to-right). Each step is a card. "Add Step" button at the end. Steps scroll and center on addition.
+
 **Step Configuration:**
 
 | Field | Control | Range | Applies To |
 |-------|---------|-------|------------|
-| Process Type | Select dropdown | Drying, Heating, Cure (405nm), Bleaching (450nm), Cooling | All |
-| Temperature | +/- buttons | 20--80 degrees C, step 5 | All except Cooling |
-| Intensity | +/- buttons | 0--100%, step 5 | Cure, Bleaching |
-| Time | +/- buttons | 1--120 min, step 1 | All |
-| Cooling Rate | +/- buttons | 1--20 degrees C/min, step 1 | Cooling only |
+| Process Type | Select dropdown | Drying, Heating, Cure (405nm), Bleaching (450nm), Cooling, N₂ Purge | All |
+| Temperature | +/- buttons | 20--80 degrees C, step 5 | All except Nitrogen |
+| Time | +/- buttons | 1--120 min, step 1 | Drying, Heating, Cure, Bleacher |
+| Cooling Mode | Select | Fast / Medium / Slow | Cooling only |
 | Timer Mode | Select | At temperature / On ramp start | Cure, Bleaching |
-| UV during heat | Toggle | On/Off | Cure, Bleaching |
-| UV Intensity | +/- buttons | 5--100%, step 5 | When UV enabled |
-| UV Start Mode | Select | Immediately / At temperature / At ramp % | When UV enabled |
-| UV Ramp % | +/- buttons | 10--100%, step 10 | When UV Start = At ramp % |
+| UV Intensity | +/- buttons | 5--100%, step 5 | Cure, Bleaching |
+| UV Start Mode | Select | Immediately / At temperature | Cure, Bleaching |
+
+**Validation Rules (Save button):**
+
+| Rule | Error Message |
+|------|---------------|
+| No name entered | "Enter a program name" |
+| No steps | "Add at least one step" |
+| N₂ without Heating/Cure/Bleacher after | "Add a Heating, Cure, or Bleaching step after N₂ purge" |
+| N₂ without any Cooling step | "Nitrogen must be vented — add a Cooling step to save the program" |
+
+Validation errors appear only when the user taps the Save button.
 
 #### <span class="req-id">FR-3.3.2</span> CSV Import <span class="badge badge-high">HIGH</span>
 
 **CSV Format:**
 
 ```csv
-Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStartMode,UvRampPercent
-1,Drying,60,,10,,,,,
-2,Heating,80,,5,,,,,
-3,Cure,80,50,10,,30,on-target,at-target,
-4,Cooling,,,5,5,,,,
+Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode
+1,Heating,40,10,,,,,
+2,Nitrogen,,,,,,,
+3,Cure,40,15,on-target,30,at-target,,
+4,Cooling,25,,,,,,medium
 ```
+
+**Column mapping:**
+
+| # | Column | Description |
+|---|--------|-------------|
+| 1 | Step | Step number |
+| 2 | Process | Heating, Drying, Cure, Bleacher, Cooling, Nitrogen |
+| 3 | Temperature | 20-80°C (empty for Nitrogen) |
+| 4 | Time | 1-120 min (empty for Cooling/Nitrogen) |
+| 5 | TimerMode | `on-ramp` or `on-target` (Cure/Bleacher only) |
+| 6 | UVIntensity | 5-100% (Cure/Bleacher only) |
+| 7 | UVStart | `at-start` or `at-target` (Cure/Bleacher only) |
+| 8 | UVRampPercent | 10-100% (optional) |
+| 9 | CoolingMode | `fast`, `medium`, or `slow` (Cooling only) |
 
 **Validation Rules:**
 
 | Rule | Condition | Error Message |
 |------|-----------|---------------|
-| Column count | < 5 columns | "Not enough columns (need at least 5)" |
-| Process type | Not in valid list | "Invalid process (must be Heating, Drying, Cure, Cooling, or Bleacher)" |
+| Column count | < 4 columns | "Not enough columns (need at least 4)" |
+| Process type | Not in valid list | "Invalid process (must be Heating, Drying, Cure, Cooling, Bleacher, or Nitrogen)" |
 | Temperature | < 20 or > 80 | "Invalid temperature (must be 20-80)" |
-| Intensity | < 0 or > 100 | "Invalid intensity (must be 0-100)" |
 | Time | < 1 or > 120 | "Invalid time (must be 1-120)" |
-| Cooling rate | < 1 or > 20 | "Invalid cooling rate (must be 1-20)" |
+| Max N₂ steps | > 2 | "Maximum 2 nitrogen purge steps allowed" |
+| N₂ without process | No Heating/Cure/Bleacher after N₂ | "Add a Heating, Cure, or Bleaching step after N₂ purge" |
+| N₂ without Cooling | N₂ present but no Cooling step | "Nitrogen must be vented — add a Cooling step" |
+| Temp decreasing | Temp drops without Cooling | "Temperature cannot decrease without a Cooling step" |
 | No valid steps | 0 parsed | "No valid steps found" |
 
 #### <span class="req-id">FR-3.3.3</span> Preset Materials <span class="badge badge-high">HIGH</span>
@@ -464,10 +492,17 @@ Step,Process,Temperature,Intensity,Time,CoolingRate,UvIntensity,TimerMode,UvStar
 
 | Parameter | Value |
 |-----------|-------|
-| Trigger | After Drying phase completes |
-| Condition | `nitrogenMode === true` AND was enabled before process started |
+| Trigger | When a Nitrogen step is reached in the cure sequence |
+| Condition | `nitrogenMode === true` on the system |
 | Duration | Configurable, default 60 seconds |
 | Pressure requirement | >= 6 bar at activation (NOT checked during process) |
+| Max per program | 2 Nitrogen steps |
+
+**Placement rules:**
+1. After Nitrogen: must have a Heating, Cure, Bleacher, or Cooling step
+2. Program must include a Cooling step to vent nitrogen from the chamber
+3. At least one Heating, Cure, or Bleaching step must follow the N₂ purge
+4. If N₂ is not enabled on the system, Nitrogen steps are automatically skipped
 
 **Behavior:**
 1. Status bar: white "N2" badge, countdown in seconds
@@ -832,6 +867,22 @@ When keyboard is opened from within a Radix Dialog:
 4. Second tap: clear sessionStorage, render app
 5. Page reload via `window.location.reload()`
 
+#### <span class="req-id">FR-3.13.2</span> Screen Saver <span class="badge badge-medium">MEDIUM</span>
+
+| Parameter | Value |
+|-----------|-------|
+| Idle timeout | 2 minutes (120 seconds) |
+| Wake method | Double-tap (same as shutdown screen) |
+| Disabled during | Active cure process (`/cure-process`) |
+
+**Behavior:**
+1. After 2 minutes without touch/pointer activity, the WakeScreen overlay is displayed
+2. Any touch or pointer movement resets the idle timer
+3. First tap: "Tap again to start"
+4. Second tap: dismiss screensaver, resume normal UI, reset idle timer
+5. The screensaver SHALL NOT activate during an active cure process
+6. Events tracked: `pointerdown`, `pointermove`, `touchstart`
+
 ---
 
 ## 4. Non-Functional Requirements
@@ -910,14 +961,14 @@ When keyboard is opened from within a Radix Dialog:
 ```typescript
 interface CureStep {
   step: number                              // Sequence number (1-based)
-  process: 'Heating' | 'Drying' | 'Cure' | 'Cooling' | 'Bleacher'
-  temperature: number | null                // 20-80 deg C
+  process: 'Heating' | 'Drying' | 'Cure' | 'Cooling' | 'Bleacher' | 'Nitrogen'
+  temperature: number | null                // 20-80 deg C (null for Nitrogen)
   intensity: number | null                  // 0-100%
-  time: number                              // 1-120 minutes
-  coolingRate?: number | null               // 1-20 deg C/min (Cooling only)
-  uvIntensity?: number | null               // 0-100% (Cure/Bleacher)
+  time: number                              // 1-120 minutes (0 for Cooling/Nitrogen)
+  coolingMode?: 'fast' | 'medium' | 'slow'  // Cooling only
+  uvIntensity?: number | null               // 5-100% (Cure/Bleacher)
   timerMode?: 'on-ramp' | 'on-target'      // When to start countdown
-  uvStartMode?: 'at-start' | 'at-target' | 'at-ramp-percent'
+  uvStartMode?: 'at-start' | 'at-target'   // When UV turns on
   uvRampPercent?: number                    // 10-100%
 }
 ```
