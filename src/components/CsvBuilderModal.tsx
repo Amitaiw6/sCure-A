@@ -112,14 +112,17 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     }))
   }
 
-  // Min temperature for a step: must be >= last non-cooling step's temp
-  // A Cooling step in between resets the minimum back to 20
+  // Min temperature for a heat-type step: must be >= last non-cooling step's
+  // temp, and never below the hardware heating floor (heating.target_min=30 —
+  // the heater driver refuses lower targets). A Cooling step in between
+  // resets the minimum back to that floor.
+  const HEAT_MIN_TEMP = 30
   const getMinTemp = (index: number): number => {
     for (let i = index - 1; i >= 0; i--) {
-      if (steps[i].process === 'Cooling') return 20
-      if (steps[i].temperature != null) return steps[i].temperature!
+      if (steps[i].process === 'Cooling') return HEAT_MIN_TEMP
+      if (steps[i].temperature != null) return Math.max(steps[i].temperature!, HEAT_MIN_TEMP)
     }
-    return 20
+    return HEAT_MIN_TEMP
   }
 
   // For Cooling steps: max temp must be < the previous step's temperature
@@ -331,9 +334,9 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
         {/* Steps - horizontal scroll */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden scroll-hidden px-4 py-3" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}>
-          <div className="flex gap-3 h-full items-center">
+          <div className="flex gap-3 h-full items-stretch">
             {steps.map((step, i) => (
-              <div key={i} data-step-card className="border border-border rounded-xl p-4 shrink-0 w-[300px] overflow-y-auto scroll-hidden max-h-full">
+              <div key={i} data-step-card className="border border-border rounded-xl p-4 shrink-0 w-[300px] overflow-y-auto scroll-hidden">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-primary text-sm font-medium">Step {step.step}</span>
                   <Button variant="ghost" size="icon-xs" onClick={() => removeStep(i)} disabled={steps.length <= 1}>
@@ -448,7 +451,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                         <TouchNumber
                           value={step.uvIntensity ?? 30}
                           onChange={v => updateStep(i, 'uvIntensity', v)}
-                          min={5} max={100} step={5} suffix="%"
+                          min={10} max={100} step={5} suffix="%"
                           className="w-[140px]"
                         />
                       </div>
