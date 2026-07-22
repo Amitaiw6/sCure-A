@@ -13,17 +13,28 @@ import { sha256Hex } from '@/lib/compliance'
 const API_BASE = import.meta.env.VITE_HW_API_URL || 'http://localhost:3001/api'
 const IS_DEV = import.meta.env.DEV
 
-async function apiCall(endpoint: string, method = 'POST'): Promise<{ ok: boolean; message: string }> {
-  if (IS_DEV) {
-    console.log(`[HW-API] ${method} ${endpoint} (simulated)`)
+// Never sent to a live server from a dev machine, even if one is reachable
+const DEV_BLOCKED = ['/system/reboot', '/system/shutdown', '/system/update']
+
+async function apiCall(endpoint: string, method = 'POST'): Promise<{ ok: boolean; message: string; code?: number }> {
+  if (IS_DEV && DEV_BLOCKED.some(p => endpoint.startsWith(p))) {
+    console.log(`[HW-API] ${method} ${endpoint} (simulated — blocked in dev)`)
     return { ok: true, message: 'Simulated in dev mode' }
   }
 
+  // Always try the real API first: commands must reach the hardware whenever
+  // a server is running, so the chamber actually heats and the UI can follow
+  // the measured chamber temperature. Dev without a server falls back to a
+  // simulated OK so the local UI simulation keeps working.
   try {
-    const res = await fetch(`${API_BASE}${endpoint}`, { method })
+    const res = await fetch(`${API_BASE}${endpoint}`, { method, signal: AbortSignal.timeout(5000) })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json()
   } catch (err) {
+    if (IS_DEV) {
+      console.log(`[HW-API] ${method} ${endpoint} (simulated — API not reachable)`)
+      return { ok: true, message: 'Simulated in dev mode' }
+    }
     console.error(`[HW-API] Error calling ${endpoint}:`, err)
     return { ok: false, message: String(err) }
   }
@@ -59,9 +70,38 @@ export async function setDamper(open: boolean) {
   return apiCall(`/damper/${open ? 'open' : 'close'}`)
 }
 
-/** Run fan test */
-export async function runFanTest() {
-  return apiCall('/diagnostics/fan-test')
+/** Run fan test for a specific fan (led_cooling / chamber_intake / chamber_heating) */
+export async function runFanTest(fan?: string) {
+  return apiCall(`/diagnostics/fan-test${fan ? `?fan=${fan}` : ''}`)
+}
+
+/** Open/close the N₂ purge valve */
+export async function setNitrogenValve(on: boolean) {
+  return apiCall(`/cure/nitrogen?on=${on ? 1 : 0}`)
+}
+
+/** BOFA fume-extraction on/off */
+export async function setBofaControl(on: boolean) {
+  return apiCall(`/bofa?on=${on ? 1 : 0}`)
+}
+
+/** Set the system clock (Settings → Date & Time → Apply) */
+export async function setSystemDateTime(date: string, time: string): Promise<{ ok: boolean; message: string }> {
+  if (IS_DEV) {
+    console.log(`[HW-API] datetime ${date} ${time} (simulated)`)
+    return { ok: true, message: 'Simulated in dev mode' }
+  }
+  try {
+    const res = await fetch(`${API_BASE}/system/datetime`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, time }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.json()
+  } catch (err) {
+    return { ok: false, message: String(err) }
+  }
 }
 
 /** Run LED diagnostic */
@@ -104,9 +144,10 @@ export async function dryToTargetTemperature(targetC: number) {
   return apiCall(`/cure/dry?target=${targetC}`)
 }
 
-/** Stop all cure outputs (heater, UV, cooling). */
-export async function stopCureOutputs() {
-  return apiCall('/cure/stop')
+/** Stop all cure outputs (heater, UV, cooling, N₂).
+ *  immediate=true (user abort): full heater shutdown with no fan run-on. */
+export async function stopCureOutputs(immediate = false) {
+  return apiCall(`/cure/stop${immediate ? '?immediate=1' : ''}`)
 }
 
 /**

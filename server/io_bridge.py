@@ -64,14 +64,21 @@ class IOBridge:
         self._damper_open = False
         self._cooling_mode = None         # UI mode name while cooling is active
         self._uv = {'on': False, 'intensity': 0, 'wavelength': None}
+        self._fan_duty = {name: 0 for name in FAN_GROUPS}   # last commanded %
+        self._n2_on = False               # nitrogen valve state (GPIO13)
+        self._bofa_on = False             # BOFA extraction (PCA ch 10)
         try:
-            from io_controller import SystemController, PCA_CHANNELS, PCA_FANS
+            from io_controller import (SystemController, PCA_CHANNELS,
+                                       PCA_FANS, GPIO_SIGNALS, set_gpio_level)
             from temperature_control import TemperatureController
             self.PCA_CHANNELS, self.PCA_FANS = PCA_CHANNELS, PCA_FANS
+            self.GPIO_SIGNALS, self._set_gpio = GPIO_SIGNALS, set_gpio_level
             self.sys = SystemController()
             self.sys.startup_safe()       # known-OFF state before serving
             self.temp = TemperatureController(self.sys)
             self.available = True
+        except FileNotFoundError as e:    # bad/missing components.json - NOT "no hardware"
+            self.error = f'hardware config error: {e}'
         except Exception as e:            # noqa: BLE001 - off-Pi / no I2C
             self.error = str(e)
 
@@ -90,10 +97,20 @@ class IOBridge:
         except Exception:                 # noqa: BLE001
             chamber = None
         door_open = self.sys.door_open()
-        fans = {}
+        # fans = commanded duty % (same meaning as the simulation payload);
+        # the measured tachometer readings go in fanRpm.
+        fan_rpm = {}
         for ui_name, group in FAN_GROUPS.items():
             rpm = self.sys.read_rpm(group[0])
-            fans[ui_name] = int(rpm) if rpm else 0
+            fan_rpm[ui_name] = int(rpm) if rpm else 0
+        led_temps = {}
+        for name, sensor in LED_TEST_SENSORS:
+            key = name.split()[0].lower()          # 'Left LED' -> 'left'
+            try:
+                with self.sys.lock:
+                    led_temps[key] = round(self.sys.io.read_temp(sensor)['temp'], 1)
+            except Exception:             # noqa: BLE001
+                led_temps[key] = None
         target = None
         if self.temp.active:
             target = heat.get('target')
@@ -110,7 +127,12 @@ class IOBridge:
             'uvIntensity': self._uv['intensity'],
             'uvWavelength': self._uv['wavelength'],
             'damperOpen': self._damper_open,
-            'fans': fans,
+            'fans': dict(self._fan_duty),
+            'fanRpm': fan_rpm,
+            'ledTemps': led_temps,
+            'nitrogenActive': self._n2_on,
+            'n2LinePressure': None,       # no line-pressure sensor on this board
+            'bofaOn': self._bofa_on,
             'atTemp': bool(heat.get('at_temp')),
             'heaterPwm': heat.get('pwm'),
             'coolingRate': cool.get('rate_meas'),
@@ -198,14 +220,44 @@ class IOBridge:
                 self._damper_open = True
             return ok, why
 
-    def stop_all(self):
-        """Stop every cure output (heater, UV, cooling)."""
+    def stop_all(self, immediate=False):
+        """Stop every cure output (heater, UV, cooling, nitrogen).
+
+        immediate=True (user abort): full heater shutdown right now, no
+        10-minute fan run-on - matches the UI promise of an immediate stop.
+        immediate=False (normal end-of-cure): heater off with the standard
+        fan cooldown run-on."""
         with self._op:
             self.set_uv(False)
+            self.set_nitrogen(False)
             self.sys.stop_cooling('user')
-            self.temp.stop('user')
+            if immediate:
+                self.temp.shutdown('user')
+            else:
+                self.temp.stop('user')
             self._damper_open = False
             return True, None
+
+    # ------------------------------------------------------------------
+    #  Nitrogen purge (solenoid valve on GPIO13) / BOFA extraction
+    # ------------------------------------------------------------------
+    def set_nitrogen(self, on):
+        try:
+            self._set_gpio(self.GPIO_SIGNALS['NITROGEN_VALVE'], bool(on))
+        except Exception as e:            # noqa: BLE001 - pinctrl unavailable
+            return False, f'nitrogen valve failed: {e}'
+        self._n2_on = bool(on)
+        return True, None
+
+    def set_bofa(self, on):
+        try:
+            with self.sys.lock:
+                self.sys.io.pca.set_duty(self.PCA_CHANNELS['BOFA'],
+                                         100 if on else 0)
+        except Exception as e:            # noqa: BLE001 - I2C write failed
+            return False, f'BOFA control failed: {e}'
+        self._bofa_on = bool(on)
+        return True, None
 
     # ------------------------------------------------------------------
     #  Fans / damper / door
@@ -216,9 +268,20 @@ class IOBridge:
             names = [fan.upper()]
         if not names:
             return False, f'unknown fan: {fan}'
-        with self.sys.lock:
-            for name in names:
-                self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], percent)
+        # The heating loop owns FAN_HEATER and the cooling loop owns
+        # FAN_COOLING - a manual write would fight the control loop.
+        if fan == 'chamber_heating' and (self.temp.active or self.sys.is_heater_on()):
+            return False, 'heater fan is controlled by the heating loop while it is active'
+        if fan == 'chamber_intake' and self.sys.cooling_status().get('active'):
+            return False, 'intake fan is controlled by the cooling loop while it is active'
+        try:
+            with self.sys.lock:
+                for name in names:
+                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], percent)
+        except Exception as e:            # noqa: BLE001 - I2C write failed
+            return False, f'fan write failed: {e}'
+        if fan in self._fan_duty:
+            self._fan_duty[fan] = int(percent)
         return True, None
 
     def set_damper(self, open_state):
@@ -235,28 +298,40 @@ class IOBridge:
         with self._op:
             self.set_uv(False)
             self.temp.stop('user')
-            self.sys.set_door_magnet(True)
-            threading.Timer(DOOR_RELEASE_SEC,
-                            lambda: self.sys.set_door_magnet(False)).start()
+            try:
+                self.sys.set_door_magnet(True)
+                threading.Timer(DOOR_RELEASE_SEC,
+                                lambda: self.sys.set_door_magnet(False)).start()
+            except Exception as e:        # noqa: BLE001 - I2C write failed
+                return False, f'door release failed: {e}'
             return True, None
 
     # ------------------------------------------------------------------
     #  Diagnostics
     # ------------------------------------------------------------------
-    def run_fan_test(self):
-        """Spin the heater fan up (unless heating already owns it) and measure
-        the real tachometer RPM."""
-        fan = 'FAN_HEATER'
+    def run_fan_test(self, fan=None):
+        """Spin the requested fan up (unless a control loop already owns it)
+        and measure the real tachometer RPM. `fan` is a UI group name
+        (led_cooling / chamber_intake / chamber_heating); default = heater fan."""
+        group = FAN_GROUPS.get(fan or 'chamber_heating')
+        if not group:
+            return {'rpm': 0, 'status': 'FAIL', 'message': f'unknown fan: {fan}'}
+        name = group[0]
         with self._op:
-            fan_busy = self.sys.is_heater_on() or self.temp.active
+            if name == 'FAN_HEATER':
+                fan_busy = self.sys.is_heater_on() or self.temp.active
+            elif name == 'FAN_COOLING':
+                fan_busy = bool(self.sys.cooling_status().get('active'))
+            else:
+                fan_busy = False
             if not fan_busy:
                 with self.sys.lock:
-                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[fan], 100)
+                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], 100)
                 time.sleep(2.0)           # spin-up
-            rpm = self.sys.measure_rpm(fan, window=1.0)
+            rpm = self.sys.measure_rpm(name, window=1.0)
             if not fan_busy:
                 with self.sys.lock:
-                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[fan], 0)
+                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], 0)
         rpm = int(rpm or 0)
         min_rpm = self.sys.heater_cfg().get('min_fan_rpm', 100)
         return {'rpm': rpm, 'status': 'OK' if rpm >= min_rpm else 'FAIL'}
@@ -282,7 +357,8 @@ class IOBridge:
     def shutdown(self):
         for action in (lambda: self.temp.shutdown('user'),
                        lambda: self.sys.stop_cooling('user'),
-                       lambda: self.sys.all_leds_off()):
+                       lambda: self.sys.all_leds_off(),
+                       lambda: self.set_nitrogen(False)):
             try:
                 action()
             except Exception:             # noqa: BLE001

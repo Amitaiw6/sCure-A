@@ -10,6 +10,7 @@ import { useSystemConfig } from '@/context/SystemConfigContext'
 import {
   systemReboot, exportLogs, setTargetTemperature, setFanSpeed,
   setDamper, runFanTest, runLedDiagnostic,
+  setBofaControl as apiSetBofa, setSystemDateTime,
 } from '@/services/hardware-api'
 import { COMPLIANCE_CONTROLS } from '@/lib/compliance'
 import UpdateModal from '@/components/UpdateModal'
@@ -42,7 +43,8 @@ export default function SettingsPage() {
   const [chamberHeating, setChamberHeatingLocal] = useState(62)
   const [damperOpen, setDamperOpen] = useState(false)
   const [bofaControl, setBofaControl] = useState(true)
-  const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null }>>({})
+  const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null; ok?: boolean }>>({})
+  const [clockStatus, setClockStatus] = useState<'idle' | 'ok' | 'error'>('idle')
   const [ledTestRunning, setLedTestRunning] = useState(false)
   const [ledResults, setLedResults] = useState<{ label: string; ok: boolean }[] | null>(null)
   const [logsStatus, setLogsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
@@ -68,9 +70,10 @@ export default function SettingsPage() {
 
   const handleFanTest = async (id: string) => {
     setFanTests(prev => ({ ...prev, [id]: { running: true, rpm: null } }))
-    const res = await runFanTest()
+    const res = await runFanTest(id)          // per-fan diagnostic on the IO board
     const rpm = (res as { rpm?: number }).rpm
-    setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: rpm ?? FAN_RPM[id] ?? null } }))
+    const ok = (res as { status?: string }).status !== 'FAIL'
+    setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: rpm ?? FAN_RPM[id] ?? null, ok } }))
   }
 
   const handleLedTest = async () => {
@@ -90,7 +93,7 @@ export default function SettingsPage() {
   // Debounced hardware writes: sliders fire on every step while dragging
   const tempDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleChamberHeatingChange = (val: number | null) => {
-    const v = val ?? 25
+    const v = Math.max(val ?? 30, 30)   // heater refuses targets below 30°C
     setChamberHeatingLocal(v)
     if (tempDebounceRef.current) clearTimeout(tempDebounceRef.current)
     tempDebounceRef.current = setTimeout(() => setTargetTemperature(v), 400)
@@ -156,11 +159,11 @@ export default function SettingsPage() {
           <Card>
             <div className="space-y-2">
               <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={handleFanChange('led_cooling', setLedCoolingAirflow)}
-                onTest={() => handleFanTest('led_cooling')} testing={fanTests['led_cooling']?.running} rpm={fanTests['led_cooling']?.rpm} />
+                onTest={() => handleFanTest('led_cooling')} testing={fanTests['led_cooling']?.running} rpm={fanTests['led_cooling']?.rpm} ok={fanTests['led_cooling']?.ok} />
               <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={handleFanChange('chamber_intake', setChamberIntakeFan)}
-                onTest={() => handleFanTest('chamber_intake')} testing={fanTests['chamber_intake']?.running} rpm={fanTests['chamber_intake']?.rpm} />
+                onTest={() => handleFanTest('chamber_intake')} testing={fanTests['chamber_intake']?.running} rpm={fanTests['chamber_intake']?.rpm} ok={fanTests['chamber_intake']?.ok} />
               <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={handleFanChange('chamber_heating', setChamberHeatingFan)}
-                onTest={() => handleFanTest('chamber_heating')} testing={fanTests['chamber_heating']?.running} rpm={fanTests['chamber_heating']?.rpm} />
+                onTest={() => handleFanTest('chamber_heating')} testing={fanTests['chamber_heating']?.running} rpm={fanTests['chamber_heating']?.rpm} ok={fanTests['chamber_heating']?.ok} />
             </div>
           </Card>
 
@@ -169,13 +172,13 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <Label className="shrink-0">Chamber Heating</Label>
               <div className="flex-1 h-4 bg-gradient-to-r from-blue-500 via-yellow-500 to-orange-500 rounded-full relative">
-                <input type="range" min={20} max={80} value={chamberHeating}
+                <input type="range" min={30} max={80} value={chamberHeating}
                   onChange={e => handleChamberHeatingChange(Number(e.target.value))}
                   className="absolute inset-0 w-full opacity-0 cursor-pointer touch-manipulation" />
                 <div className="absolute top-1/2 w-5 h-5 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none"
-                  style={{ left: `calc(10px + (100% - 20px) * ${(chamberHeating - 20) / 60})`, transform: 'translate(-50%, -50%)' }} />
+                  style={{ left: `calc(10px + (100% - 20px) * ${(chamberHeating - 30) / 50})`, transform: 'translate(-50%, -50%)' }} />
               </div>
-              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={20} max={80} step={1} suffix="°C" className="w-[120px] shrink-0" />
+              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={30} max={80} step={1} suffix="°C" className="w-[120px] shrink-0" />
             </div>
           </Card>
 
@@ -213,7 +216,8 @@ export default function SettingsPage() {
           <Card>
             <div className="grid grid-cols-3 gap-x-6 gap-y-1.5">
               <InfoItem label="Lead On Time" value={`${config.leadOnTimeHours} hours`} />
-              <InfoItem label="N₂ Pressure" value="2.0 bar" />
+              <InfoItem label="N₂ Pressure"
+                value={hw.n2LinePressure != null ? `${hw.n2LinePressure.toFixed(1)} bar` : 'N/A'} />
               <div className="flex items-center justify-between">
                 <Label>
                   Nitrogen Mode
@@ -231,7 +235,8 @@ export default function SettingsPage() {
                 />
               </div>
               <ToggleItem label="NFC" checked={hw.nfcEnabled} onChange={setNfcEnabled} />
-              <ToggleItem label="BOFA Control" checked={bofaControl} onChange={setBofaControl} />
+              <ToggleItem label="BOFA Control" checked={bofaControl}
+                onChange={v => { setBofaControl(v); apiSetBofa(v) }} />
             </div>
           </Card>
         </div>
@@ -282,12 +287,12 @@ export default function SettingsPage() {
                       className="bg-secondary border border-border rounded-md px-2 py-1 text-[11px] text-foreground font-mono w-[130px] touch-manipulation"
                     />
                   </div>
-                  <Button variant="outline" size="sm" className="w-full text-[10px] h-7 mt-1" onClick={() => {
-                    // In production: call API to set system clock
-                    // sudo date -s "YYYY-MM-DD HH:MM"
-                    console.log(`[DateTime] Set to ${dateTime.date} ${dateTime.time}`)
+                  <Button variant="outline" size="sm" className="w-full text-[10px] h-7 mt-1" onClick={async () => {
+                    const res = await setSystemDateTime(dateTime.date, dateTime.time)
+                    setClockStatus(res.ok ? 'ok' : 'error')
+                    setTimeout(() => setClockStatus('idle'), 3000)
                   }}>
-                    Apply
+                    {clockStatus === 'ok' ? '✓ Applied' : clockStatus === 'error' ? '✗ Failed' : 'Apply'}
                   </Button>
                 </>
               )}
@@ -446,13 +451,14 @@ function Btn({ children, active, muted, red, onClick }: {
   )
 }
 
-function FanRow({ label, value, onChange, onTest, testing, rpm }: {
+function FanRow({ label, value, onChange, onTest, testing, rpm, ok = true }: {
   label: string
   value: number
   onChange: (v: number) => void
   onTest?: () => void
   testing?: boolean
   rpm?: number | null
+  ok?: boolean
 }) {
   return (
     <div className="flex items-center gap-2 flex-1">
@@ -472,7 +478,9 @@ function FanRow({ label, value, onChange, onTest, testing, rpm }: {
         </Button>
       )}
       {rpm != null && (
-        <span className="text-green-400 text-[10px] shrink-0 whitespace-nowrap w-[72px] text-right">{rpm} RPM <b>OK</b></span>
+        <span className={cn('text-[10px] shrink-0 whitespace-nowrap w-[72px] text-right', ok ? 'text-green-400' : 'text-destructive')}>
+          {rpm} RPM <b>{ok ? 'OK' : 'FAIL'}</b>
+        </span>
       )}
     </div>
   )

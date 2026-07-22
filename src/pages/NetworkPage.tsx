@@ -140,7 +140,15 @@ export default function NetworkPage() {
                 <Button
                   size="sm"
                   className={cn('text-[11px] h-8 px-4', connectionMode === 'dhcp' ? 'bg-primary text-white' : 'bg-secondary text-muted-foreground')}
-                  onClick={() => setConnectionMode('dhcp')}
+                  onClick={() => {
+                    setConnectionMode('dhcp')
+                    // Apply on the device too, not only in local UI state
+                    fetch(`${API_BASE}/network/static`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ dhcp: true }),
+                    }).catch(() => {})
+                  }}
                 >
                   DHCP
                 </Button>

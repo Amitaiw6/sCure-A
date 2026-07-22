@@ -129,11 +129,15 @@ export function parseCsv(csvContent: string): CsvParseResult {
       continue
     }
 
-    // Temperature validation
+    // Temperature validation — hardware limits: the heater refuses targets
+    // below 30°C (heating.target_min); cooling targets are 20-75°C.
     const temp = cols[2] ? Number(cols[2]) : null
-    if (temp !== null && (isNaN(temp) || temp < 20 || temp > 80)) {
-      errors.push(`Row ${i}: Invalid temperature "${cols[2]}" (must be 20-80)`)
-      continue
+    if (temp !== null) {
+      const [tMin, tMax] = proc === 'Cooling' ? [20, 75] : [30, 80]
+      if (isNaN(temp) || temp < tMin || temp > tMax) {
+        errors.push(`Row ${i}: Invalid temperature "${cols[2]}" (must be ${tMin}-${tMax} for ${proc})`)
+        continue
+      }
     }
     step.temperature = temp ?? (proc === 'Cooling' ? 25 : 40)
 
@@ -154,8 +158,14 @@ export function parseCsv(csvContent: string): CsvParseResult {
         step.timerMode = tm as TimerMode
       }
 
+      // Hardware LED driver: below led_power.min_intensity (10%) the LEDs
+      // stay dark, so anything under 10 is rejected here and by the backend.
       const uvInt = cols[5] ? Number(cols[5]) : null
-      if (uvInt !== null && !isNaN(uvInt) && uvInt >= 0 && uvInt <= 100) {
+      if (uvInt !== null) {
+        if (isNaN(uvInt) || uvInt < 10 || uvInt > 100) {
+          errors.push(`Row ${i}: Invalid UV intensity "${cols[5]}" (must be 10-100)`)
+          continue
+        }
         step.uvIntensity = uvInt
       }
 
@@ -220,7 +230,15 @@ export function parseCsv(csvContent: string): CsvParseResult {
       }
       lastTemp = s.temperature
     }
-    if (s.process === 'Cooling') lastTemp = null
+    // Cooling target must actually be below the temperature it cools from
+    // (same rule as the step editor: at least 5°C below the previous step),
+    // otherwise the hardware cooling loop terminates immediately as a no-op.
+    if (s.process === 'Cooling') {
+      if (lastTemp !== null && s.temperature != null && s.temperature > lastTemp - 5) {
+        errors.push(`Step ${s.step}: Cooling target (${s.temperature}°C) must be at least 5°C below the previous step (${lastTemp}°C)`)
+      }
+      lastTemp = null
+    }
   }
 
   if (needsCoolingOrDrying) {

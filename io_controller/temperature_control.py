@@ -14,10 +14,12 @@ Mode sequence (heating):
      closed, cooling mode off, heater fan (FAN_HEATER) started at the
      configured PWM and verified to actually spin (tachometer RPM), and the
      chamber thermistor reading valid. The heater is enabled only if ALL pass.
-  2. PI(D) loop: the heater element is a real PWM channel (PWM_HEATER on the
-     PCA9685), so the controller output drives its duty directly (0-100%) -
-     no on/off delta-sigma needed. TEMP_CHAMBER tracks the target
-     temperature; the heater fan stays on for the whole mode.
+  2. PI(D) loop: the controller computes a 0-100% duty for the heater element
+     (PWM_HEATER on the PCA9685). If the channel is a true PWM output the duty
+     is written directly; if it is declared digital (PCA_DIGITAL - ON/OFF SSR)
+     the duty is applied by delta-sigma time-proportioning across the sample
+     cycles, so the average power still tracks the PI output. TEMP_CHAMBER
+     tracks the target temperature; the heater fan stays on for the whole mode.
   3. Ongoing safety: the standard heater health check (fan RPM + thermistor)
      re-runs every health_check_sec, and the door interlock can force the
      heater off at any time - either ends the mode with a fault.
@@ -38,8 +40,8 @@ Standalone run (blocking; Ctrl+C stops safely):
 import threading
 import time
 
-from io_controller import (LOG, PCA_CHANNELS, PCA_FANS, VerificationError,
-                           load_component_config)
+from io_controller import (LOG, PCA_CHANNELS, PCA_DIGITAL, PCA_FANS,
+                           VerificationError, load_component_config)
 
 HEATING_DEFAULTS = {
     "target_temp": 60.0,
@@ -154,6 +156,11 @@ class TemperatureController:
         last = time.monotonic()
         health_period = max(1.0, float(hcfg.get("health_check_sec", 10)))
         next_health = last + health_period
+        heater_ch = PCA_CHANNELS[hcfg["channel"]]
+        # Digital (ON/OFF SSR) channel: apply the PI duty by delta-sigma
+        # time-proportioning so average power still follows the controller.
+        digital = heater_ch in PCA_DIGITAL
+        sigma = 0.0
         while not self._stop.wait(cfg["sample_sec"]):
             if not self.sys.heater_on:            # door interlock / external off
                 self._finish(self.sys.heater_fault or "heater disabled externally")
@@ -180,9 +187,17 @@ class TemperatureController:
                       cfg["kp"] * err + ki * integ + cfg["kd"] * deriv))
             self._state.update(temp=t, pwm=pwm,
                                at_temp=abs(err) <= cfg["at_temp_band"])
+            out = pwm
+            if digital:
+                sigma += pwm
+                if sigma >= 100.0:
+                    sigma -= 100.0
+                    out = 100.0
+                else:
+                    out = 0.0
             try:
                 with self.sys.lock:
-                    self.sys.io.pca.set_duty_verified(PCA_CHANNELS[hcfg["channel"]], pwm)
+                    self.sys.io.pca.set_duty_verified(heater_ch, out)
             except Exception as e:                # noqa: BLE001
                 self._finish(f"heater not confirmed: {e}")
                 return

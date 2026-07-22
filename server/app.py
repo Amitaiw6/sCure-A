@@ -43,6 +43,17 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
+
+def run(cmd, timeout=15):
+    """Run a shell command and return its stripped stdout ('' on failure)."""
+    try:
+        out = subprocess.run(cmd, shell=True, capture_output=True,
+                             text=True, timeout=timeout)
+        return (out.stdout or '').strip()
+    except Exception as e:  # noqa: BLE001 - diagnostics must never raise
+        print(f"[SYS] command failed ({cmd}): {e}")
+        return ''
+
 # Real IO-board drivers (io_controller/ at the repo root), via the bridge.
 # Off-Pi (no I2C / smbus2) the bridge reports unavailable and the simulation
 # below keeps serving the UI.
@@ -66,10 +77,20 @@ if io_bridge is not None:
 # Hardware abstraction - calls C++ driver or simulates
 # ============================================================
 
+# Simulation thermal model (no IO board): the simulated chamber follows the
+# commanded target the way the real PI loop does, so the UI always sees a
+# chamber temperature that moves toward the target.
+SIM_AMBIENT = 24.0
+SIM_HEAT_RATE = 0.5                      # C/s while heating toward target
+SIM_COOL_RATES = {'fast': 5.0 / 60, 'medium': 2.5 / 60, 'slow': 1.0 / 60}  # C/s
+SIM_IDLE_RATE = 0.05                     # C/s drift back to ambient when idle
+
+
 class HardwareController:
     def __init__(self, bridge=None):
         self.bridge = bridge              # IOBridge (real io_controller drivers) or None
-        self.chamber_temp = 24.0
+        self.chamber_temp = SIM_AMBIENT
+        self._sim_time = time.time()
         self.target_temp = None
         self.door_closed = True
         self.heating = False
@@ -79,11 +100,32 @@ class HardwareController:
         self.uv_intensity = 0
         self.uv_wavelength = None       # 405 (Cure) | 450 (Bleaching)
         self.damper_open = False
+        self.nitrogen_on = False
+        self.bofa_on = False
         self.fans = {
             'led_cooling': 0,
             'chamber_intake': 0,
             'chamber_heating': 0,
         }
+
+    def _sim_tick(self):
+        """Advance the simulated chamber temperature toward the target."""
+        now = time.time()
+        dt = min(max(now - self._sim_time, 0.0), 10.0)
+        self._sim_time = now
+        if dt <= 0:
+            return
+        if self.heating and self.target_temp is not None:
+            self.chamber_temp = min(float(self.target_temp),
+                                    self.chamber_temp + SIM_HEAT_RATE * dt)
+        elif self.cooling and self.target_temp is not None:
+            rate = SIM_COOL_RATES.get(self.cooling_mode, SIM_COOL_RATES['medium'])
+            self.chamber_temp = max(float(self.target_temp),
+                                    self.chamber_temp - rate * dt)
+        elif self.chamber_temp > SIM_AMBIENT:
+            self.chamber_temp = max(SIM_AMBIENT,
+                                    self.chamber_temp - SIM_IDLE_RATE * dt)
+        self.chamber_temp = round(self.chamber_temp, 1)
 
     def get_state(self):
         if self.bridge:
@@ -93,6 +135,8 @@ class HardwareController:
                 print(f"[HW] state read failed: {e}")
         if HW_AVAILABLE:
             return hw_driver.get_state()
+        self._sim_tick()
+        base = self.chamber_temp
         return {
             'chamberTemp': self.chamber_temp,
             'targetTemp': self.target_temp,
@@ -105,6 +149,13 @@ class HardwareController:
             'uvWavelength': self.uv_wavelength,
             'damperOpen': self.damper_open,
             'fans': self.fans,
+            'fanRpm': {k: (2850 if v > 0 else 0) for k, v in self.fans.items()},
+            'ledTemps': {'left': round(base + 1.5, 1), 'right': round(base + 2.0, 1),
+                         'door': round(base + 0.5, 1), 'back': round(base + 1.0, 1)},
+            'nitrogenActive': self.nitrogen_on,
+            'n2LinePressure': 6.0,        # simulated line pressure (no sensor off-Pi)
+            'bofaOn': self.bofa_on,
+            'faults': {'heater': None, 'cooling': None, 'led': None},
             'hwSource': 'simulation',
         }
 
@@ -116,6 +167,7 @@ class HardwareController:
             return ok, why
         if HW_AVAILABLE:
             hw_driver.set_target_temperature(temp)
+        self.heating = True               # simulation ramps toward the target
         return True, None
 
     def stop_heating(self):
@@ -168,74 +220,98 @@ class HardwareController:
         self.uv_on = bool(on)
         self.uv_intensity = int(intensity) if on else 0
         self.uv_wavelength = wavelength if on else None
+        if self.bridge:
+            return self.bridge.set_uv(bool(on), int(intensity) if on else 0,
+                                      wavelength)
         if HW_AVAILABLE and hasattr(hw_driver, 'set_uv'):
             hw_driver.set_uv(bool(on), int(intensity) if on else 0, wavelength)
+        return True, None
+
+    def set_nitrogen(self, on):
+        """Open/close the N2 purge valve (GPIO13 on the IO board)."""
+        if self.bridge:
+            ok, why = self.bridge.set_nitrogen(on)
+            self.nitrogen_on = ok and bool(on)
+            return ok, why
+        self.nitrogen_on = bool(on)
+        return True, None
+
+    def set_bofa(self, on):
+        """BOFA fume-extraction control (PCA channel 10)."""
+        if self.bridge:
+            ok, why = self.bridge.set_bofa(on)
+            self.bofa_on = ok and bool(on)
+            return ok, why
+        self.bofa_on = bool(on)
+        return True, None
 
     # ---- high-level operation functions (one per recipe process) ----
     # Each function owns starting / controlling / stopping its hardware. The
     # process ends automatically per its own logic (target reached, etc.).
     def heat_to_target_temperature(self, target_c):
         """Heat the chamber to target_c. Ends when the target is reached."""
-        self.set_uv(False)
-        self.set_cooling(False)
         self.target_temp = target_c
-        self.heating = True
         if self.bridge:
             return self.bridge.heat_to_target(target_c)
+        self.set_uv(False)
+        self.set_cooling(False)
+        self.heating = True
         return True, None
 
     def dry_to_target_temperature(self, target_c):
         """Run drying toward target_c; the process logic stops it automatically."""
-        self.set_uv(False)
-        self.set_cooling(False)
         self.target_temp = target_c
-        self.heating = True
         if self.bridge:
             return self.bridge.dry_to_target(target_c)
+        self.set_uv(False)
+        self.set_cooling(False)
+        self.heating = True
         return True, None
 
     def cure_uv_405(self, target_c, intensity_pct):
         """Cure: heater to target_c + UV 405 nm at intensity_pct."""
-        self.set_cooling(False)
         self.target_temp = target_c
-        self.heating = True
-        self.set_uv(True, intensity_pct, 405)
         if self.bridge:
             return self.bridge.cure_uv(target_c, intensity_pct, 405)
+        self.set_cooling(False)
+        self.heating = True
+        self.set_uv(True, intensity_pct, 405)
         return True, None
 
     def cure_uv_450(self, target_c, intensity_pct):
         """Bleaching: heater to target_c + UV 450 nm at intensity_pct."""
-        self.set_cooling(False)
         self.target_temp = target_c
-        self.heating = True
-        self.set_uv(True, intensity_pct, 450)
         if self.bridge:
             return self.bridge.cure_uv(target_c, intensity_pct, 450)
+        self.set_cooling(False)
+        self.heating = True
+        self.set_uv(True, intensity_pct, 450)
         return True, None
 
     def cool_to_target_temperature(self, target_c, mode):
         """Cool the chamber to target_c in mode (fast/medium/slow). Ends when reached."""
-        self.set_uv(False)
-        self.set_heating(False)
         self.target_temp = target_c
-        self.set_cooling(True, mode)
         if self.bridge:
             return self.bridge.cool_to_target(target_c, mode)
+        self.set_uv(False)
+        self.set_heating(False)
+        self.set_cooling(True, mode)
         return True, None
 
-    def stop_all(self):
-        """Stop every cure output (heater, UV, cooling)."""
+    def stop_all(self, immediate=False):
+        """Stop every cure output (heater, UV, cooling, N2).
+        immediate=True (abort): no heater-fan run-on."""
+        self.nitrogen_on = False
+        if self.bridge:
+            return self.bridge.stop_all(immediate)
         self.set_uv(False)
         self.set_heating(False)
         self.set_cooling(False)
-        if self.bridge:
-            return self.bridge.stop_all()
         return True, None
 
-    def run_fan_test(self):
+    def run_fan_test(self, fan=None):
         if self.bridge:
-            return self.bridge.run_fan_test()
+            return self.bridge.run_fan_test(fan)
         if HW_AVAILABLE:
             return hw_driver.run_fan_test()
         return {'rpm': 2850, 'status': 'OK'}
@@ -306,6 +382,7 @@ def network_status():
         info['connected'] = info['ip'] != '0.0.0.0'
     except Exception as e:
         info['connected'] = False
+        info['code'] = 9084               # NETWORK_STATUS_UNAVAILABLE
         print(f"[NET] Error getting network status: {e}")
 
     return jsonify(info)
@@ -325,13 +402,38 @@ def network_diagnostics():
 
     cmd = cmd_map.get(tool)
     if not cmd:
-        return jsonify({'ok': False, 'result': 'Unknown tool'})
+        return jsonify({'ok': False, 'code': 9080, 'result': 'Unknown tool'})
 
     try:
-        result = run(cmd)
+        result = run(cmd, timeout=45)
         return jsonify({'ok': True, 'result': result})
     except Exception as e:
-        return jsonify({'ok': False, 'result': str(e)})
+        return jsonify({'ok': False, 'code': 9085, 'result': str(e)})
+
+
+@app.route('/api/network/static', methods=['POST'])
+def network_static():
+    """Apply a static-IP (or DHCP) configuration to eth0 via NetworkManager."""
+    d = request.get_json(silent=True) or {}
+    use_dhcp = bool(d.get('dhcp'))
+    ip, gateway = d.get('ip', ''), d.get('gateway', '')
+    subnet, dns = d.get('subnet', '255.255.255.0'), d.get('dns', '')
+    if not _on_device():
+        return jsonify({'ok': True, 'message': 'Network config simulated (off-device)'})
+    try:
+        conn = run("nmcli -t -f NAME,DEVICE connection show --active | grep ':eth0' | cut -d: -f1") or 'eth0'
+        if use_dhcp:
+            run(f'nmcli connection modify "{conn}" ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns ""')
+        else:
+            # subnet mask -> prefix length
+            prefix = sum(bin(int(o)).count('1') for o in subnet.split('.')) if subnet else 24
+            run(f'nmcli connection modify "{conn}" ipv4.method manual '
+                f'ipv4.addresses {ip}/{prefix} ipv4.gateway {gateway}'
+                + (f' ipv4.dns {dns}' if dns else ''))
+        run(f'nmcli connection up "{conn}"', timeout=30)
+        return jsonify({'ok': True, 'message': 'Network configuration applied'})
+    except Exception as e:
+        return jsonify({'ok': False, 'code': 9084, 'message': str(e)})
 
 
 def _db_on():
@@ -441,10 +543,15 @@ def cure_run_report_get(ext_id):
     return jsonify({'ok': True, **rep})
 
 
+def _on_device():
+    """True when running on the machine itself (Pi / any Linux host)."""
+    return sys.platform.startswith('linux')
+
+
 @app.route('/api/system/reboot', methods=['POST'])
 def reboot():
     print("[SYSTEM] Rebooting...")
-    if not HW_AVAILABLE:
+    if not _on_device():
         return jsonify({'ok': True, 'message': 'Reboot simulated'})
     subprocess.Popen(['sudo', 'reboot'], stdout=subprocess.DEVNULL)
     return jsonify({'ok': True, 'message': 'Rebooting...'})
@@ -453,7 +560,7 @@ def reboot():
 @app.route('/api/system/shutdown', methods=['POST'])
 def shutdown():
     print("[SYSTEM] Shutting down...")
-    if not HW_AVAILABLE:
+    if not _on_device():
         return jsonify({'ok': True, 'message': 'Shutdown simulated'})
     subprocess.Popen(['sudo', 'shutdown', '-h', 'now'], stdout=subprocess.DEVNULL)
     return jsonify({'ok': True, 'message': 'Shutting down...'})
@@ -467,7 +574,12 @@ def door_open():
 
 @app.route('/api/chamber/temperature', methods=['POST'])
 def set_temperature():
+    # Same bounds as the driver (heating.target_min=30): anything below is
+    # silently clamped up by the control loop, so reject it here instead.
     target = float(request.args.get('target', 25))
+    if not (30 <= target <= 80):
+        return jsonify({'ok': False, 'code': 7001,
+                        'message': f'Invalid target {target} (30-80°C)'})
     ok, why = hw.set_target_temp(target)
     return jsonify({'ok': ok, 'message': why or f'Target set to {target}°C'})
 
@@ -495,71 +607,140 @@ def damper(action):
 # Each step is defined only by process + (target temp / UV intensity /
 # UV wavelength / cooling mode). There is NO user-configured time — the
 # function decides when its process is complete.
+#
+# Ranges mirror the REAL driver limits (io_controller/components.json):
+#   heating.target_min = 30°C  → heat/dry/cure targets are 30-80°C
+#   led_power.min_intensity = 10 → below 10% the LEDs stay dark
+# Error codes come from the central registry (public/config/errors.json).
 # ============================================================
-def _valid_temp(t):
-    return 20 <= t <= 80
+HEAT_TARGET_MIN = 30    # io_controller heating.target_min — heater refuses below this
+TEMP_MAX = 80
+COOL_TARGET_MIN = 20
+UV_INTENSITY_MIN = 10   # io_controller led_power.min_intensity — LEDs off below this
+
+ERR_INVALID_TARGET_TEMP = 7001
+ERR_INVALID_UV_INTENSITY = 7002
+ERR_INVALID_COOLING_MODE = 7003
+ERR_PRECURE_CHECK_FAILED = 6015
+
+
+def _valid_heat_temp(t):
+    return HEAT_TARGET_MIN <= t <= TEMP_MAX
+
+def _valid_cool_temp(t):
+    return COOL_TARGET_MIN <= t <= TEMP_MAX
 
 def _valid_intensity(i):
-    return 5 <= i <= 100
+    return UV_INTENSITY_MIN <= i <= 100
+
+def _hw_result(ok, why, success_msg):
+    """Uniform cure-route response; hardware refusals carry code 6015."""
+    if ok:
+        return jsonify({'ok': True, 'message': success_msg})
+    return jsonify({'ok': False, 'code': ERR_PRECURE_CHECK_FAILED,
+                    'message': why or 'Hardware refused the operation'})
 
 @app.route('/api/cure/heat', methods=['POST'])
 def cure_heat():
     target = float(request.args.get('target', 60))
-    if not _valid_temp(target):
-        return jsonify({'ok': False, 'message': f'Invalid target {target} (20-80°C)'})
+    if not _valid_heat_temp(target):
+        return jsonify({'ok': False, 'code': ERR_INVALID_TARGET_TEMP,
+                        'message': f'Invalid target {target} ({HEAT_TARGET_MIN}-{TEMP_MAX}°C)'})
     ok, why = hw.heat_to_target_temperature(target)
-    return jsonify({'ok': ok, 'message': why or f'Heating to {target}°C'})
+    return _hw_result(ok, why, f'Heating to {target}°C')
 
 @app.route('/api/cure/dry', methods=['POST'])
 def cure_dry():
     target = float(request.args.get('target', 60))
-    if not _valid_temp(target):
-        return jsonify({'ok': False, 'message': f'Invalid target {target} (20-80°C)'})
+    if not _valid_heat_temp(target):
+        return jsonify({'ok': False, 'code': ERR_INVALID_TARGET_TEMP,
+                        'message': f'Invalid target {target} ({HEAT_TARGET_MIN}-{TEMP_MAX}°C)'})
     ok, why = hw.dry_to_target_temperature(target)
-    return jsonify({'ok': ok, 'message': why or f'Drying to {target}°C'})
+    return _hw_result(ok, why, f'Drying to {target}°C')
 
 @app.route('/api/cure/cure-405', methods=['POST'])
 def cure_405():
     target = float(request.args.get('target', 60))
     intensity = int(request.args.get('intensity', 30))
-    if not _valid_temp(target):
-        return jsonify({'ok': False, 'message': f'Invalid target {target} (20-80°C)'})
+    if not _valid_heat_temp(target):
+        return jsonify({'ok': False, 'code': ERR_INVALID_TARGET_TEMP,
+                        'message': f'Invalid target {target} ({HEAT_TARGET_MIN}-{TEMP_MAX}°C)'})
     if not _valid_intensity(intensity):
-        return jsonify({'ok': False, 'message': f'Invalid intensity {intensity} (5-100%)'})
+        return jsonify({'ok': False, 'code': ERR_INVALID_UV_INTENSITY,
+                        'message': f'Invalid intensity {intensity} ({UV_INTENSITY_MIN}-100%)'})
     ok, why = hw.cure_uv_405(target, intensity)
-    return jsonify({'ok': ok, 'message': why or f'Cure UV 405nm @ {intensity}%, {target}°C'})
+    return _hw_result(ok, why, f'Cure UV 405nm @ {intensity}%, {target}°C')
 
 @app.route('/api/cure/cure-450', methods=['POST'])
 def cure_450():
     target = float(request.args.get('target', 60))
     intensity = int(request.args.get('intensity', 30))
-    if not _valid_temp(target):
-        return jsonify({'ok': False, 'message': f'Invalid target {target} (20-80°C)'})
+    if not _valid_heat_temp(target):
+        return jsonify({'ok': False, 'code': ERR_INVALID_TARGET_TEMP,
+                        'message': f'Invalid target {target} ({HEAT_TARGET_MIN}-{TEMP_MAX}°C)'})
     if not _valid_intensity(intensity):
-        return jsonify({'ok': False, 'message': f'Invalid intensity {intensity} (5-100%)'})
+        return jsonify({'ok': False, 'code': ERR_INVALID_UV_INTENSITY,
+                        'message': f'Invalid intensity {intensity} ({UV_INTENSITY_MIN}-100%)'})
     ok, why = hw.cure_uv_450(target, intensity)
-    return jsonify({'ok': ok, 'message': why or f'Bleaching UV 450nm @ {intensity}%, {target}°C'})
+    return _hw_result(ok, why, f'Bleaching UV 450nm @ {intensity}%, {target}°C')
 
 @app.route('/api/cure/cool', methods=['POST'])
 def cure_cool():
     target = float(request.args.get('target', 25))
     mode = request.args.get('mode', 'medium')
-    if not _valid_temp(target):
-        return jsonify({'ok': False, 'message': f'Invalid target {target} (20-80°C)'})
+    if not _valid_cool_temp(target):
+        return jsonify({'ok': False, 'code': ERR_INVALID_TARGET_TEMP,
+                        'message': f'Invalid target {target} ({COOL_TARGET_MIN}-{TEMP_MAX}°C)'})
     if mode not in ('fast', 'medium', 'slow'):
-        return jsonify({'ok': False, 'message': f'Invalid cooling mode {mode}'})
+        return jsonify({'ok': False, 'code': ERR_INVALID_COOLING_MODE,
+                        'message': f'Invalid cooling mode {mode}'})
     ok, why = hw.cool_to_target_temperature(target, mode)
-    return jsonify({'ok': ok, 'message': why or f'Cooling ({mode}) to {target}°C'})
+    return _hw_result(ok, why, f'Cooling ({mode}) to {target}°C')
+
+@app.route('/api/cure/nitrogen', methods=['POST'])
+def cure_nitrogen():
+    """Open/close the N2 purge valve. ?on=1 opens, ?on=0 closes."""
+    on = request.args.get('on', '1') not in ('0', 'false', 'off')
+    ok, why = hw.set_nitrogen(on)
+    return _hw_result(ok, why, f'Nitrogen valve {"opened" if on else "closed"}')
 
 @app.route('/api/cure/stop', methods=['POST'])
 def cure_stop():
-    hw.stop_all()
-    return jsonify({'ok': True, 'message': 'All cure outputs stopped'})
+    """Stop all cure outputs. ?immediate=1 (abort) skips the heater-fan run-on."""
+    immediate = request.args.get('immediate', '0') not in ('0', 'false', '')
+    hw.stop_all(immediate)
+    return jsonify({'ok': True, 'message': 'All cure outputs stopped'
+                    + (' immediately' if immediate else '')})
+
+
+@app.route('/api/uv', methods=['POST'])
+def set_uv_output():
+    """Standalone UV control (diagnostics): ?on=1&intensity=30&wavelength=405."""
+    on = request.args.get('on', '0') not in ('0', 'false', 'off')
+    intensity = int(request.args.get('intensity', 30))
+    wavelength = int(request.args.get('wavelength', 405))
+    if on and not _valid_intensity(intensity):
+        return jsonify({'ok': False, 'code': ERR_INVALID_UV_INTENSITY,
+                        'message': f'Invalid intensity {intensity} ({UV_INTENSITY_MIN}-100%)'})
+    if on and wavelength not in (405, 450):
+        return jsonify({'ok': False, 'message': f'Invalid wavelength {wavelength} (405|450)'})
+    ok, why = hw.set_uv(on, intensity, wavelength if on else None)
+    return _hw_result(ok, why, f'UV {"on" if on else "off"}')
+
+
+@app.route('/api/bofa', methods=['POST'])
+def set_bofa():
+    """BOFA fume-extraction on/off. ?on=1|0"""
+    on = request.args.get('on', '1') not in ('0', 'false', 'off')
+    ok, why = hw.set_bofa(on)
+    return _hw_result(ok, why, f'BOFA {"on" if on else "off"}')
 
 
 @app.route('/api/diagnostics/fan-test', methods=['POST'])
 def fan_test():
-    result = hw.run_fan_test()
+    """Per-fan diagnostic: ?fan=led_cooling|chamber_intake|chamber_heating."""
+    fan = request.args.get('fan')
+    result = hw.run_fan_test(fan)
     return jsonify({'ok': True, **result})
 
 
@@ -578,7 +759,7 @@ def export_logs():
         os.system('sync && umount /media/usb 2>/dev/null')
         return jsonify({'ok': True, 'message': 'Logs exported to USB'})
     except Exception as e:
-        return jsonify({'ok': False, 'message': str(e)})
+        return jsonify({'ok': False, 'code': 9083, 'message': str(e)})
 
 
 @app.route('/api/system/export-csv', methods=['POST'])
@@ -594,14 +775,89 @@ def export_csv_to_usb():
         from updater import find_usb_mount
         usb = find_usb_mount()
         if not usb:
-            return jsonify({'ok': False, 'message': 'No USB drive found. Please insert a USB stick.'})
+            return jsonify({'ok': False, 'code': 9081,
+                            'message': 'No USB drive found. Please insert a USB stick.'})
         dest = os.path.join(usb, filename)
         with open(dest, 'w', newline='') as f:
             f.write(content)
         os.system('sync')
         return jsonify({'ok': True, 'message': f'Saved {filename} to USB', 'path': dest})
     except Exception as e:
+        return jsonify({'ok': False, 'code': 9082, 'message': str(e)})
+
+
+@app.route('/api/system/datetime', methods=['POST'])
+def set_datetime():
+    """Set the system clock: {date: 'YYYY-MM-DD', time: 'HH:MM'}."""
+    d = request.get_json(silent=True) or {}
+    date_s, time_s = d.get('date', ''), d.get('time', '')
+    import re
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_s) or \
+       not re.fullmatch(r'\d{2}:\d{2}(:\d{2})?', time_s):
+        return jsonify({'ok': False, 'message': 'Invalid date/time format'})
+    if not _on_device():
+        return jsonify({'ok': True, 'message': f'Clock set simulated ({date_s} {time_s})'})
+    try:
+        run('sudo timedatectl set-ntp false')
+        out = subprocess.run(['sudo', 'timedatectl', 'set-time', f'{date_s} {time_s}:00'
+                              if len(time_s) == 5 else f'{date_s} {time_s}'],
+                             capture_output=True, text=True, timeout=15)
+        if out.returncode != 0:
+            return jsonify({'ok': False, 'message': out.stderr.strip() or 'set-time failed'})
+        return jsonify({'ok': True, 'message': f'Clock set to {date_s} {time_s}'})
+    except Exception as e:
         return jsonify({'ok': False, 'message': str(e)})
+
+
+def _find_update_package():
+    """Locate the newest .scu package on USB. Returns (path, error)."""
+    try:
+        from updater import find_usb_mount, find_update_package
+        usb = find_usb_mount()
+        if not usb:
+            return None, ('No USB drive found', 9081)
+        pkg = find_update_package(usb)
+        if not pkg:
+            return None, ('No .scu update file found on USB', 9087)
+        return pkg, None
+    except Exception as e:
+        return None, (str(e), 9086)
+
+
+@app.route('/api/system/update/manifest', methods=['GET'])
+def update_manifest():
+    """Version + SHA-256 of the update package, for UI-side integrity check."""
+    pkg, err = _find_update_package()
+    if not pkg:
+        msg, code = err
+        return jsonify({'ok': False, 'code': code, 'message': msg}), 404
+    import hashlib
+    h = hashlib.sha256()
+    with open(pkg, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    version = os.path.basename(pkg)
+    try:
+        from updater import extract_and_verify, read_manifest
+        update_dir, _msg = extract_and_verify(pkg)
+        if update_dir:
+            version = read_manifest(update_dir).get('version', version)
+            import shutil as _sh
+            _sh.rmtree(os.path.dirname(update_dir), ignore_errors=True)
+    except Exception:  # pragma: no cover - version stays as filename
+        pass
+    return jsonify({'ok': True, 'version': version, 'sha256': h.hexdigest()})
+
+
+@app.route('/api/system/update/package', methods=['GET'])
+def update_package():
+    """Raw update-package bytes (integrity-checked by the UI against the manifest)."""
+    pkg, err = _find_update_package()
+    if not pkg:
+        msg, code = err
+        return jsonify({'ok': False, 'code': code, 'message': msg}), 404
+    return send_from_directory(os.path.dirname(pkg), os.path.basename(pkg),
+                               as_attachment=True)
 
 
 @app.route('/api/system/update', methods=['POST'])
@@ -610,6 +866,11 @@ def update_software():
     try:
         from updater import run_update
         result = run_update()
+        if not result.get('ok'):
+            result.setdefault('code',
+                              9087 if 'No .scu' in (result.get('message') or '')
+                              else 9081 if 'USB' in (result.get('message') or '')
+                              else 9086)
         return jsonify(result)
     except ImportError:
         return jsonify({'ok': True, 'message': 'Update simulated', 'steps': []})

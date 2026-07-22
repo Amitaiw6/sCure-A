@@ -1,5 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+
+export interface HardwareFaults {
+  heater: string | null
+  cooling: string | null
+  led: string | null
+}
 
 export interface HardwareState {
   chamberTemp: number
@@ -18,6 +24,8 @@ export interface HardwareState {
   nfcEnabled: boolean           // NFC reader enabled
   networkConnected: boolean     // Ethernet/network available
   apiConnected: boolean         // Python API reachable
+  faults: HardwareFaults | null // live faults reported by the IO board
+  ledTemps: Record<string, number | null> | null  // per-LED-module thermistors
   counters: {
     led405: number              // hours of 405nm LED usage
     led450: number              // hours of 450nm LED usage
@@ -59,6 +67,8 @@ const defaultState: HardwareState = {
   nfcEnabled: true,
   networkConnected: navigator.onLine,
   apiConnected: false,
+  faults: null,
+  ledTemps: null,
   counters: {
     led405: 124.5,
     led450: 87.2,
@@ -110,8 +120,14 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // Poll network + API status (real chamber temp, door, etc.) every 2 seconds
+  const alertRef = useRef({ wasConnected: false, heaterFault: null as string | null, coolingFault: null as string | null })
   useEffect(() => {
     const API_BASE = import.meta.env.VITE_HW_API_URL || 'http://localhost:3001/api'
+
+    // Surface hardware problems on the Alerts screen via the central registry
+    // codes (AlertsContext listens for this event).
+    const raiseAlert = (code: number) =>
+      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code } }))
 
     const checkStatus = async () => {
       // Browser online/offline
@@ -122,17 +138,42 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
         const res = await fetch(`${API_BASE}/state`, { signal: AbortSignal.timeout(3000) })
         if (res.ok) {
           const data = await res.json()
+          alertRef.current.wasConnected = true
+          // New heater/cooling fault since the last poll → temp-stall alert (7004)
+          const hf = data.faults?.heater ?? null
+          const cf = data.faults?.cooling ?? null
+          if ((hf && hf !== alertRef.current.heaterFault) ||
+              (cf && cf !== alertRef.current.coolingFault)) {
+            raiseAlert(7004)
+          }
+          alertRef.current.heaterFault = hf
+          alertRef.current.coolingFault = cf
+          // The hardware is authoritative: mirror the real readback so the
+          // heating/cooling/UV/target indicators reflect the machine, not
+          // the UI's optimistic local state.
           setState(prev => ({
             ...prev,
             apiConnected: true,
-            chamberTemp: data.chamberTemp ?? prev.chamberTemp,
+            chamberTemp: data.chamberTemp != null ? Math.round(data.chamberTemp * 10) / 10 : prev.chamberTemp,
             doorClosed: data.doorClosed ?? prev.doorClosed,
+            targetTemp: data.targetTemp !== undefined ? data.targetTemp : prev.targetTemp,
+            isHeating: data.isHeating ?? prev.isHeating,
+            isCooling: data.isCooling ?? prev.isCooling,
+            uvOn: data.uvOn ?? prev.uvOn,
+            uvIntensity: data.uvIntensity ?? prev.uvIntensity,
+            nitrogenActive: data.nitrogenActive ?? prev.nitrogenActive,
             n2LinePressure: data.n2LinePressure ?? prev.n2LinePressure,
+            faults: data.faults ?? prev.faults,
+            ledTemps: data.ledTemps ?? prev.ledTemps,
           }))
         } else {
+          if (alertRef.current.wasConnected) raiseAlert(9089)  // HW_API_UNREACHABLE
+          alertRef.current.wasConnected = false
           setState(prev => ({ ...prev, apiConnected: false }))
         }
       } catch {
+        if (alertRef.current.wasConnected) raiseAlert(9089)
+        alertRef.current.wasConnected = false
         setState(prev => ({ ...prev, apiConnected: false }))
       }
     }

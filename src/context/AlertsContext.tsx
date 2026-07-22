@@ -80,7 +80,8 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     load()
   }, [])
 
-  // Demo: trigger some alerts on load
+  // Restore persisted alerts; demo alerts are DEV-only so a real machine
+  // never shows fabricated problems.
   useEffect(() => {
     if (errorDefs.length === 0) return
     const stored = localStorage.getItem('scure-active-alerts')
@@ -95,7 +96,8 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         return
       }
     }
-    // Load demo alerts when no active alerts exist
+    if (!import.meta.env.DEV) return
+    // Dev only: load demo alerts when no active alerts exist
     localStorage.removeItem('scure-active-alerts')
     const now = new Date()
     setActiveAlerts([
@@ -121,6 +123,17 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       return [...prev, { id: crypto.randomUUID(), code, timestamp: new Date().toISOString(), dismissed: false }]
     })
   }, [])
+
+  // Hardware layers (HardwareContext poll, cure page) raise alerts by
+  // dispatching 'scure-alert' with a registry code — decoupled from provider order.
+  useEffect(() => {
+    const onAlert = (e: Event) => {
+      const code = (e as CustomEvent<{ code?: number }>).detail?.code
+      if (typeof code === 'number') triggerAlert(code)
+    }
+    window.addEventListener('scure-alert', onAlert)
+    return () => window.removeEventListener('scure-alert', onAlert)
+  }, [triggerAlert])
 
   const dismissAlert = useCallback((id: string) => {
     setActiveAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a))

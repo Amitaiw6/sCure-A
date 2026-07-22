@@ -31,7 +31,12 @@ interface StepModalProps {
 
 const processTypes: ProcessType[] = ['Drying', 'Heating', 'Cure', 'Bleacher', 'Cooling', 'Nitrogen']
 
-export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep, stepNumber, minTemp = 20, maxCoolingTemp = 75 }: StepModalProps) {
+// Hardware limits (io_controller/components.json): the heater refuses targets
+// below 30°C and the UV LEDs stay dark below 10% intensity.
+const HEAT_MIN_TEMP = 30
+const UV_MIN_INTENSITY = 10
+
+export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep, stepNumber, minTemp = HEAT_MIN_TEMP, maxCoolingTemp = 75 }: StepModalProps) {
   const [processType, setProcessType] = useState<ProcessType>('Cooling')
   const [tempValue, setTempValue] = useState<number | null>(25)
   const [intensityValue, setIntensityValue] = useState<number | null>(null)
@@ -72,7 +77,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
     const proc = v as ProcessType
     setProcessType(proc)
     if (proc === 'Heating') {
-      setTempValue(prev => prev ?? 40)
+      setTempValue(prev => Math.max(prev ?? 40, HEAT_MIN_TEMP))
       setIntensityValue(null)
       setUvIntensity(null)
     } else if (proc === 'Cooling') {
@@ -85,11 +90,11 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setIntensityValue(null)
       setUvIntensity(null)
     } else if (proc === 'Drying') {
-      setTempValue(prev => prev ?? 40)
+      setTempValue(prev => Math.max(prev ?? 40, HEAT_MIN_TEMP))
       setIntensityValue(null)
       setUvIntensity(null)
     } else {
-      setTempValue(prev => prev ?? 40)
+      setTempValue(prev => Math.max(prev ?? 40, HEAT_MIN_TEMP))
       setIntensityValue(prev => prev ?? 30)
     }
   }
@@ -149,7 +154,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
               <TouchNumber
                 value={tempValue}
                 onChange={setTempValue}
-                min={processType === 'Cooling' ? 20 : minTemp}
+                min={processType === 'Cooling' ? 20 : Math.max(minTemp, HEAT_MIN_TEMP)}
                 max={processType === 'Cooling' ? maxCoolingTemp : 80}
                 step={5}
                 suffix="°C"
@@ -206,7 +211,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
                 value={time}
                 onChange={v => setTime(v ?? 1)}
                 min={1}
-                max={120}
+                max={processType === 'Bleacher' ? 720 : 120}
                 step={1}
                 suffix="min"
                 className="w-[160px]"
@@ -237,7 +242,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
                 <TouchNumber
                   value={uvIntensity ?? 30}
                   onChange={v => setUvIntensity(v)}
-                  min={5}
+                  min={UV_MIN_INTENSITY}
                   max={100}
                   step={5}
                   suffix="%"
