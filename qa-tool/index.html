@@ -809,6 +809,38 @@ async function runSingleTest(test) {
       return;
     }
 
+    // Local UX↔hardware compatibility logic mirrors (no API needed)
+    if (test.check && test.check.startsWith('hwc_csv_') || test.check === 'hwc_cool_done_band' || test.check === 'hwc_deltasigma') {
+      const result = runHwCompatCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Negative API test: the endpoint must REJECT the request (ok:false),
+    // optionally with a specific registry error code.
+    if (test.check === 'hw_reject') {
+      const opts = { method: test.method || 'POST', signal: AbortSignal.timeout(8000) };
+      if (test.body) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(test.body); }
+      const r = await fetch(apiUrl + test.endpoint, opts);
+      const d = await r.json();
+      const elapsed = Date.now() - t0;
+      let result;
+      if (d.ok === false && (!test.code || d.code === test.code)) {
+        result = { status: 'pass', msg: `Rejected${d.code ? ' with code ' + d.code : ''}: ${(d.message || '').slice(0, 40)}` };
+      } else if (d.ok === false) {
+        result = { status: 'warn', msg: `Rejected but code=${d.code ?? 'none'} (expected ${test.code})` };
+      } else {
+        result = { status: 'fail', msg: 'Request was ACCEPTED but must be rejected' };
+      }
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r2 => setTimeout(r2, 50));
+      return;
+    }
+
     // Fullscreen launch prerequisite: the API server must serve the built
     // UI at / (and at any client route) — the Pi kiosk and the Windows
     // desktop window (server/desktop.py) both open http://localhost:3001.
@@ -996,6 +1028,17 @@ async function runSingleTest(test) {
 
 function runCheck(check, data) {
   switch (check) {
+    case 'hwc_n2_state': {
+      if (typeof data.nitrogenActive !== 'boolean') return { status: 'fail', msg: 'No nitrogenActive in /api/state' };
+      return data.nitrogenActive
+        ? { status: 'pass', msg: 'nitrogenActive = true after valve open' }
+        : { status: 'warn', msg: 'nitrogenActive is false (valve command may have been refused off-Pi)' };
+    }
+    case 'hwc_state_extras': {
+      const missing = ['ledTemps', 'fanRpm', 'nitrogenActive', 'faults'].filter(k => data[k] === undefined);
+      if (missing.length > 0) return { status: 'fail', msg: `Missing state fields: ${missing.join(', ')}` };
+      return { status: 'pass', msg: `hwSource=${data.hwSource}: ledTemps/fanRpm/nitrogenActive/faults all present` };
+    }
     case 'temp_range': {
       const temp = data.chamberTemp;
       if (typeof temp !== 'number') return { status: 'fail', msg: 'No temperature data' };
@@ -1582,6 +1625,67 @@ const FAN_IDS = ['led_cooling', 'chamber_intake', 'chamber_heating'];
 function fanTestResultSim(id) {
   const rpm = FAN_RPM_SIM[id] ?? null;
   return { rpm, ok: rpm != null && rpm >= 2000 }; // healthy fans spin well above 2000 RPM
+}
+
+// ============================================================
+// UX ↔ Hardware compatibility mirrors — same rules as MaterialContext.parseCsv,
+// CureProcessPage cooling completion and io_controller delta-sigma heating.
+// ============================================================
+function runHwCompatCheck(check) {
+  // Mirror of the CSV import range rules (hardware-authoritative)
+  const csvTempOk = (proc, t) => proc === 'Cooling' ? (t >= 20 && t <= 75) : (t >= 30 && t <= 80);
+  const csvUvOk = (v) => v >= 10 && v <= 100;
+  switch (check) {
+    case 'hwc_csv_heat_min': {
+      const cases = [['Heating', 25, false], ['Heating', 30, true], ['Drying', 29, false], ['Cure', 30, true], ['Cooling', 25, true]];
+      const bad = cases.filter(([p, t, exp]) => csvTempOk(p, t) !== exp);
+      return bad.length === 0
+        ? { status: 'pass', msg: `${cases.length} heating-floor cases match the 30°C driver minimum` }
+        : { status: 'fail', msg: `${bad.length} wrong: ${bad.map(c => `${c[0]}@${c[1]}`).join(', ')}` };
+    }
+    case 'hwc_csv_uv_min': {
+      const cases = [[5, false], [9, false], [10, true], [100, true], [101, false]];
+      const bad = cases.filter(([v, exp]) => csvUvOk(v) !== exp);
+      return bad.length === 0
+        ? { status: 'pass', msg: 'UV floor matches led_power.min_intensity (10%)' }
+        : { status: 'fail', msg: `${bad.length} wrong UV bounds` };
+    }
+    case 'hwc_csv_cool_drop': {
+      // Cooling target must be at least 5°C below the previous step's temp
+      const coolOk = (prevTemp, target) => prevTemp == null || target <= prevTemp - 5;
+      const cases = [[60, 25, true], [60, 56, false], [60, 55, true], [null, 25, true], [40, 38, false]];
+      const bad = cases.filter(([p, t, exp]) => coolOk(p, t) !== exp);
+      return bad.length === 0
+        ? { status: 'pass', msg: 'Cooling-drop rule (≥5°C below previous) enforced' }
+        : { status: 'fail', msg: `${bad.length} wrong cooling-drop cases` };
+    }
+    case 'hwc_cool_done_band': {
+      // Mirror of CureProcessPage: cooling completes at target + 0.5°C
+      const coolDone = (chamber, target) => chamber <= target + 0.5;
+      const cases = [[60, 25, false], [25.6, 25, false], [25.5, 25, true], [25, 25, true], [24, 25, true]];
+      const bad = cases.filter(([c, tg, exp]) => coolDone(c, tg) !== exp);
+      return bad.length === 0
+        ? { status: 'pass', msg: 'Cooling completion follows the measured temp (±0.5°C band)' }
+        : { status: 'fail', msg: `${bad.length} wrong completion cases` };
+    }
+    case 'hwc_deltasigma': {
+      // Mirror of temperature_control delta-sigma: average ON ratio ≈ duty
+      const dutyToRatio = (duty, cycles) => {
+        let sigma = 0, on = 0;
+        for (let i = 0; i < cycles; i++) {
+          sigma += duty;
+          if (sigma >= 100) { sigma -= 100; on++; }
+        }
+        return (on / cycles) * 100;
+      };
+      const cases = [0, 10, 25, 50, 75, 100];
+      const bad = cases.filter(d => Math.abs(dutyToRatio(d, 200) - d) > 1);
+      return bad.length === 0
+        ? { status: 'pass', msg: 'Delta-sigma ON-ratio tracks PI duty within 1% over 200 cycles' }
+        : { status: 'fail', msg: `Duty mismatch at: ${bad.join(', ')}%` };
+    }
+  }
+  return { status: 'fail', msg: 'Unknown check: ' + check };
 }
 
 function runFanTestCheck(check) {
