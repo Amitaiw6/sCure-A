@@ -61,8 +61,11 @@ class StatusLeds(threading.Thread):
 
     Priority:  any active fault -> BLINKING fault color (red)
                door open        -> BLINKING door color
+               process running  -> busy color (yellow) as a comet MOVING
+                                   right-to-left (heating / cooling / UV —
+                                   any active cure step)
                otherwise        -> solid normal color
-    Colors / brightness / blink rate come from the "rgb"."status" config.
+    Colors / brightness / blink + chase rates come from "rgb"."status".
     Best-effort by design: any LED error is swallowed - the strip must never
     take down heating/cooling control.
     """
@@ -75,26 +78,47 @@ class StatusLeds(threading.Thread):
         self.color_normal = parse_color(str(st.get('normal', 'green')))
         self.color_fault = parse_color(str(st.get('fault', 'red')))
         self.color_door = parse_color(str(st.get('door_open', 'ff7800')))
+        self.color_busy = parse_color(str(st.get('busy', 'yellow')))
         self.brightness = float(st.get('brightness', 40))
         self.blink_sec = max(0.1, float(st.get('blink_sec', 0.5)))
+        # chase_sec = time per one-LED step of the moving busy animation
+        self.chase_sec = max(0.03, float(st.get('chase_sec', 0.12)))
+        self.chase_tail = max(1, int(st.get('chase_tail', 5)))
+        self.rtl = str(st.get('busy_direction', 'rtl')).lower() != 'ltr'
         self._stop_evt = threading.Event()
         self._last_frame = None
 
     def _mode(self):
         b = self.bridge
         try:
-            cooling_fault = b.sys.cooling_status().get('fault')
+            cool = b.sys.cooling_status()
         except Exception:                 # noqa: BLE001
-            cooling_fault = None
-        if b.temp.fault or b.sys.heater_fault or b.sys.led_fault or cooling_fault:
+            cool = {}
+        if b.temp.fault or b.sys.heater_fault or b.sys.led_fault or cool.get('fault'):
             return 'fault'
         if b.sys.door_open() is True:     # None (sensor unreadable) is not "open"
             return 'door'
+        if b.temp.active or cool.get('active') or b._uv.get('on'):
+            return 'busy'
         return 'normal'
 
+    def _paint_chase(self, offset):
+        """One frame of the busy animation: a comet with a fading tail that
+        moves right-to-left across the strip (flip with busy_direction)."""
+        px, n = self.leds.px, self.leds.count
+        level = max(0.0, min(1.0, self.brightness / 100.0))
+        r, g, b = self.color_busy
+        head = (n - 1 - offset) % n if self.rtl else offset % n
+        for i in range(n):
+            # tail trails where the head came from
+            d = (i - head) % n if self.rtl else (head - i) % n
+            f = level * (1.0 - d / self.chase_tail) if d < self.chase_tail else 0.0
+            px[i] = (int(r * f), int(g * f), int(b * f))
+        px.show()
+
     def run(self):
-        phase = False
-        while not self._stop_evt.wait(self.blink_sec):
+        offset = 0
+        while not self._stop_evt.wait(self.chase_sec):
             try:
                 # Manual /api/rgb override active -> leave the strip alone;
                 # force a repaint of the status color when it ends.
@@ -102,11 +126,17 @@ class StatusLeds(threading.Thread):
                     self._last_frame = None
                     continue
                 mode = self._mode()
-                phase = not phase
+                if mode == 'busy':
+                    offset = (offset + 1) % self.leds.count
+                    self._paint_chase(offset)
+                    self._last_frame = ('busy', offset)
+                    continue
+                # blink phase derived from wall time (loop ticks at chase_sec)
+                blink_on = int(time.time() / self.blink_sec) % 2 == 0
                 if mode == 'fault':
-                    frame = self.color_fault if phase else (0, 0, 0)
+                    frame = self.color_fault if blink_on else (0, 0, 0)
                 elif mode == 'door':
-                    frame = self.color_door if phase else (0, 0, 0)
+                    frame = self.color_door if blink_on else (0, 0, 0)
                 else:
                     frame = self.color_normal
                 if frame != self._last_frame:

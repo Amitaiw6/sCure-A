@@ -292,7 +292,7 @@ const TEST_CATEGORIES = [
       { id: 'io_cool_on', name: 'Cooling Mode ON', desc: 'POST /api/cure/cool — damper opens, fans run under closed-loop rate control', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
       { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
-      { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): any fault → BLINKING red beats door-open; open door → BLINKING door color; all OK → solid normal color; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
+      { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): any fault → BLINKING red beats door-open; open door → BLINKING door color; process running (heat/cool/UV) → yellow comet moving right-to-left; all OK → solid normal color; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
     ]
   },
   {
@@ -866,32 +866,41 @@ async function runSingleTest(test) {
       return;
     }
 
-    // Mirrors StatusLeds._mode() + blink in server/io_bridge.py: the RGB
-    // strip shows machine status — fault (blink red) > door open (blink) >
-    // normal (solid). door_open === null (unreadable sensor) is NOT "open".
+    // Mirrors StatusLeds in server/io_bridge.py: the RGB strip shows machine
+    // status — fault (blink red) > door open (blink) > busy (yellow comet
+    // moving right-to-left while heating/cooling/UV run) > normal (solid).
+    // door_open === null (unreadable sensor) is NOT "open".
     if (test.check === 'io_rgb_status') {
-      const mode = (fault, doorOpen) => fault ? 'fault' : (doorOpen === true ? 'door' : 'normal');
+      const mode = (fault, doorOpen, busy) =>
+        fault ? 'fault' : (doorOpen === true ? 'door' : (busy ? 'busy' : 'normal'));
       const frame = (m, phase, colors) =>
         m === 'fault' ? (phase ? colors.fault : 'off')
         : m === 'door' ? (phase ? colors.door : 'off')
+        : m === 'busy' ? 'comet'
         : colors.normal;
       const C = { normal: 'green', fault: 'red', door: 'orange' };
       const cases = [
-        [null, false, 'normal'],          // all OK -> solid normal color
-        [null, true, 'door'],             // door open -> door blink
-        ['heater fan', true, 'fault'],    // fault beats door
-        ['thermistor', false, 'fault'],
-        [null, null, 'normal'],           // unreadable sensor stays normal
+        // [fault, doorOpen, busy] -> expected mode
+        [null, false, false, 'normal'],       // all OK -> solid normal color
+        [null, true, false, 'door'],          // door open -> door blink
+        ['heater fan', true, true, 'fault'],  // fault beats door and busy
+        [null, true, true, 'door'],           // door beats busy
+        [null, false, true, 'busy'],          // process running -> moving yellow
+        [null, null, false, 'normal'],        // unreadable sensor stays normal
       ];
-      const bad = cases.filter(([f, d, expect]) => mode(f, d) !== expect);
+      const bad = cases.filter(([f, d, bz, expect]) => mode(f, d, bz) !== expect);
+      // Comet frame: head at n-1-offset moves right-to-left, tail fades behind
+      const cometHead = (n, offset) => (n - 1 - offset) % n;
+      const chaseOk = cometHead(21, 0) === 20 && cometHead(21, 1) === 19 && cometHead(21, 21) === 20;
       const blinkOk =
         frame('fault', true, C) === 'red' && frame('fault', false, C) === 'off' &&   // fault blinks
         frame('door', true, C) === 'orange' && frame('door', false, C) === 'off' &&  // door blinks
+        frame('busy', true, C) === 'comet' && frame('busy', false, C) === 'comet' && // busy always animates
         frame('normal', true, C) === 'green' && frame('normal', false, C) === 'green'; // normal solid
       const elapsed = Date.now() - t0;
-      const result = bad.length === 0 && blinkOk
-        ? { status: 'pass', msg: 'fault > door > normal priority and blink behavior correct' }
-        : { status: 'fail', msg: bad.length ? `wrong mode for: ${bad.map(c => `fault=${c[0]},door=${c[1]}`).join('; ')}` : 'blink pattern wrong' };
+      const result = bad.length === 0 && blinkOk && chaseOk
+        ? { status: 'pass', msg: 'fault > door > busy > normal priority; blink + right-to-left comet correct' }
+        : { status: 'fail', msg: bad.length ? `wrong mode for: ${bad.map(c => `fault=${c[0]},door=${c[1]},busy=${c[2]}`).join('; ')}` : (!chaseOk ? 'comet direction wrong' : 'blink pattern wrong') };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
