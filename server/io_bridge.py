@@ -109,19 +109,20 @@ class StatusLeds(threading.Thread):
     def _evaluate(self):
         """Runs every status_sec (default 2 s): classify the machine state for
         the strip AND enforce the door safety - the door opening while ANY
-        output is live aborts the process and forces every output off."""
-        mode = self._mode()
-        if mode == 'door':
-            b = self.bridge
-            try:
+        output is live aborts the process and forces every output off.
+        The abort check is independent of the displayed mode, so it fires
+        even when a fault has priority on the strip."""
+        b = self.bridge
+        try:
+            if b.sys.door_open() is True:
                 outputs_on = (b.temp.active or b.sys.cooling_status().get('active')
                               or b._uv.get('on') or b._n2_on or b._bofa_on
                               or any(d > 0 for d in b._fan_duty.values()))
                 if outputs_on:
                     b.door_abort()
-            except Exception:             # noqa: BLE001 - best-effort here; the
-                pass                      # io_controller interlock still backs it up
-        return mode
+        except Exception:                 # noqa: BLE001 - best-effort here; the
+            pass                          # io_controller interlock still backs it up
+        return self._mode()
 
     def _paint_chase(self, offset):
         """One frame of the busy animation: a comet with a fading tail that
