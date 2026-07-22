@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { TouchNumber } from '@/components/ui/touch-number'
@@ -6,7 +7,10 @@ import { Progress } from '@/components/ui/progress'
 import { useHardware } from '@/context/HardwareContext'
 import { Download, Upload, Fan, Zap, Building2, Unlink, ShieldCheck } from 'lucide-react'
 import { useSystemConfig } from '@/context/SystemConfigContext'
-import { systemReboot, exportLogs } from '@/services/hardware-api'
+import {
+  systemReboot, exportLogs, setTargetTemperature, setFanSpeed,
+  setDamper, runFanTest, runLedDiagnostic,
+} from '@/services/hardware-api'
 import { COMPLIANCE_CONTROLS } from '@/lib/compliance'
 import UpdateModal from '@/components/UpdateModal'
 import ComplianceModal from '@/components/ComplianceModal'
@@ -18,7 +22,7 @@ function formatHours(h: number): string {
 }
 
 export default function SettingsPage() {
-  const { state: hw, setChamberTemp, setNitrogenMode, setNfcEnabled, setSystemName } = useHardware()
+  const { state: hw, setNitrogenMode, setNfcEnabled, setSystemName } = useHardware()
   const { config, setOrganization, resetSetup } = useSystemConfig()
   const orgFileInputRef = useRef<HTMLInputElement>(null)
   const [orgError, setOrgError] = useState<string | null>(null)
@@ -40,7 +44,7 @@ export default function SettingsPage() {
   const [bofaControl, setBofaControl] = useState(true)
   const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null }>>({})
   const [ledTestRunning, setLedTestRunning] = useState(false)
-  const [ledResults, setLedResults] = useState<string[] | null>(null)
+  const [ledResults, setLedResults] = useState<{ label: string; ok: boolean }[] | null>(null)
   const [logsStatus, setLogsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [showUpdate, setShowUpdate] = useState(false)
   const [showCompliance, setShowCompliance] = useState(false)
@@ -62,26 +66,46 @@ export default function SettingsPage() {
     chamber_heating: 2780,
   }
 
-  const handleFanTest = (id: string) => {
+  const handleFanTest = async (id: string) => {
     setFanTests(prev => ({ ...prev, [id]: { running: true, rpm: null } }))
-    setTimeout(() => {
-      setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: FAN_RPM[id] ?? 2800 } }))
-    }, 2000)
+    const res = await runFanTest()
+    const rpm = (res as { rpm?: number }).rpm
+    setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: rpm ?? FAN_RPM[id] ?? null } }))
   }
 
-  const handleLedTest = () => {
+  const handleLedTest = async () => {
     setLedTestRunning(true)
     setLedResults(null)
-    setTimeout(() => {
-      setLedResults(['Font LED: 62°C', 'Left LED: 62°C', 'Door LED: 62°C', 'Right LED: 62°C'])
-      setLedTestRunning(false)
-    }, 3000)
+    const res = await runLedDiagnostic()
+    const results = (res as { results?: { name: string; temp: number | null; status: string }[] }).results
+    setLedResults(results
+      ? results.map(r => ({
+          label: `${r.name}: ${r.temp != null ? `${r.temp}°C` : 'N/A'}`,
+          ok: r.status === 'OK',
+        }))
+      : [{ label: 'LED test unavailable', ok: false }])
+    setLedTestRunning(false)
   }
 
+  // Debounced hardware writes: sliders fire on every step while dragging
+  const tempDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleChamberHeatingChange = (val: number | null) => {
     const v = val ?? 25
     setChamberHeatingLocal(v)
-    setChamberTemp(v)
+    if (tempDebounceRef.current) clearTimeout(tempDebounceRef.current)
+    tempDebounceRef.current = setTimeout(() => setTargetTemperature(v), 400)
+  }
+
+  const fanDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const handleFanChange = (id: string, setter: (v: number) => void) => (v: number) => {
+    setter(v)
+    if (fanDebounceRef.current[id]) clearTimeout(fanDebounceRef.current[id])
+    fanDebounceRef.current[id] = setTimeout(() => setFanSpeed(id, v), 400)
+  }
+
+  const handleDamper = (open: boolean) => {
+    setDamperOpen(open)
+    setDamper(open)
   }
 
   return (
@@ -122,8 +146,8 @@ export default function SettingsPage() {
             <Card className="flex-1">
               <Label>Damper</Label>
               <div className="flex gap-2 mt-1">
-                <Btn active={damperOpen} onClick={() => setDamperOpen(true)}>OPEN</Btn>
-                <Btn active={!damperOpen} onClick={() => setDamperOpen(false)}>CLOSE</Btn>
+                <Btn active={damperOpen} onClick={() => handleDamper(true)}>OPEN</Btn>
+                <Btn active={!damperOpen} onClick={() => handleDamper(false)}>CLOSE</Btn>
               </div>
             </Card>
           </div>
@@ -131,11 +155,11 @@ export default function SettingsPage() {
           {/* Row 2: Fan controls — each fan has its own diagnostic test */}
           <Card>
             <div className="space-y-2">
-              <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={setLedCoolingAirflow}
+              <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={handleFanChange('led_cooling', setLedCoolingAirflow)}
                 onTest={() => handleFanTest('led_cooling')} testing={fanTests['led_cooling']?.running} rpm={fanTests['led_cooling']?.rpm} />
-              <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={setChamberIntakeFan}
+              <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={handleFanChange('chamber_intake', setChamberIntakeFan)}
                 onTest={() => handleFanTest('chamber_intake')} testing={fanTests['chamber_intake']?.running} rpm={fanTests['chamber_intake']?.rpm} />
-              <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={setChamberHeatingFan}
+              <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={handleFanChange('chamber_heating', setChamberHeatingFan)}
                 onTest={() => handleFanTest('chamber_heating')} testing={fanTests['chamber_heating']?.running} rpm={fanTests['chamber_heating']?.rpm} />
             </div>
           </Card>
@@ -166,7 +190,7 @@ export default function SettingsPage() {
               {ledResults && (
                 <div className="flex gap-3 flex-wrap">
                   {ledResults.map((r, i) => (
-                    <span key={i} className="text-[9px] text-muted-foreground">{r} <span className="text-green-400 font-bold">OK</span></span>
+                    <span key={i} className="text-[9px] text-muted-foreground">{r.label} <span className={cn('font-bold', r.ok ? 'text-green-400' : 'text-destructive')}>{r.ok ? 'OK' : 'FAIL'}</span></span>
                   ))}
                 </div>
               )}
