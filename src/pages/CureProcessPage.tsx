@@ -12,6 +12,11 @@ import { useHardware } from '@/context/HardwareContext'
 import { useCureHistory } from '@/context/CureHistoryContext'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
+import type { CoolingMode } from '@/context/MaterialContext'
+import {
+  heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450,
+  coolToTargetTemperature, stopCureOutputs,
+} from '@/services/hardware-api'
 
 const phaseColorMap: Record<string, string> = {
   Heating: 'text-orange-400',
@@ -86,10 +91,10 @@ export default function CureProcessPage() {
   const phases = useMemo(() => {
     if (steps.length === 0) {
       return [
-        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1 },
-        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1 },
-        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1 },
-        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1 },
+        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode },
+        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode },
+        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode },
+        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode },
       ]
     }
     // Skip Nitrogen steps if nitrogen is not enabled on the system
@@ -101,16 +106,36 @@ export default function CureProcessPage() {
         temp: s.temperature,
         intensity: s.intensity,
         time: s.time,
+        coolingMode: (s.coolingMode ?? 'medium') as CoolingMode,
       }))
   }, [steps, hw.nitrogenMode])
+
+  // Send the real hardware command for a phase. Off-Pi (API not connected)
+  // this is skipped and the page keeps its local simulation.
+  const commandedPhaseRef = useRef(-1)
+  const commandPhase = useCallback((phase: (typeof phases)[number]) => {
+    if (!hw.apiConnected) return
+    const temp = phase.temp ?? hw.chamberTemp
+    switch (phase.type) {
+      case 'heating': heatToTargetTemperature(temp); break
+      case 'drying': dryToTargetTemperature(temp); break
+      case 'cure': cureUv405(temp, phase.intensity ?? 30); break
+      case 'bleacher': cureUv450(temp, phase.intensity ?? 30); break
+      case 'cooling': coolToTargetTemperature(phase.temp ?? AMBIENT_TEMP, phase.coolingMode); break
+    }
+  }, [hw.apiConnected, hw.chamberTemp])
 
   // Ramp start temperature (where ramp begins from)
   const [rampStartTemp, setRampStartTemp] = useState(AMBIENT_TEMP)
 
-  // Calculate ramp for current active phase
+  // Calculate ramp for current active phase.
+  // With real hardware the ramp progress follows the measured chamber
+  // temperature; off-Pi it follows the simulated time-based ramp.
   const currentPhaseTemp = phases[activePhase]?.temp ?? 80
   const rampDuration = Math.max(1, Math.abs(currentPhaseTemp - rampStartTemp) * RAMP_RATE)
-  const rampProgress = Math.min(100, (rampElapsed / rampDuration) * 100)
+  const rampProgress = hw.apiConnected && currentPhaseTemp !== rampStartTemp
+    ? Math.min(100, Math.max(0, ((hw.chamberTemp - rampStartTemp) / (currentPhaseTemp - rampStartTemp)) * 100))
+    : Math.min(100, (rampElapsed / rampDuration) * 100)
   const targetTemp = currentPhaseTemp
 
   useEffect(() => {
@@ -129,6 +154,17 @@ export default function CureProcessPage() {
   const tick = useCallback(() => {
     // Ramp phase
     if (isRamping) {
+      // Real hardware: the heater is already commanded; the ramp ends when
+      // the measured chamber temperature reaches the target.
+      if (hw.apiConnected) {
+        setRampElapsed(prev => prev + 1)
+        if (hw.chamberTemp >= targetTemp - 0.5) {
+          setIsRamping(false)
+          setHeating(false)
+        }
+        return
+      }
+      // Off-Pi simulation: time-based ramp that also fakes the temperature.
       setRampElapsed(prev => {
         const next = prev + 1
         if (next >= rampDuration) {
@@ -170,7 +206,7 @@ export default function CureProcessPage() {
       }
       return next
     })
-  }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, setChamberTemp, setHeating, setNitrogenActive])
+  }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, hw.apiConnected, hw.chamberTemp, setChamberTemp, setHeating, setNitrogenActive])
 
   // Temperature stall detection: every 1 min during ramp or cooling, check progress
   const isInTempPhase = isRamping || (isRunning && phases[activePhase]?.type === 'cooling')
@@ -210,6 +246,7 @@ export default function CureProcessPage() {
   }
 
   const handleTempWarningAbort = () => {
+    stopCureOutputs()
     setShowTempWarning(false)
     setIsRunning(false)
     setIsRamping(false)
@@ -220,11 +257,13 @@ export default function CureProcessPage() {
     navigate('/')
   }
 
-  // When entering a new phase, start ramp if needed or N2 purge
+  // When entering a new phase: command the hardware, then start ramp / N2 purge
   useEffect(() => {
     if (!isRunning || isComplete || isRamping || n2Purging) return
     const currentPhase = phases[activePhase]
     if (!currentPhase) return
+    if (commandedPhaseRef.current === activePhase) return  // phase already started
+    commandedPhaseRef.current = activePhase
 
     // Nitrogen phase → start purge
     if (currentPhase.type === 'nitrogen') {
@@ -233,6 +272,8 @@ export default function CureProcessPage() {
       setNitrogenActive(true)
       return
     }
+
+    commandPhase(currentPhase)
 
     // Phases with temperature that need ramp (not cooling, not nitrogen, not first phase which is handled on mount)
     if (activePhase > 0 && currentPhase.temp != null && currentPhase.type !== 'cooling') {
@@ -245,7 +286,7 @@ export default function CureProcessPage() {
         setHeating(true)
       }
     }
-  }, [activePhase, isRunning, isComplete, isRamping, n2Purging, phases])
+  }, [activePhase, isRunning, isComplete, isRamping, n2Purging, phases, commandPhase, hw.chamberTemp, setNitrogenActive, setTargetTemp, setHeating])
 
   // Check if current phase is done → advance
   useEffect(() => {
@@ -261,6 +302,7 @@ export default function CureProcessPage() {
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
       } else {
+        stopCureOutputs()
         setIsRunning(false)
         setIsComplete(true)
         setNitrogenActive(false)
@@ -281,6 +323,7 @@ export default function CureProcessPage() {
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
       } else {
+        stopCureOutputs()
         setIsRunning(false)
         setIsComplete(true)
         setNitrogenActive(false)
@@ -350,11 +393,17 @@ export default function CureProcessPage() {
       )
       setCureLogId(id)
       const firstPhase = phases[0]
+      if (firstPhase && firstPhase.type !== 'nitrogen') {
+        commandedPhaseRef.current = 0
+        commandPhase(firstPhase)
+      }
       if (firstPhase?.temp != null && firstPhase.type !== 'cooling' && firstPhase.type !== 'nitrogen') {
         setIsRamping(true)
         setRampElapsed(0)
-        setRampStartTemp(AMBIENT_TEMP)
-        setChamberTemp(AMBIENT_TEMP)
+        // Real hardware: ramp starts from the measured chamber temperature
+        const startTemp = hw.apiConnected ? hw.chamberTemp : AMBIENT_TEMP
+        setRampStartTemp(startTemp)
+        if (!hw.apiConnected) setChamberTemp(AMBIENT_TEMP)
         setTargetTemp(firstPhase.temp ?? 80)
         setHeating(true)
       }
@@ -363,6 +412,7 @@ export default function CureProcessPage() {
   }, [phaseElapsed.length])
 
   const handleAbort = () => {
+    stopCureOutputs()
     setIsRunning(false)
     setIsRamping(false)
     setN2Purging(false)

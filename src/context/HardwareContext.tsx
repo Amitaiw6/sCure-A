@@ -109,7 +109,7 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, nitrogenDuration: seconds }))
   }, [])
 
-  // Poll network + API status every 5 seconds
+  // Poll network + API status (real chamber temp, door, etc.) every 2 seconds
   useEffect(() => {
     const API_BASE = import.meta.env.VITE_HW_API_URL || 'http://localhost:3001/api'
 
@@ -138,7 +138,7 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
     }
 
     checkStatus()
-    const interval = setInterval(checkStatus, 5000)
+    const interval = setInterval(checkStatus, 2000)
 
     // Browser online/offline events
     const onOnline = () => setState(prev => ({ ...prev, networkConnected: true }))
