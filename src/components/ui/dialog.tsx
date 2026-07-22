@@ -20,7 +20,17 @@ function DialogTrigger({
 function DialogPortal({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  // Portal into #root (not document.body): the whole UI is a fixed 800x480
+  // canvas that fitToScreen() stretches to the physical screen, and dialogs
+  // must scale with it. #root has a transform, so `fixed` children position
+  // against the canvas — inset-0 covers exactly the full screen.
+  return (
+    <DialogPrimitive.Portal
+      data-slot="dialog-portal"
+      container={typeof document !== 'undefined' ? document.getElementById('root') : undefined}
+      {...props}
+    />
+  )
 }
 
 function DialogClose({

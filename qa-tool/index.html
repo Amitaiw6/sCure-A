@@ -174,7 +174,7 @@ const TEST_CATEGORIES = [
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
       { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
-      { id: 'ui_builder_size', name: 'Program Builder Fills Screen', desc: 'Build Cure Program dialog (CsvBuilderModal) is 784x464 on the 800x480 canvas — at least 95% of the screen in both axes', check: 'ui_builder_size' },
+      { id: 'ui_builder_size', name: 'Dialogs Scale With The Screen', desc: 'Dialog/Select portals render inside the scaled #root canvas, so the 550x460 Build Cure Program dialog shows at ~69% x ~96% of any screen — exactly the design proportions', check: 'ui_builder_size' },
     ]
   },
   {
@@ -931,15 +931,24 @@ async function runSingleTest(test) {
       return;
     }
 
-    // Mirrors CsvBuilderModal: the Build Cure Program dialog must cover at
-    // least 95% of the 800x480 design canvas in both axes (screen proportions).
+    // Mirrors the dialog portal fix: dialogs portal into the scaled #root
+    // canvas, so a 550x460 dialog occupies the same PROPORTION of any screen
+    // (550/800 x 460/480) instead of a fixed unscaled pixel box.
     if (test.check === 'ui_builder_size') {
-      const DIALOG = { w: 784, h: 464 }, CANVAS = { w: 800, h: 480 };
-      const wOk = DIALOG.w / CANVAS.w >= 0.95, hOk = DIALOG.h / CANVAS.h >= 0.95;
+      const DIALOG = { w: 550, h: 460 }, CANVAS = { w: 800, h: 480 };
+      const propW = DIALOG.w / CANVAS.w, propH = DIALOG.h / CANVAS.h;   // scale-invariant
+      const screens = [[1280, 720], [1920, 1080], [800, 480]];
+      // On every screen the scaled dialog keeps the design proportions
+      const bad = screens.filter(([sw, sh]) => {
+        const onScreenW = DIALOG.w * (sw / CANVAS.w) / sw;   // = propW for all screens
+        const onScreenH = DIALOG.h * (sh / CANVAS.h) / sh;   // = propH
+        return Math.abs(onScreenW - propW) > 1e-9 || Math.abs(onScreenH - propH) > 1e-9;
+      });
+      const propOk = propW > 0.6 && propW < 0.8 && propH > 0.9;   // design: ~69% x ~96%
       const elapsed = Date.now() - t0;
-      const result = wOk && hOk
-        ? { status: 'pass', msg: `dialog ${DIALOG.w}x${DIALOG.h} covers ${Math.round(DIALOG.w / CANVAS.w * 100)}% x ${Math.round(DIALOG.h / CANVAS.h * 100)}% of the screen` }
-        : { status: 'fail', msg: `dialog ${DIALOG.w}x${DIALOG.h} leaves too much margin on the ${!wOk ? 'width' : 'height'}` };
+      const result = bad.length === 0 && propOk
+        ? { status: 'pass', msg: `dialog holds ${Math.round(propW * 100)}% x ${Math.round(propH * 100)}% of every screen (design proportions)` }
+        : { status: 'fail', msg: bad.length ? 'dialog proportion changes between screens' : `unexpected proportions ${Math.round(propW * 100)}% x ${Math.round(propH * 100)}%` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
