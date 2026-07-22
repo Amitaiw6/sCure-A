@@ -59,20 +59,21 @@ export default function TopBar() {
       <div className="flex items-center gap-2">
         {/* Door + Temperature combined */}
         <div className="flex items-center bg-secondary rounded-xl overflow-hidden">
-          <button
-            onClick={() => !isCuring && hw.doorClosed && setDoorClosed(false)}
-            disabled={isCuring || !hw.doorClosed}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors touch-manipulation border-r border-border ${
-              !hw.doorClosed
-                ? 'bg-orange-500/15 text-orange-400'
-                : isCuring
-                  ? 'text-muted-foreground opacity-50'
+          {/* The door cannot be opened during a cure — hide the control while curing (safety) */}
+          {!isCuring && (
+            <button
+              onClick={() => hw.doorClosed && setDoorClosed(false)}
+              disabled={!hw.doorClosed}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors touch-manipulation border-r border-border ${
+                !hw.doorClosed
+                  ? 'bg-orange-500/15 text-orange-400'
                   : 'text-foreground hover:bg-accent active:scale-95'
-            }`}
-          >
-            {hw.doorClosed ? <DoorClosed size={24} /> : <DoorOpen size={24} />}
-            {hw.doorClosed ? 'Open' : 'Opened'}
-          </button>
+              }`}
+            >
+              {hw.doorClosed ? <DoorClosed size={24} /> : <DoorOpen size={24} />}
+              {hw.doorClosed ? 'Open' : 'Opened'}
+            </button>
+          )}
           <div className="flex items-center gap-2 px-4 py-1.5">
             <Thermometer size={22} className={heatingLong ? 'text-red-500' : 'text-muted-foreground'} />
             <div className="flex flex-col items-end">
@@ -87,25 +88,23 @@ export default function TopBar() {
 
       {/* Right side - Icons (min 44x44 touch targets) */}
       <div className="flex items-center gap-1.5">
-        <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation relative">
-          <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-colors ${
-            hw.nitrogenMode
-              ? hw.nitrogenActive
+        {hw.nitrogenMode && (
+          <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation relative">
+            <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-colors ${
+              hw.nitrogenActive
                 ? 'border-white bg-white/20 text-white animate-pulse'
                 : 'border-white text-white'
-              : 'border-[#444] text-muted-foreground'
-          }`}>
-            <span className="text-xs font-bold leading-none">N₂</span>
-          </div>
-          {hw.nitrogenMode && (
+            }`}>
+              <span className="text-xs font-bold leading-none">N₂</span>
+            </div>
             <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${hw.nitrogenActive ? 'bg-green-400 animate-pulse' : 'bg-white'}`} />
-          )}
-        </button>
+          </button>
+        )}
         {hw.nfcEnabled && <CircledIcon><Nfc size={22} /></CircledIcon>}
-        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/cure-history') navigate('/cure-history', { replace: location.pathname !== '/' }) }}>
+        <TouchIcon active={location.pathname === '/cure-history'} onClick={() => { if (!isCuring && location.pathname !== '/cure-history') navigate('/cure-history', { replace: location.pathname !== '/' }) }}>
           <History size={24} className={isCuring ? 'opacity-30' : undefined} />
         </TouchIcon>
-        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/alerts') navigate('/alerts', { replace: location.pathname !== '/' }) }}>
+        <TouchIcon active={location.pathname === '/alerts'} onClick={() => { if (!isCuring && location.pathname !== '/alerts') navigate('/alerts', { replace: location.pathname !== '/' }) }}>
           <div className="relative">
             <Bell size={24} className={isCuring ? 'opacity-30' : criticalAlerts.length > 0 ? 'text-red-500' : alertCount > 0 ? 'text-orange-400' : undefined} />
             {alertCount > 0 && (
@@ -115,10 +114,13 @@ export default function TopBar() {
             )}
           </div>
         </TouchIcon>
-        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' }) }}><Settings size={24} className={isCuring ? 'opacity-30' : undefined} /></TouchIcon>
-        <TouchIcon onClick={() => { if (!isCuring && location.pathname !== '/network') navigate('/network', { replace: location.pathname !== '/' }) }}>
+        <TouchIcon active={location.pathname === '/settings'} onClick={() => { if (!isCuring && location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' }) }}><Settings size={24} className={isCuring ? 'opacity-30' : undefined} /></TouchIcon>
+        <TouchIcon active={location.pathname === '/network'} onClick={() => { if (!isCuring && location.pathname !== '/network') navigate('/network', { replace: location.pathname !== '/' }) }}>
           <Globe size={24} className={
-            isCuring ? 'opacity-30' : !hw.networkConnected ? 'text-destructive' : 'text-white'
+            isCuring ? 'opacity-30'
+              : !hw.networkConnected ? 'text-destructive'
+              : location.pathname === '/network' ? undefined /* active → inherit primary (blue) */
+              : 'text-white'
           } />
         </TouchIcon>
       </div>
@@ -126,11 +128,15 @@ export default function TopBar() {
   )
 }
 
-function TouchIcon({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+function TouchIcon({ children, onClick, active }: { children: React.ReactNode; onClick?: () => void; active?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="w-12 h-12 rounded-xl flex items-center justify-center text-muted-foreground hover:text-white active:bg-accent transition-colors touch-manipulation"
+      className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors touch-manipulation ${
+        active
+          ? 'bg-primary/15 text-primary'
+          : 'text-muted-foreground hover:text-white active:bg-accent'
+      }`}
     >
       {children}
     </button>

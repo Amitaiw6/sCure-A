@@ -1,14 +1,22 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
+// Bundled sample catalog — last-resort fallback when offline (single-file design build).
+import bundledErrors from '../../public/config/errors.json'
 
 export interface ErrorDef {
-  code: string
-  title: string
+  /** Stable, unique, hierarchical number (1xxx daemon · 2xxx backend · 3xxx UI). */
+  code: number
+  /** Stable machine key (UPPER_SNAKE), e.g. USB_WRITE_FAILED. */
+  key: string
+  /** Displayed text — CS-editable in the registry without any code change. */
+  message: string
   severity: 'critical' | 'warning'
   category: string
   description: string
   troubleshooting: string[]
   supportUrl: string
+  /** Pre-2.0 code (E-/W-), kept only for traceability. */
+  legacyCode?: string
 }
 
 export interface SupportInfo {
@@ -20,7 +28,7 @@ export interface SupportInfo {
 
 export interface ActiveAlert {
   id: string
-  code: string
+  code: number
   timestamp: string
   dismissed: boolean
 }
@@ -32,11 +40,11 @@ interface AlertsContextType {
   criticalAlerts: ActiveAlert[]
   warningAlerts: ActiveAlert[]
   alertCount: number
-  triggerAlert: (code: string) => void
+  triggerAlert: (code: number) => void
   dismissAlert: (id: string) => void
   clearAll: () => void
-  getErrorDef: (code: string) => ErrorDef | undefined
-  getQrUrl: (code: string) => string
+  getErrorDef: (code: number) => ErrorDef | undefined
+  getQrUrl: (code: number) => string
 }
 
 const defaultSupport: SupportInfo = {
@@ -62,8 +70,12 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
           const data = await res.json()
           setErrorDefs(data.errors || [])
           setSupport(data.support || defaultSupport)
+          return
         }
-      } catch { /* use empty */ }
+      } catch { /* fall through to bundled */ }
+      // Bundled fallback (offline / single-file design build)
+      setErrorDefs((bundledErrors.errors as ErrorDef[]) || [])
+      setSupport((bundledErrors.support as SupportInfo) || defaultSupport)
     }
     load()
   }, [])
@@ -74,9 +86,12 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('scure-active-alerts')
     if (stored) {
       const parsed: ActiveAlert[] = JSON.parse(stored)
-      const hasActive = parsed.some(a => !a.dismissed)
+      // Drop any alert whose code is no longer in the registry (e.g. pre-2.0 E-/W- codes)
+      // so a stale localStorage entry can't leave the bell badge counting unresolvable alerts.
+      const known = parsed.filter(a => errorDefs.some(e => e.code === a.code))
+      const hasActive = known.some(a => !a.dismissed)
       if (hasActive) {
-        setActiveAlerts(parsed)
+        setActiveAlerts(known)
         return
       }
     }
@@ -84,11 +99,11 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('scure-active-alerts')
     const now = new Date()
     setActiveAlerts([
-      { id: crypto.randomUUID(), code: 'E-101', timestamp: new Date(now.getTime() - 120000).toISOString(), dismissed: false },
-      { id: crypto.randomUUID(), code: 'E-102', timestamp: new Date(now.getTime() - 60000).toISOString(), dismissed: false },
-      { id: crypto.randomUUID(), code: 'W-301', timestamp: new Date(now.getTime() - 300000).toISOString(), dismissed: false },
-      { id: crypto.randomUUID(), code: 'W-305', timestamp: new Date(now.getTime() - 180000).toISOString(), dismissed: false },
-      { id: crypto.randomUUID(), code: 'W-302', timestamp: new Date(now.getTime() - 600000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 9082, timestamp: new Date(now.getTime() - 120000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 9089, timestamp: new Date(now.getTime() - 60000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 9084, timestamp: new Date(now.getTime() - 300000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 9080, timestamp: new Date(now.getTime() - 180000).toISOString(), dismissed: false },
+      { id: crypto.randomUUID(), code: 9085, timestamp: new Date(now.getTime() - 600000).toISOString(), dismissed: false },
     ])
   }, [errorDefs])
 
@@ -99,7 +114,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     }
   }, [activeAlerts])
 
-  const triggerAlert = useCallback((code: string) => {
+  const triggerAlert = useCallback((code: number) => {
     setActiveAlerts(prev => {
       // Don't duplicate same code
       if (prev.some(a => a.code === code && !a.dismissed)) return prev
@@ -115,11 +130,11 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     setActiveAlerts(prev => prev.map(a => ({ ...a, dismissed: true })))
   }, [])
 
-  const getErrorDef = useCallback((code: string) => {
+  const getErrorDef = useCallback((code: number) => {
     return errorDefs.find(e => e.code === code)
   }, [errorDefs])
 
-  const getQrUrl = useCallback((code: string) => {
+  const getQrUrl = useCallback((code: number) => {
     const def = errorDefs.find(e => e.code === code)
     return def?.supportUrl || `${support.docsBase}/${code}`
   }, [errorDefs, support])
@@ -127,7 +142,9 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const undismissed = activeAlerts.filter(a => !a.dismissed)
   const criticalAlerts = undismissed.filter(a => getErrorDef(a.code)?.severity === 'critical')
   const warningAlerts = undismissed.filter(a => getErrorDef(a.code)?.severity === 'warning')
-  const alertCount = undismissed.length
+  // Only count alerts that resolve to a registry definition, so the bell badge
+  // always matches what the Alerts screen can actually display.
+  const alertCount = undismissed.filter(a => getErrorDef(a.code)).length
 
   return (
     <AlertsContext.Provider value={{

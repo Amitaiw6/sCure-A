@@ -1,228 +1,600 @@
 {
   "_meta": {
-    "version": "1.0.0",
-    "lastUpdated": "2026-03-30",
-    "description": "sCure Error & Warning Definitions. CS team can edit descriptions, troubleshooting steps, and support links. Error codes and severity levels are system-defined and should not be changed.",
-    "editableFields": ["description", "troubleshooting", "supportUrl"],
-    "systemFields": ["code", "title", "severity", "category"]
+    "version": "3.0.0",
+    "lastUpdated": "2026-06-29",
+    "description": "sCure central Error Registry — the single source of truth for every error/warning. Each record has a stable, unique numeric code whose FIRST DIGIT identifies the SRS section/screen the error is documented in (3=Setup, 4=Setup Name, 5=Connect Organization, 6=Home, 7=Cure Process, 8=Cure History, 9=Error Management: device/hardware alerts + cross-cutting system faults). The code is carried UNCHANGED across every layer (C++ driver/daemon -> Flask backend -> React UI); the originating subsystem is recorded in the per-record \"layer\" field. CS may edit message, description, troubleshooting and supportUrl; code, key, severity, category and layer are system-defined.",
+    "editableFields": [
+      "message",
+      "description",
+      "troubleshooting",
+      "supportUrl"
+    ],
+    "systemFields": [
+      "code",
+      "key",
+      "severity",
+      "category",
+      "layer"
+    ],
+    "ranges": [
+      {
+        "from": 3000,
+        "to": 3999,
+        "section": "3",
+        "label": "Setup Screen"
+      },
+      {
+        "from": 4000,
+        "to": 4999,
+        "section": "4",
+        "label": "Setup Name Screen"
+      },
+      {
+        "from": 5000,
+        "to": 5999,
+        "section": "5",
+        "label": "Connect Organization Screen"
+      },
+      {
+        "from": 6000,
+        "to": 6999,
+        "section": "6",
+        "label": "Home Screen (material list, recipe builder, CSV import, view-all, start cure)"
+      },
+      {
+        "from": 7000,
+        "to": 7999,
+        "section": "7",
+        "label": "Cure Process Screen"
+      },
+      {
+        "from": 8000,
+        "to": 8999,
+        "section": "8",
+        "label": "Cure History Screen"
+      },
+      {
+        "from": 9000,
+        "to": 9999,
+        "section": "9",
+        "label": "Error Management — device/hardware alerts (9001-9079) + cross-cutting system/backend faults (9080-9099)"
+      }
+    ]
   },
-
   "support": {
     "email": "support@scure.com",
     "phone": "+1-800-123-4567",
     "chat": "https://scure.com/support/chat",
     "docsBase": "https://docs.scure.com/errors"
   },
-
   "errors": [
     {
-      "code": "E-101",
-      "title": "Laser Temperature too High",
+      "code": 3001,
+      "key": "SERIAL_RESTORE_FAILED",
+      "message": "Serial Number Restore Failed",
       "severity": "critical",
-      "category": "temperature",
-      "description": "The laser temperature has exceeded the safe operating limit. This may be due to cooling failure or excessive usage.",
+      "category": "provisioning",
+      "layer": "daemon",
+      "description": "During setup the serial number could not be restored from the SD backup to Storage. Provisioning cannot continue until a valid serial number is available.",
       "troubleshooting": [
-        "Turn off the machine",
-        "Check the cooling fan",
-        "Clean the air filter",
-        "Wait 10 minutes before restarting"
+        "Check the SD card is seated and readable",
+        "Verify the backup configuration file exists on SD",
+        "Reboot and retry setup",
+        "Contact support to re-provision the serial number"
       ],
-      "supportUrl": "https://docs.scure.com/errors/E-101"
+      "supportUrl": "https://docs.scure.com/errors/3001"
     },
     {
-      "code": "E-102",
-      "title": "Chamber Overheat",
+      "code": 3002,
+      "key": "CLOUD_COMM_FAILED",
+      "message": "Cloud Communication Failed",
       "severity": "critical",
-      "category": "temperature",
-      "description": "The chamber temperature has exceeded the maximum safe limit of 85°C. The heater has been automatically shut off.",
+      "category": "provisioning",
+      "layer": "backend",
+      "description": "The device could not obtain a serial number from the cloud within the allowed number of attempts during setup (problem communicating with the cloud).",
       "troubleshooting": [
-        "Allow the chamber to cool down naturally",
-        "Check the temperature sensor connection",
-        "Verify the heater relay is functioning",
-        "Inspect the chamber insulation"
+        "Check the internet connection",
+        "Verify the device can reach the sCure cloud service",
+        "Retry the request",
+        "Contact support if the cloud remains unreachable"
       ],
-      "supportUrl": "https://docs.scure.com/errors/E-102"
+      "supportUrl": "https://docs.scure.com/errors/3002"
     },
     {
-      "code": "E-103",
-      "title": "System Motor Failure",
-      "severity": "critical",
-      "category": "mechanical",
-      "description": "The damper motor has failed to respond. This prevents proper airflow control during the curing process.",
-      "troubleshooting": [
-        "Power cycle the machine",
-        "Check motor cable connections",
-        "Listen for motor engagement sound",
-        "Contact support if motor is silent"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/E-103"
-    },
-    {
-      "code": "E-104",
-      "title": "Door Lock Failure",
-      "severity": "critical",
-      "category": "safety",
-      "description": "The door lock mechanism has failed. The curing process cannot start without a secure door lock.",
-      "troubleshooting": [
-        "Close the door firmly",
-        "Check the door alignment",
-        "Inspect the lock solenoid",
-        "Clean the door latch mechanism"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/E-104"
-    },
-    {
-      "code": "E-105",
-      "title": "UV LED Failure",
-      "severity": "critical",
-      "category": "electrical",
-      "description": "One or more UV LEDs have failed the diagnostic test. Curing quality may be compromised.",
-      "troubleshooting": [
-        "Run LED diagnostic from Settings",
-        "Check LED connections",
-        "Inspect LED panel for damage",
-        "Replace LED module if needed"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/E-105"
-    },
-    {
-      "code": "E-106",
-      "title": "N₂ Pressure Critical",
-      "severity": "critical",
-      "category": "gas",
-      "description": "Nitrogen line pressure has dropped below the minimum required level during an active cure process.",
-      "troubleshooting": [
-        "Check the N₂ supply tank level",
-        "Inspect the gas line for leaks",
-        "Verify the regulator setting (minimum 6 bar)",
-        "Replace empty N₂ tank"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/E-106"
-    },
-    {
-      "code": "E-107",
-      "title": "Power Supply Fault",
-      "severity": "critical",
-      "category": "electrical",
-      "description": "The main power supply voltage is outside the acceptable range. System operation may be unreliable.",
-      "troubleshooting": [
-        "Check the power cable connection",
-        "Verify the wall outlet voltage",
-        "Try a different power outlet",
-        "Inspect the internal power supply unit"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/E-107"
-    },
-    {
-      "code": "E-108",
-      "title": "Communication Error",
-      "severity": "critical",
-      "category": "system",
-      "description": "The control board has lost communication with the hardware interface. No hardware commands can be executed.",
-      "troubleshooting": [
-        "Reboot the system",
-        "Check internal cable connections",
-        "Verify the control board LED indicators",
-        "Reflash firmware if issue persists"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/E-108"
-    },
-
-    {
-      "code": "W-301",
-      "title": "Filter Needs Cleaning",
-      "severity": "warning",
-      "category": "maintenance",
-      "description": "The air filter has reached its recommended service interval. Cleaning or replacement is recommended to maintain optimal performance.",
-      "troubleshooting": [
-        "Remove and inspect the air filter",
-        "Clean with compressed air",
-        "Replace if visibly damaged",
-        "Reset the filter timer in Settings"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/W-301"
-    },
-    {
-      "code": "W-302",
-      "title": "Fan Speed Low",
-      "severity": "warning",
-      "category": "mechanical",
-      "description": "The cooling fan is running below expected RPM. This may indicate dust buildup or bearing wear.",
-      "troubleshooting": [
-        "Run fan test from Settings",
-        "Clean the fan blades",
-        "Check for obstructions",
-        "Replace fan if RPM remains low"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/W-302"
-    },
-    {
-      "code": "W-303",
-      "title": "N₂ Pressure Low",
-      "severity": "warning",
-      "category": "gas",
-      "description": "Nitrogen line pressure is below the recommended level. Nitrogen mode may not activate properly.",
-      "troubleshooting": [
-        "Check the N₂ tank gauge",
-        "Verify pressure is at least 6 bar",
-        "Check for slow leaks in the gas line"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/W-303"
-    },
-    {
-      "code": "W-304",
-      "title": "High Lead On Time",
-      "severity": "warning",
-      "category": "maintenance",
-      "description": "The UV LED modules have exceeded 500 hours of operation. Performance may gradually decrease.",
-      "troubleshooting": [
-        "Run LED diagnostic to verify output",
-        "Plan LED module replacement",
-        "Contact support for replacement parts"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/W-304"
-    },
-    {
-      "code": "W-305",
-      "title": "Software Update Available",
-      "severity": "warning",
-      "category": "system",
-      "description": "A new software version is available. Update to get the latest features and bug fixes.",
-      "troubleshooting": [
-        "Download the update from the support portal",
-        "Copy the .scu file to a USB drive",
-        "Go to Settings → Update Software",
-        "Follow the on-screen instructions"
-      ],
-      "supportUrl": "https://docs.scure.com/errors/W-305"
-    },
-    {
-      "code": "W-306",
-      "title": "Network Disconnected",
+      "code": 3003,
+      "key": "SETUP_NO_INTERNET",
+      "message": "No Internet Connection",
       "severity": "warning",
       "category": "network",
-      "description": "The ethernet connection has been lost. Remote monitoring and cloud features are unavailable.",
+      "layer": "backend",
+      "description": "During setup the device has no internet connection, so it cannot request a serial number from the cloud. The user can connect the network and retry.",
       "troubleshooting": [
-        "Check the ethernet cable",
-        "Verify the router/switch is powered on",
-        "Try a different network port",
-        "Check network settings"
+        "Connect the ethernet cable",
+        "Verify the network/router is online",
+        "Retry once the connection is restored"
       ],
-      "supportUrl": "https://docs.scure.com/errors/W-306"
+      "supportUrl": "https://docs.scure.com/errors/3003"
     },
     {
-      "code": "W-307",
-      "title": "Door Sensor Misaligned",
+      "code": 4001,
+      "key": "INVALID_DEVICE_NAME",
+      "message": "Invalid Device Name",
       "severity": "warning",
-      "category": "safety",
-      "description": "The door sensor readings are intermittent. The door may not be sealing properly.",
+      "category": "validation",
+      "layer": "ui",
+      "description": "The device name entered on the Setup Name screen is empty. A non-empty name is required to continue.",
       "troubleshooting": [
-        "Open and close the door firmly",
-        "Check the door hinges",
-        "Clean the sensor area",
-        "Adjust the door alignment"
+        "Enter a name for the device",
+        "Avoid leading/trailing spaces only"
       ],
-      "supportUrl": "https://docs.scure.com/errors/W-307"
+      "supportUrl": "https://docs.scure.com/errors/4001"
+    },
+    {
+      "code": 4002,
+      "key": "DATA_FILE_WRITE_FAILED",
+      "message": "Data File Write Failed",
+      "severity": "critical",
+      "category": "storage",
+      "layer": "backend",
+      "description": "The backend could not persist a data file (user materials or print history) to the device storage.",
+      "troubleshooting": [
+        "Check available space on the device",
+        "Reboot the system and retry",
+        "Contact support if the fault persists"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/4002"
+    },
+    {
+      "code": 4003,
+      "key": "SD_BACKUP_WRITE_FAILED",
+      "message": "SD Backup Write Failed",
+      "severity": "warning",
+      "category": "storage",
+      "layer": "backend",
+      "description": "The configuration was saved to primary Storage but the secondary backup copy to the SD card failed. Whether this blocks the flow or is a warning-only follows system policy (SRS OI-6).",
+      "troubleshooting": [
+        "Check the SD card is inserted and writable",
+        "Verify free space on the SD card",
+        "Reboot and retry; the primary configuration is already saved"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/4003"
+    },
+    {
+      "code": 5001,
+      "key": "ORG_ID_NOT_FOUND",
+      "message": "No Organization ID in File",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "The selected organization CSV file does not contain a valid organization ID (UUID).",
+      "troubleshooting": [
+        "Select the correct organization CSV exported from the portal",
+        "Verify the file contains a valid organization UUID"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/5001"
+    },
+    {
+      "code": 6001,
+      "key": "PROGRAM_NAME_REQUIRED",
+      "message": "Program Name Required",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "The recipe builder cannot save a program without a name.",
+      "troubleshooting": [
+        "Enter a program name before saving"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6001"
+    },
+    {
+      "code": 6002,
+      "key": "NO_STEPS_DEFINED",
+      "message": "No Steps Defined",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "The recipe builder cannot save a program with zero steps.",
+      "troubleshooting": [
+        "Add at least one step to the program"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6002"
+    },
+    {
+      "code": 6003,
+      "key": "N2_SEQUENCE_INVALID",
+      "message": "Invalid N₂ Purge Sequence",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "An N₂ purge step is not followed by the required sequence: N₂ → (Cure | Bleaching) → Cooling.",
+      "troubleshooting": [
+        "After an N₂ purge, add a Cure or Bleaching step",
+        "After that Cure/Bleaching, add a Cooling step"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6003"
+    },
+    {
+      "code": 6004,
+      "key": "STEP_TEMP_TOO_LOW",
+      "message": "Step Temperature Too Low",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "A non-cooling step's temperature is lower than the previous non-cooling step. Temperatures must not decrease except in a Cooling step.",
+      "troubleshooting": [
+        "Raise the step temperature to at least the previous step's temperature",
+        "Use a Cooling step to lower the temperature"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6004"
+    },
+    {
+      "code": 6005,
+      "key": "COOLING_TEMP_INVALID",
+      "message": "Invalid Cooling Temperature",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "A Cooling step's target temperature is not lower than the temperature of the preceding step.",
+      "troubleshooting": [
+        "Set the Cooling target below the previous step's temperature"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6005"
+    },
+    {
+      "code": 6006,
+      "key": "CSV_STRUCTURE_INVALID",
+      "message": "Invalid CSV Structure",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "An imported program CSV is missing a required header or contains no data row.",
+      "troubleshooting": [
+        "Use a CSV exported by the recipe builder",
+        "Check the header row and that at least one step is present"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6006"
+    },
+    {
+      "code": 6007,
+      "key": "CSV_INVALID_PROCESS",
+      "message": "Invalid CSV Process",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "A row in the imported CSV names a process that is not recognised (expected Heating, Drying, Cure, Bleaching, Cooling or Nitrogen).",
+      "troubleshooting": [
+        "Correct the process name in the offending row",
+        "Re-export the CSV from the recipe builder"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6007"
+    },
+    {
+      "code": 6008,
+      "key": "CSV_INVALID_TEMP",
+      "message": "Invalid CSV Temperature",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "A row in the imported CSV has a temperature outside the accepted 20–80°C range.",
+      "troubleshooting": [
+        "Set the row temperature between 20°C and 80°C"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6008"
+    },
+    {
+      "code": 6009,
+      "key": "CSV_INVALID_TIME",
+      "message": "Invalid CSV Time",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "A row in the imported CSV has a time outside the accepted range (1–120, Bleaching 1–720). Note: per-step time has since been removed from the recipe model (SRS OI-17); this check is retained only for legacy CSV files.",
+      "troubleshooting": [
+        "Correct the time value in the offending row",
+        "Re-export the CSV from the current recipe builder"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6009"
+    },
+    {
+      "code": 6010,
+      "key": "CSV_TOO_MANY_N2",
+      "message": "Too Many Nitrogen Steps",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "ui",
+      "description": "The imported CSV defines more than the maximum of 2 nitrogen purge steps.",
+      "troubleshooting": [
+        "Reduce the program to at most 2 nitrogen purge steps"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6010"
+    },
+    {
+      "code": 6011,
+      "key": "CSV_SAVE_FAILED",
+      "message": "CSV Save Failed",
+      "severity": "warning",
+      "category": "io",
+      "layer": "ui",
+      "description": "The recipe builder could not save the generated program CSV to USB; it falls back to a browser download.",
+      "troubleshooting": [
+        "Insert a writable USB stick and retry",
+        "Use the downloaded file from the browser instead"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6011"
+    },
+    {
+      "code": 6012,
+      "key": "MIXED_MATERIALS_SELECTED",
+      "message": "Mixed Materials Selected",
+      "severity": "warning",
+      "category": "selection",
+      "layer": "ui",
+      "description": "A Cure Together batch may only combine prints of the same material. Two or more different materials were selected.",
+      "troubleshooting": [
+        "Select prints that all use the same material",
+        "Run different materials as separate cures"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6012"
+    },
+    {
+      "code": 6013,
+      "key": "NO_MATERIAL_SELECTED",
+      "message": "No Material Selected",
+      "severity": "warning",
+      "category": "selection",
+      "layer": "ui",
+      "description": "Start Cure was pressed with no material or print selected.",
+      "troubleshooting": [
+        "Select a material or a recent print before starting a cure"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6013"
+    },
+    {
+      "code": 6014,
+      "key": "PROGRAM_NOT_RUNNABLE",
+      "message": "Cannot Start Program",
+      "severity": "warning",
+      "category": "selection",
+      "layer": "ui",
+      "description": "The selected program cannot run as configured — e.g. it is nitrogen-only while nitrogen is disabled, so every step would be skipped.",
+      "troubleshooting": [
+        "Enable nitrogen in Settings, or",
+        "Choose a program that has non-nitrogen steps"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6014"
+    },
+    {
+      "code": 6015,
+      "key": "PRECURE_CHECK_FAILED",
+      "message": "Pre-Cure Check Failed",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The pre-cure hardware check did not pass (e.g. chamber not ready, door/seal open or N₂ line not pressurised). The cure was not started and no outputs were energised.",
+      "troubleshooting": [
+        "Close and seal the chamber door",
+        "Verify the N₂ line pressure (if nitrogen is enabled)",
+        "Wait for the chamber to report ready, then retry",
+        "Run diagnostics from Settings if the check keeps failing"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/6015"
+    },
+    {
+      "code": 7001,
+      "key": "INVALID_TARGET_TEMP",
+      "message": "Invalid Target Temperature",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "backend",
+      "description": "A cure operation requested a target temperature outside the accepted 20–80°C range. The backend rejected the command and energised no outputs.",
+      "troubleshooting": [
+        "Edit the recipe step so the target is between 20°C and 80°C",
+        "Re-import the program CSV if the value came from a file"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/7001"
+    },
+    {
+      "code": 7002,
+      "key": "INVALID_UV_INTENSITY",
+      "message": "Invalid UV Intensity",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "backend",
+      "description": "A Cure (405 nm) or Bleaching (450 nm) step requested a UV intensity outside the accepted 5–100% range. The backend rejected the command.",
+      "troubleshooting": [
+        "Set the UV intensity between 5% and 100%",
+        "Re-import the program CSV if the value came from a file"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/7002"
+    },
+    {
+      "code": 7003,
+      "key": "INVALID_COOLING_MODE",
+      "message": "Invalid Cooling Mode",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "backend",
+      "description": "A cooling step requested a mode other than fast, medium or slow. The backend rejected the command.",
+      "troubleshooting": [
+        "Set the cooling mode to fast, medium or slow",
+        "Re-import the program CSV if the value came from a file"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/7003"
+    },
+    {
+      "code": 7004,
+      "key": "CURE_TEMP_STALL",
+      "message": "Cure Temperature Stall",
+      "severity": "warning",
+      "category": "process",
+      "layer": "ui",
+      "description": "During a cure the chamber failed to move toward its target across five consecutive 5-minute stall checks. The user is warned that continuing may cause distortions, and may Continue or Abort.",
+      "troubleshooting": [
+        "Choose Abort to stop, or Continue at your own risk",
+        "Check heater/cooling operation and chamber insulation",
+        "Run diagnostics from Settings"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/7004"
+    },
+    {
+      "code": 7005,
+      "key": "CURE_ABORTED",
+      "message": "Cure Aborted",
+      "severity": "warning",
+      "category": "process",
+      "layer": "ui",
+      "description": "A cure run was aborted (by the user from the active phase, or from the Temperature Warning). The session is logged with status aborted and the device returns to Home.",
+      "troubleshooting": [
+        "Review the cure history entry for the aborted run",
+        "Restart the cure when ready"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/7005"
+    },
+    {
+      "code": 9080,
+      "key": "UNKNOWN_DIAGNOSTIC_TOOL",
+      "message": "Unknown Network Tool",
+      "severity": "warning",
+      "category": "validation",
+      "layer": "backend",
+      "description": "The network diagnostics endpoint was called with an unsupported tool name (expected ping, traceroute or nslookup).",
+      "troubleshooting": [
+        "Select one of the supported diagnostic tools",
+        "Retry the diagnostic from the Network screen"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9080"
+    },
+    {
+      "code": 9081,
+      "key": "USB_NOT_FOUND",
+      "message": "USB Drive Not Found",
+      "severity": "warning",
+      "category": "storage",
+      "layer": "backend",
+      "description": "An export operation could not locate a mounted USB drive on the device.",
+      "troubleshooting": [
+        "Insert a USB stick into the machine",
+        "Wait a few seconds for it to mount, then retry",
+        "Try a different USB port or stick"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9081"
+    },
+    {
+      "code": 9082,
+      "key": "USB_WRITE_FAILED",
+      "message": "USB Write Failed",
+      "severity": "critical",
+      "category": "storage",
+      "layer": "backend",
+      "description": "The backend found a USB drive but failed to write the file to it (full, read-only or removed mid-write).",
+      "troubleshooting": [
+        "Check the USB stick has free space and is not write-protected",
+        "Do not remove the USB stick during export",
+        "Reformat the USB stick (FAT32) and retry"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9082"
+    },
+    {
+      "code": 9083,
+      "key": "LOG_EXPORT_FAILED",
+      "message": "Log Export Failed",
+      "severity": "warning",
+      "category": "storage",
+      "layer": "backend",
+      "description": "The backend failed to copy the system logs to the USB drive.",
+      "troubleshooting": [
+        "Insert a writable USB stick and retry",
+        "Check available space on the USB drive"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9083"
+    },
+    {
+      "code": 9084,
+      "key": "NETWORK_STATUS_UNAVAILABLE",
+      "message": "Network Status Unavailable",
+      "severity": "warning",
+      "category": "network",
+      "layer": "backend",
+      "description": "The backend could not read the device network status (IP / MAC / gateway).",
+      "troubleshooting": [
+        "Check the ethernet cable and link LEDs",
+        "Reboot the system",
+        "Verify network settings"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9084"
+    },
+    {
+      "code": 9085,
+      "key": "NETWORK_DIAGNOSTIC_FAILED",
+      "message": "Network Diagnostic Failed",
+      "severity": "warning",
+      "category": "network",
+      "layer": "backend",
+      "description": "A network diagnostic command (ping / traceroute / nslookup) failed to execute on the device.",
+      "troubleshooting": [
+        "Verify the target address is reachable",
+        "Check the network connection and retry"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9085"
+    },
+    {
+      "code": 9086,
+      "key": "UPDATE_FAILED",
+      "message": "Software Update Failed",
+      "severity": "critical",
+      "category": "update",
+      "layer": "backend",
+      "description": "The backend update process failed while installing a software package from USB.",
+      "troubleshooting": [
+        "Re-download the update package and copy it to USB",
+        "Verify the package version and integrity",
+        "Retry the update from Settings → Update Software"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9086"
+    },
+    {
+      "code": 9087,
+      "key": "UPDATE_PACKAGE_NOT_FOUND",
+      "message": "Update Package Not Found",
+      "severity": "warning",
+      "category": "update",
+      "layer": "backend",
+      "description": "No update package (or its manifest) could be found on the connected USB drive.",
+      "troubleshooting": [
+        "Copy the .scu update package and its manifest to the USB root",
+        "Insert the USB stick and retry"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9087"
+    },
+    {
+      "code": 9088,
+      "key": "UPDATE_INTEGRITY_FAILED",
+      "message": "Update Integrity Check Failed",
+      "severity": "critical",
+      "category": "security",
+      "layer": "ui",
+      "description": "The update package failed SHA-256 integrity verification (missing/malformed checksum or a mismatch — corrupt or tampered package). Installation is blocked (EN 18031 secure update).",
+      "troubleshooting": [
+        "Re-download the update package from the official portal",
+        "Verify the checksum/manifest matches the package",
+        "Do not install packages from untrusted sources"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9088"
+    },
+    {
+      "code": 9089,
+      "key": "HW_API_UNREACHABLE",
+      "message": "Hardware Service Unreachable",
+      "severity": "critical",
+      "category": "system",
+      "layer": "ui",
+      "description": "The UI could not reach the local hardware API (Flask backend). Hardware commands cannot be sent.",
+      "troubleshooting": [
+        "Reboot the system",
+        "Verify the sCure service is running",
+        "Contact support if the fault persists"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9089"
     }
   ]
 }

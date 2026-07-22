@@ -401,14 +401,17 @@ export default function CureProcessPage() {
 
     if (phase.type === 'heating' || phase.type === 'drying') {
       const isActiveRamping = status === 'active' && isRamping
+      const isActiveHolding = status === 'active' && !isRamping
       const label = phase.type === 'heating' ? 'Heating' : 'Drying'
+      // During HOLD (target reached) the gauge shows the remaining time; during ramp it shows temperature
+      const remaining = Math.max(0, phase.time * 60 - elapsed)
       return {
-        gaugeValue: isActiveRamping ? `${hw.chamberTemp}` : status === 'active' ? `${phase.temp}` : status === 'completed' ? `${phase.temp}` : '0',
-        gaugeLabel: isActiveRamping ? 'RAMP °C' : 'HOLD °C',
+        gaugeValue: isActiveRamping ? `${hw.chamberTemp}` : isActiveHolding ? formatTime(remaining) : status === 'completed' ? `${phase.temp}` : '0',
+        gaugeLabel: isActiveRamping ? 'RAMP °C' : isActiveHolding ? 'REMAINING' : 'HOLD °C',
         gaugeProgress: isActiveRamping ? rampProgress : status === 'completed' ? 100 : progress,
         rangeStart: `${isActiveRamping ? rampStartTemp : AMBIENT_TEMP}°C`,
         rangeEnd: `${phase.temp ?? 80}°C`,
-        statusText: isActiveRamping ? `Ramping ${hw.chamberTemp}°C → ${phase.temp}°C ...` : status === 'active' ? `${label} at ${phase.temp}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+        statusText: isActiveRamping ? `Ramping ...` : status === 'active' ? `${label} ...` : status === 'completed' ? 'Done' : 'Waiting ...',
       }
     }
     if (phase.type === 'cure') {
@@ -439,20 +442,8 @@ export default function CureProcessPage() {
       gaugeProgress: status === 'completed' ? 100 : progress,
       rangeStart: `${phase.temp ?? 80}°C`,
       rangeEnd: `${AMBIENT_TEMP}°C`,
-      statusText: status === 'active' ? `Cooling to ${phase.temp ?? AMBIENT_TEMP}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+      statusText: status === 'active' ? `Cooling ...` : status === 'completed' ? 'Done' : 'Waiting ...',
     }
-  }
-
-  // Heating phase shows ramp time remaining, then hold time
-  const getTimeLeft = (phase: typeof phases[0], index: number) => {
-    const elapsed = phaseElapsed[index] ?? 0
-    if (phase.type === 'nitrogen') {
-      return formatTime(Math.max(0, hw.nitrogenDuration - n2Elapsed))
-    }
-    if (isRamping && getPhaseStatus(index) === 'active' && index === activePhase) {
-      return `${hw.chamberTemp}°C → ${phase.temp}°C`
-    }
-    return formatTime(Math.max(0, phase.time * 60 - elapsed))
   }
 
   return (
@@ -564,11 +555,6 @@ export default function CureProcessPage() {
               gaugeValue={gauge.gaugeValue}
               gaugeLabel={gauge.gaugeLabel}
               gaugeProgress={gauge.gaugeProgress}
-              timeLeft={getTimeLeft(phase, i)}
-              rangeStart={gauge.rangeStart}
-              rangeEnd={gauge.rangeEnd}
-              rangeProgress={phaseProgress}
-              statusText={gauge.statusText}
               minElapsed={String(minE).padStart(2, '0')}
               secElapsed={String(secE).padStart(2, '0')}
               percentComplete={`${Math.round(phaseProgress)}%`}

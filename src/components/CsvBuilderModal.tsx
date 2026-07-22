@@ -18,6 +18,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { useMaterials } from '@/context/MaterialContext'
+import { exportCsvToUsb } from '@/services/hardware-api'
 import type { CureStep, Material, TimerMode, UvStartMode, CoolingMode } from '@/context/MaterialContext'
 
 interface CsvBuilderModalProps {
@@ -42,12 +43,14 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
   const [showKeyboard, setShowKeyboard] = useState(false)
   const [steps, setSteps] = useState<CureStep[]>([emptyStep(1)])
   const [showSaveError, setShowSaveError] = useState(false)
+  const [csvMsg, setCsvMsg] = useState<{ text: string; error: boolean } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const isEditing = !!editMaterial
 
   // Load data when editing
   useEffect(() => {
+    setCsvMsg(null)
     if (editMaterial) {
       setName(editMaterial.name)
       setSteps([...editMaterial.steps])
@@ -71,7 +74,18 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
   const addNewStep = () => {
     setSteps(prev => {
-      const next = [...prev, emptyStep(prev.length + 1)]
+      const base = emptyStep(prev.length + 1)
+      const last = prev[prev.length - 1]
+      const beforeLast = prev[prev.length - 2]
+      let newStep: CureStep = base
+      if (last?.process === 'Nitrogen') {
+        // Only Cure/Bleaching may follow an N₂ purge — default to Cure
+        newStep = { ...base, process: 'Cure', intensity: 30 }
+      } else if (beforeLast?.process === 'Nitrogen' && (last?.process === 'Cure' || last?.process === 'Bleacher')) {
+        // After the Cure/Bleaching that followed N₂ — only Cooling is allowed
+        newStep = { ...base, process: 'Cooling', temperature: 25, coolingMode: 'medium', time: 0 }
+      }
+      const next = [...prev, newStep]
       scrollToStep(next.length - 1)
       return next
     })
@@ -152,10 +166,16 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
   const getAllowedProcesses = (index: number): ProcessType[] => {
     const all: ProcessType[] = ['Drying', 'Heating', 'Cure', 'Bleacher', 'Cooling', 'Nitrogen']
     const prev = index > 0 ? steps[index - 1] : null
+    const prevPrev = index > 1 ? steps[index - 2] : null
 
-    // After Nitrogen: only Heating, Cure, or Bleacher allowed
+    // After Nitrogen: only Cure or Bleaching allowed
     if (prev?.process === 'Nitrogen') {
-      return ['Heating', 'Cure', 'Bleacher']
+      return ['Cure', 'Bleacher']
+    }
+
+    // After the Cure/Bleaching that followed an N₂ purge: only Cooling (vent)
+    if (prevPrev?.process === 'Nitrogen' && (prev?.process === 'Cure' || prev?.process === 'Bleacher')) {
+      return ['Cooling']
     }
 
     // Nitrogen only allowed after Cooling (and need Cooling between two N2 steps)
@@ -194,37 +214,59 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     return [header, ...rows].join('\n')
   }
 
-  const handleDownloadCsv = () => {
-    const csv = generateCsv()
+  const browserDownloadCsv = (csv: string, filename: string) => {
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${name || 'untitled'}.csv`
+    a.download = filename
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  const hasNitrogen = steps.some(s => s.process === 'Nitrogen')
-  const hasCooling = steps.some(s => s.process === 'Cooling')
-
-  // After N₂, must have at least one Heating/Cure/Bleaching step
-  const hasProcessAfterN2 = (() => {
-    if (!hasNitrogen) return true
-    let afterN2 = false
-    for (const s of steps) {
-      if (s.process === 'Nitrogen') afterN2 = true
-      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) return true
+  const handleDownloadCsv = async () => {
+    const csv = generateCsv()
+    const filename = `${name || 'untitled'}.csv`
+    // Primary path: write the CSV to the USB drive connected to the machine.
+    const res = await exportCsvToUsb(filename, csv)
+    if (res.ok) {
+      setCsvMsg({ text: res.message || 'Saved to USB', error: false })
+      return
     }
-    return false
+    // Fallback (dev, or no USB connected): hand the file to the browser.
+    browserDownloadCsv(csv, filename)
+    setCsvMsg({
+      text: res.message?.includes('No USB')
+        ? 'No USB drive — downloaded the file instead'
+        : 'Downloaded the file',
+      error: true,
+    })
+  }
+
+  const hasNitrogen = steps.some(s => s.process === 'Nitrogen')
+
+  // Each N₂ purge must be followed by a Cure/Bleaching step, then a Cooling step:
+  //   N₂ → (Cure | Bleaching) → Cooling
+  const n2BlockError = (() => {
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].process !== 'Nitrogen') continue
+      const next = steps[i + 1]
+      const after = steps[i + 2]
+      if (!next || (next.process !== 'Cure' && next.process !== 'Bleacher')) {
+        return 'After N₂ purge, add a Cure or Bleaching step'
+      }
+      if (!after || after.process !== 'Cooling') {
+        return 'After the Cure/Bleaching that follows N₂, add a Cooling step'
+      }
+    }
+    return null
   })()
 
   // Validation error message
   const saveError = (() => {
     if (!name.trim()) return 'Enter a program name'
     if (steps.length === 0) return 'Add at least one step'
-    if (hasNitrogen && !hasProcessAfterN2) return 'Add a Heating, Cure, or Bleaching step after N₂ purge'
-    if (hasNitrogen && !hasCooling) return 'Nitrogen must be vented — add a Cooling step to save the program'
+    if (hasNitrogen && n2BlockError) return n2BlockError
     return null
   })()
 
@@ -273,7 +315,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         {/* Top bar */}
         <div className="flex items-center gap-4 px-4 py-2 shrink-0 border-b border-border">
           <DialogHeader className="p-0">
-            <DialogTitle className="text-lg text-primary whitespace-nowrap">
+            <DialogTitle className="text-lg whitespace-nowrap">
               {isEditing ? 'Edit Program' : 'Build Cure Program'}
             </DialogTitle>
           </DialogHeader>
@@ -307,7 +349,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                       <SelectTrigger className="w-[140px] h-9">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" side="bottom" sideOffset={4}>
                         {getAllowedProcesses(i).map(proc => (
                           <SelectItem
                             key={proc}
@@ -342,7 +384,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                           <SelectTrigger className="w-[140px] h-9">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent position="popper" side="bottom" sideOffset={4}>
                             <SelectItem value="fast">Fast</SelectItem>
                             <SelectItem value="medium">Medium</SelectItem>
                             <SelectItem value="slow">Slow</SelectItem>
@@ -380,7 +422,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                       <TouchNumber
                         value={step.time}
                         onChange={v => updateStep(i, 'time', v ?? 1)}
-                        min={1} max={120} step={1} suffix=" min"
+                        min={1} max={step.process === 'Bleacher' ? 720 : 120} step={1} suffix=" min"
                         className="w-[140px]"
                       />
                     </div>
@@ -395,7 +437,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                           <SelectTrigger className="w-[140px] h-9">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent position="popper" side="bottom" sideOffset={4}>
                             <SelectItem value="on-ramp">On ramp start</SelectItem>
                             <SelectItem value="on-target">At temperature</SelectItem>
                           </SelectContent>
@@ -418,7 +460,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                           <SelectTrigger className="w-[140px] h-9">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent position="popper" side="bottom" sideOffset={4}>
                             <SelectItem value="at-start">On ramp start</SelectItem>
                             <SelectItem value="at-target">At temperature</SelectItem>
                           </SelectContent>
@@ -445,6 +487,9 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         <div className="shrink-0 border-t border-border px-4 py-2">
           {showSaveError && saveError && (
             <div className="text-destructive text-xs text-center mb-1.5">{saveError}</div>
+          )}
+          {csvMsg && (
+            <div className={`text-xs text-center mb-1.5 ${csvMsg.error ? 'text-yellow-500' : 'text-green-500'}`}>{csvMsg.text}</div>
           )}
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={handleDownloadCsv} className="gap-1">

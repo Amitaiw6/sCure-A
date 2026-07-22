@@ -1,0 +1,78 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="alerts-flow" name="sCure Alerts Screen Flow">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="laneU" parent="1" value="UI" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" vertex="1">
+          <mxGeometry x="0" y="0" width="560" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="laneS" parent="1" value="Storage" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" vertex="1">
+          <mxGeometry x="560" y="0" width="440" height="960" as="geometry" />
+        </mxCell>
+
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry x="255" y="40" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="n_bell" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap the Bell (top bar) — badge = active count; red if any critical, orange if only warnings" vertex="1">
+          <mxGeometry x="130" y="92" width="280" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Alerts screen (/alerts)" vertex="1">
+          <mxGeometry x="160" y="180" width="220" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n_loadreg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Load Error Registry — fetch /config/errors.json (fallback: bundled copy)" vertex="1">
+          <mxGeometry x="600" y="90" width="360" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n_load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Read active alerts (localStorage 'scure-active-alerts'); drop any code not in the registry" vertex="1">
+          <mxGeometry x="600" y="250" width="380" height="68" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d_any" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Any active alerts?" vertex="1">
+          <mxGeometry x="185" y="350" width="200" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n_clear" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show 'All Clear — No active alerts'" vertex="1">
+          <mxGeometry x="6" y="452" width="140" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="e_clear" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry x="63" y="556" width="26" height="26" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n_list" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="List grouped: Critical Errors / Non-Critical Errors — each row: code · message · severity badge" vertex="1">
+          <mxGeometry x="170" y="470" width="290" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="n_resolve" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Resolve each code → registry record (message · severity · troubleshooting)" vertex="1">
+          <mxGeometry x="150" y="566" width="300" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n_select" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Operator selects an alert" vertex="1">
+          <mxGeometry x="185" y="646" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n_detail" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Detail: description · troubleshooting steps · QR (supportUrl) · support (email / phone / chat)" vertex="1">
+          <mxGeometry x="140" y="708" width="300" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n_dismiss" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Dismiss alert (or Clear all)" vertex="1">
+          <mxGeometry x="185" y="816" width="220" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n_update" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Update active set; persist; recompute count &amp; bell badge" vertex="1">
+          <mxGeometry x="600" y="812" width="380" height="58" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a1" parent="1" edge="1" source="start" target="n_bell" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a2" parent="1" edge="1" source="n_bell" target="n_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a3" parent="1" edge="1" source="n_open" target="n_load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="load"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a4" parent="1" edge="1" source="n_load" target="d_any" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a5" parent="1" edge="1" source="d_any" target="n_clear" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a6" parent="1" edge="1" source="n_clear" target="e_clear" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a7" parent="1" edge="1" source="d_any" target="n_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a8" parent="1" edge="1" source="n_list" target="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a9" parent="1" edge="1" source="n_loadreg" target="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#888888;dashed=1;endArrow=open;fontSize=11;fontColor=#666666;" value="resolve text by code"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="594" /></Array></mxGeometry></mxCell>
+        <mxCell id="a10" parent="1" edge="1" source="n_resolve" target="n_select" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a11" parent="1" edge="1" source="n_select" target="n_detail" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a12" parent="1" edge="1" source="n_detail" target="n_dismiss" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a13" parent="1" edge="1" source="n_dismiss" target="n_update" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a14" parent="1" edge="1" source="n_update" target="d_any" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="recompute"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="520" y="841" /><mxPoint x="520" y="392" /></Array></mxGeometry></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

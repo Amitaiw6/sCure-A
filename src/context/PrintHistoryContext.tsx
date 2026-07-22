@@ -23,17 +23,16 @@ interface PrintHistoryContextType {
 
 const API_BASE = 'http://localhost:3001'
 
+// Print history is managed in PostgreSQL and read via the backend API.
+// When the backend is unreachable (dev / offline), fall back to bundled demo prints.
+import { DEMO_PRINTS } from '@/data/demo-data'
+
 async function loadPrintHistory(): Promise<PrintLog[]> {
   try {
     const res = await fetch(`${API_BASE}/api/print-history`)
     if (res.ok) return await res.json()
-  } catch { /* API not available */ }
-  // Fallback: static file (dev mode)
-  try {
-    const res = await fetch('/materials/print_history.json')
-    if (res.ok) return await res.json()
-  } catch { /* ignore */ }
-  return []
+  } catch { /* backend not available */ }
+  return DEMO_PRINTS
 }
 
 async function savePrintHistory(logs: PrintLog[]) {

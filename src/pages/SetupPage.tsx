@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import { useHardware } from '@/context/HardwareContext'
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,7 @@ type Step = 'welcome' | 'name' | 'org'
 export default function SetupPage() {
   const { setOrganization, completeSetup } = useSystemConfig()
   const { state: hw, setSystemName } = useHardware()
+  const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState<Step>('welcome')
@@ -55,13 +57,13 @@ export default function SetupPage() {
     if (orgId) {
       setOrganization(orgId)
       completeSetup()
-      window.location.href = '/'
+      navigate('/') // router navigation — never a hard URL change (would escape to file:/// on the offline build)
     }
   }
 
   const handleSkip = () => {
     completeSetup()
-    window.location.href = '/'
+    navigate('/')
   }
 
   return (

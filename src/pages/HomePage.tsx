@@ -5,7 +5,7 @@ import CsvBuilderModal from '@/components/CsvBuilderModal'
 import ImportCsvModal from '@/components/ImportCsvModal'
 import PrintHistoryModal from '@/components/PrintHistoryModal'
 import { Button } from '@/components/ui/button'
-import { Play, Upload, Trash2, Pencil, ChevronRight, CheckCircle, XCircle, AlertTriangle, Building2 } from 'lucide-react'
+import { Play, Upload, Trash2, Pencil, Copy, ChevronRight, CheckCircle, XCircle, AlertTriangle, Building2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMaterials } from '@/context/MaterialContext'
 import { usePrintHistory } from '@/context/PrintHistoryContext'
@@ -34,7 +34,7 @@ function timeAgo(dateStr: string) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { materials, selectedMaterialId, setSelectedMaterialId, removeMaterial, isLoading } = useMaterials()
+  const { materials, selectedMaterialId, setSelectedMaterialId, duplicateMaterial, removeMaterial, favoriteIds, toggleFavorite, isLoading } = useMaterials()
   const { recentLogs } = usePrintHistory()
   const { config } = useSystemConfig()
   const { state: hw } = useHardware()
@@ -50,6 +50,15 @@ export default function HomePage() {
   const handleEdit = (mat: Material) => {
     setEditingMaterial(mat)
     setShowBuilder(true)
+  }
+
+  // Duplicate a material to "<name> Copy" and immediately open it for editing
+  const handleDuplicate = (mat: Material) => {
+    const copy = duplicateMaterial(mat.id)
+    if (copy) {
+      setEditingMaterial(copy)
+      setShowBuilder(true)
+    }
   }
 
   const handleCloseBuilder = () => {
@@ -125,7 +134,7 @@ export default function HomePage() {
                 </div>
                 <span className="text-cyan-400 text-xs shrink-0">{log.duration}min</span>
                 <span className="text-muted-foreground text-xs shrink-0">{timeAgo(log.date)}</span>
-                <span className="text-muted-foreground/50 text-[10px] shrink-0">{log.printerName}</span>
+                <span className="text-muted-foreground/50 text-sm shrink-0">{log.printerName}</span>
                 <ChevronRight size={14} className="text-muted-foreground shrink-0" />
               </div>
             )
@@ -133,8 +142,8 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Material List Section */}
-      <div className="flex items-center justify-between mb-3 mt-5">
+      {/* Material List Section — sticky header stays visible while the list scrolls */}
+      <div className="flex items-center justify-between mb-3 pt-5 pb-2 sticky top-0 z-20 bg-background">
         <h2 className="text-white text-base font-semibold">
           Material List
           <span className="text-muted-foreground text-xs font-normal ml-2">({materials.length})</span>
@@ -168,7 +177,9 @@ export default function HomePage() {
           No materials yet. Upload a CSV or create a new program.
         </p>
       ) : (
-        materials.map(mat => (
+        [...materials]
+          .sort((a, b) => (favoriteIds.includes(b.id) ? 1 : 0) - (favoriteIds.includes(a.id) ? 1 : 0))
+          .map(mat => (
           <div key={mat.id} className="flex items-center gap-2">
             <div className="flex-1">
               <MaterialItem
@@ -176,27 +187,44 @@ export default function HomePage() {
                 duration={`${mat.totalDuration}min`}
                 isSelected={selectedMaterialId === mat.id}
                 isPreset={mat.isPreset}
+                isFavorite={favoriteIds.includes(mat.id)}
+                onToggleFavorite={() => toggleFavorite(mat.id)}
                 onClick={() => { setSelectedMaterialId(mat.id); setSelectedPrintId(null) }}
               />
             </div>
-            {editMode && !mat.isPreset && (
+            {editMode && (
               <>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => handleEdit(mat)}
+                  onClick={() => handleDuplicate(mat)}
                   className="shrink-0 mb-2"
+                  title="Duplicate"
                 >
-                  <Pencil size={16} className="text-primary" />
+                  <Copy size={16} className="text-foreground" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => removeMaterial(mat.id)}
-                  className="shrink-0 mb-2"
-                >
-                  <Trash2 size={16} className="text-destructive" />
-                </Button>
+                {!mat.isPreset && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleEdit(mat)}
+                      className="shrink-0 mb-2"
+                      title="Edit"
+                    >
+                      <Pencil size={16} className="text-primary" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => removeMaterial(mat.id)}
+                      className="shrink-0 mb-2"
+                      title="Delete"
+                    >
+                      <Trash2 size={16} className="text-destructive" />
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>

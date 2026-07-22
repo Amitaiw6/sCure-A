@@ -1,4 +1,4 @@
-import { PlusCircle, ChevronRight, Lock } from 'lucide-react'
+import { PlusCircle, ChevronRight, Lock, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface MaterialItemProps {
@@ -7,10 +7,12 @@ interface MaterialItemProps {
   isCommand?: boolean
   isSelected?: boolean
   isPreset?: boolean
+  isFavorite?: boolean
+  onToggleFavorite?: () => void
   onClick?: () => void
 }
 
-export default function MaterialItem({ label, duration, isCommand, isSelected, isPreset, onClick }: MaterialItemProps) {
+export default function MaterialItem({ label, duration, isCommand, isSelected, isPreset, isFavorite, onToggleFavorite, onClick }: MaterialItemProps) {
   return (
     <div
       onClick={onClick}
@@ -22,6 +24,18 @@ export default function MaterialItem({ label, duration, isCommand, isSelected, i
       )}
     >
       <div className="flex items-center gap-3">
+        {onToggleFavorite && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+            className="shrink-0 -ml-1 p-1 rounded-md hover:bg-white/10 transition-colors touch-manipulation"
+            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Star
+              size={18}
+              className={isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground/60'}
+            />
+          </button>
+        )}
         {isPreset ? (
           <Lock size={16} className="text-muted-foreground/50" />
         ) : (

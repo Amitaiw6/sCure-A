@@ -1,0 +1,247 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="cure-process-flow" name="sCure Cure Process Flow">
+    <mxGraphModel dx="1945" dy="986" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1280" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1">
+          <mxGeometry height="1240" width="560" as="geometry" />
+        </mxCell>
+        <mxCell id="u_warn" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#cc0000;fontSize=12;" value="Temperature Warning&lt;br&gt;Continue / Abort" vertex="1">
+          <mxGeometry height="72" width="300" x="110" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1">
+          <mxGeometry height="1240" width="480" x="560" as="geometry" />
+        </mxCell>
+        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1">
+          <mxGeometry height="1240" width="480" x="1040" as="geometry" />
+        </mxCell>
+        <mxCell id="s_complete" parent="laneS" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="completeCure → status completed + duration + steps;&lt;br&gt;remove pending Cure-Together prints" vertex="1">
+          <mxGeometry height="72" width="390" x="10" y="758" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="246" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="u_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Cure Process (auto-start on mount)" vertex="1">
+          <mxGeometry height="48" width="300" x="110" y="96" as="geometry" />
+        </mxCell>
+        <mxCell id="f_build" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Build phases from program steps&lt;br&gt;(skip N₂ steps if nitrogen disabled; demo if none)" vertex="1">
+          <mxGeometry height="58" width="390" x="595" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="s_start" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="startCure → add &#39;running&#39; log to&lt;br&gt;cure history (scure-cure-history)" vertex="1">
+          <mxGeometry height="60" width="390" x="1060" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="d_type" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Current phase type?&lt;br&gt;(1 s tick advances ramp / purge / timer)" vertex="1">
+          <mxGeometry height="90" width="220" x="780" y="284" as="geometry" />
+        </mxCell>
+        <mxCell id="f_heat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=left;verticalAlign=middle;spacingLeft=10;" value="&lt;b&gt;Heating / Drying&lt;/b&gt; → heat_to_target / dry_to_target&lt;br&gt;Set target temp — controller drives Heater to target, then HOLD phase.time" vertex="1">
+          <mxGeometry height="54" width="430" x="600" y="408" as="geometry" />
+        </mxCell>
+        <mxCell id="f_cure" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=left;verticalAlign=middle;spacingLeft=10;" value="&lt;b&gt;Cure / Bleaching&lt;/b&gt; → cure_uv_405 / cure_uv_450&lt;br&gt;Set target temp (Heater controlled) + UV 405/450 nm on, HOLD phase.time → stop" vertex="1">
+          <mxGeometry height="50" width="430" x="600" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="f_cool" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=left;verticalAlign=middle;spacingLeft=10;" value="&lt;b&gt;Cooling&lt;/b&gt; → cool_to_target_temperature&lt;br&gt;Set cooling target — controller drives Cooling (mode) toward target" vertex="1">
+          <mxGeometry height="50" width="430" x="600" y="532" as="geometry" />
+        </mxCell>
+        <mxCell id="f_n2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=left;verticalAlign=middle;spacingLeft=10;" value="&lt;b&gt;N₂ Purge&lt;/b&gt; → purge for nitrogenDuration (nitrogen active)" vertex="1">
+          <mxGeometry height="50" width="430" x="600" y="594" as="geometry" />
+        </mxCell>
+        <mxCell id="s_tel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="recordTelemetry every 5 s:&lt;br&gt;chamberTemp · UV type (405/450) · LED temps" vertex="1">
+          <mxGeometry height="64" width="390" x="1060" y="296" as="geometry" />
+        </mxCell>
+        <mxCell id="d_more" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Last phase done?" vertex="1">
+          <mxGeometry height="84" width="220" x="780" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_warn" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#cc0000;fontStyle=1;" value="Err 7004" vertex="1">
+          <mxGeometry height="24" width="80" x="110" y="402" as="geometry" />
+        </mxCell>
+        <mxCell id="u_complete" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="&lt;b&gt;&#39;Cure Complete!&#39; screen&lt;/b&gt;&lt;br&gt;&#39;&lt;material&gt; cured successfully&#39; · Total time · N steps" vertex="1">
+          <mxGeometry height="60" width="300" x="110" y="698" as="geometry" />
+        </mxCell>
+        <mxCell id="n_door" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Door (button) → door opens (≈ 0.5 s),&lt;br&gt;then returns to Home" vertex="1">
+          <mxGeometry height="54" width="300" x="110" y="772" as="geometry" />
+        </mxCell>
+        <mxCell id="e_done" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="247" y="858" as="geometry" />
+        </mxCell>
+        <mxCell id="u_abort" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="User Abort (active phase → AbortModal → confirm)" vertex="1">
+          <mxGeometry height="58" width="300" x="110" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="s_abort" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="abortCure(stepsCompleted) → status aborted" vertex="1">
+          <mxGeometry height="60" width="390" x="1060" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="u_home" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Return to Home" vertex="1">
+          <mxGeometry height="48" width="300" x="110" y="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="e_abort" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#cc0000;fontColor=#cc0000;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="✗" vertex="1">
+          <mxGeometry height="28" width="28" x="246" y="1082" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_abort" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#cc0000;fontStyle=1;" value="Err 7005" vertex="1">
+          <mxGeometry height="26" width="64" x="278" y="1082" as="geometry" />
+        </mxCell>
+        <mxCell id="re1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="u_open">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" edge="1" parent="1" source="u_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="f_build">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" edge="1" parent="1" source="f_build" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="s_start" value="log start">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re4" edge="1" parent="1" source="s_start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_type">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1255" y="270" />
+              <mxPoint x="890" y="270" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p1" edge="1" parent="1" source="d_type" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="f_heat" value="Heating / Drying">
+          <mxGeometry relative="1" x="0.9881" y="60" as="geometry">
+            <mxPoint x="-10" y="-34" as="offset" />
+            <Array as="points">
+              <mxPoint x="575" y="329" />
+              <mxPoint x="575" y="433" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p2" edge="1" parent="1" source="d_type" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="f_cure" value="Cure / Bleaching">
+          <mxGeometry relative="1" x="-0.2929" y="21" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="575" y="329" />
+              <mxPoint x="575" y="495" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3" edge="1" parent="1" source="d_type" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="f_cool" value="Cooling">
+          <mxGeometry relative="1" x="-0.345" y="31" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="575" y="329" />
+              <mxPoint x="575" y="557" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p4" edge="1" parent="1" source="d_type" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="f_n2" value="N₂ Purge">
+          <mxGeometry relative="1" x="-0.4231" y="51" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="575" y="329" />
+              <mxPoint x="575" y="619" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m1" edge="1" parent="1" source="f_heat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="d_more">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1035" y="433" />
+              <mxPoint x="1035" y="732" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m2" edge="1" parent="1" source="f_cure" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="d_more">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1035" y="495" />
+              <mxPoint x="1035" y="732" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m3" edge="1" parent="1" source="f_cool" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="d_more">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1035" y="557" />
+              <mxPoint x="1035" y="732" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m4" edge="1" parent="1" source="f_n2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="d_more">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1035" y="619" />
+              <mxPoint x="1035" y="732" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_tel" edge="1" parent="1" source="d_type" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="s_tel" value="every 5 s">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_more_no" edge="1" parent="1" source="d_more" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="d_type" value="no (next phase)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="890" y="660" />
+              <mxPoint x="1090" y="660" />
+              <mxPoint x="1090" y="390" />
+              <mxPoint x="890" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_more_yes" edge="1" parent="1" source="d_more" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="s_complete" value="yes">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="890" y="794" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_comp" edge="1" parent="1" source="s_complete" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="u_complete">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1255" y="680" />
+              <mxPoint x="260" y="680" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_door" edge="1" parent="1" source="u_complete" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_door">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_done" edge="1" parent="1" source="n_door" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_stall" edge="1" parent="1" source="d_type" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#cc0000;fontColor=#cc0000;endArrow=block;fontSize=11;dashed=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="u_warn" value="temp stalls">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="835" y="266" />
+              <mxPoint x="260" y="266" />
+              <mxPoint x="260" y="430" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_cont" edge="1" parent="1" source="u_warn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.4;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" target="d_type" value="Continue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="500" y="459" />
+              <mxPoint x="500" y="290" />
+              <mxPoint x="825" y="290" />
+              <mxPoint x="825" y="306" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_warn_abort" edge="1" parent="1" source="u_warn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#cc0000;fontColor=#cc0000;endArrow=block;fontSize=11;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="s_abort" value="Abort">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="650" />
+              <mxPoint x="480" y="650" />
+              <mxPoint x="480" y="840" />
+              <mxPoint x="1255" y="840" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_abort" edge="1" parent="1" source="u_abort" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="s_abort">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_ah" edge="1" parent="1" source="s_abort" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="u_home">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1255" y="990" />
+              <mxPoint x="260" y="990" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re_he" edge="1" parent="1" source="u_home" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_abort">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

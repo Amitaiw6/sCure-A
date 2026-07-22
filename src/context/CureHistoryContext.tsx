@@ -34,24 +34,34 @@ interface CureHistoryContextType {
   recordTelemetry: (id: string, sample: TelemetrySample) => void
 }
 
-const STORAGE_KEY = 'scure-cure-history'
+const API_BASE = 'http://localhost:3001'
 
-function loadLogs(): CureLog[] {
+// Cure history is managed in PostgreSQL via the backend (§10) — API only.
+async function apiGetCureHistory(): Promise<CureLog[] | null> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return JSON.parse(stored)
-  } catch { /* ignore */ }
-  return []
+    const res = await fetch(`${API_BASE}/api/cure-history`)
+    if (res.ok) return await res.json()
+  } catch { /* backend not available */ }
+  return null
+}
+
+function apiPost(path: string, body: unknown) {
+  fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => { /* fire-and-forget; localStorage keeps the record */ })
 }
 
 const CureHistoryContext = createContext<CureHistoryContextType | null>(null)
 
 export function CureHistoryProvider({ children }: { children: ReactNode }) {
-  const [logs, setLogs] = useState<CureLog[]>(loadLogs)
+  const [logs, setLogs] = useState<CureLog[]>([])
 
+  // Load the canonical history from the database (API only).
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs))
-  }, [logs])
+    apiGetCureHistory().then(r => { if (r) setLogs(r) })
+  }, [])
 
   const activeLog = logs.find(l => l.status === 'running') ?? null
 
@@ -71,6 +81,7 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
       serialNumber,
     }
     setLogs(prev => [log, ...prev])
+    apiPost(`/api/cure-runs/${id}/start`, { materialName, steps, phases, targetTemp, serialNumber })
     return id
   }, [])
 
@@ -81,6 +92,7 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
       const duration = Math.round((new Date(endedAt).getTime() - new Date(l.startedAt).getTime()) / 1000)
       return { ...l, endedAt, duration, status, stepsCompleted: stepsCompleted ?? l.stepsCompleted }
     }))
+    apiPost(`/api/cure-runs/${id}/finish`, { status, stepsCompleted })
   }, [])
 
   const recordTelemetry = useCallback((id: string, sample: TelemetrySample) => {
@@ -89,6 +101,7 @@ export function CureHistoryProvider({ children }: { children: ReactNode }) {
       const telemetry = [...(l.telemetry ?? []), sample]
       return { ...l, telemetry }
     }))
+    apiPost(`/api/cure-runs/${id}/telemetry`, sample)
   }, [])
 
   const completeCure = useCallback((id: string) => {

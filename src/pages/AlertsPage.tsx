@@ -34,7 +34,7 @@ export default function AlertsPage() {
             }
             <div>
               <span className="text-red-400 text-sm font-mono">{def.code}:</span>
-              <span className="text-foreground text-sm font-bold ml-2">{def.title}</span>
+              <span className="text-foreground text-sm font-bold ml-2">{def.message}</span>
             </div>
           </div>
 
@@ -176,7 +176,7 @@ function AlertRow({ alert, def, supportUrl, onSelect }: { alert: ActiveAlert; de
       )}>
         {def.code}
       </span>
-      <span className="text-foreground text-xs font-medium flex-1">{def.title}</span>
+      <span className="text-foreground text-xs font-medium flex-1">{def.message}</span>
       <div className="bg-white p-1 rounded">
         <QRCodeSVG value={supportUrl} size={28} />
       </div>

@@ -1,0 +1,85 @@
+@startuml
+' sCure Box — Setup Flow (swimlane activity diagram)
+' Lane order: Storage | UI sCure | Cloud
+'   UI sCure is placed in the MIDDLE because it interacts with both Storage and
+'   Cloud; this keeps every connector to a single adjacent lane and prevents
+'   lines from crossing over a third lane (no overlapping lines).
+' Terminators: success -> stop (activity final, filled bullseye)
+'              error   -> end  (flow final, circle with X)
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #333333
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #333333
+skinparam SwimlaneBorderColor #888888
+title sCure — Setup Flow
+
+' --- establish lane order (Storage | UI sCure | Cloud) ---
+|Storage|
+|UI sCure|
+|Cloud|
+
+|UI sCure|
+start
+:Press GET STARTED;
+
+|Storage|
+if (SN exists on SSD1?) then (yes)
+  |UI sCure|
+  :Proceed to next screen;
+  stop
+else (no)
+  |Storage|
+  if (SN exists on SSD2?) then (yes)
+    :Restore SN from SSD2 to SSD1;
+    if (Restore OK?) then (yes)
+      |UI sCure|
+      :Proceed to next screen;
+      stop
+    else (no)
+      |UI sCure|
+      :Show error;
+      end
+    endif
+  else (no)
+    |UI sCure|
+    if (Internet available?) then (no)
+      :Show error
+      User retries;
+      end
+    else (yes)
+      |Cloud|
+      :Request next available SN
+      (up to 5 attempts);
+      if (SN received within 5 tries?) then (no)
+        |UI sCure|
+        :Show "Problem communicating
+        with the cloud"
+        User retries;
+        end
+      else (yes)
+        |Storage|
+        :Save SN to SSD1
+        (/etc/scure/config.json)
+        set as system SN;
+        :Back up SN to SSD2
+        (/mnt/ssd2/scure/config_backup.json);
+        |Cloud|
+        :Register system in cloud
+        with the SN;
+        if (Registration OK?) then (yes)
+          |UI sCure|
+          :Proceed to next screen;
+          stop
+        else (no)
+          |UI sCure|
+          :Show error
+          User retries;
+          end
+        endif
+      endif
+    endif
+  endif
+endif
+@enduml

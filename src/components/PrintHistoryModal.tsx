@@ -283,7 +283,7 @@ export default function PrintHistoryModal({ isOpen, onClose }: PrintHistoryModal
                   </div>
                   <span className="text-muted-foreground text-xs shrink-0">{formatDate(log.date)}</span>
                   <span className="text-cyan-400 text-xs shrink-0">{log.duration} min</span>
-                  {hasOrg && <span className="text-muted-foreground/50 text-[10px] shrink-0">{log.printerName}</span>}
+                  {hasOrg && <span className="text-muted-foreground/50 text-sm shrink-0">{log.printerName}</span>}
                   <ChevronRight size={14} className="text-muted-foreground shrink-0" />
                 </div>
               )

@@ -1,0 +1,99 @@
+{
+  "$description": "sCure design tokens — source of truth: src/index.css (:root) and Tailwind usage. Format compatible with the Tokens Studio for Figma plugin (value/type). Theme is dark-only; the kiosk viewport is a fixed 800x480.",
+  "color": {
+    "background":            { "value": "#0a0a0a", "type": "color", "description": "App background (near-black)" },
+    "foreground":            { "value": "#ffffff", "type": "color", "description": "Primary text / titles (white)" },
+    "card":                  { "value": "#111111", "type": "color", "description": "Card surface" },
+    "card-foreground":       { "value": "#ffffff", "type": "color" },
+    "popover":               { "value": "#141414", "type": "color", "description": "Dialog / modal surface" },
+    "popover-foreground":    { "value": "#ffffff", "type": "color" },
+    "primary":               { "value": "#0ea5e9", "type": "color", "description": "Accent (cyan/blue) — interactive accents & active states ONLY, never titles" },
+    "primary-foreground":    { "value": "#ffffff", "type": "color" },
+    "secondary":             { "value": "#1a1a1a", "type": "color", "description": "Top bar / secondary buttons" },
+    "secondary-foreground":  { "value": "#ffffff", "type": "color" },
+    "muted":                 { "value": "#1a1a1a", "type": "color" },
+    "muted-foreground":      { "value": "#9ca3af", "type": "color", "description": "Secondary / label text (gray)" },
+    "accent":                { "value": "#1a1a1a", "type": "color", "description": "Hover / pressed surface" },
+    "accent-foreground":     { "value": "#ffffff", "type": "color" },
+    "destructive":           { "value": "#dc2626", "type": "color", "description": "Error / critical / destructive" },
+    "destructive-foreground":{ "value": "#ffffff", "type": "color" },
+    "border":                { "value": "#222222", "type": "color" },
+    "input":                 { "value": "#222222", "type": "color" },
+    "ring":                  { "value": "#0ea5e9", "type": "color", "description": "Focus ring (= primary)" }
+  },
+  "status": {
+    "$description": "Semantic status colors used across screens (see SRS §6 UI Design Overview).",
+    "ok":       { "value": "#22c55e", "type": "color", "description": "OK / completed (green)" },
+    "warning":  { "value": "#fb923c", "type": "color", "description": "Warning / heating (orange)" },
+    "error":    { "value": "#ef4444", "type": "color", "description": "Error / critical (red)" },
+    "cooling":  { "value": "#22d3ee", "type": "color", "description": "Cooling (cyan/teal)" },
+    "cure":     { "value": "#a855f7", "type": "color", "description": "Cure (purple)" },
+    "nitrogen": { "value": "#ffffff", "type": "color", "description": "N₂ purge (white)" }
+  },
+  "process": {
+    "$description": "Per-step process colors for the cure builder & cure process screens.",
+    "heating":   { "value": "#fb923c", "type": "color" },
+    "drying":    { "value": "#f59e0b", "type": "color" },
+    "cure-405":  { "value": "#a855f7", "type": "color", "description": "Cure (405 nm UV)" },
+    "bleach-450":{ "value": "#3b82f6", "type": "color", "description": "Bleaching (450 nm UV)" },
+    "cooling":   { "value": "#14b8a6", "type": "color" },
+    "nitrogen":  { "value": "#ffffff", "type": "color" }
+  },
+  "chart": {
+    "chart-1": { "value": "#0ea5e9", "type": "color" },
+    "chart-2": { "value": "#f97316", "type": "color" },
+    "chart-3": { "value": "#a855f7", "type": "color" },
+    "chart-4": { "value": "#14b8a6", "type": "color" },
+    "chart-5": { "value": "#3b82f6", "type": "color" }
+  },
+  "font": {
+    "family": {
+      "sans":    { "value": "Geist Variable, sans-serif", "type": "fontFamilies", "description": "All text (Geist variable)" },
+      "heading": { "value": "Geist Variable, sans-serif", "type": "fontFamilies" },
+      "mono":    { "value": "ui-monospace, SFMono-Regular, Menlo, monospace", "type": "fontFamilies", "description": "Numbers / IDs / tabular figures" }
+    },
+    "weight": {
+      "normal":    { "value": "400", "type": "fontWeights" },
+      "medium":    { "value": "500", "type": "fontWeights" },
+      "semibold":  { "value": "600", "type": "fontWeights" },
+      "bold":      { "value": "700", "type": "fontWeights" },
+      "extrabold": { "value": "800", "type": "fontWeights" }
+    },
+    "size": {
+      "$description": "Tailwind sizes used in the app (base = 14px).",
+      "9":    { "value": "9px",  "type": "fontSizes" },
+      "10":   { "value": "10px", "type": "fontSizes" },
+      "xs":   { "value": "12px", "type": "fontSizes" },
+      "sm":   { "value": "14px", "type": "fontSizes", "description": "Base body size" },
+      "base": { "value": "16px", "type": "fontSizes" },
+      "lg":   { "value": "18px", "type": "fontSizes" },
+      "xl":   { "value": "20px", "type": "fontSizes" }
+    },
+    "lineHeight": {
+      "tight":  { "value": "1.25", "type": "lineHeights" },
+      "normal": { "value": "1.4",  "type": "lineHeights", "description": "Body default" }
+    }
+  },
+  "radius": {
+    "$description": "Derived from --radius: 0.75rem (12px).",
+    "sm":   { "value": "7px",  "type": "borderRadius" },
+    "md":   { "value": "10px", "type": "borderRadius" },
+    "lg":   { "value": "12px", "type": "borderRadius" },
+    "xl":   { "value": "17px", "type": "borderRadius" },
+    "full": { "value": "9999px", "type": "borderRadius" }
+  },
+  "spacing": {
+    "$description": "Tailwind 4px base scale; values most used in the app.",
+    "1":   { "value": "4px",  "type": "spacing" },
+    "1.5": { "value": "6px",  "type": "spacing" },
+    "2":   { "value": "8px",  "type": "spacing" },
+    "2.5": { "value": "10px", "type": "spacing" },
+    "3":   { "value": "12px", "type": "spacing" },
+    "4":   { "value": "16px", "type": "spacing" }
+  },
+  "size": {
+    "viewport-width":  { "value": "800px", "type": "sizing", "description": "Fixed kiosk viewport width" },
+    "viewport-height": { "value": "480px", "type": "sizing", "description": "Fixed kiosk viewport height" },
+    "touch-target":    { "value": "44px",  "type": "sizing", "description": "Minimum touch hit area" }
+  }
+}

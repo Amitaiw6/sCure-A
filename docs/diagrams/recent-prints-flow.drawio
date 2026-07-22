@@ -1,0 +1,129 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="recent-prints-flow" name="sCure Recent Prints Flow">
+    <mxGraphModel dx="1334" dy="974" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1">
+          <mxGeometry height="870" width="560" as="geometry" />
+        </mxCell>
+        <mxCell id="e_noprints" parent="laneU" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="427" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1">
+          <mxGeometry height="870" width="440" x="560" as="geometry" />
+        </mxCell>
+        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1">
+          <mxGeometry height="870" width="420" x="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="225" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Recent Prints" vertex="1">
+          <mxGeometry height="44" width="200" x="140" y="92" as="geometry" />
+        </mxCell>
+        <mxCell id="n_load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Load print history — read print_history.json (/api/print-history)" vertex="1">
+          <mxGeometry height="66" width="250" x="1085" y="84" as="geometry" />
+        </mxCell>
+        <mxCell id="d_org" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Organization connected?" vertex="1">
+          <mxGeometry height="74" width="180" x="690" y="153" as="geometry" />
+        </mxCell>
+        <mxCell id="n_noorg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show &#39;No organization&#39;; hide View All" vertex="1">
+          <mxGeometry height="54" width="200" x="340" y="161" as="geometry" />
+        </mxCell>
+        <mxCell id="e_noorg" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="427" y="236" as="geometry" />
+        </mxCell>
+        <mxCell id="d_empty" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Any prints?" vertex="1">
+          <mxGeometry height="64" width="160" x="700" y="278" as="geometry" />
+        </mxCell>
+        <mxCell id="n_noprints" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show &#39;No prints yet&#39;" vertex="1">
+          <mxGeometry height="44" width="180" x="350" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="n_show" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show 3 most recent (newest first) + View All" vertex="1">
+          <mxGeometry height="54" width="220" x="130" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="n_select" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="User selects a recent print" vertex="1">
+          <mxGeometry height="44" width="200" x="140" y="492" as="geometry" />
+        </mxCell>
+        <mxCell id="n_resolve" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Resolve material by name (first match)" vertex="1">
+          <mxGeometry height="54" width="200" x="680" y="488" as="geometry" />
+        </mxCell>
+        <mxCell id="d_found" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Material found?" vertex="1">
+          <mxGeometry height="64" width="170" x="695" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="n_nofound" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Start Cure stays disabled" vertex="1">
+          <mxGeometry height="48" width="200" x="340" y="588" as="geometry" />
+        </mxCell>
+        <mxCell id="e_nofound" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="427" y="668" as="geometry" />
+        </mxCell>
+        <mxCell id="n_active" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Set active program" vertex="1">
+          <mxGeometry height="44" width="180" x="690" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="n_enabled" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Start Cure enabled (→ §6.8)" vertex="1">
+          <mxGeometry height="44" width="190" x="150" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="e_enabled" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="232" y="772" as="geometry" />
+        </mxCell>
+        <mxCell id="re1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_open">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" edge="1" parent="1" source="n_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_load" value="load">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" edge="1" parent="1" source="n_load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_org">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re4" edge="1" parent="1" source="d_org" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_noorg" value="no">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re4b" edge="1" parent="1" source="n_noorg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_noorg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re5" edge="1" parent="1" source="d_org" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_empty" value="yes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re6" edge="1" parent="1" source="d_empty" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_noprints" value="no">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re6b" edge="1" parent="1" source="n_noprints" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_noprints">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re7" edge="1" parent="1" source="d_empty" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_show" value="yes">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="390" />
+              <mxPoint x="240" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re8" edge="1" parent="1" source="n_show" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_select">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re9" edge="1" parent="1" source="n_select" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_resolve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re10" edge="1" parent="1" source="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_found">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re11" edge="1" parent="1" source="d_found" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_nofound" value="no">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re11b" edge="1" parent="1" source="n_nofound" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_nofound">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re12" edge="1" parent="1" source="d_found" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_active" value="yes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re13" edge="1" parent="1" source="n_active" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_enabled">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re14" edge="1" parent="1" source="n_enabled" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_enabled">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

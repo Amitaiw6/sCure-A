@@ -92,9 +92,24 @@
   This guide explains the required format, valid parameters, and common errors to avoid.
 </p>
 
+<h3>1.1 Build Criteria &mdash; what makes a valid program</h3>
+<p>A program (whether built on-screen or imported from CSV) is accepted only when it meets all of these criteria:</p>
+<div class="ok-box">
+  <div class="title">A valid cure program must satisfy:</div>
+  <ul>
+    <li><strong>Has a name and at least one step.</strong></li>
+    <li><strong>Temperature only rises.</strong> Each Heating / Drying / Cure / Bleacher step must be at a temperature <strong>equal to or higher than the previous step</strong>. To use a lower temperature you must first add a <strong>Cooling</strong> step &mdash; a Cooling step resets the floor, after which the temperature may go lower again. <em>(You cannot set a Heating step below the temperature already reached without cooling the chamber first.)</em></li>
+    <li><strong>Temperature range 20&ndash;80&deg;C</strong> (in 5&deg; steps). A Cooling step's target is <strong>20&deg;C up to (previous step &minus; 5)</strong> and must be below the previous step.</li>
+    <li><strong>Time:</strong> 1&ndash;120&nbsp;min for Drying / Heating / Cure, and 1&ndash;720&nbsp;min (up to 12&nbsp;h) for Bleacher. Cooling and Nitrogen carry no time.</li>
+    <li><strong>UV Intensity 5&ndash;100%</strong> for Cure / Bleacher (default 30%).</li>
+    <li><strong>Nitrogen order:</strong> at most <strong>2</strong> N&#8322; purges; every purge must be followed by <strong>Cure or Bleacher, then Cooling</strong> (<code>N&#8322; &rarr; Cure/Bleacher &rarr; Cooling</code>); two purges must be separated by a Cooling step.</li>
+  </ul>
+</div>
+<p style="font-size:12px; color:#666;">On the on-screen builder these criteria are enforced <em>live</em> &mdash; the controls simply won't let you reach an invalid value, and Save is blocked with a message until the name / step / N&#8322; rules are met. On CSV import the same criteria are re-checked and a file that breaks any of them is rejected (see Section&nbsp;7).</p>
+
 <!-- SECTION 2 -->
 <h2>2. CSV File Structure</h2>
-<p>The CSV file must contain a <strong>header row</strong> followed by one or more <strong>data rows</strong>. Each row represents one process step.</p>
+<p>The CSV file must contain a <strong>header row</strong> followed by one or more <strong>data rows</strong>. Each row represents one process step. Columns are read by <strong>position</strong> in the order shown in Section&nbsp;2.2 &mdash; keep them in that order. The header row itself is only checked for the word "Step" or "Process"; the actual column names are not parsed.</p>
 
 <h3>2.1 Header Format</h3>
 <div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span></div>
@@ -123,7 +138,7 @@
     <td>3</td>
     <td><strong>Temperature</strong></td>
     <td>Target temperature in &deg;C (20&ndash;80)</td>
-    <td><span class="badge badge-required">Required*</span></td>
+    <td><span class="badge badge-optional">Optional*</span></td>
   </tr>
   <tr>
     <td>4</td>
@@ -140,7 +155,7 @@
   <tr>
     <td>6</td>
     <td><strong>UVIntensity</strong></td>
-    <td>UV light intensity in % (5&ndash;100)</td>
+    <td>UV light intensity in % (0&ndash;100)</td>
     <td><span class="badge badge-cure">Cure/Bleacher</span></td>
   </tr>
   <tr>
@@ -163,8 +178,8 @@
   </tr>
 </table>
 <p style="font-size:12px; color:#666;">
-  * Temperature is required for Drying, Heating, Cure, Bleacher, and Cooling. Leave empty for Nitrogen.<br>
-  ** Time is required for Drying, Heating, Cure, and Bleacher. Leave empty for Cooling and Nitrogen.
+  * Temperature applies to Drying, Heating, Cure, Bleacher, and Cooling (leave empty for Nitrogen). It is <strong>optional</strong>: if given it must be 20&ndash;80&deg;C, otherwise the importer defaults it to 40&deg;C (25&deg;C for Cooling).<br>
+  ** Time is required for Drying, Heating, and Cure (1&ndash;120&nbsp;min) and for Bleacher (1&ndash;720&nbsp;min, up to 12&nbsp;h). Leave empty for Cooling and Nitrogen.
 </p>
 
 <!-- SECTION 3 -->
@@ -191,26 +206,26 @@
   <tr>
     <td><strong>Cure</strong></td>
     <td>UV curing with 405nm LED light</td>
-    <td>Temperature, Time</td>
-    <td>Supports TimerMode, UVIntensity, UVStart</td>
+    <td>Time (1&ndash;120&nbsp;min)</td>
+    <td>Temperature optional (defaults 40&deg;C). Supports TimerMode, UVIntensity, UVStart, UVRampPercent</td>
   </tr>
   <tr>
     <td><strong>Bleacher</strong></td>
     <td>Bleaching with 450nm LED light</td>
-    <td>Temperature, Time</td>
-    <td>Supports TimerMode, UVIntensity, UVStart</td>
+    <td>Time (1&ndash;720&nbsp;min)</td>
+    <td>Long runs allowed (up to 12&nbsp;h). Temperature optional (defaults 40&deg;C). Supports TimerMode, UVIntensity, UVStart, UVRampPercent</td>
   </tr>
   <tr>
     <td><strong>Cooling</strong></td>
     <td>Controlled cooling to target temperature</td>
-    <td>Temperature</td>
-    <td>CoolingMode: fast / medium / slow (default: medium)</td>
+    <td>&mdash;</td>
+    <td>Temperature optional (defaults 25&deg;C). CoolingMode: fast / medium / slow (default: medium). Time is ignored.</td>
   </tr>
   <tr>
     <td><strong>Nitrogen</strong></td>
     <td>N&#8322; purge of the chamber</td>
     <td>&mdash;</td>
-    <td>No temperature or time needed. Runs automatically if N&#8322; is enabled on the system.</td>
+    <td>No temperature or time. Must be followed by Cure/Bleacher, then a Cooling step. Runs automatically only if N&#8322; is enabled; otherwise skipped.</td>
   </tr>
 </table>
 
@@ -222,12 +237,34 @@
   <div class="title">N&#8322; Purge Requirements</div>
   <ul>
     <li><strong>Maximum 2 Nitrogen steps</strong> per program</li>
-    <li><strong>After Nitrogen</strong>, the next step must be one of: <strong>Heating</strong>, <strong>Cure</strong>, <strong>Bleacher</strong>, or <strong>Cooling</strong></li>
-    <li><strong>A Cooling step is required</strong> somewhere after the Nitrogen step to vent the nitrogen from the chamber</li>
-    <li>At least one <strong>Heating, Cure, or Bleaching</strong> step must follow the N&#8322; purge</li>
-    <li>If N&#8322; is not enabled on the system, Nitrogen steps will be skipped automatically during the cure process</li>
+    <li><strong>Immediately after a Nitrogen step, only a Cure or Bleacher step is allowed</strong> (not Heating or Cooling)</li>
+    <li><strong>Immediately after that Cure/Bleacher, only a Cooling step is allowed</strong> &mdash; the required order is <code>Nitrogen &rarr; Cure/Bleacher &rarr; Cooling</code></li>
+    <li><strong>A Cooling step is required</strong> after the Nitrogen purge to vent the nitrogen from the chamber</li>
+    <li>At least one <strong>Cure or Bleacher</strong> step must follow the N&#8322; purge</li>
+    <li>If N&#8322; is not enabled on the system, Nitrogen steps are skipped automatically during the cure process</li>
   </ul>
 </div>
+
+<h3>4.1 Which step may follow which</h3>
+<table>
+  <tr>
+    <th>Current step</th>
+    <th>Allowed next step</th>
+  </tr>
+  <tr>
+    <td><strong>Nitrogen (N&#8322; purge)</strong></td>
+    <td><strong>Only Cure or Bleacher</strong> &mdash; not Heating, Drying, Cooling, or another Nitrogen</td>
+  </tr>
+  <tr>
+    <td><strong>The Cure / Bleacher that directly follows an N&#8322; purge</strong></td>
+    <td><strong>Only Cooling</strong> (to vent the nitrogen)</td>
+  </tr>
+  <tr>
+    <td><strong>Heating, Drying, Cure, Bleacher, or Cooling</strong> (not part of an N&#8322; sequence)</td>
+    <td>Any process &mdash; provided the temperature does not drop without a Cooling step, and Nitrogen only if a Cooling has occurred since the last purge and fewer than 2 purges have been used</td>
+  </tr>
+</table>
+<p style="font-size:12px; color:#666;">In short, a nitrogen purge always forms the fixed block <code>N&#8322; &rarr; Cure/Bleacher &rarr; Cooling</code>. Anything else after an N&#8322; purge is rejected.</p>
 
 <!-- SECTION 5 -->
 <h2>5. Example CSV Files</h2>
@@ -249,16 +286,15 @@
 1,Drying,45,8,,,,,
 2,Heating,65,5,,,,,
 3,Cure,65,15,on-target,50,at-target,,
-4,Bleacher,60,10,on-target,30,at-start,,
+4,Bleacher,65,10,on-target,30,at-start,,
 5,Cooling,25,,,,,,fast</div>
 
 <h3>5.4 Program with Nitrogen Purge</h3>
 <div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
 1,Heating,40,10,,,,,
 2,Nitrogen,,,,,,,
-3,Heating,60,10,,,,,
-4,Cure,60,15,on-target,30,at-target,,
-5,Cooling,25,,,,,,medium</div>
+3,Cure,60,15,on-target,30,at-target,,
+4,Cooling,25,,,,,,medium</div>
 
 <h3>5.5 Advanced: Dual Nitrogen Purge</h3>
 <div class="example"><span class="header-line">Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode</span>
@@ -267,7 +303,7 @@
 3,Cure,40,15,on-target,50,at-target,,
 4,Cooling,30,,,,,,medium
 5,Nitrogen,,,,,,,
-6,Heating,60,10,,,,,
+6,Bleacher,60,10,on-target,30,at-target,,
 7,Cooling,25,,,,,,fast</div>
 
 <!-- SECTION 6 -->
@@ -280,10 +316,12 @@
     <th>Unit</th>
   </tr>
   <tr><td>Temperature</td><td>20</td><td>80</td><td>&deg;C</td></tr>
-  <tr><td>Time</td><td>1</td><td>120</td><td>minutes</td></tr>
-  <tr><td>UVIntensity</td><td>5</td><td>100</td><td>%</td></tr>
+  <tr><td>Time (Drying / Heating / Cure)</td><td>1</td><td>120</td><td>minutes</td></tr>
+  <tr><td>Time (Bleacher)</td><td>1</td><td>720</td><td>minutes (up to 12&nbsp;h)</td></tr>
+  <tr><td>UVIntensity</td><td>0</td><td>100</td><td>%</td></tr>
   <tr><td>UVRampPercent</td><td>10</td><td>100</td><td>%</td></tr>
 </table>
+<p style="font-size:12px; color:#666;">A <strong>Temperature</strong> or <strong>Time</strong> value outside its range rejects the whole file. For the optional Cure/Bleacher/Cooling fields (TimerMode, UVIntensity, UVStart, UVRampPercent, CoolingMode) an out-of-range or misspelled value is <strong>silently ignored</strong> and the default is used &mdash; it does not reject the file.</p>
 
 <!-- SECTION 7 -->
 <div class="page-break"></div>
@@ -291,22 +329,27 @@
 <p>The system will <strong>not import</strong> a CSV file if any of the following errors are found:</p>
 
 <div class="error-box">
-  <div class="title">Common Rejection Reasons</div>
+  <div class="title">Rejection Reasons (any one stops the whole file from importing)</div>
   <ul>
-    <li><strong>Missing header row</strong> &mdash; The first row must contain column names including "Step" or "Process"</li>
-    <li><strong>Less than 4 columns</strong> &mdash; Each data row must have at least 4 comma-separated values</li>
-    <li><strong>Invalid process type</strong> &mdash; Must be exactly: Drying, Heating, Cure, Bleacher, Cooling, or Nitrogen (case-sensitive)</li>
-    <li><strong>Temperature out of range</strong> &mdash; Must be between 20&deg;C and 80&deg;C</li>
-    <li><strong>Time out of range</strong> &mdash; Must be between 1 and 120 minutes</li>
-    <li><strong>Invalid TimerMode</strong> &mdash; Must be <code>on-ramp</code> or <code>on-target</code></li>
-    <li><strong>Invalid UVStart</strong> &mdash; Must be <code>at-start</code> or <code>at-target</code></li>
-    <li><strong>Invalid CoolingMode</strong> &mdash; Must be <code>fast</code>, <code>medium</code>, or <code>slow</code></li>
-    <li><strong>More than 2 Nitrogen steps</strong> &mdash; Maximum 2 N&#8322; purge steps per program</li>
-    <li><strong>Nitrogen without process after</strong> &mdash; A Heating, Cure, or Bleaching step must follow N&#8322;</li>
-    <li><strong>Nitrogen without Cooling</strong> &mdash; A Cooling step is required to vent the nitrogen</li>
-    <li><strong>Temperature decreases without Cooling</strong> &mdash; Temperature can only increase between steps unless a Cooling step resets it</li>
-    <li><strong>Empty file or no valid steps</strong> &mdash; At least one valid data row is required</li>
+    <li><strong>No header or no data rows</strong> &mdash; the file needs a header row plus at least one data row</li>
+    <li><strong>Missing header keyword</strong> &mdash; the header row must contain the word "Step" or "Process" (case-insensitive)</li>
+    <li><strong>Less than 4 columns</strong> &mdash; each data row must have at least 4 comma-separated values</li>
+    <li><strong>Invalid process type</strong> &mdash; must be exactly Drying, Heating, Cure, Bleacher, Cooling, or Nitrogen (case-sensitive)</li>
+    <li><strong>Temperature out of range</strong> &mdash; if a temperature is given it must be 20&ndash;80&deg;C</li>
+    <li><strong>Time out of range</strong> &mdash; 1&ndash;120&nbsp;min (Drying / Heating / Cure) or 1&ndash;720&nbsp;min (Bleacher)</li>
+    <li><strong>Temperature decreases without Cooling</strong> &mdash; a step's temperature cannot be lower than the previous step unless a Cooling step resets it</li>
+    <li><strong>More than 2 Nitrogen steps</strong> &mdash; maximum 2 N&#8322; purge steps per program</li>
+    <li><strong>Wrong step after Nitrogen</strong> &mdash; a Nitrogen step must be followed by Cure or Bleacher</li>
+    <li><strong>Wrong step after the N&#8322; Cure/Bleacher</strong> &mdash; the step after the Cure/Bleacher that follows N&#8322; must be Cooling</li>
+    <li><strong>Nitrogen not vented</strong> &mdash; a Cooling step is required after the N&#8322; purge</li>
+    <li><strong>No Cure/Bleacher after Nitrogen</strong> &mdash; at least one Cure or Bleacher step must follow the N&#8322; purge</li>
+    <li><strong>No valid steps</strong> &mdash; at least one valid data row is required</li>
   </ul>
+</div>
+
+<div class="warn-box">
+  <div class="title">Not a rejection &mdash; silently defaulted</div>
+  <p>A misspelled or out-of-range <strong>TimerMode</strong>, <strong>UVIntensity</strong>, <strong>UVStart</strong>, <strong>UVRampPercent</strong> or <strong>CoolingMode</strong> does <strong>not</strong> reject the file &mdash; the importer ignores the bad value and applies the default (TimerMode <code>on-target</code>, UVStart <code>at-target</code>, UVIntensity <code>30</code>, CoolingMode <code>medium</code>).</p>
 </div>
 
 <!-- SECTION 8 -->
@@ -368,18 +411,18 @@
   <div class="title">Before importing, verify:</div>
   <ul>
     <li>File has <strong>.csv</strong> extension</li>
-    <li>First row is the header with column names</li>
-    <li>Each row has at least 4 columns</li>
+    <li>First row is a header containing "Step" or "Process"</li>
+    <li>Each row has at least 4 columns, in the Section&nbsp;2.2 order</li>
     <li>Process types are spelled correctly (case-sensitive)</li>
-    <li>Temperature is 20&ndash;80&deg;C for Heating, Drying, Cure, Bleacher, and Cooling steps</li>
+    <li>Any Temperature you provide is 20&ndash;80&deg;C (omit it to accept the default: 40&deg;C, or 25&deg;C for Cooling)</li>
     <li>Temperature and Time are left empty for Nitrogen steps</li>
     <li>Time is left empty for Cooling steps</li>
-    <li>Time is between 1&ndash;120 minutes for all other steps</li>
-    <li>TimerMode, UVIntensity, and UVStart are only used with Cure or Bleacher</li>
-    <li>CoolingMode is only used with Cooling steps</li>
+    <li>Time is 1&ndash;120&nbsp;min (Drying / Heating / Cure) or 1&ndash;720&nbsp;min (Bleacher)</li>
+    <li>Temperature never decreases between steps unless a Cooling step resets it</li>
+    <li>TimerMode, UVIntensity, UVStart and UVRampPercent are only meaningful for Cure or Bleacher</li>
+    <li>CoolingMode is only meaningful for Cooling steps</li>
     <li>Maximum 2 Nitrogen steps per program</li>
-    <li>After Nitrogen: must have a Heating, Cure, or Bleaching step</li>
-    <li>If using Nitrogen: must have a Cooling step to vent N&#8322;</li>
+    <li>Order around N&#8322; is <code>Nitrogen &rarr; Cure/Bleacher &rarr; Cooling</code></li>
   </ul>
 </div>
 

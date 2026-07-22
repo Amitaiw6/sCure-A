@@ -1,0 +1,170 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="view-all-flow" name="sCure View All / Print History Flow">
+    <mxGraphModel dx="1638" dy="705" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1">
+          <mxGeometry height="1130" width="560" as="geometry" />
+        </mxCell>
+        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1">
+          <mxGeometry height="1130" width="440" x="560" as="geometry" />
+        </mxCell>
+        <mxCell id="d_same" parent="laneF" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="All selected prints same material?" vertex="1">
+          <mxGeometry height="84" width="200" x="90" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1">
+          <mxGeometry height="1130" width="420" x="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="225" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap &#39;View All&#39; (shown only when an organization is connected)" vertex="1">
+          <mxGeometry height="50" width="230" x="125" y="92" as="geometry" />
+        </mxCell>
+        <mxCell id="n_load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Read print_history(/api/print-history) — same local store as Recent Prints" vertex="1">
+          <mxGeometry height="72" width="260" x="1080" y="82" as="geometry" />
+        </mxCell>
+        <mxCell id="n_modal" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Print History (full-screen modal) — list ALL prints" vertex="1">
+          <mxGeometry height="58" width="240" x="630" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="n_list" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show all prints + filter bar; header count &#39;filtered / total&#39;" vertex="1">
+          <mxGeometry height="58" width="250" x="120" y="169" as="geometry" />
+        </mxCell>
+        <mxCell id="n_filter" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Filter by Material ▾, Printer ▾, Date range (From / To) — optional" vertex="1">
+          <mxGeometry height="62" width="250" x="120" y="266" as="geometry" />
+        </mxCell>
+        <mxCell id="n_recompute" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Recompute visible list; update filtered / total count" vertex="1">
+          <mxGeometry height="58" width="240" x="630" y="268" as="geometry" />
+        </mxCell>
+        <mxCell id="d_mode" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Multi-select prints?" vertex="1">
+          <mxGeometry height="76" width="190" x="655" y="368" as="geometry" />
+        </mxCell>
+        <mxCell id="n_pick" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap one row → pick its material" vertex="1">
+          <mxGeometry height="48" width="240" x="120" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="n_resolve" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Resolve material by name (first match)" vertex="1">
+          <mxGeometry height="54" width="230" x="635" y="484" as="geometry" />
+        </mxCell>
+        <mxCell id="n_close" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Cure Process&amp;nbsp;" vertex="1">
+          <mxGeometry height="50" width="240" x="120" y="485" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pick" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="227" y="565" as="geometry" />
+        </mxCell>
+        <mxCell id="n_multi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Toggle prints into selection (checkboxes)" vertex="1">
+          <mxGeometry height="50" width="240" x="120" y="646" as="geometry" />
+        </mxCell>
+        <mxCell id="n_diff" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show &#39;⚠ Cannot cure different materials together&#39;; Cure Together hidden" vertex="1">
+          <mxGeometry height="62" width="260" x="110" y="738" as="geometry" />
+        </mxCell>
+        <mxCell id="e_diff" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#cc0000;fontColor=#cc0000;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="✗" vertex="1">
+          <mxGeometry height="28" width="28" x="226" y="822" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_diff" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#cc0000;fontStyle=1;" value="Err 6012" vertex="1">
+          <mxGeometry height="26" width="64" x="258" y="822" as="geometry" />
+        </mxCell>
+        <mxCell id="n_curetog" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Cure Together available: &#39;Ready to cure N× &lt;material&gt;&#39; — press it" vertex="1">
+          <mxGeometry height="60" width="250" x="120" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="n_setactive" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Set active program (by name); record selected print IDs (sessionStorage)" vertex="1">
+          <mxGeometry height="64" width="250" x="630" y="898" as="geometry" />
+        </mxCell>
+        <mxCell id="n_opencure" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Cure Process (→ §6.8)" vertex="1">
+          <mxGeometry height="48" width="240" x="120" y="996" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cure" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="227" y="1078" as="geometry" />
+        </mxCell>
+        <mxCell id="re1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_open">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" edge="1" parent="1" source="n_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_load" value="load">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" edge="1" parent="1" source="n_load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_modal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re4" edge="1" parent="1" source="n_modal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_list">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re5" edge="1" parent="1" source="n_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_filter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re6" edge="1" parent="1" source="n_filter" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_recompute" value="apply">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re7" edge="1" parent="1" source="n_recompute" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_mode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re8" edge="1" parent="1" source="d_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_pick" value="no (single tap)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re9" edge="1" parent="1" source="n_pick" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_resolve">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="460" />
+              <mxPoint x="750" y="460" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re10" edge="1" parent="1" source="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_close">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re11" edge="1" parent="1" source="n_close" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_pick">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re12" edge="1" parent="1" source="d_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_multi" value="yes (checkbox)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="945" y="406" />
+              <mxPoint x="945" y="620" />
+              <mxPoint x="240" y="620" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re13" edge="1" parent="1" source="n_multi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_same">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="750" y="670" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re14" edge="1" parent="1" source="d_same" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_diff" value="no (mixed)">
+          <mxGeometry relative="1" x="-0.1459" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="240" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re15" edge="1" parent="1" source="n_diff" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_diff">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re16" edge="1" parent="1" source="d_same" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_curetog" value="yes (1 / all same)">
+          <mxGeometry relative="1" x="0.1731" y="-10" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="750" y="870" />
+              <mxPoint x="245" y="870" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re17" edge="1" parent="1" source="n_curetog" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_setactive">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re18" edge="1" parent="1" source="n_setactive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_opencure">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="755" y="970" />
+              <mxPoint x="240" y="970" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re19" edge="1" parent="1" source="n_opencure" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_cure">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

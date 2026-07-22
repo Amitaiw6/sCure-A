@@ -21,7 +21,10 @@ function App() {
   const [asleep, setAsleep] = useState(() => {
     return sessionStorage.getItem('scure-shutdown') === 'true'
   })
-  const [booting, setBooting] = useState(true)
+  // Show the boot/diagnostics screen only on a real power-up — not when resuming from sleep
+  const [booting, setBooting] = useState(() => {
+    return sessionStorage.getItem('scure-shutdown') !== 'true'
+  })
   const [screenSaver, setScreenSaver] = useState(false)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -59,11 +62,11 @@ function App() {
   if (isLoading) return null
 
   if (asleep) {
-    return <WakeScreen onWake={() => { sessionStorage.removeItem('scure-shutdown'); setAsleep(false) }} />
+    return <WakeScreen blank onWake={() => { sessionStorage.removeItem('scure-shutdown'); setAsleep(false) }} />
   }
 
   if (booting) {
-    return <BootScreen onComplete={() => { sessionStorage.setItem('scure-booted', 'true'); setBooting(false) }} />
+    return <BootScreen onComplete={() => setBooting(false)} />
   }
 
   if (!config.setupComplete) {
@@ -71,7 +74,9 @@ function App() {
   }
 
   if (screenSaver) {
-    return <WakeScreen onWake={() => { setScreenSaver(false); resetIdleTimer() }} />
+    // Screensaver stays fully black until first touch (screen protection / burn-in),
+    // then reveals the wake hint — same behavior as Sleep.
+    return <WakeScreen blank onWake={() => { setScreenSaver(false); resetIdleTimer() }} />
   }
 
   return (

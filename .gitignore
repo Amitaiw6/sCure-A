@@ -1,6 +1,12 @@
 # Logs
 logs
 *.log
+
+# Python / tooling temp
+__pycache__/
+.chrometmp/
+render.html
+render-dump.html
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

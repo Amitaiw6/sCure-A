@@ -1,0 +1,17 @@
+# systemd unit for the sCure Hardware API + UI (Flask).
+# Installed by pi-setup.sh (which replaces __APP_DIR__ with the real path).
+# Runs as root: required for I2C/pinctrl (IO board) and reboot/shutdown.
+[Unit]
+Description=sCure Hardware API + UI (Flask, io_controller bridge)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=__APP_DIR__/server
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/server/app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

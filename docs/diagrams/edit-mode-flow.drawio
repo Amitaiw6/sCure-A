@@ -1,0 +1,128 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="edit-mode-flow" name="sCure Edit Mode Flow">
+    <mxGraphModel dx="1601" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="860" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1">
+          <mxGeometry height="820" width="560" as="geometry" />
+        </mxCell>
+        <mxCell id="dup_ui" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open builder (Edit Program) on the copy → §6.7.1" vertex="1">
+          <mxGeometry height="54" width="300" x="160" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="edit_ui" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open builder (Edit Program) pre-filled → §6.7.1&lt;br&gt;(user programs only)" vertex="1">
+          <mxGeometry height="58" width="300" x="161" y="478" as="geometry" />
+        </mxCell>
+        <mxCell id="ad" edge="1" parent="laneU" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.3;exitDx=0;exitDy=0;" value="Duplicate (any)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="331" y="300" />
+            </Array>
+            <mxPoint x="331.42857142857133" y="290.0000000000002" as="sourcePoint" />
+            <mxPoint x="585" y="300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1">
+          <mxGeometry height="820" width="440" x="560" as="geometry" />
+        </mxCell>
+        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1">
+          <mxGeometry height="820" width="460" x="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="245" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n_press" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Press Edit (shown only when materials exist)" vertex="1">
+          <mxGeometry height="48" width="280" x="120" y="92" as="geometry" />
+        </mxCell>
+        <mxCell id="n_enter" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Enter edit mode: button label → &#39;Done&#39;;&lt;br&gt;each row reveals action icons" vertex="1">
+          <mxGeometry height="56" width="280" x="120" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="d_act" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Row action?" vertex="1">
+          <mxGeometry height="84" width="200" x="160" y="268" as="geometry" />
+        </mxCell>
+        <mxCell id="dup_fw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="duplicateMaterial: build unique name&lt;br&gt;&#39;name Copy&#39; (then &#39;Copy 2&#39;, &#39;Copy 3&#39;, …);&lt;br&gt;deep-copy steps; isPreset = false; new uuid" vertex="1">
+          <mxGeometry height="92" width="380" x="585" y="262" as="geometry" />
+        </mxCell>
+        <mxCell id="dup_st" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Add copy to user-materials store; auto-select the copy" vertex="1">
+          <mxGeometry height="64" width="420" x="1020" y="276" as="geometry" />
+        </mxCell>
+        <mxCell id="edit_st" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="On Save: updateMaterial → persist to user-materials store&lt;br&gt;(presets cannot be edited)" vertex="1">
+          <mxGeometry height="64" width="420" x="1020" y="478" as="geometry" />
+        </mxCell>
+        <mxCell id="del_fw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="removeMaterial (presets are ignored)" vertex="1">
+          <mxGeometry height="56" width="380" x="585" y="582" as="geometry" />
+        </mxCell>
+        <mxCell id="del_st" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Remove from user-materials store;&lt;br&gt;clear selection if it was selected; remove from favorites" vertex="1">
+          <mxGeometry height="72" width="420" x="1020" y="574" as="geometry" />
+        </mxCell>
+        <mxCell id="done_ui" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Exit edit mode (button label → &#39;Edit&#39;)" vertex="1">
+          <mxGeometry height="50" width="280" x="110" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="e_done" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="237" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;arcSize=6;fillColor=#F7F7F7;strokeColor=#999999;fontSize=11;align=left;verticalAlign=top;spacing=8;" value="&lt;b&gt;Preset vs user rows&lt;/b&gt;&lt;br&gt;Preset rows expose &lt;b&gt;only Duplicate&lt;/b&gt; — Edit and Delete are hidden (presets are read-only). The copy made by Duplicate is always an editable user program. Duplicate and Edit both continue in the Build/Edit Program flow (§6.7.1)." vertex="1">
+          <mxGeometry height="100" width="430" x="585" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="re1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_press">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" edge="1" parent="1" source="n_press" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_enter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" edge="1" parent="1" source="n_enter" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_act">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ds1" edge="1" parent="1" source="dup_fw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="dup_st">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ds2" edge="1" parent="1" source="dup_st" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="dup_ui" value="open">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1230" y="420" />
+              <mxPoint x="260" y="420" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ae" edge="1" parent="1" source="d_act" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" target="edit_ui" value="Edit (user)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="160" y="322" />
+              <mxPoint x="170" y="322" />
+              <mxPoint x="170" y="310" />
+              <mxPoint x="80" y="310" />
+              <mxPoint x="80" y="509" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="es1" edge="1" parent="1" source="edit_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="edit_st" value="Save">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="al" edge="1" parent="1" source="d_act" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.8;exitDx=0;exitDy=0;" target="del_fw" value="Delete (user)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="520" y="335" />
+              <mxPoint x="520" y="610" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ls1" edge="1" parent="1" source="del_fw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="del_st">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="an" edge="1" parent="1" source="d_act" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="done_ui" value="Done">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="110" y="352" />
+              <mxPoint x="110" y="560" />
+              <mxPoint x="250" y="560" />
+            </Array>
+            <mxPoint x="230" y="590" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ne" edge="1" parent="1" source="done_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

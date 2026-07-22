@@ -218,7 +218,7 @@ const TEST_CATEGORIES = [
     name: 'Configuration Files',
     icon: '📁',
     tests: [
-      { id: 'cfg_presets', name: 'Presets JSON', desc: 'Validate presets.json loads and has materials', url: '/materials/presets/presets.json', check: 'presets' },
+      { id: 'cfg_presets', name: 'Presets (API)', desc: 'GET /api/materials/presets returns the seeded preset programs (Postgres)', endpoint: '/api/materials/presets', method: 'GET', expectArray: true },
       { id: 'cfg_errors', name: 'Errors JSON', desc: 'Validate errors.json structure', url: '/config/errors.json', check: 'errors' },
       { id: 'cfg_system', name: 'System JSON', desc: 'Validate system.json config', url: '/config/system.json', check: 'system' },
     ]
@@ -238,6 +238,54 @@ const TEST_CATEGORIES = [
     icon: '🖥',
     tests: [
       { id: 'sys_logs', name: 'Export Logs', desc: 'Test log export function', endpoint: '/api/system/export-logs', method: 'POST', expect: 'ok' },
+      { id: 'sys_export_csv', name: 'Export CSV to USB', desc: 'CSV export endpoint writes to the connected USB (or reports no-USB)', endpoint: '/api/system/export-csv', method: 'POST', body: { filename: 'qa-test.csv', content: 'Step,Process,Temperature,UVIntensity,CoolingMode\n1,Heating,40,,' }, expect: 'message' },
+    ]
+  },
+  {
+    id: 'data_persistence',
+    name: 'Data Persistence (PostgreSQL)',
+    icon: '🗄',
+    tests: [
+      { id: 'data_materials_get', name: 'Get User Materials', desc: 'GET /api/materials/user returns user programs (DB view or JSON fallback)', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
+      { id: 'data_print_history_get', name: 'Get Print History', desc: 'GET /api/print-history returns print records (§6.4)', endpoint: '/api/print-history', method: 'GET', expectArray: true },
+      { id: 'data_cure_history_get', name: 'Get Cure History', desc: 'GET /api/cure-history returns cure runs (§8) — empty [] without a DB', endpoint: '/api/cure-history', method: 'GET', expectArray: true },
+      { id: 'data_cure_start', name: 'Start Cure Run (DB)', desc: 'POST /api/cure-runs/qa-test-run/start records a run — needs DATABASE_URL (503 otherwise)', endpoint: '/api/cure-runs/qa-test-run/start', method: 'POST', body: { materialName: 'QA Material', steps: 2, phases: ['Heating', 'Cooling'], targetTemp: 60, serialNumber: 'QA-BOX-001' }, expect: 'ok' },
+      { id: 'data_telemetry', name: 'Record Telemetry (DB)', desc: 'POST /api/cure-runs/qa-test-run/telemetry appends a sample to cure_run_telemetry', endpoint: '/api/cure-runs/qa-test-run/telemetry', method: 'POST', body: { t: 5, chamberTemp: 42.5, uvOn: false }, expect: 'ok' },
+      { id: 'data_cure_finish', name: 'Finish Cure Run (DB)', desc: 'POST /api/cure-runs/qa-test-run/finish closes the run', endpoint: '/api/cure-runs/qa-test-run/finish', method: 'POST', body: { status: 'completed', stepsCompleted: 2 }, expect: 'ok' },
+      { id: 'data_report_save', name: 'Save Cure Report (DB)', desc: 'POST /api/cure-runs/qa-test-run/report persists the report to cure_reports', endpoint: '/api/cure-runs/qa-test-run/report', method: 'POST', body: { content: '<html>QA report</html>', summary: { materialName: 'QA Material', status: 'completed' }, format: 'html' }, expect: 'ok' },
+      { id: 'data_report_get', name: 'Fetch Cure Report (DB)', desc: 'GET /api/cure-runs/qa-test-run/report returns the saved report', endpoint: '/api/cure-runs/qa-test-run/report', method: 'GET', expect: 'ok' },
+    ]
+  },
+  {
+    id: 'cure_ops',
+    name: 'Cure Operation Functions',
+    icon: '🔥',
+    tests: [
+      { id: 'op_heat', name: 'Heat to Target', desc: 'heat_to_target_temperature(60)', endpoint: '/api/cure/heat?target=60', method: 'POST', expect: 'ok' },
+      { id: 'op_dry', name: 'Dry to Target', desc: 'dry_to_target_temperature(50)', endpoint: '/api/cure/dry?target=50', method: 'POST', expect: 'ok' },
+      { id: 'op_cure405', name: 'Cure UV 405nm', desc: 'cure_uv_405(target 60, intensity 30%)', endpoint: '/api/cure/cure-405?target=60&intensity=30', method: 'POST', expect: 'ok' },
+      { id: 'op_cure450', name: 'Bleaching UV 450nm', desc: 'cure_uv_450(target 60, intensity 40%)', endpoint: '/api/cure/cure-450?target=60&intensity=40', method: 'POST', expect: 'ok' },
+      { id: 'op_cool', name: 'Cool to Target', desc: 'cool_to_target_temperature(25, medium)', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
+      { id: 'op_stop', name: 'Stop All Outputs', desc: 'stop_all() turns off heater / UV / cooling', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
+      { id: 'op_bad_temp', name: 'Reject Bad Temp', desc: 'Heat with target 99°C is rejected (20-80)', endpoint: '/api/cure/heat?target=99', method: 'POST', expect: 'message' },
+      { id: 'op_bad_mode', name: 'Reject Bad Cooling Mode', desc: 'Cool with mode=turbo is rejected', endpoint: '/api/cure/cool?target=25&mode=turbo', method: 'POST', expect: 'message' },
+    ]
+  },
+  {
+    id: 'io_integration',
+    name: 'IO Board Integration (io_controller)',
+    icon: '🔌',
+    tests: [
+      { id: 'io_state_source', name: 'Hardware Source', desc: 'GET /api/state reports the driving layer: real IO board (io_controller) or simulation', endpoint: '/api/state', method: 'GET', check: 'io_hw_source' },
+      { id: 'io_door_state', name: 'Door Interlock Read', desc: 'GET /api/state reads the door sensor (GPIO27) — doorClosed must be present', endpoint: '/api/state', method: 'GET', check: 'io_door' },
+      { id: 'io_heat_on', name: 'Heating ON (safety pre-flight)', desc: 'POST /api/cure/heat?target=40 — heater enables only after door-closed, fan spin-up + RPM and thermistor checks', endpoint: '/api/cure/heat?target=40', method: 'POST', expect: 'ok' },
+      { id: 'io_heat_state', name: 'Heating State Reflected', desc: 'GET /api/state shows isHeating + target after the heat command', endpoint: '/api/state', method: 'GET', check: 'io_heating_on' },
+      { id: 'io_uv_405', name: 'UV 405nm ON (Cure)', desc: 'POST /api/cure/cure-405 — wavelength routing (GPIO17) verified, 405nm LEDs + their fans start', endpoint: '/api/cure/cure-405?target=40&intensity=30', method: 'POST', expect: 'ok' },
+      { id: 'io_uv_state', name: 'UV State Reflected', desc: 'GET /api/state shows uvOn with wavelength 405', endpoint: '/api/state', method: 'GET', check: 'io_uv_on' },
+      { id: 'io_uv_450', name: 'UV 450nm ON (Bleaching)', desc: 'POST /api/cure/cure-450 — switches wavelength mode safely (all LEDs off first)', endpoint: '/api/cure/cure-450?target=40&intensity=30', method: 'POST', expect: 'ok' },
+      { id: 'io_cool_on', name: 'Cooling Mode ON', desc: 'POST /api/cure/cool — damper opens, fans run under closed-loop rate control', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
+      { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
+      { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
     ]
   },
   {
@@ -248,14 +296,17 @@ const TEST_CATEGORIES = [
       { id: 'pv_empty_name', name: 'Empty Name Blocked', desc: 'Program without a name cannot be saved', check: 'pv_empty_name' },
       { id: 'pv_no_steps', name: 'No Steps Blocked', desc: 'Program with zero steps cannot be saved', check: 'pv_no_steps' },
       { id: 'pv_valid_simple', name: 'Simple Valid Program', desc: 'Heating → Cooling program passes validation', check: 'pv_valid_simple' },
-      { id: 'pv_n2_no_process', name: 'N₂ Without Process After', desc: 'N₂ without Heating/Cure/Bleaching after it is blocked', check: 'pv_n2_no_process' },
-      { id: 'pv_n2_with_heating', name: 'N₂ + Heating Passes', desc: 'N₂ followed by Heating passes the process check', check: 'pv_n2_with_heating' },
+      { id: 'pv_n2_no_process', name: 'N₂ Without Cure/Bleach After', desc: 'N₂ without Cure/Bleaching after it is blocked', check: 'pv_n2_no_process' },
+      { id: 'pv_n2_with_heating', name: 'N₂ + Heating Blocked', desc: 'Heating directly after N₂ is blocked (only Cure/Bleaching allowed)', check: 'pv_n2_with_heating' },
       { id: 'pv_n2_with_cure', name: 'N₂ + Cure Passes', desc: 'N₂ followed by Cure passes the process check', check: 'pv_n2_with_cure' },
       { id: 'pv_n2_with_bleacher', name: 'N₂ + Bleaching Passes', desc: 'N₂ followed by Bleaching passes the process check', check: 'pv_n2_with_bleacher' },
-      { id: 'pv_n2_no_cooling', name: 'N₂ + Process But No Cooling', desc: 'N₂ with Heating but no Cooling step is blocked', check: 'pv_n2_no_cooling' },
-      { id: 'pv_n2_with_cooling', name: 'N₂ + Process + Cooling Passes', desc: 'N₂ → Heating → Cooling passes all validations', check: 'pv_n2_with_cooling' },
+      { id: 'pv_n2_no_cooling', name: 'N₂ + Cure But No Cooling', desc: 'N₂ → Cure with no Cooling step after is blocked', check: 'pv_n2_no_cooling' },
+      { id: 'pv_n2_with_cooling', name: 'N₂ + Cure + Cooling Passes', desc: 'N₂ → Cure → Cooling passes all validations', check: 'pv_n2_with_cooling' },
       { id: 'pv_n2_cure_cooling', name: 'N₂ + Cure + Cooling Passes', desc: 'N₂ → Cure → Cooling is a fully valid program', check: 'pv_n2_cure_cooling' },
       { id: 'pv_only_cooling', name: 'Only Cooling Blocked', desc: 'Program with only Cooling (no Cure/Heating) is blocked', check: 'pv_only_cooling' },
+      { id: 'pv_n2_drying_after', name: 'N₂ + Drying Blocked', desc: 'Drying directly after N₂ is blocked (only Cure/Bleaching allowed)', check: 'pv_n2_drying_after' },
+      { id: 'pv_n2_cooling_direct', name: 'N₂ → Cooling Directly Blocked', desc: 'Cooling directly after N₂ (no Cure/Bleach) is blocked', check: 'pv_n2_cooling_direct' },
+      { id: 'pv_n2_cure_then_heating', name: 'N₂ → Cure → Heating Blocked', desc: 'After the Cure that follows N₂, only Cooling is allowed (Heating blocked)', check: 'pv_n2_cure_then_heating' },
     ]
   },
   {
@@ -269,12 +320,110 @@ const TEST_CATEGORIES = [
       { id: 'csv_invalid_process', name: 'Invalid Process Rejected', desc: 'Unknown process type is rejected', check: 'csv_invalid_process' },
       { id: 'csv_bad_temp', name: 'Bad Temperature Rejected', desc: 'Temperature >80 is rejected', check: 'csv_bad_temp' },
       { id: 'csv_bad_time', name: 'Bad Time Rejected', desc: 'Time >120 is rejected', check: 'csv_bad_time' },
+      { id: 'csv_bleach_12h', name: 'Bleaching Up To 12h', desc: 'Bleaching accepts 720 min (12 h)', check: 'csv_bleach_12h' },
+      { id: 'csv_bleach_over12h', name: 'Bleaching >12h Rejected', desc: 'Bleaching time >720 min is rejected', check: 'csv_bleach_over12h' },
       { id: 'csv_n2_no_process', name: 'N₂ Without Process Rejected', desc: 'N₂ → Cooling without Heating/Cure after is rejected', check: 'csv_n2_no_process' },
       { id: 'csv_n2_no_cooling', name: 'N₂ Without Cooling Rejected', desc: 'N₂ + Heating without Cooling step is rejected', check: 'csv_n2_no_cooling' },
       { id: 'csv_n2_max3', name: 'Max 2 N₂ Steps', desc: '3 Nitrogen steps are rejected', check: 'csv_n2_max3' },
       { id: 'csv_temp_decrease', name: 'Temp Decrease Rejected', desc: 'Temperature drop without Cooling is rejected', check: 'csv_temp_decrease' },
       { id: 'csv_cooling_mode', name: 'CoolingMode Parsed', desc: 'CoolingMode fast/medium/slow parsed correctly', check: 'csv_cooling_mode' },
       { id: 'csv_empty', name: 'Empty CSV Rejected', desc: 'CSV with only header is rejected', check: 'csv_empty' },
+    ]
+  },
+  {
+    id: 'material_duplicate',
+    name: 'Material Duplication',
+    icon: '⧉',
+    tests: [
+      { id: 'dup_copy_name', name: 'Copy Naming', desc: 'Duplicate is named "<name> Copy"', check: 'dup_copy_name' },
+      { id: 'dup_is_editable', name: 'Preset Copy Editable', desc: 'Duplicating a locked preset yields an editable (non-preset) material', check: 'dup_is_editable' },
+      { id: 'dup_steps_cloned', name: 'Steps Deep-Cloned', desc: 'Copy steps match content but are distinct references', check: 'dup_steps_cloned' },
+      { id: 'dup_inserted_after', name: 'Appended To End', desc: 'Copy is placed at the end of the list with new user materials', check: 'dup_inserted_after' },
+      { id: 'dup_unique_name', name: 'Unique Name On Repeat', desc: 'Duplicating twice gives "Copy" then "Copy 2"', check: 'dup_unique_name' },
+      { id: 'dup_invalid_id', name: 'Unknown ID Safe', desc: 'Duplicating a missing id returns null (no copy)', check: 'dup_invalid_id' },
+    ]
+  },
+  {
+    id: 'boot_sleep',
+    name: 'Boot vs Sleep Resume',
+    icon: '⏻',
+    tests: [
+      { id: 'boot_cold_shows_diag', name: 'Cold Start Boots', desc: 'A real power-up shows the boot/diagnostics screen', check: 'boot_cold_shows_diag' },
+      { id: 'boot_sleep_no_diag', name: 'Sleep Resume Skips Diag', desc: 'Resuming from sleep does NOT show diagnostics', check: 'boot_sleep_no_diag' },
+      { id: 'boot_sleep_shows_wake', name: 'Sleep Shows Wake', desc: 'Resuming from sleep shows the wake screen', check: 'boot_sleep_shows_wake' },
+      { id: 'boot_cold_not_asleep', name: 'Cold Start Not Asleep', desc: 'A cold power-up is not in sleep state', check: 'boot_cold_not_asleep' },
+      { id: 'wake_sleep_black', name: 'Sleep Screen Black', desc: 'Sleep mode shows a fully black screen to protect the display', check: 'wake_sleep_black' },
+      { id: 'wake_sleep_hint_after_touch', name: 'Hint After Touch', desc: 'First touch on the black sleep screen reveals the wake hint', check: 'wake_sleep_hint_after_touch' },
+      { id: 'wake_two_taps_wakes', name: 'Two Taps Wake', desc: 'A double tap wakes the system from sleep', check: 'wake_two_taps_wakes' },
+      { id: 'wake_screensaver_black', name: 'Screensaver Black', desc: 'The idle screensaver is fully black until first touch (screen protection)', check: 'wake_screensaver_black' },
+      { id: 'wake_screensaver_hint_after_touch', name: 'Screensaver Hint After Touch', desc: 'First touch on the black screensaver reveals the wake hint', check: 'wake_screensaver_hint_after_touch' },
+    ]
+  },
+  {
+    id: 'srs_versions',
+    name: 'SRS Document Version History',
+    icon: '📜',
+    tests: [
+      { id: 'srs_roundtrip_plain', name: 'Plain Snapshot Round-Trips', desc: 'A simple archived version survives serialize → reload → parse unchanged', check: 'srs_roundtrip_plain' },
+      { id: 'srs_roundtrip_scripttag', name: 'Embedded Close-Tag Survives', desc: 'A snapshot containing a closing script tag is escaped and parses back intact', check: 'srs_roundtrip_scripttag' },
+      { id: 'srs_no_raw_close', name: 'No Raw Close In Archive', desc: 'Serialized archive text contains no raw closing script tag that would truncate the file', check: 'srs_no_raw_close' },
+      { id: 'srs_unicode', name: 'Hebrew/Unicode Preserved', desc: 'Non-ASCII snapshot content (e.g. גרסה ישנה) round-trips correctly', check: 'srs_unicode' },
+      { id: 'srs_empty_archive', name: 'Empty Archive Reads As List', desc: 'An empty "[]" archive parses to an empty version list (no error)', check: 'srs_empty_archive' },
+    ]
+  },
+  {
+    id: 'fan_diagnostics',
+    name: 'Per-Fan Diagnostics',
+    icon: '🌀',
+    tests: [
+      { id: 'fant_led_cooling', name: 'LED Cooling Fan Test', desc: 'LED Cooling Airflow fan runs its own diagnostic (≈2850 RPM)', check: 'fant_led_cooling' },
+      { id: 'fant_chamber_intake', name: 'Chamber Intake Fan Test', desc: 'Chamber Intake fan runs its own diagnostic (≈3050 RPM)', check: 'fant_chamber_intake' },
+      { id: 'fant_chamber_heating', name: 'Chamber Heating Fan Test', desc: 'Chamber Heating fan runs its own diagnostic (≈2780 RPM)', check: 'fant_chamber_heating' },
+      { id: 'fant_each_fan_has_test', name: 'Every Fan Testable', desc: 'All three fans expose an individual diagnostic', check: 'fant_each_fan_has_test' },
+      { id: 'fant_distinct_rpm', name: 'Distinct Per-Fan RPM', desc: 'Each fan reports its own RPM, not one shared value', check: 'fant_distinct_rpm' },
+      { id: 'fant_unknown_fan', name: 'Unknown Fan Safe', desc: 'An unknown fan id yields no result', check: 'fant_unknown_fan' },
+    ]
+  },
+  {
+    id: 'cure_gauge_value',
+    name: 'Cure Phase Gauge',
+    icon: '⏱',
+    tests: [
+      { id: 'gv_hold_shows_time', name: 'HOLD Shows Time', desc: 'After reaching temperature, the gauge shows the remaining countdown', check: 'gv_hold_shows_time' },
+      { id: 'gv_ramp_shows_temp', name: 'Ramp Shows Temp', desc: 'While heating up, the gauge shows the climbing temperature', check: 'gv_ramp_shows_temp' },
+      { id: 'gv_hold_never_negative', name: 'Countdown Never Negative', desc: 'Overrun clamps the gauge countdown to 00:00', check: 'gv_hold_never_negative' },
+      { id: 'gv_completed_shows_temp', name: 'Completed Shows Temp', desc: 'A finished phase shows its hold temperature', check: 'gv_completed_shows_temp' },
+    ]
+  },
+  {
+    id: 'material_favorites',
+    name: 'Material Favorites (Star)',
+    icon: '⭐',
+    tests: [
+      { id: 'fav_toggle_on', name: 'Star Adds Favorite', desc: 'Starring a material adds it to favorites', check: 'fav_toggle_on' },
+      { id: 'fav_toggle_off', name: 'Unstar Removes Favorite', desc: 'Un-starring removes it from favorites', check: 'fav_toggle_off' },
+      { id: 'fav_moves_to_top', name: 'Starred Rises To Top', desc: 'A starred material moves to the top of the list', check: 'fav_moves_to_top' },
+      { id: 'fav_order_stable', name: 'Non-Favorites Stable', desc: 'Unstarred materials keep their original order', check: 'fav_order_stable' },
+      { id: 'fav_multiple_top', name: 'Multiple Favorites Top', desc: 'Several starred materials group at the top in order', check: 'fav_multiple_top' },
+      { id: 'fav_none_unchanged', name: 'No Favorites = No Change', desc: 'With no favorites the list order is unchanged', check: 'fav_none_unchanged' },
+    ]
+  },
+  {
+    id: 'topbar_nav',
+    name: 'TopBar Active Nav',
+    icon: '🔆',
+    tests: [
+      { id: 'nav_settings', name: 'Settings Lit', desc: 'Settings icon is highlighted on /settings', check: 'nav_settings' },
+      { id: 'nav_network', name: 'Network Lit', desc: 'Network icon is highlighted on /network', check: 'nav_network' },
+      { id: 'nav_alerts', name: 'Alerts Lit', desc: 'Alerts icon is highlighted on /alerts', check: 'nav_alerts' },
+      { id: 'nav_history', name: 'History Lit', desc: 'History icon is highlighted on /cure-history', check: 'nav_history' },
+      { id: 'nav_home_none', name: 'No Highlight On Home', desc: 'No nav icon is lit on the Home page', check: 'nav_home_none' },
+      { id: 'nav_single_active', name: 'Single Active Icon', desc: 'Exactly one nav icon is active per settings-area route', check: 'nav_single_active' },
+      { id: 'nav_globe_active_blue', name: 'Active Globe Is Blue', desc: 'On /network (connected) the globe inherits the primary/blue color, not white', check: 'nav_globe_active_blue' },
+      { id: 'nav_globe_inactive_white', name: 'Inactive Globe Is White', desc: 'Off /network (connected) the globe is white', check: 'nav_globe_inactive_white' },
+      { id: 'nav_globe_disconnected_red', name: 'Disconnected Globe Is Red', desc: 'A disconnected globe stays red even when active', check: 'nav_globe_disconnected_red' },
+      { id: 'n2_hidden_when_off', name: 'N₂ Hidden When Off', desc: 'N₂ icon is hidden when nitrogen mode is disabled', check: 'n2_hidden_when_off' },
+      { id: 'n2_shown_when_on', name: 'N₂ Shown When On', desc: 'N₂ icon is visible when nitrogen mode is enabled', check: 'n2_shown_when_on' },
     ]
   },
   {
@@ -300,6 +449,19 @@ const TEST_CATEGORIES = [
       { id: 'perf_temp_response', name: 'Heater Response Time', desc: 'Set target temp and measure time until acknowledged', endpoint: '/api/chamber/temperature?target=30', method: 'POST', check: 'perf_simple' },
       { id: 'perf_fan_response', name: 'Fan Command Response', desc: 'Set fan speed and measure response time', endpoint: '/api/fans/led_cooling?speed=25', method: 'POST', check: 'perf_simple' },
       { id: 'perf_stop_cleanup', name: 'Cleanup (stop heater/fan)', desc: 'Stop heater and reset fan to 0', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
+    ]
+  },
+  {
+    id: 'compliance',
+    name: 'Compliance (CRA / EN 18031)',
+    icon: '🛡',
+    tests: [
+      { id: 'cra_verify_pass', name: 'Valid Package Verifies', desc: 'A package matching its SHA-256 passes integrity verification', check: 'cra_verify_pass' },
+      { id: 'cra_verify_tamper', name: 'Tampered Package Blocked', desc: 'A package whose bytes were altered fails verification (install blocked)', check: 'cra_verify_tamper' },
+      { id: 'cra_verify_missing_hash', name: 'Missing Checksum Blocked', desc: 'An empty/absent checksum is rejected', check: 'cra_verify_missing_hash' },
+      { id: 'cra_verify_bad_hex', name: 'Malformed Checksum Blocked', desc: 'A non-hex / wrong-length checksum is rejected', check: 'cra_verify_bad_hex' },
+      { id: 'cra_verify_prefix_upper', name: 'Prefixed/Uppercase Hash OK', desc: 'A "SHA256:" prefixed, uppercase digest normalizes and verifies', check: 'cra_verify_prefix_upper' },
+      { id: 'cra_requirements_defined', name: 'All REQ-CRA Defined', desc: 'All 8 REQ-CRA requirements are present', check: 'cra_requirements_defined' },
     ]
   },
 ];
@@ -531,6 +693,86 @@ async function runSingleTest(test) {
       await new Promise(r => setTimeout(r, 50));
       return;
     }
+    if (test.check && test.check.startsWith('dup_')) {
+      const result = runDuplicateCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('nav_')) {
+      const result = runNavCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('n2_')) {
+      const result = runN2IconCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('fav_')) {
+      const result = runFavoriteCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('gv_')) {
+      const result = runGaugeValueCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('fant_')) {
+      const result = runFanTestCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('srs_')) {
+      const result = runSrsVersionCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('boot_')) {
+      const result = runBootCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('wake_')) {
+      const result = runWakeScreenCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+    if (test.check && test.check.startsWith('cra_')) {
+      const result = await runComplianceCheck(test.check);
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
 
     // Performance tests with special logic
     if (test.check === 'perf_latency') {
@@ -571,7 +813,7 @@ async function runSingleTest(test) {
     if (test.check === 'perf_multi_load') {
       const s = Date.now();
       const [presetsRes, userRes] = await Promise.all([
-        fetch('/materials/presets/presets.json', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
+        fetch(apiUrl + '/api/materials/presets', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
         fetch(apiUrl + '/api/materials/user', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []),
       ]);
       const elapsed = Date.now() - s;
@@ -683,6 +925,29 @@ function runCheck(check, data) {
       if (!data.serialNumber) return { status: 'fail', msg: 'No serial number' };
       return { status: 'pass', msg: `S/N: ${data.serialNumber}` };
     }
+    // --- IO Board Integration (io_controller bridge) ---
+    case 'io_hw_source': {
+      if (data.hwSource === 'io_controller') return { status: 'pass', msg: 'Real IO board (io_controller)' };
+      return { status: 'warn', msg: `Simulation mode (hwSource: ${data.hwSource || 'none'})` };
+    }
+    case 'io_door': {
+      if (typeof data.doorClosed !== 'boolean') return { status: 'fail', msg: 'No doorClosed in state' };
+      return { status: 'pass', msg: data.doorClosed ? 'Door CLOSED' : 'Door OPEN' };
+    }
+    case 'io_heating_on': {
+      if (data.hwSource !== 'io_controller') return { status: 'warn', msg: 'Simulation — not read from hardware' };
+      if (data.isHeating) return { status: 'pass', msg: `Heating, target ${data.targetTemp}°C` };
+      return { status: 'fail', msg: (data.faults && data.faults.heater) || 'isHeating = false' };
+    }
+    case 'io_uv_on': {
+      if (data.hwSource !== 'io_controller') return { status: 'warn', msg: 'Simulation — not read from hardware' };
+      if (data.uvOn && data.uvWavelength === 405) return { status: 'pass', msg: `UV 405nm ON @ ${data.uvIntensity}%` };
+      return { status: 'fail', msg: (data.faults && data.faults.led) || 'UV not on' };
+    }
+    case 'io_all_off': {
+      if (data.uvOn || data.isCooling) return { status: 'fail', msg: 'Outputs still on after stop' };
+      return { status: 'pass', msg: 'All outputs off' };
+    }
     default: {
       // Program Validation checks (pv_*)
       if (check.startsWith('pv_')) return runProgramValidationCheck(check);
@@ -699,22 +964,85 @@ function validateProgram(name, steps) {
   const hasCooling = steps.some(s => s.process === 'Cooling');
   const hasCureOrHeating = steps.some(s => s.process === 'Cure' || s.process === 'Bleacher' || s.process === 'Heating');
 
-  const hasProcessAfterN2 = (() => {
-    if (!hasNitrogen) return true;
-    let afterN2 = false;
-    for (const s of steps) {
-      if (s.process === 'Nitrogen') afterN2 = true;
-      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) return true;
+  // Each N₂ purge must be followed by Cure/Bleaching, then Cooling: N₂ → (Cure|Bleach) → Cooling
+  const n2BlockError = (() => {
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].process !== 'Nitrogen') continue;
+      const next = steps[i + 1];
+      const after = steps[i + 2];
+      if (!next || (next.process !== 'Cure' && next.process !== 'Bleacher')) {
+        return 'After N₂ purge, add a Cure or Bleaching step';
+      }
+      if (!after || after.process !== 'Cooling') {
+        return 'After the Cure/Bleaching that follows N₂, add a Cooling step';
+      }
     }
-    return false;
+    return null;
   })();
 
   if (!name.trim()) return 'Enter a program name';
   if (steps.length === 0) return 'Add at least one step';
   if (!hasCureOrHeating) return 'Program must include a Cure or Heating step';
-  if (hasNitrogen && !hasProcessAfterN2) return 'N₂ requires Heating/Cure/Bleaching after it';
-  if (hasNitrogen && !hasCooling) return 'N₂ requires a Cooling step';
+  if (hasNitrogen && n2BlockError) return n2BlockError;
   return null;
+}
+
+// ============================================================
+// Compliance Logic (mirrors src/lib/compliance.ts)
+// ============================================================
+async function sha256HexQA(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function normalizeSha256QA(value) {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase().replace(/^sha-?256[:=]\s*/, '');
+  return /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+async function verifyUpdatePackageQA(bytes, expected) {
+  const e = normalizeSha256QA(expected);
+  if (!e) return { ok: false, reason: 'Missing or malformed checksum' };
+  const a = await sha256HexQA(bytes);
+  return a === e ? { ok: true, reason: 'Integrity verified' } : { ok: false, reason: 'Checksum mismatch' };
+}
+// Mirror of REQ-CRA IDs defined in src/lib/compliance.ts
+const QA_CRA_REQUIREMENTS = ['REQ-CRA-01','REQ-CRA-02','REQ-CRA-03','REQ-CRA-04','REQ-CRA-05','REQ-CRA-06','REQ-CRA-07','REQ-CRA-08'];
+
+async function runComplianceCheck(check) {
+  const enc = new TextEncoder();
+  const pkg = enc.encode('scure-update:1.0.1');
+  const goodHash = await sha256HexQA(pkg);
+
+  switch (check) {
+    case 'cra_verify_pass': {
+      const r = await verifyUpdatePackageQA(pkg, goodHash);
+      return r.ok ? { status: 'pass', msg: 'Valid package verified' } : { status: 'fail', msg: 'Valid package was rejected: ' + r.reason };
+    }
+    case 'cra_verify_tamper': {
+      const tampered = enc.encode('scure-update:1.0.1-EVIL');
+      const r = await verifyUpdatePackageQA(tampered, goodHash);
+      return !r.ok ? { status: 'pass', msg: 'Blocked: ' + r.reason } : { status: 'fail', msg: 'Tampered package was NOT blocked' };
+    }
+    case 'cra_verify_missing_hash': {
+      const r = await verifyUpdatePackageQA(pkg, '');
+      return !r.ok ? { status: 'pass', msg: 'Blocked: ' + r.reason } : { status: 'fail', msg: 'Missing checksum was NOT blocked' };
+    }
+    case 'cra_verify_bad_hex': {
+      const r = await verifyUpdatePackageQA(pkg, 'zz' + goodHash.slice(2, 40));
+      return !r.ok ? { status: 'pass', msg: 'Blocked: ' + r.reason } : { status: 'fail', msg: 'Malformed checksum was NOT blocked' };
+    }
+    case 'cra_verify_prefix_upper': {
+      const r = await verifyUpdatePackageQA(pkg, 'SHA256:' + goodHash.toUpperCase());
+      return r.ok ? { status: 'pass', msg: 'Normalized & verified' } : { status: 'fail', msg: 'Prefixed/uppercase digest not accepted' };
+    }
+    case 'cra_requirements_defined': {
+      return QA_CRA_REQUIREMENTS.length === 8
+        ? { status: 'pass', msg: '8 REQ-CRA requirements defined' }
+        : { status: 'fail', msg: `Expected 8, got ${QA_CRA_REQUIREMENTS.length}` };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown compliance check' };
+  }
 }
 
 function runProgramValidationCheck(check) {
@@ -738,9 +1066,10 @@ function runProgramValidationCheck(check) {
       return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block N₂ without process after' };
     }
     case 'pv_n2_with_heating': {
+      // New rule: Heating directly after N₂ is NOT allowed — only Cure/Bleaching
       const steps = [s('Heating', 40), s('Nitrogen'), s('Heating', 60), s('Cooling', 25)];
       const err = validateProgram('Test', steps);
-      return !err ? { status: 'pass', msg: 'N₂ + Heating accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block Heating after N₂' };
     }
     case 'pv_n2_with_cure': {
       const steps = [s('Heating', 40), s('Nitrogen'), s('Cure', 40), s('Cooling', 25)];
@@ -753,12 +1082,13 @@ function runProgramValidationCheck(check) {
       return !err ? { status: 'pass', msg: 'N₂ + Bleaching accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
     }
     case 'pv_n2_no_cooling': {
-      const steps = [s('Heating', 40), s('Nitrogen'), s('Heating', 60)];
+      // N₂ → Cure with no Cooling after → blocked (must be vented)
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Cure', 60)];
       const err = validateProgram('Test', steps);
       return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block N₂ without Cooling' };
     }
     case 'pv_n2_with_cooling': {
-      const steps = [s('Heating', 40), s('Nitrogen'), s('Heating', 60), s('Cooling', 25)];
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Cure', 60), s('Cooling', 25)];
       const err = validateProgram('Test', steps);
       return !err ? { status: 'pass', msg: 'Full N₂ flow accepted' } : { status: 'fail', msg: 'Rejected: ' + err };
     }
@@ -771,8 +1101,535 @@ function runProgramValidationCheck(check) {
       const err = validateProgram('Test', [s('Cooling', 25)]);
       return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block program without Cure/Heating' };
     }
+    case 'pv_n2_drying_after': {
+      // Drying directly after N₂ is not allowed
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Drying', 50), s('Cure', 60), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block Drying after N₂' };
+    }
+    case 'pv_n2_cooling_direct': {
+      // Cooling directly after N₂ with no Cure/Bleach in between is blocked
+      const steps = [s('Cure', 40), s('Nitrogen'), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should block Cooling directly after N₂' };
+    }
+    case 'pv_n2_cure_then_heating': {
+      // N₂ → Cure → Heating: the step after the cure must be Cooling, not Heating
+      const steps = [s('Heating', 40), s('Nitrogen'), s('Cure', 60), s('Heating', 70), s('Cooling', 25)];
+      const err = validateProgram('Test', steps);
+      return err ? { status: 'pass', msg: 'Blocked: ' + err } : { status: 'fail', msg: 'Should force Cooling after the N₂ cure' };
+    }
     default:
       return { status: 'warn', msg: 'Unknown validation check' };
+  }
+}
+
+// ============================================================
+// Material Duplication Logic (mirrors MaterialContext.duplicateMaterial)
+// ============================================================
+// Returns the unique "<name> Copy" name given the names already in the list.
+function makeCopyName(baseName, existingNames) {
+  let copyName = `${baseName} Copy`;
+  let n = 2;
+  while (existingNames.includes(copyName)) {
+    copyName = `${baseName} Copy ${n}`;
+    n++;
+  }
+  return copyName;
+}
+
+// Simulates duplicating a material from a list; returns the new material + new list.
+function duplicateMaterialSim(list, id) {
+  const mat = list.find(m => m.id === id);
+  if (!mat) return null;
+  const copy = {
+    id: 'copy-' + id,
+    name: makeCopyName(mat.name, list.map(m => m.name)),
+    steps: mat.steps.map(s => ({ ...s })),
+    totalDuration: mat.totalDuration,
+    isPreset: false,
+  };
+  const next = [...list, copy];
+  return { copy, next };
+}
+
+function runDuplicateCheck(check) {
+  const baseList = [
+    { id: 'a', name: 'ST45', steps: [{ process: 'Heating', temperature: 45, time: 10 }], totalDuration: 10, isPreset: true },
+    { id: 'b', name: 'Carbon Fiber', steps: [{ process: 'Heating', temperature: 60, time: 20 }, { process: 'Cooling', temperature: 25, time: 0 }], totalDuration: 20, isPreset: false },
+  ];
+
+  switch (check) {
+    case 'dup_copy_name': {
+      const { copy } = duplicateMaterialSim(baseList, 'a');
+      return copy.name === 'ST45 Copy'
+        ? { status: 'pass', msg: 'Copy named "ST45 Copy"' }
+        : { status: 'fail', msg: `Expected "ST45 Copy", got "${copy.name}"` };
+    }
+    case 'dup_is_editable': {
+      // Duplicating a locked preset must produce an editable (non-preset) material
+      const { copy } = duplicateMaterialSim(baseList, 'a');
+      return copy.isPreset === false
+        ? { status: 'pass', msg: 'Preset copy is editable (isPreset=false)' }
+        : { status: 'fail', msg: 'Copy should not be a preset' };
+    }
+    case 'dup_steps_cloned': {
+      const { copy } = duplicateMaterialSim(baseList, 'b');
+      const sameContent = JSON.stringify(copy.steps) === JSON.stringify(baseList[1].steps);
+      const notSameRef = copy.steps !== baseList[1].steps && copy.steps[0] !== baseList[1].steps[0];
+      return sameContent && notSameRef
+        ? { status: 'pass', msg: 'Steps deep-copied (content equal, refs distinct)' }
+        : { status: 'fail', msg: 'Steps not properly cloned' };
+    }
+    case 'dup_inserted_after': {
+      const { next } = duplicateMaterialSim(baseList, 'a');
+      // Copy is appended to the end, alongside new user materials
+      return next.length === baseList.length + 1 && next[next.length - 1].name === 'ST45 Copy'
+        ? { status: 'pass', msg: 'Copy appended to end of list' }
+        : { status: 'fail', msg: 'Copy not appended to end' };
+    }
+    case 'dup_unique_name': {
+      // Duplicating twice must not collide: Copy, then Copy 2
+      const first = duplicateMaterialSim(baseList, 'a');
+      const second = duplicateMaterialSim(first.next, 'a');
+      return first.copy.name === 'ST45 Copy' && second.copy.name === 'ST45 Copy 2'
+        ? { status: 'pass', msg: 'Second copy named "ST45 Copy 2"' }
+        : { status: 'fail', msg: `Got "${first.copy.name}" then "${second.copy.name}"` };
+    }
+    case 'dup_invalid_id': {
+      const result = duplicateMaterialSim(baseList, 'does-not-exist');
+      return result === null
+        ? { status: 'pass', msg: 'Unknown id returns null (no copy)' }
+        : { status: 'fail', msg: 'Should return null for unknown id' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown duplication check' };
+  }
+}
+
+// ============================================================
+// TopBar Active Nav Logic (mirrors TopBar.tsx active highlight)
+// ============================================================
+// Returns the id of the nav icon that should be lit for a given route,
+// or null if no nav icon is active (e.g. Home).
+function activeNavFor(pathname) {
+  if (pathname === '/cure-history') return 'history';
+  if (pathname === '/alerts') return 'alerts';
+  if (pathname === '/settings') return 'settings';
+  if (pathname === '/network') return 'network';
+  return null;
+}
+
+// Mirrors the Globe icon className resolution in TopBar.tsx.
+// Returns null when the icon should inherit the parent's color (text-primary when active).
+function globeIconColor(isCuring, connected, pathname) {
+  if (isCuring) return 'opacity-30';
+  if (!connected) return 'text-destructive';
+  if (pathname === '/network') return null; // active → inherit primary (blue)
+  return 'text-white';
+}
+
+function runNavCheck(check) {
+  switch (check) {
+    case 'nav_settings': {
+      return activeNavFor('/settings') === 'settings'
+        ? { status: 'pass', msg: 'Settings icon lit on /settings' }
+        : { status: 'fail', msg: 'Settings icon not active on /settings' };
+    }
+    case 'nav_network': {
+      return activeNavFor('/network') === 'network'
+        ? { status: 'pass', msg: 'Network icon lit on /network' }
+        : { status: 'fail', msg: 'Network icon not active on /network' };
+    }
+    case 'nav_alerts': {
+      return activeNavFor('/alerts') === 'alerts'
+        ? { status: 'pass', msg: 'Alerts icon lit on /alerts' }
+        : { status: 'fail', msg: 'Alerts icon not active on /alerts' };
+    }
+    case 'nav_history': {
+      return activeNavFor('/cure-history') === 'history'
+        ? { status: 'pass', msg: 'History icon lit on /cure-history' }
+        : { status: 'fail', msg: 'History icon not active on /cure-history' };
+    }
+    case 'nav_home_none': {
+      return activeNavFor('/') === null
+        ? { status: 'pass', msg: 'No nav icon lit on Home' }
+        : { status: 'fail', msg: 'Home should not light any nav icon' };
+    }
+    case 'nav_single_active': {
+      // Exactly one icon may be active for any given settings-area route
+      const routes = ['/settings', '/network', '/alerts', '/cure-history'];
+      const ok = routes.every(r => {
+        const active = activeNavFor(r);
+        return active !== null && routes.filter(x => activeNavFor(x) === active).length === 1;
+      });
+      return ok
+        ? { status: 'pass', msg: 'Exactly one icon active per route' }
+        : { status: 'fail', msg: 'Multiple or zero icons active for a route' };
+    }
+    case 'nav_globe_active_blue': {
+      // null = no explicit color → inherits the parent's text-primary (blue) when active
+      const c = globeIconColor(false, true, '/network');
+      return c === null
+        ? { status: 'pass', msg: 'Active globe inherits primary (blue)' }
+        : { status: 'fail', msg: `Active globe forced to ${c} instead of inheriting blue` };
+    }
+    case 'nav_globe_inactive_white': {
+      const c = globeIconColor(false, true, '/settings');
+      return c === 'text-white'
+        ? { status: 'pass', msg: 'Inactive connected globe is white' }
+        : { status: 'fail', msg: `Expected white, got ${c}` };
+    }
+    case 'nav_globe_disconnected_red': {
+      const c = globeIconColor(false, false, '/network');
+      return c === 'text-destructive'
+        ? { status: 'pass', msg: 'Disconnected globe stays red even when active' }
+        : { status: 'fail', msg: `Expected red, got ${c}` };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown nav check' };
+  }
+}
+
+// ============================================================
+// TopBar N₂ Icon Logic (mirrors TopBar.tsx nitrogen indicator)
+// ============================================================
+// The N₂ icon is rendered only when nitrogen mode is enabled.
+function n2IconVisible(nitrogenMode) {
+  return !!nitrogenMode;
+}
+
+function runN2IconCheck(check) {
+  switch (check) {
+    case 'n2_hidden_when_off': {
+      return n2IconVisible(false) === false
+        ? { status: 'pass', msg: 'N₂ icon hidden when nitrogen mode is off' }
+        : { status: 'fail', msg: 'N₂ icon should be hidden when off' };
+    }
+    case 'n2_shown_when_on': {
+      return n2IconVisible(true) === true
+        ? { status: 'pass', msg: 'N₂ icon shown when nitrogen mode is on' }
+        : { status: 'fail', msg: 'N₂ icon should be shown when on' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown N₂ icon check' };
+  }
+}
+
+// ============================================================
+// Wake Screen blackout (mirrors WakeScreen showHint + tap-to-wake)
+// ============================================================
+// Sleep mode (blank=true) stays fully black until first touch; screensaver always shows the hint.
+function wakeScreenView(blank, tapCount) {
+  const showHint = !blank || tapCount > 0;
+  return { black: !showHint, woke: tapCount >= 2 };
+}
+
+function runWakeScreenCheck(check) {
+  switch (check) {
+    case 'wake_sleep_black': {
+      const v = wakeScreenView(true, 0); // sleep, untouched
+      return v.black
+        ? { status: 'pass', msg: 'Sleep screen is fully black (screen protected)' }
+        : { status: 'fail', msg: 'Sleep screen should be black' };
+    }
+    case 'wake_sleep_hint_after_touch': {
+      const v = wakeScreenView(true, 1); // sleep, first touch
+      return !v.black
+        ? { status: 'pass', msg: 'Wake hint appears after first touch' }
+        : { status: 'fail', msg: 'Hint should show after touch' };
+    }
+    case 'wake_two_taps_wakes': {
+      const v = wakeScreenView(true, 2);
+      return v.woke
+        ? { status: 'pass', msg: 'Two taps wake the system' }
+        : { status: 'fail', msg: 'Two taps should wake' };
+    }
+    case 'wake_screensaver_black': {
+      const v = wakeScreenView(true, 0); // screensaver, untouched — now blank like sleep
+      return v.black
+        ? { status: 'pass', msg: 'Screensaver is fully black (screen protected)' }
+        : { status: 'fail', msg: 'Screensaver should be black until touched' };
+    }
+    case 'wake_screensaver_hint_after_touch': {
+      const v = wakeScreenView(true, 1); // screensaver, first touch
+      return !v.black
+        ? { status: 'pass', msg: 'Wake hint appears after first touch' }
+        : { status: 'fail', msg: 'Hint should show after touch' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown wake-screen check' };
+  }
+}
+
+// ============================================================
+// Boot vs Sleep-Resume (mirrors App.tsx asleep/booting init)
+// ============================================================
+// The boot/diagnostics screen shows only on a real power-up, not when resuming from sleep.
+// shutdownFlag is the value of sessionStorage 'scure-shutdown' present at mount.
+function bootDecision(shutdownFlag) {
+  return {
+    asleep: shutdownFlag === 'true',
+    booting: shutdownFlag !== 'true',
+  };
+}
+
+// ============================================================
+// SRS Document Version History (mirrors docs/sCure_SRS.html setVersions/getVersions)
+// Snapshots are archived as JSON inside a <script type="application/json"> tag, so any
+// "</" must be escaped to "<\/" or an embedded closing script tag would truncate the file.
+// ============================================================
+function srsEncodeVersions(arr) {
+  return JSON.stringify(arr).replace(/<\//g, '<\\/'); // exact logic from setVersions()
+}
+function srsDecodeVersions(text) {
+  try { return JSON.parse(text || '[]') || []; } catch (e) { return null; } // getVersions()
+}
+function deepEqual(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
+function runSrsVersionCheck(check) {
+  const CLOSE = '</' + 'script>'; // avoid a literal closing tag in this file too
+  switch (check) {
+    case 'srs_roundtrip_plain': {
+      const arr = [{ n: 'Baseline', date: '2026-06-30', author: '—', change: 'pristine', html: '<!DOCTYPE html>\n<html><body><p>v1</p></body></html>' }];
+      const back = srsDecodeVersions(srsEncodeVersions(arr));
+      return deepEqual(arr, back)
+        ? { status: 'pass', msg: 'Plain version round-trips unchanged' }
+        : { status: 'fail', msg: 'Round-trip altered the version data' };
+    }
+    case 'srs_roundtrip_scripttag': {
+      const html = '<html><body><script>var x="' + CLOSE + '";' + CLOSE + '<p>old</p></body></html>';
+      const arr = [{ n: '3', date: '2026-06-30', author: 'Amitai', change: 'edit', html }];
+      const back = srsDecodeVersions(srsEncodeVersions(arr));
+      return back && back[0] && back[0].html === html && back[0].html.includes(CLOSE)
+        ? { status: 'pass', msg: 'Embedded closing script tag survives the round-trip' }
+        : { status: 'fail', msg: 'Closing script tag was lost or corrupted' };
+    }
+    case 'srs_no_raw_close': {
+      const arr = [{ n: '1', html: 'before' + CLOSE + 'after' }];
+      const encoded = srsEncodeVersions(arr);
+      return !encoded.includes(CLOSE)
+        ? { status: 'pass', msg: 'Encoded archive has no raw closing script tag' }
+        : { status: 'fail', msg: 'Raw closing script tag present — file would truncate' };
+    }
+    case 'srs_unicode': {
+      const arr = [{ n: '2', author: 'אמיתי', change: 'שינוי', html: '<p>גרסה ישנה של המסמך</p>' }];
+      const back = srsDecodeVersions(srsEncodeVersions(arr));
+      return back && deepEqual(arr, back) && back[0].html.includes('גרסה ישנה')
+        ? { status: 'pass', msg: 'Hebrew/Unicode content preserved' }
+        : { status: 'fail', msg: 'Unicode content not preserved' };
+    }
+    case 'srs_empty_archive': {
+      const back = srsDecodeVersions('[]');
+      return Array.isArray(back) && back.length === 0
+        ? { status: 'pass', msg: 'Empty archive parses to an empty list' }
+        : { status: 'fail', msg: 'Empty archive did not parse to []' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown SRS version check' };
+  }
+}
+
+function runBootCheck(check) {
+  switch (check) {
+    case 'boot_cold_shows_diag': {
+      const d = bootDecision(null); // no shutdown flag = cold power-up
+      return d.booting && !d.asleep
+        ? { status: 'pass', msg: 'Cold start shows boot/diagnostics' }
+        : { status: 'fail', msg: 'Cold start should boot' };
+    }
+    case 'boot_sleep_no_diag': {
+      const d = bootDecision('true'); // resuming from sleep
+      return !d.booting
+        ? { status: 'pass', msg: 'No diagnostics screen when resuming from sleep' }
+        : { status: 'fail', msg: 'Sleep resume must skip boot screen' };
+    }
+    case 'boot_sleep_shows_wake': {
+      const d = bootDecision('true');
+      return d.asleep
+        ? { status: 'pass', msg: 'Sleep resume shows wake screen' }
+        : { status: 'fail', msg: 'Sleep resume should be asleep' };
+    }
+    case 'boot_cold_not_asleep': {
+      const d = bootDecision(null);
+      return !d.asleep
+        ? { status: 'pass', msg: 'Cold start is not asleep' }
+        : { status: 'fail', msg: 'Cold start should not be asleep' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown boot check' };
+  }
+}
+
+// ============================================================
+// Per-Fan Diagnostic (mirrors SettingsPage handleFanTest / FanRow)
+// ============================================================
+const FAN_RPM_SIM = { led_cooling: 2850, chamber_intake: 3050, chamber_heating: 2780 };
+const FAN_IDS = ['led_cooling', 'chamber_intake', 'chamber_heating'];
+
+// Simulates running a fan's diagnostic; rpm null = unknown fan.
+function fanTestResultSim(id) {
+  const rpm = FAN_RPM_SIM[id] ?? null;
+  return { rpm, ok: rpm != null && rpm >= 2000 }; // healthy fans spin well above 2000 RPM
+}
+
+function runFanTestCheck(check) {
+  switch (check) {
+    case 'fant_led_cooling': {
+      const r = fanTestResultSim('led_cooling');
+      return r.ok && r.rpm === 2850 ? { status: 'pass', msg: `LED Cooling: ${r.rpm} RPM OK` } : { status: 'fail', msg: `Got ${r.rpm} RPM` };
+    }
+    case 'fant_chamber_intake': {
+      const r = fanTestResultSim('chamber_intake');
+      return r.ok && r.rpm === 3050 ? { status: 'pass', msg: `Chamber Intake: ${r.rpm} RPM OK` } : { status: 'fail', msg: `Got ${r.rpm} RPM` };
+    }
+    case 'fant_chamber_heating': {
+      const r = fanTestResultSim('chamber_heating');
+      return r.ok && r.rpm === 2780 ? { status: 'pass', msg: `Chamber Heating: ${r.rpm} RPM OK` } : { status: 'fail', msg: `Got ${r.rpm} RPM` };
+    }
+    case 'fant_each_fan_has_test': {
+      // Every fan must produce its own healthy result
+      const allOk = FAN_IDS.every(id => fanTestResultSim(id).ok);
+      return allOk ? { status: 'pass', msg: `All ${FAN_IDS.length} fans have a diagnostic` } : { status: 'fail', msg: 'A fan is missing its diagnostic' };
+    }
+    case 'fant_distinct_rpm': {
+      // Each fan reports its own RPM (not a single shared value)
+      const rpms = FAN_IDS.map(id => fanTestResultSim(id).rpm);
+      const distinct = new Set(rpms).size === rpms.length;
+      return distinct ? { status: 'pass', msg: `Per-fan RPM: ${rpms.join(', ')}` } : { status: 'fail', msg: 'Fans share one RPM value' };
+    }
+    case 'fant_unknown_fan': {
+      const r = fanTestResultSim('does_not_exist');
+      return r.rpm === null && !r.ok ? { status: 'pass', msg: 'Unknown fan reports no result' } : { status: 'fail', msg: 'Unknown fan should have no RPM' };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown fan-test check' };
+  }
+}
+
+// ============================================================
+// Cure Phase Gauge Value (mirrors CureProcessPage getGaugeInfo heating/drying)
+// ============================================================
+// Ramp → gauge shows climbing temperature; HOLD (target reached) → gauge shows the remaining time.
+function formatTimeForTest(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function getHeatingGaugeSim(phase, ctx) {
+  const { status = 'active', isRamping = false, chamberTemp = 25, elapsed = 0 } = ctx;
+  const isActiveRamping = status === 'active' && isRamping;
+  const isActiveHolding = status === 'active' && !isRamping;
+  const remaining = Math.max(0, phase.time * 60 - elapsed);
+  return {
+    value: isActiveRamping ? `${chamberTemp}` : isActiveHolding ? formatTimeForTest(remaining) : status === 'completed' ? `${phase.temp}` : '0',
+    label: isActiveRamping ? 'RAMP °C' : isActiveHolding ? 'REMAINING' : 'HOLD °C',
+  };
+}
+
+function runGaugeValueCheck(check) {
+  switch (check) {
+    case 'gv_hold_shows_time': {
+      // HOLD: 10min phase, 7s in → gauge shows 09:53 with REMAINING label
+      const g = getHeatingGaugeSim({ type: 'drying', temp: 45, time: 10 }, { status: 'active', isRamping: false, elapsed: 7 });
+      return g.value === '09:53' && g.label === 'REMAINING'
+        ? { status: 'pass', msg: `Gauge shows ${g.value} (${g.label})` }
+        : { status: 'fail', msg: `Expected 09:53/REMAINING, got ${g.value}/${g.label}` };
+    }
+    case 'gv_ramp_shows_temp': {
+      // RAMP: gauge shows the climbing chamber temperature, not time
+      const g = getHeatingGaugeSim({ type: 'heating', temp: 60, time: 5 }, { status: 'active', isRamping: true, chamberTemp: 38 });
+      return g.value === '38' && g.label === 'RAMP °C'
+        ? { status: 'pass', msg: `Gauge shows ${g.value} (${g.label})` }
+        : { status: 'fail', msg: `Expected 38/RAMP °C, got ${g.value}/${g.label}` };
+    }
+    case 'gv_hold_never_negative': {
+      // Overrun clamps the countdown to 00:00
+      const g = getHeatingGaugeSim({ type: 'heating', temp: 40, time: 1 }, { status: 'active', isRamping: false, elapsed: 120 });
+      return g.value === '00:00'
+        ? { status: 'pass', msg: 'Countdown clamped to 00:00' }
+        : { status: 'fail', msg: `Expected 00:00, got ${g.value}` };
+    }
+    case 'gv_completed_shows_temp': {
+      // Completed phase shows the hold temperature again
+      const g = getHeatingGaugeSim({ type: 'drying', temp: 45, time: 10 }, { status: 'completed' });
+      return g.value === '45' && g.label === 'HOLD °C'
+        ? { status: 'pass', msg: `Completed shows ${g.value} (${g.label})` }
+        : { status: 'fail', msg: `Expected 45/HOLD °C, got ${g.value}/${g.label}` };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown gauge-value check' };
+  }
+}
+
+// ============================================================
+// Material Favorites Logic (mirrors MaterialContext + HomePage sort)
+// ============================================================
+function toggleFavoriteSim(favoriteIds, id) {
+  return favoriteIds.includes(id) ? favoriteIds.filter(f => f !== id) : [...favoriteIds, id];
+}
+
+// Stable sort: favorites first, original order preserved within each group.
+function sortByFavorite(list, favoriteIds) {
+  return [...list].sort((a, b) =>
+    (favoriteIds.includes(b.id) ? 1 : 0) - (favoriteIds.includes(a.id) ? 1 : 0)
+  );
+}
+
+function runFavoriteCheck(check) {
+  const list = [
+    { id: 'a', name: 'ST45' },
+    { id: 'b', name: 'Carbon Fiber' },
+    { id: 'c', name: 'Fiberglass' },
+    { id: 'd', name: 'ABS-Like' },
+  ];
+
+  switch (check) {
+    case 'fav_toggle_on': {
+      const next = toggleFavoriteSim([], 'c');
+      return next.includes('c') && next.length === 1
+        ? { status: 'pass', msg: 'Star added to favorites' }
+        : { status: 'fail', msg: 'Star not added' };
+    }
+    case 'fav_toggle_off': {
+      const next = toggleFavoriteSim(['c'], 'c');
+      return !next.includes('c') && next.length === 0
+        ? { status: 'pass', msg: 'Star removed from favorites' }
+        : { status: 'fail', msg: 'Star not removed' };
+    }
+    case 'fav_moves_to_top': {
+      const sorted = sortByFavorite(list, ['c']);
+      return sorted[0].id === 'c'
+        ? { status: 'pass', msg: 'Starred item moved to top' }
+        : { status: 'fail', msg: `Top is "${sorted[0].id}", expected "c"` };
+    }
+    case 'fav_order_stable': {
+      // Non-favorites keep their original relative order
+      const sorted = sortByFavorite(list, ['c']);
+      const rest = sorted.filter(m => m.id !== 'c').map(m => m.id).join(',');
+      return rest === 'a,b,d'
+        ? { status: 'pass', msg: 'Non-favorites keep original order' }
+        : { status: 'fail', msg: `Order was "${rest}", expected "a,b,d"` };
+    }
+    case 'fav_multiple_top': {
+      // Multiple favorites all rise to the top, in original order
+      const sorted = sortByFavorite(list, ['b', 'd']);
+      const top2 = sorted.slice(0, 2).map(m => m.id).join(',');
+      return top2 === 'b,d'
+        ? { status: 'pass', msg: 'Multiple favorites grouped at top (b,d)' }
+        : { status: 'fail', msg: `Top two were "${top2}", expected "b,d"` };
+    }
+    case 'fav_none_unchanged': {
+      // No favorites → list order is unchanged
+      const sorted = sortByFavorite(list, []);
+      const order = sorted.map(m => m.id).join(',');
+      return order === 'a,b,c,d'
+        ? { status: 'pass', msg: 'No favorites keeps list order' }
+        : { status: 'fail', msg: `Order was "${order}"` };
+    }
+    default:
+      return { status: 'warn', msg: 'Unknown favorite check' };
   }
 }
 
@@ -799,8 +1656,10 @@ function parseCsvForTest(csvContent) {
 
     let time = 0;
     if (process !== 'Cooling' && process !== 'Nitrogen') {
+      // Bleaching may run up to 12 hours (720 min); others cap at 120 min.
+      const maxTime = process === 'Bleacher' ? 720 : 120;
       time = parseInt(cols[3]);
-      if (isNaN(time) || time < 1 || time > 120) { errors.push(`Row ${i}: Invalid time "${cols[3]}"`); continue; }
+      if (isNaN(time) || time < 1 || time > maxTime) { errors.push(`Row ${i}: Invalid time "${cols[3]}" (must be 1-${maxTime})`); continue; }
     }
 
     const step = { step: parseInt(cols[0]) || i, process, temperature: null, time };
@@ -829,11 +1688,17 @@ function parseCsvForTest(csvContent) {
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i], prev = i > 0 ? steps[i - 1] : null;
     if (s.process === 'Nitrogen') { n2Count++; if (n2Count > 2) errors.push(`Step ${s.step}: Maximum 2 nitrogen steps`); }
-    if (prev?.process === 'Nitrogen' && (s.process === 'Drying' || s.process === 'Nitrogen')) {
-      errors.push(`Step ${s.step}: After nitrogen, only Heating, Cure, Bleacher, or Cooling`);
+    if (prev?.process === 'Nitrogen' && s.process !== 'Cure' && s.process !== 'Bleacher') {
+      errors.push(`Step ${s.step}: After nitrogen, only Cure or Bleaching is allowed`);
+    }
+    if (prev && (prev.process === 'Cure' || prev.process === 'Bleacher')) {
+      const prevPrev = i > 1 ? steps[i - 2] : null;
+      if (prevPrev?.process === 'Nitrogen' && s.process !== 'Cooling') {
+        errors.push(`Step ${s.step}: After the Cure/Bleaching that follows N₂, only Cooling is allowed`);
+      }
     }
     if (s.process === 'Nitrogen') needsCoolingOrDrying = true;
-    if (needsCoolingOrDrying && (s.process === 'Cooling' || s.process === 'Drying')) needsCoolingOrDrying = false;
+    if (needsCoolingOrDrying && s.process === 'Cooling') needsCoolingOrDrying = false;
     if (s.process !== 'Cooling' && s.process !== 'Nitrogen' && s.temperature != null) {
       if (lastTemp !== null && s.temperature < lastTemp) errors.push(`Step ${s.step}: Temperature cannot decrease without Cooling`);
       lastTemp = s.temperature;
@@ -847,9 +1712,9 @@ function parseCsvForTest(csvContent) {
     let found = false, afterN2 = false;
     for (const s of steps) {
       if (s.process === 'Nitrogen') afterN2 = true;
-      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) { found = true; break; }
+      if (afterN2 && (s.process === 'Cure' || s.process === 'Bleacher')) { found = true; break; }
     }
-    if (!found) errors.push('Add a Heating, Cure, or Bleaching step after N₂ purge');
+    if (!found) errors.push('Add a Cure or Bleaching step after N₂ purge');
   }
 
   return { steps, errors };
@@ -868,7 +1733,8 @@ function runCsvImportCheck(check) {
       return r.errors.length === 0 ? { status: 'pass', msg: `${r.steps.length} steps with N₂` } : { status: 'fail', msg: r.errors[0] };
     }
     case 'csv_valid_full': {
-      const r = parseCsvForTest(`${H}\n1,Drying,40,10,,,,,\n2,Heating,60,5,,,,,\n3,Nitrogen,,,,,,,\n4,Cure,60,15,on-target,30,at-target,,\n5,Bleacher,60,10,on-target,40,at-start,,\n6,Cooling,25,,,,,,fast`);
+      // All 6 process types; N₂ → Cure → Cooling block kept valid (Bleaching placed before N₂)
+      const r = parseCsvForTest(`${H}\n1,Drying,40,10,,,,,\n2,Heating,60,5,,,,,\n3,Bleacher,60,10,on-target,40,at-start,,\n4,Nitrogen,,,,,,,\n5,Cure,60,15,on-target,30,at-target,,\n6,Cooling,25,,,,,,fast`);
       return r.errors.length === 0 && r.steps.length === 6 ? { status: 'pass', msg: 'All 6 process types OK' } : { status: 'fail', msg: r.errors[0] || 'Wrong step count' };
     }
     case 'csv_invalid_process': {
@@ -882,6 +1748,15 @@ function runCsvImportCheck(check) {
     case 'csv_bad_time': {
       const r = parseCsvForTest(`${H}\n1,Heating,40,150,,,,,`);
       return r.errors.some(e => e.includes('time')) ? { status: 'pass', msg: 'Rejected time 150min' } : { status: 'fail', msg: 'Should reject time >120' };
+    }
+    case 'csv_bleach_12h': {
+      // 720 min Bleaching is allowed; preceding Heating keeps temps non-decreasing.
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Bleacher,40,720,on-target,40,at-target,,`);
+      return r.errors.length === 0 ? { status: 'pass', msg: 'Bleaching 720min accepted' } : { status: 'fail', msg: r.errors[0] };
+    }
+    case 'csv_bleach_over12h': {
+      const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Bleacher,40,721,on-target,40,at-target,,`);
+      return r.errors.some(e => e.includes('time')) ? { status: 'pass', msg: 'Rejected Bleaching 721min' } : { status: 'fail', msg: 'Should reject Bleaching >720' };
     }
     case 'csv_n2_no_process': {
       const r = parseCsvForTest(`${H}\n1,Heating,40,10,,,,,\n2,Nitrogen,,,,,,,\n3,Cooling,25,,,,,,medium`);

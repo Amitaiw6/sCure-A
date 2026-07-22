@@ -4,10 +4,12 @@ import { Switch } from '@/components/ui/switch'
 import { TouchNumber } from '@/components/ui/touch-number'
 import { Progress } from '@/components/ui/progress'
 import { useHardware } from '@/context/HardwareContext'
-import { Download, Upload, Fan, Zap, Building2, Unlink } from 'lucide-react'
+import { Download, Upload, Fan, Zap, Building2, Unlink, ShieldCheck } from 'lucide-react'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import { systemReboot, systemShutdown, exportLogs } from '@/services/hardware-api'
+import { COMPLIANCE_CONTROLS } from '@/lib/compliance'
 import UpdateModal from '@/components/UpdateModal'
+import ComplianceModal from '@/components/ComplianceModal'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { Pencil } from 'lucide-react'
 
@@ -36,12 +38,12 @@ export default function SettingsPage() {
   const [chamberHeating, setChamberHeatingLocal] = useState(62)
   const [damperOpen, setDamperOpen] = useState(false)
   const [bofaControl, setBofaControl] = useState(true)
-  const [fanTestRunning, setFanTestRunning] = useState(false)
-  const [fanSpeed, setFanSpeed] = useState<number | null>(null)
+  const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null }>>({})
   const [ledTestRunning, setLedTestRunning] = useState(false)
   const [ledResults, setLedResults] = useState<string[] | null>(null)
   const [logsStatus, setLogsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [showUpdate, setShowUpdate] = useState(false)
+  const [showCompliance, setShowCompliance] = useState(false)
   const [showNameKeyboard, setShowNameKeyboard] = useState(false)
   const [editingName, setEditingName] = useState(hw.systemName)
   const [factoryTaps, setFactoryTaps] = useState(0)
@@ -53,10 +55,18 @@ export default function SettingsPage() {
     setTimeout(() => setLogsStatus('idle'), 3000)
   }
 
-  const handleFanTest = () => {
-    setFanTestRunning(true)
-    setFanSpeed(null)
-    setTimeout(() => { setFanSpeed(2850); setFanTestRunning(false) }, 2000)
+  // Expected nominal RPM per fan (used by the per-fan diagnostic)
+  const FAN_RPM: Record<string, number> = {
+    led_cooling: 2850,
+    chamber_intake: 3050,
+    chamber_heating: 2780,
+  }
+
+  const handleFanTest = (id: string) => {
+    setFanTests(prev => ({ ...prev, [id]: { running: true, rpm: null } }))
+    setTimeout(() => {
+      setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: FAN_RPM[id] ?? 2800 } }))
+    }, 2000)
   }
 
   const handleLedTest = () => {
@@ -118,19 +128,15 @@ export default function SettingsPage() {
             </Card>
           </div>
 
-          {/* Row 2: Fan controls */}
+          {/* Row 2: Fan controls — each fan has its own diagnostic test */}
           <Card>
             <div className="space-y-2">
-              <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={setLedCoolingAirflow} />
-              <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={setChamberIntakeFan} />
-              <div className="flex items-center gap-2">
-                <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={setChamberHeatingFan} />
-                <Button variant="outline" size="sm" className="text-[10px] h-6 px-2 gap-1 shrink-0" onClick={handleFanTest} disabled={fanTestRunning}>
-                  <Fan size={10} className={fanTestRunning ? 'animate-spin' : ''} />
-                  Test
-                </Button>
-                {fanSpeed !== null && <span className="text-green-400 text-[10px] shrink-0 whitespace-nowrap">{fanSpeed} RPM <b>OK</b></span>}
-              </div>
+              <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={setLedCoolingAirflow}
+                onTest={() => handleFanTest('led_cooling')} testing={fanTests['led_cooling']?.running} rpm={fanTests['led_cooling']?.rpm} />
+              <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={setChamberIntakeFan}
+                onTest={() => handleFanTest('chamber_intake')} testing={fanTests['chamber_intake']?.running} rpm={fanTests['chamber_intake']?.rpm} />
+              <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={setChamberHeatingFan}
+                onTest={() => handleFanTest('chamber_heating')} testing={fanTests['chamber_heating']?.running} rpm={fanTests['chamber_heating']?.rpm} />
             </div>
           </Card>
 
@@ -284,6 +290,14 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
+            <Label>Compliance <span className="text-muted-foreground/60">(CRA / EN 18031)</span></Label>
+            <Button variant="outline" size="sm" className="w-full text-[10px] h-8 gap-1 mt-1.5" onClick={() => setShowCompliance(true)}>
+              <ShieldCheck size={13} className="text-green-500" />
+              {COMPLIANCE_CONTROLS.filter(c => c.status === 'active').length} controls active
+            </Button>
+          </Card>
+
+          <Card>
             <Label>Organization</Label>
             {config.organizationId ? (
               <div className="mt-1.5 space-y-1.5">
@@ -352,6 +366,7 @@ export default function SettingsPage() {
         </div>
       </div>
       <UpdateModal isOpen={showUpdate} onClose={() => setShowUpdate(false)} />
+      <ComplianceModal isOpen={showCompliance} onClose={() => setShowCompliance(false)} />
       <OnScreenKeyboard
         isOpen={showNameKeyboard}
         value={editingName}
@@ -407,7 +422,14 @@ function Btn({ children, active, muted, red, onClick }: {
   )
 }
 
-function FanRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function FanRow({ label, value, onChange, onTest, testing, rpm }: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  onTest?: () => void
+  testing?: boolean
+  rpm?: number | null
+}) {
   return (
     <div className="flex items-center gap-2 flex-1">
       <span className="text-muted-foreground text-[10px] w-[130px] shrink-0">{label}</span>
@@ -419,6 +441,15 @@ function FanRow({ label, value, onChange }: { label: string; value: number; onCh
           className="absolute inset-0 w-full opacity-0 cursor-pointer touch-manipulation" />
       </div>
       <span className="text-muted-foreground text-[9px] w-14 text-right">100% PWM</span>
+      {onTest && (
+        <Button variant="outline" size="sm" className="text-[10px] h-6 px-2 gap-1 shrink-0" onClick={onTest} disabled={testing}>
+          <Fan size={10} className={testing ? 'animate-spin' : ''} />
+          Test
+        </Button>
+      )}
+      {rpm != null && (
+        <span className="text-green-400 text-[10px] shrink-0 whitespace-nowrap w-[72px] text-right">{rpm} RPM <b>OK</b></span>
+      )}
     </div>
   )
 }

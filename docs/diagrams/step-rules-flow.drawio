@@ -1,0 +1,75 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="step-rules-flow" name="sCure Step Sequencing Rules">
+    <mxGraphModel dx="1334" dy="974" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="120" y="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="comp" parent="1" style="swimlane;html=1;startSize=46;horizontal=1;fillColor=none;strokeColor=#333333;fontSize=13;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;rounded=1;arcSize=4;" value="Normal steps &#8212; add in any order&#10;(temperature must not drop without a Cooling step)" vertex="1">
+          <mxGeometry height="392" width="660" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s_heat" parent="comp" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Heating&lt;/b&gt;&lt;hr&gt;Temperature 20&#8211;80 &#176;C (5&#176; steps), &#8805; previous&lt;br&gt;(no time &#8212; ends at target)" vertex="1">
+          <mxGeometry height="78" width="300" x="20" y="64" as="geometry" />
+        </mxCell>
+        <mxCell id="s_dry" parent="comp" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Drying&lt;/b&gt;&lt;hr&gt;Temperature 20&#8211;80 &#176;C (5&#176; steps), &#8805; previous&lt;br&gt;(no time &#8212; ends at target)" vertex="1">
+          <mxGeometry height="78" width="300" x="340" y="64" as="geometry" />
+        </mxCell>
+        <mxCell id="s_cure" parent="comp" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Cure (405 nm)&lt;/b&gt;&lt;hr&gt;Temperature 20&#8211;80 &#176;C, &#8805; previous&lt;br&gt;UV Intensity 5&#8211;100% (no time / timer)" vertex="1">
+          <mxGeometry height="104" width="300" x="20" y="156" as="geometry" />
+        </mxCell>
+        <mxCell id="s_bleach" parent="comp" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Bleaching (450 nm)&lt;/b&gt;&lt;hr&gt;Temperature 20&#8211;80 &#176;C, &#8805; previous&lt;br&gt;UV Intensity 5&#8211;100% (no time / timer)" vertex="1">
+          <mxGeometry height="104" width="300" x="340" y="156" as="geometry" />
+        </mxCell>
+        <mxCell id="s_cool" parent="comp" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Cooling&lt;/b&gt;&lt;hr&gt;Target Temp 20 &#176;C &#8230; (previous &#8722; 5), must be lower &#183; 5&#176; steps&lt;br&gt;Cooling Mode: Fast / Medium / Slow &#183; no run time" vertex="1">
+          <mxGeometry height="80" width="620" x="20" y="276" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;N&#8322; Purge&lt;/b&gt;&lt;hr&gt;No temperature &#183; no time&lt;br&gt;Runs only if nitrogen is enabled" vertex="1">
+          <mxGeometry height="84" width="250" x="880" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="cureN2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Cure / Bleaching&lt;/b&gt; (under nitrogen)&lt;hr&gt;Required after the purge&lt;br&gt;(parameters as in the states at left)" vertex="1">
+          <mxGeometry height="96" width="250" x="880" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="ventN2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;align=center;verticalAlign=middle;" value="&lt;b&gt;Cooling &#8212; vent&lt;/b&gt;&lt;hr&gt;Required to vent the N&#8322;&lt;br&gt;Cooling Mode &#183; target below previous" vertex="1">
+          <mxGeometry height="84" width="250" x="880" y="440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="final" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="28" width="28" x="356" y="572" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;arcSize=6;fillColor=#F7F7F7;strokeColor=#999999;fontSize=11;align=left;verticalAlign=top;spacing=8;" value="&lt;b&gt;Parameter limits (summary)&lt;/b&gt;&lt;br&gt;&#8226; Temperature 20&#8211;80 &#176;C (5&#176; steps) &#183; NO user time (the operation function decides completion)&lt;br&gt;&#8226; Cooling target &lt; previous step&#39;s temperature (5&#176; steps)&lt;br&gt;&#8226; UV Intensity 5&#8211;100% (5% steps, Cure/Bleaching)&lt;br&gt;&#8226; Max 2 N&#8322; purges &#183; N&#8322; runs only if nitrogen is enabled (no temp / no time)" vertex="1">
+          <mxGeometry height="130" width="660" x="40" y="640" as="geometry" />
+        </mxCell>
+
+        <mxCell id="re1" edge="1" parent="1" source="start" target="comp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_save" edge="1" parent="1" source="comp" target="final" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" value="Save Program">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_n2" edge="1" parent="1" source="comp" target="n2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.18;exitDx=0;exitDy=0;" value="[only after a Cooling since the last N&#8322; &#183; max 2]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_cure" edge="1" parent="1" source="n2" target="cureN2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="required (Cure / Bleaching only)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_vent" edge="1" parent="1" source="cureN2" target="ventN2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="required (Cooling only)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re_back" edge="1" parent="1" source="ventN2" target="comp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;entryX=1;entryY=0.85;entryDx=0;entryDy=0;" value="continue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="482" />
+              <mxPoint x="780" y="453" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

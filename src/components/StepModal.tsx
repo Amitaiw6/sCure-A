@@ -119,7 +119,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       <DialogContent className="sm:max-w-[380px] p-6" showCloseButton={false}>
         {/* Header */}
         <DialogHeader className="flex-row items-center justify-between">
-          <DialogTitle className="text-primary text-lg">{isEdit ? 'Edit Step' : 'Add Step'}</DialogTitle>
+          <DialogTitle className="text-lg">{isEdit ? 'Edit Step' : 'Add Step'}</DialogTitle>
           <span className="text-muted-foreground text-sm">Step {stepNumber}</span>
         </DialogHeader>
 

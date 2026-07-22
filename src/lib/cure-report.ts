@@ -1,4 +1,5 @@
 import type { CureLog } from '@/context/CureHistoryContext'
+import { saveCureReport } from '@/services/hardware-api'
 
 export function generateCureReport(log: CureLog) {
   const telemetry = log.telemetry ?? []
@@ -444,6 +445,19 @@ new Chart(document.getElementById('ledChart'), {
 </script>
 </body>
 </html>`
+
+  // Persist the report to the backend database (PostgreSQL) — best-effort, non-blocking.
+  void saveCureReport(log.id, html, {
+    materialName: log.materialName,
+    status: log.status,
+    duration: log.duration,
+    steps: log.steps,
+    stepsCompleted: log.stepsCompleted,
+    targetTemp: log.targetTemp,
+    serialNumber: log.serialNumber,
+    startedAt: log.startedAt,
+    endedAt: log.endedAt,
+  })
 
   const blob = new Blob([html], { type: 'text/html' })
   const url = URL.createObjectURL(blob)

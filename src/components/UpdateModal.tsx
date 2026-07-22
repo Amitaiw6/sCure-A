@@ -8,7 +8,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { updateSoftware } from '@/services/hardware-api'
+import { fetchUpdatePackage, updateSoftware } from '@/services/hardware-api'
+import { verifyUpdatePackage } from '@/lib/compliance'
 
 interface UpdateModalProps {
   isOpen: boolean
@@ -26,27 +27,48 @@ export default function UpdateModal({ isOpen, onClose }: UpdateModalProps) {
   const [message, setMessage] = useState('')
   const [version, setVersion] = useState('')
 
+  // Mark the current (last) running step as failed and stop the update.
+  const failHere = (msg: string) => {
+    setSteps(prev => [
+      ...prev.slice(0, -1),
+      { ...prev[prev.length - 1], status: 'error' },
+    ])
+    setMessage(msg)
+    setStatus('error')
+  }
+
   const handleUpdate = async () => {
     setStatus('running')
     setSteps([
       { step: 'Finding USB drive...', status: 'running' },
     ])
 
-    // Simulate step progression for UX
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise(r => setTimeout(r, 700))
     setSteps(prev => [
       { ...prev[0], status: 'ok' },
       { step: 'Looking for update package...', status: 'running' },
     ])
 
-    await new Promise(r => setTimeout(r, 600))
+    // Locate the package + its expected checksum
+    const pkgRes = await fetchUpdatePackage()
+    if (!pkgRes.ok || !pkgRes.package) {
+      failHere(pkgRes.message)
+      return
+    }
+
     setSteps(prev => [
       ...prev.slice(0, -1),
       { ...prev[prev.length - 1], status: 'ok' },
-      { step: 'Verifying signature...', status: 'running' },
+      { step: 'Verifying integrity (SHA-256)...', status: 'running' },
     ])
 
-    await new Promise(r => setTimeout(r, 1000))
+    // EN 18031 secure-update control: a corrupt/tampered/unsigned package is rejected.
+    const verify = await verifyUpdatePackage(pkgRes.package.bytes, pkgRes.package.expectedSha256)
+    if (!verify.ok) {
+      failHere(verify.reason)
+      return
+    }
+
     setSteps(prev => [
       ...prev.slice(0, -1),
       { ...prev[prev.length - 1], status: 'ok' },
@@ -61,16 +83,11 @@ export default function UpdateModal({ isOpen, onClose }: UpdateModalProps) {
         ...prev.slice(0, -1),
         { ...prev[prev.length - 1], status: 'ok' },
       ])
-      setVersion(result.version || '')
+      setVersion(result.version || pkgRes.package!.version || '')
       setMessage(result.message)
       setStatus('success')
     } else {
-      setSteps(prev => [
-        ...prev.slice(0, -1),
-        { ...prev[prev.length - 1], status: 'error' },
-      ])
-      setMessage(result.message)
-      setStatus('error')
+      failHere(result.message)
     }
   }
 
@@ -104,7 +121,7 @@ export default function UpdateModal({ isOpen, onClose }: UpdateModalProps) {
             <div className="bg-secondary rounded-lg p-3 text-xs space-y-1">
               <p className="text-muted-foreground">The update will:</p>
               <p className="text-foreground">1. Find the update file on USB</p>
-              <p className="text-foreground">2. Verify digital signature</p>
+              <p className="text-foreground">2. Verify integrity (SHA-256)</p>
               <p className="text-foreground">3. Backup current version</p>
               <p className="text-foreground">4. Install new version</p>
               <p className="text-foreground">5. Restart services</p>

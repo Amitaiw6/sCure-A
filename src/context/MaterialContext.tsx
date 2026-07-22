@@ -32,7 +32,10 @@ interface MaterialContextType {
   addMaterial: (material: Omit<Material, 'id' | 'createdAt' | 'isPreset'>) => void
   updateMaterial: (id: string, data: { name: string; steps: CureStep[]; totalDuration: number }) => void
   addMaterialFromCsv: (fileName: string, csvContent: string) => { success: boolean; errors: string[] }
+  duplicateMaterial: (id: string) => Material | null
   removeMaterial: (id: string) => void
+  favoriteIds: string[]
+  toggleFavorite: (id: string) => void
   selectedMaterialId: string | null
   setSelectedMaterialId: (id: string | null) => void
   exportMaterialCsv: (id: string) => void
@@ -103,9 +106,11 @@ export function parseCsv(csvContent: string): CsvParseResult {
     // Nitrogen and Cooling don't need time
     let time = 0
     if (proc !== 'Cooling' && proc !== 'Nitrogen') {
+      // Bleaching may run up to 12 hours (720 min); other processes cap at 120 min.
+      const maxTime = proc === 'Bleacher' ? 720 : 120
       time = parseInt(cols[3])
-      if (isNaN(time) || time < 1 || time > 120) {
-        errors.push(`Row ${i}: Invalid time "${cols[3]}" (must be 1-120)`)
+      if (isNaN(time) || time < 1 || time > maxTime) {
+        errors.push(`Row ${i}: Invalid time "${cols[3]}" (must be 1-${maxTime})`)
         continue
       }
     }
@@ -140,7 +145,6 @@ export function parseCsv(csvContent: string): CsvParseResult {
       } else {
         step.coolingMode = 'medium'
       }
-    } else {
     }
 
     // Cure/Bleacher extended fields
@@ -190,16 +194,24 @@ export function parseCsv(csvContent: string): CsvParseResult {
       }
     }
 
-    // After Nitrogen: only Heating, Cure, Bleacher, or Cooling
+    // After Nitrogen: only Cure or Bleaching is allowed
     if (prev?.process === 'Nitrogen') {
-      if (s.process === 'Drying' || s.process === 'Nitrogen') {
-        errors.push(`Step ${s.step}: After nitrogen, only Heating, Cure, Bleacher, or Cooling is allowed`)
+      if (s.process !== 'Cure' && s.process !== 'Bleacher') {
+        errors.push(`Step ${s.step}: After nitrogen, only Cure or Bleaching is allowed`)
       }
     }
 
-    // Track N2 → must have a Heating/Cure/Bleacher after it, and a Cooling step somewhere
+    // After the Cure/Bleaching that followed an N₂ purge: only Cooling is allowed
+    if (prev && (prev.process === 'Cure' || prev.process === 'Bleacher')) {
+      const prevPrev = i > 1 ? steps[i - 2] : null
+      if (prevPrev?.process === 'Nitrogen' && s.process !== 'Cooling') {
+        errors.push(`Step ${s.step}: After the Cure/Bleaching that follows N₂, only Cooling is allowed`)
+      }
+    }
+
+    // Track N2 → must have a Cure/Bleacher after it, and a Cooling step to vent it
     if (s.process === 'Nitrogen') needsCoolingOrDrying = true
-    if (needsCoolingOrDrying && (s.process === 'Cooling' || s.process === 'Drying')) needsCoolingOrDrying = false
+    if (needsCoolingOrDrying && s.process === 'Cooling') needsCoolingOrDrying = false
 
     // Temperature must go up (unless after Cooling)
     if (s.process !== 'Cooling' && s.process !== 'Nitrogen' && s.temperature != null) {
@@ -215,17 +227,17 @@ export function parseCsv(csvContent: string): CsvParseResult {
     errors.push('Nitrogen must be vented — add a Cooling step after the N₂ purge')
   }
 
-  // If program has N₂, must have at least one Heating/Cure/Bleacher after it
+  // If program has N₂, must have at least one Cure/Bleacher after it
   const hasNitrogen = steps.some(s => s.process === 'Nitrogen')
   if (hasNitrogen) {
     let foundProcessAfterN2 = false
     let afterN2 = false
     for (const s of steps) {
       if (s.process === 'Nitrogen') afterN2 = true
-      if (afterN2 && (s.process === 'Heating' || s.process === 'Cure' || s.process === 'Bleacher')) { foundProcessAfterN2 = true; break }
+      if (afterN2 && (s.process === 'Cure' || s.process === 'Bleacher')) { foundProcessAfterN2 = true; break }
     }
     if (!foundProcessAfterN2) {
-      errors.push('Add a Heating, Cure, or Bleaching step after N₂ purge')
+      errors.push('Add a Cure or Bleaching step after N₂ purge')
     }
   }
 
@@ -246,17 +258,16 @@ function downloadCsvFile(name: string, csvContent: string) {
   URL.revokeObjectURL(url)
 }
 
+// Material programs are managed in PostgreSQL and read via the backend API.
+// When the backend is unreachable (dev / offline), fall back to a bundled demo set.
+import { DEMO_PRESETS, DEMO_USER_PROGRAMS } from '@/data/demo-data'
+
 async function loadUserMaterials(): Promise<Material[]> {
   try {
     const res = await fetch(`${API_BASE}/api/materials/user`)
     if (res.ok) return await res.json()
-  } catch { /* API not available */ }
-  // Fallback: load from static file (dev mode)
-  try {
-    const res = await fetch('/materials/user_materials.json')
-    if (res.ok) return await res.json()
-  } catch { /* ignore */ }
-  return []
+  } catch { /* backend not available */ }
+  return DEMO_USER_PROGRAMS
 }
 
 async function saveUserMaterials(materials: Material[]) {
@@ -266,26 +277,15 @@ async function saveUserMaterials(materials: Material[]) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(materials),
     })
-  } catch { /* API not available in dev mode */ }
+  } catch { /* backend not available */ }
 }
 
 async function loadPresets(): Promise<Material[]> {
   try {
-    const res = await fetch('/materials/presets/presets.json')
-    if (!res.ok) return []
-
-    const data: { name: string; steps: CureStep[] }[] = await res.json()
-    return data.map(entry => ({
-      id: `preset-${entry.name}`,
-      name: entry.name,
-      steps: entry.steps,
-      totalDuration: entry.steps.reduce((sum, s) => sum + (s.time || 0), 0),
-      createdAt: '',
-      isPreset: true,
-    }))
-  } catch {
-    return []
-  }
+    const res = await fetch(`${API_BASE}/api/materials/presets`)
+    if (res.ok) return await res.json()
+  } catch { /* backend not available */ }
+  return DEMO_PRESETS
 }
 
 const MaterialContext = createContext<MaterialContextType | null>(null)
@@ -294,6 +294,23 @@ export function MaterialProvider({ children }: { children: ReactNode }) {
   const [materials, setMaterials] = useState<Material[]>([])
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('scure-favorite-materials')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+
+  // Persist favorites locally (works for presets and user materials alike)
+  useEffect(() => {
+    localStorage.setItem('scure-favorite-materials', JSON.stringify(favoriteIds))
+  }, [favoriteIds])
+
+  const toggleFavorite = useCallback((id: string) => {
+    setFavoriteIds(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id])
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -353,11 +370,40 @@ export function MaterialProvider({ children }: { children: ReactNode }) {
     setMaterials(prev => prev.map(m => m.id === id ? { ...m, ...data } : m))
   }, [materials])
 
+  const duplicateMaterial = useCallback((id: string): Material | null => {
+    const mat = materials.find(m => m.id === id)
+    if (!mat) return null
+
+    // Build a unique "<name> Copy" name (Copy, Copy 2, Copy 3, ...)
+    const existingNames = materials.map(m => m.name)
+    let copyName = `${mat.name} Copy`
+    let n = 2
+    while (existingNames.includes(copyName)) {
+      copyName = `${mat.name} Copy ${n}`
+      n++
+    }
+
+    const newMaterial: Material = {
+      id: crypto.randomUUID(),
+      name: copyName,
+      steps: mat.steps.map(s => ({ ...s })),
+      totalDuration: mat.totalDuration,
+      createdAt: new Date().toISOString(),
+      isPreset: false, // a copy is always an editable user material
+    }
+
+    // Append to the end, alongside newly created user materials
+    setMaterials(prev => [...prev, newMaterial])
+    setSelectedMaterialId(newMaterial.id)
+    return newMaterial
+  }, [materials])
+
   const removeMaterial = useCallback((id: string) => {
     const mat = materials.find(m => m.id === id)
     if (mat?.isPreset) return
     setMaterials(prev => prev.filter(m => m.id !== id))
     setSelectedMaterialId(prev => prev === id ? null : prev)
+    setFavoriteIds(prev => prev.filter(f => f !== id))
   }, [materials])
 
   const exportMaterialCsv = useCallback((id: string) => {
@@ -369,7 +415,8 @@ export function MaterialProvider({ children }: { children: ReactNode }) {
 
   return (
     <MaterialContext.Provider value={{
-      materials, addMaterial, updateMaterial, addMaterialFromCsv, removeMaterial,
+      materials, addMaterial, updateMaterial, addMaterialFromCsv, duplicateMaterial, removeMaterial,
+      favoriteIds, toggleFavorite,
       selectedMaterialId, setSelectedMaterialId, exportMaterialCsv, isLoading
     }}>
       {children}

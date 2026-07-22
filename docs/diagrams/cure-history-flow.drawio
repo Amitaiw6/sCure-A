@@ -1,0 +1,144 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="cure-history-flow" name="sCure Cure History Flow">
+    <mxGraphModel dx="1664" dy="986" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1480" pageHeight="1040" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1">
+          <mxGeometry height="1000" width="560" as="geometry" />
+        </mxCell>
+        <mxCell id="n_list" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show list (newest first) + header count (N)" vertex="1">
+          <mxGeometry height="54" width="280" x="180" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="n_row" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Each row: status icon · material name · status badge&lt;br&gt;(Completed / Aborted / Error / Running) · started → ended time&lt;br&gt;· duration · steps X/Y (orange if incomplete)" vertex="1">
+          <mxGeometry height="96" width="320" x="160" y="482" as="geometry" />
+        </mxCell>
+        <mxCell id="re8" edge="1" parent="laneU" source="n_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_row">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_dlui" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show Download report button;&lt;br&gt;user taps it (optional)" vertex="1">
+          <mxGeometry height="58" width="300" x="230" y="800" as="geometry" />
+        </mxCell>
+        <mxCell id="n_notel" parent="laneU" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="No report button (viewing only)" vertex="1">
+          <mxGeometry height="48" width="260" x="190" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="e_view" parent="laneU" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="307" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="re11" edge="1" parent="laneU" source="n_notel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_view">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re12" edge="1" parent="laneU" source="d_tel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.955;exitY=0.524;exitDx=0;exitDy=0;exitPerimeter=0;" value="yes">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="860" y="530" />
+              <mxPoint x="870" y="530" />
+              <mxPoint x="870" y="710" />
+              <mxPoint x="380" y="710" />
+            </Array>
+            <mxPoint x="980.0000000000002" y="533.8181818181818" as="sourcePoint" />
+            <mxPoint x="380" y="800" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1">
+          <mxGeometry height="1000" width="440" x="560" as="geometry" />
+        </mxCell>
+        <mxCell id="d_tel" parent="laneF" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Row has telemetry samples?" vertex="1">
+          <mxGeometry height="84" width="220" x="90" y="488" as="geometry" />
+        </mxCell>
+        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1">
+          <mxGeometry height="1000" width="460" x="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="30" width="30" x="235" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n_tap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap History icon (top bar)" vertex="1">
+          <mxGeometry height="48" width="260" x="120" y="92" as="geometry" />
+        </mxCell>
+        <mxCell id="n_nav" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Cure History (/cure-history)&lt;br&gt;back arrow returns to Home" vertex="1">
+          <mxGeometry height="54" width="260" x="120" y="178" as="geometry" />
+        </mxCell>
+        <mxCell id="n_load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Load logs from localStorage&lt;br&gt;(scure-cure-history) — device-local" vertex="1">
+          <mxGeometry height="66" width="330" x="1060" y="174" as="geometry" />
+        </mxCell>
+        <mxCell id="d_empty" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Any cure sessions?" vertex="1">
+          <mxGeometry height="76" width="200" x="660" y="266" as="geometry" />
+        </mxCell>
+        <mxCell id="n_empty" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show &#39;No cure sessions yet&#39;" vertex="1">
+          <mxGeometry height="50" width="240" x="120" y="279" as="geometry" />
+        </mxCell>
+        <mxCell id="e_empty" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="227" y="356" as="geometry" />
+        </mxCell>
+        <mxCell id="n_gen" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="generateCureReport(log)&lt;br&gt;build HTML report from telemetry" vertex="1">
+          <mxGeometry height="60" width="250" x="640" y="800" as="geometry" />
+        </mxCell>
+        <mxCell id="n_dl" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Download HTML report to the device&lt;br&gt;(Blob) — no cloud" vertex="1">
+          <mxGeometry height="66" width="330" x="1060" y="798" as="geometry" />
+        </mxCell>
+        <mxCell id="e_report" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="26" width="26" x="237" y="918" as="geometry" />
+        </mxCell>
+        <mxCell id="note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;arcSize=6;fillColor=#F7F7F7;strokeColor=#999999;fontSize=11;align=left;verticalAlign=top;spacing=8;" value="&lt;b&gt;Data &amp; persistence&lt;/b&gt;&lt;br&gt;Device-local (localStorage &#39;scure-cure-history&#39;), newest-first, persists across reload / reboot. The list is populated by the Cure Process run (start / complete / abort / error + telemetry). Each log: material, status, started/ended, duration, steps X/Y, phases, targetTemp, telemetry samples. The page is read-only (no edit / delete)." vertex="1">
+          <mxGeometry height="120" width="470" x="640" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="re1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_tap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re2" edge="1" parent="1" source="n_tap" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_nav">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re3" edge="1" parent="1" source="n_nav" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_load" value="load">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="207" />
+              <mxPoint x="650" y="207" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re4" edge="1" parent="1" source="n_load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_empty">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re5" edge="1" parent="1" source="d_empty" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_empty" value="no">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re6" edge="1" parent="1" source="n_empty" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_empty">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re7" edge="1" parent="1" source="d_empty" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_list" value="yes">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="760" y="380" />
+              <mxPoint x="320" y="380" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re9" edge="1" parent="1" source="n_row" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_tel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re10" edge="1" parent="1" source="d_tel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_notel" value="no">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="760" y="590" />
+              <mxPoint x="320" y="590" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="re13" edge="1" parent="1" source="n_dlui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_gen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re14" edge="1" parent="1" source="n_gen" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_dl" value="save">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="re15" edge="1" parent="1" source="n_dl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_report">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1230" y="888" />
+              <mxPoint x="250" y="888" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

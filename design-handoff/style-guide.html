@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sCure — UI Style Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --background:#0a0a0a; --foreground:#ffffff; --card:#111111; --popover:#141414;
+    --primary:#0ea5e9; --secondary:#1a1a1a; --muted-foreground:#9ca3af;
+    --accent:#1a1a1a; --destructive:#dc2626; --border:#222222; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--background); color:var(--foreground);
+    font-family:'Geist','Segoe UI',system-ui,sans-serif; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1100px; margin:0 auto; padding:40px 28px 100px}
+  header.cover{border-bottom:1px solid var(--border); padding-bottom:24px; margin-bottom:8px}
+  h1{font-size:34px; font-weight:800; margin:0 0 6px; letter-spacing:-.5px}
+  h1 .accent{color:var(--primary)}
+  .sub{color:var(--muted-foreground); font-size:15px; margin:0}
+  h2{font-size:20px; font-weight:700; margin:48px 0 4px; padding-top:20px; border-top:1px solid var(--border)}
+  h2:first-of-type{border-top:none}
+  .hint{color:var(--muted-foreground); font-size:13px; margin:0 0 18px}
+  .note{background:rgba(14,165,233,.08); border-left:3px solid var(--primary); padding:10px 14px; border-radius:0 8px 8px 0; font-size:13.5px; margin:16px 0}
+  .grid{display:grid; gap:12px}
+  .cols-2{grid-template-columns:repeat(2,1fr)}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cols-4{grid-template-columns:repeat(4,1fr)}
+  .swatch{border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card)}
+  .swatch .chip{height:64px}
+  .swatch .meta{padding:8px 10px}
+  .swatch .name{font-size:13px; font-weight:600}
+  .swatch .hex{font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--muted-foreground)}
+  .swatch .use{font-size:11px; color:var(--muted-foreground); margin-top:3px; line-height:1.35}
+  .type-row{display:flex; align-items:baseline; gap:16px; padding:10px 0; border-bottom:1px solid var(--border)}
+  .type-row .label{width:120px; color:var(--muted-foreground); font-family:ui-monospace,monospace; font-size:12px; flex:none}
+  .card-demo{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px}
+  .btn{border:none; border-radius:10px; padding:8px 16px; font:inherit; font-size:13px; font-weight:500; cursor:default}
+  .btn.primary{background:var(--primary); color:#fff}
+  .btn.secondary{background:var(--secondary); color:var(--muted-foreground)}
+  .btn.destructive{background:var(--destructive); color:#fff}
+  .btn.outline{background:transparent; color:var(--foreground); border:1px solid var(--border)}
+  .pill{display:inline-block; border-radius:999px; padding:2px 12px; font-size:12px; font-weight:700}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .nav-ico{width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center}
+  .nav-ico.default{color:var(--muted-foreground)}
+  .nav-ico.active{background:rgba(14,165,233,.15); color:var(--primary)}
+  .nav-ico.error{color:var(--destructive)}
+  .radius-box{height:64px; background:var(--secondary); border:1px solid var(--border)}
+  .space-bar{background:var(--primary); height:16px; border-radius:3px}
+  .label-cap{font-size:11px; color:var(--muted-foreground); margin-top:6px; font-family:ui-monospace,monospace}
+  svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="cover">
+    <h1>sCure — UI <span class="accent">Style Guide</span></h1>
+    <p class="sub">Design language for the sCure resin-curing touchscreen. Dark-only theme · fixed 800×480 kiosk viewport · font Geist. Values are the source of truth from <code>src/index.css</code>.</p>
+  </header>
+
+  <div class="note"><b>Title color rule:</b> screen &amp; dialog titles are <b>white</b> (foreground). The accent cyan/blue (<code>primary</code>) is reserved for interactive accents and active states — <b>never</b> for titles.</div>
+
+  <!-- CORE COLORS -->
+  <h2>1 · Core Colors</h2>
+  <p class="hint">Surfaces stack from near-black background → card → popover. One accent only.</p>
+  <div class="grid cols-4">
+    <div class="swatch"><div class="chip" style="background:#0a0a0a"></div><div class="meta"><div class="name">background</div><div class="hex">#0a0a0a</div><div class="use">App background</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#111111"></div><div class="meta"><div class="name">card</div><div class="hex">#111111</div><div class="use">Card surface</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#141414"></div><div class="meta"><div class="name">popover</div><div class="hex">#141414</div><div class="use">Dialog / modal</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#1a1a1a"></div><div class="meta"><div class="name">secondary</div><div class="hex">#1a1a1a</div><div class="use">Top bar / 2nd btn / hover</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#0ea5e9"></div><div class="meta"><div class="name">primary</div><div class="hex">#0ea5e9</div><div class="use">Accent · active state · focus ring</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#ffffff"></div><div class="meta"><div class="name">foreground</div><div class="hex">#ffffff</div><div class="use">Titles / primary text</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#9ca3af"></div><div class="meta"><div class="name">muted-foreground</div><div class="hex">#9ca3af</div><div class="use">Labels / secondary text</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#dc2626"></div><div class="meta"><div class="name">destructive</div><div class="hex">#dc2626</div><div class="use">Error / destructive</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#222222"></div><div class="meta"><div class="name">border / input</div><div class="hex">#222222</div><div class="use">Hairlines, inputs</div></div></div>
+  </div>
+
+  <!-- STATUS -->
+  <h2>2 · Status &amp; Process Colors</h2>
+  <p class="hint">Semantic colors for machine status and cure steps (SRS §6).</p>
+  <div class="grid cols-3">
+    <div class="swatch"><div class="chip" style="background:#22c55e"></div><div class="meta"><div class="name">OK / completed</div><div class="hex">#22c55e</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#fb923c"></div><div class="meta"><div class="name">Warning / heating</div><div class="hex">#fb923c</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#ef4444"></div><div class="meta"><div class="name">Error / critical</div><div class="hex">#ef4444</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#14b8a6"></div><div class="meta"><div class="name">Cooling</div><div class="hex">#14b8a6</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#a855f7"></div><div class="meta"><div class="name">Cure (405nm)</div><div class="hex">#a855f7</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#3b82f6"></div><div class="meta"><div class="name">Bleaching (450nm)</div><div class="hex">#3b82f6</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#ffffff"></div><div class="meta"><div class="name">N₂ purge</div><div class="hex">#ffffff</div></div></div>
+  </div>
+
+  <!-- TYPOGRAPHY -->
+  <h2>3 · Typography</h2>
+  <p class="hint">Geist variable. Base body = 14px / line-height 1.4. Numbers use tabular figures.</p>
+  <div class="card-demo">
+    <div class="type-row"><span class="label">xl · 20 · 700</span><span style="font-size:20px;font-weight:700">Material List</span></div>
+    <div class="type-row"><span class="label">lg · 18 · 700</span><span style="font-size:18px;font-weight:700">Cure Process</span></div>
+    <div class="type-row"><span class="label">base · 16 · 600</span><span style="font-size:16px;font-weight:600">Section heading</span></div>
+    <div class="type-row"><span class="label">sm · 14 · 500</span><span style="font-size:14px;font-weight:500">Print #008 — body / primary row</span></div>
+    <div class="type-row"><span class="label">xs · 12 · 400</span><span style="font-size:12px;color:#9ca3af">Secondary / material name</span></div>
+    <div class="type-row"><span class="label">10 · 400</span><span style="font-size:10px;color:#9ca3af">Caption / fine print</span></div>
+    <div class="type-row" style="border:none"><span class="label">mono</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:14px">OR200001 · 24.5°C · 00:42</span></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <span style="font-weight:400">Regular 400</span><span style="font-weight:500">Medium 500</span>
+    <span style="font-weight:600">Semibold 600</span><span style="font-weight:700">Bold 700</span><span style="font-weight:800">Extrabold 800</span>
+  </div>
+
+  <!-- RADIUS -->
+  <h2>4 · Corner Radius</h2>
+  <p class="hint">Base <code>--radius</code> = 12px.</p>
+  <div class="grid cols-4">
+    <div><div class="radius-box" style="border-radius:7px"></div><div class="label-cap">sm · 7px</div></div>
+    <div><div class="radius-box" style="border-radius:10px"></div><div class="label-cap">md · 10px</div></div>
+    <div><div class="radius-box" style="border-radius:12px"></div><div class="label-cap">lg · 12px (base)</div></div>
+    <div><div class="radius-box" style="border-radius:17px"></div><div class="label-cap">xl · 17px</div></div>
+  </div>
+
+  <!-- SPACING -->
+  <h2>5 · Spacing</h2>
+  <p class="hint">4px base unit (Tailwind scale). Touch targets ≥ 44px.</p>
+  <div class="card-demo">
+    <div class="row" style="align-items:flex-end;gap:18px">
+      <div><div class="space-bar" style="width:4px"></div><div class="label-cap">1 · 4</div></div>
+      <div><div class="space-bar" style="width:6px"></div><div class="label-cap">1.5 · 6</div></div>
+      <div><div class="space-bar" style="width:8px"></div><div class="label-cap">2 · 8</div></div>
+      <div><div class="space-bar" style="width:10px"></div><div class="label-cap">2.5 · 10</div></div>
+      <div><div class="space-bar" style="width:12px"></div><div class="label-cap">3 · 12</div></div>
+      <div><div class="space-bar" style="width:16px"></div><div class="label-cap">4 · 16</div></div>
+    </div>
+  </div>
+
+  <!-- COMPONENTS -->
+  <h2>6 · Components</h2>
+  <p class="hint">Built on Radix/shadcn primitives. Large touch targets, rounded corners.</p>
+
+  <div class="grid cols-2" style="align-items:start">
+    <div class="card-demo">
+      <div class="label-cap" style="margin:0 0 10px">Buttons</div>
+      <div class="row">
+        <button class="btn primary">Start Cure</button>
+        <button class="btn secondary">REBOOT</button>
+        <button class="btn outline">Export LOGS</button>
+        <button class="btn destructive">Abort</button>
+      </div>
+    </div>
+
+    <div class="card-demo">
+      <div class="label-cap" style="margin:0 0 10px">Status pills</div>
+      <div class="row">
+        <span class="pill" style="background:rgba(34,197,94,.15);color:#22c55e">Completed</span>
+        <span class="pill" style="background:rgba(251,146,60,.15);color:#fb923c">Heating</span>
+        <span class="pill" style="background:rgba(239,68,68,.15);color:#ef4444">Critical</span>
+        <span class="pill" style="background:rgba(14,165,233,.15);color:#0ea5e9">Active</span>
+      </div>
+    </div>
+
+    <div class="card-demo">
+      <div class="label-cap" style="margin:0 0 10px">Top-bar nav icon states</div>
+      <div class="row" style="background:#1a1a1a;border-radius:12px;padding:6px">
+        <span class="nav-ico default" title="default">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18A15 15 0 0 1 12 3"/></svg>
+        </span>
+        <span class="nav-ico active" title="active (on /network)">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18A15 15 0 0 1 12 3"/></svg>
+        </span>
+        <span class="nav-ico error" title="disconnected">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18A15 15 0 0 1 12 3"/></svg>
+        </span>
+      </div>
+      <div class="label-cap">default (muted) · active (primary tint) · disconnected (red)</div>
+    </div>
+
+    <div class="card-demo">
+      <div class="label-cap" style="margin:0 0 10px">N₂ indicator &amp; card</div>
+      <div class="row">
+        <span style="width:36px;height:36px;border-radius:999px;border:2px solid #fff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">N₂</span>
+        <div style="background:#111;border:1px solid #222;border-radius:12px;padding:10px 14px">
+          <div style="color:#9ca3af;font-size:11px">Chamber Temp</div>
+          <div style="font-size:18px;font-weight:700;font-family:ui-monospace,monospace">24.5°C</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint" style="margin-top:40px">For the full, interactive UI (all screens, modals, live states) open the app build — see <b>README.html</b>. Machine-readable tokens: <b>design-tokens.json</b>.</p>
+
+</div>
+</body>
+</html>

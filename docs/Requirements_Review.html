@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S-Cure · Software Requirements Review</title>
+<style>
+  :root{
+    --bg:#070a12;--bg2:#0c1422;--panel:#111c2e;--panel2:#16243a;--line:#1e3149;
+    --cyan:#0ea5e9;--cyan-soft:#38bdf8;--deep:#0c4a6e;--text:#e8f0f8;--muted:#8aa2bd;
+    --green:#22c55e;--amber:#f59e0b;--red:#ef4444;--violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+
+  .deck{position:fixed;inset:0}
+  .slide{
+    position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+    padding:56px 84px 88px;opacity:0;visibility:hidden;transform:translateX(40px);
+    transition:opacity .45s ease, transform .45s ease;
+    background:
+      radial-gradient(1100px 700px at 85% -10%, rgba(14,165,233,.10), transparent 60%),
+      radial-gradient(900px 600px at 0% 110%, rgba(167,139,250,.08), transparent 55%),
+      linear-gradient(160deg,var(--bg) 0%, var(--bg2) 100%);
+  }
+  .slide.active{opacity:1;visibility:visible;transform:translateX(0)}
+  .slide.prev{transform:translateX(-40px)}
+
+  .brandbar{position:absolute;top:0;right:0;left:0;height:6px;background:linear-gradient(90deg,var(--cyan),var(--violet))}
+  .kicker{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:700;letter-spacing:.14em;color:var(--cyan-soft);text-transform:uppercase;margin-bottom:20px}
+  .kicker::before{content:"";width:26px;height:2px;background:var(--cyan)}
+  h1{font-size:58px;line-height:1.08;font-weight:800;letter-spacing:-.5px}
+  h2{font-size:38px;line-height:1.12;font-weight:800;margin-bottom:6px}
+  h2 .accent{color:var(--cyan-soft)}
+  .sub{font-size:19px;color:var(--muted);margin-top:12px;max-width:880px;line-height:1.55}
+
+  .footer{position:absolute;bottom:24px;right:84px;left:84px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:13px}
+  .footer .logo{font-weight:800;color:var(--text);letter-spacing:.5px}
+  .footer .logo span{color:var(--cyan-soft)}
+  .progress{position:absolute;bottom:0;right:0;left:0;height:4px;background:rgba(255,255,255,.05)}
+  .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--violet));transition:width .4s ease}
+
+  .cover{align-items:flex-start}
+  .cover h1{font-size:78px;background:linear-gradient(120deg,#fff 30%,var(--cyan-soft));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cover .tag{font-size:23px;color:var(--muted);margin-top:16px}
+  .cover .meta{margin-top:42px;display:flex;gap:12px;flex-wrap:wrap}
+  .pill{border:1px solid var(--line);background:var(--panel);padding:10px 18px;border-radius:999px;font-size:15px;color:var(--text);display:flex;gap:8px;align-items:center}
+  .pill b{color:var(--cyan-soft)}
+
+  .grid{display:grid;gap:16px;margin-top:26px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{background:linear-gradient(160deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:20px 22px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--cyan);opacity:.85}
+  .card.v::before{background:var(--violet)}.card.g::before{background:var(--green)}.card.a::before{background:var(--amber)}.card.r::before{background:var(--red)}
+  .card h3{font-size:19px;margin-bottom:7px;display:flex;align-items:center;gap:9px}
+  .card p{font-size:14.5px;color:var(--muted);line-height:1.5}
+  .card .ico{font-size:23px}
+  .num{font-size:32px;font-weight:800;color:var(--cyan-soft);line-height:1}
+  .num.v{color:var(--violet)}.num.g{color:var(--green)}.num.a{color:var(--amber)}
+
+  ul.clean{list-style:none;margin-top:22px;display:flex;flex-direction:column;gap:15px}
+  ul.clean li{display:flex;gap:15px;align-items:flex-start;font-size:18px;line-height:1.45}
+  ul.clean li .b{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--cyan-soft);font-weight:800;font-size:15px;margin-top:1px}
+  ul.clean li b{color:var(--text)}
+  ul.clean li span{color:var(--muted)}
+
+  .stat{display:flex;flex-direction:column;gap:5px}
+  .stat .big{font-size:44px;font-weight:800;color:var(--cyan-soft)}
+  .stat .lbl{font-size:14.5px;color:var(--muted)}
+
+  .badge{display:inline-block;padding:3px 11px;border-radius:999px;font-size:12.5px;font-weight:700}
+  .b-crit{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.4)}
+  .b-ai{background:rgba(167,139,250,.15);color:#c4b5fd;border:1px solid rgba(167,139,250,.4)}
+
+  /* screenshot showcase */
+  .showcase{display:grid;grid-template-columns:1.25fr .9fr;gap:48px;align-items:center;margin-top:24px}
+  .showcase.rev{grid-template-columns:.9fr 1.25fr}
+  .panel-frame{
+    border:2px solid var(--line);border-radius:18px;padding:10px;background:#04060b;
+    box-shadow:0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(14,165,233,.12);
+    position:relative;
+  }
+  .panel-frame::after{content:"7\" Touch · 800×480";position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+  .panel-frame img{display:block;width:100%;border-radius:10px}
+  .shot-points{display:flex;flex-direction:column;gap:14px}
+  .shot-points h2{margin-bottom:14px}
+  .shot-points .pt{display:flex;gap:12px;align-items:flex-start}
+  .shot-points .pt .d{width:9px;height:9px;border-radius:50%;background:var(--cyan);margin-top:7px;flex:0 0 auto;box-shadow:0 0 10px var(--cyan)}
+  .shot-points .pt b{font-size:17px}
+  .shot-points .pt p{font-size:14px;color:var(--muted);line-height:1.45}
+
+  .duo{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;margin-top:20px}
+  .duo .panel-frame::after{content:""}
+  .cap{text-align:center;margin-top:30px;font-size:13px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+
+  .stack{display:flex;flex-direction:column;gap:10px;margin-top:22px}
+  .layer{border:1px solid var(--line);border-radius:14px;padding:16px 22px;background:linear-gradient(90deg,var(--panel),transparent);display:flex;justify-content:space-between;align-items:center}
+  .layer .t{font-size:20px;font-weight:700}
+  .layer .d{font-size:14px;color:var(--muted)}
+  .layer .tech{font-size:13px;color:var(--cyan-soft);font-family:monospace}
+  .arrow{text-align:center;color:var(--muted);font-size:17px}
+
+  .tl{display:grid;grid-template-columns:repeat(4,1fr);margin-top:32px;position:relative}
+  .tl::before{content:"";position:absolute;top:26px;right:6%;left:6%;height:3px;background:var(--line)}
+  .tl .node{display:flex;flex-direction:column;align-items:center;text-align:center;position:relative;gap:13px;padding:0 10px}
+  .tl .dot{width:54px;height:54px;border-radius:50%;background:var(--panel);border:3px solid var(--cyan);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--cyan-soft);z-index:1;font-size:20px}
+  .tl .node h4{font-size:17px}
+  .tl .node p{font-size:13.5px;color:var(--muted);line-height:1.4}
+
+  .ask{border:1px solid rgba(14,165,233,.4);background:linear-gradient(160deg,rgba(14,165,233,.10),var(--panel))}
+  .big-ask{font-size:21px;line-height:1.45}
+
+  .controls{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:50}
+  .controls button{background:var(--panel);border:1px solid var(--line);color:var(--text);width:40px;height:40px;border-radius:10px;cursor:pointer;font-size:18px}
+  .controls button:hover{border-color:var(--cyan)}
+  .counter{position:fixed;top:20px;right:84px;font-size:14px;color:var(--muted);z-index:50}
+  .counter b{color:var(--cyan-soft)}
+</style>
+</head>
+<body>
+
+<div class="counter">Slide <b id="cur">1</b> / <span id="tot">16</span></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 · COVER -->
+  <section class="slide cover active">
+    <div class="brandbar"></div>
+    <div class="kicker">Software Requirements Review</div>
+    <h1>S-Cure</h1>
+    <div class="tag">Control Software for an Industrial UV / Thermal Curing System · v1.1</div>
+    <div class="meta">
+      <div class="pill">📅 June 2026</div>
+      <div class="pill">📄 <b>SRS-SCURE-2026-001</b></div>
+      <div class="pill">🤖 <b>AI-driven</b> development & QA</div>
+      <div class="pill">🖥️ Raspberry Pi CM5</div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Confidential</span></div>
+  </section>
+
+  <!-- 2 · AGENDA -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Agenda</div>
+    <h2>What we'll cover <span class="accent">today</span></h2>
+    <ul class="clean">
+      <li><span class="b">1</span><div><b>Product overview</b> <span>— what the system does and who uses it</span></div></li>
+      <li><span class="b">2</span><div><b>The software, live</b> <span>— a walkthrough of the actual screens</span></div></li>
+      <li><span class="b">3</span><div><b>Our approach: AI-driven development & QA</b> <span>— how we compress the timeline</span></div></li>
+      <li><span class="b">4</span><div><b>High-level requirements map</b> <span>— the core functional areas</span></div></li>
+      <li><span class="b">5</span><div><b>Quality, safety & architecture</b> <span>— how we define "done"</span></div></li>
+      <li><span class="b">6</span><div><b>What we need from you</b> <span>— decisions, approvals & open points</span></div></li>
+    </ul>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Agenda</span></div>
+  </section>
+
+  <!-- 3 · PRODUCT OVERVIEW (home screenshot) -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Product Overview</div>
+    <div class="showcase">
+      <div class="panel-frame"><img src="screenshots/home.png" alt="S-Cure home screen"></div>
+      <div class="shot-points">
+        <h2>What is <span class="accent">S-Cure</span>?</h2>
+        <div class="pt"><span class="d"></span><div><b>Industrial curing controller</b><p>UV / thermal post-processing for 3D prints, composites & dental models.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Self-contained kiosk</b><p>Runs fully offline — no internet dependency, single-user touch UI.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Material-driven</b><p>Factory presets delivered & refreshed from the cloud / version updates, plus user-defined CSV programs.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Prints from the printer</b><p>Recent print jobs arrive from the connected 3D printer / organization — tap one to cure the matching material.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Process history</b><p>The history button (↺) in the top bar opens a dedicated page — every cure run is saved with what was processed, when and with which program.</p></div></div>
+      </div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Home Screen — live</span></div>
+  </section>
+
+  <!-- 4 · LIVE: BOOT & SETUP -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Software, Live · First Impression</div>
+    <h2>Boot diagnostics & <span class="accent">guided setup</span></h2>
+    <div class="duo">
+      <div class="panel-frame"><img src="screenshots/boot.png" alt="S-Cure boot diagnostics"></div>
+      <div class="panel-frame"><img src="screenshots/setup.png" alt="S-Cure setup wizard"></div>
+    </div>
+    <p class="cap">14-point self-test on every boot · 3-step first-run setup wizard</p>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Boot & Setup — live</span></div>
+  </section>
+
+  <!-- 4b · LIVE: ONBOARDING / ORGANIZATION -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Software, Live · Onboarding</div>
+    <div class="showcase">
+      <div class="panel-frame"><img src="screenshots/setup-org.png" alt="S-Cure connect organization step"></div>
+      <div class="shot-points">
+        <h2>Connecting the box to <span class="accent">your ecosystem</span></h2>
+        <div class="pt"><span class="d"></span><div><b>Device identity</b><p>Naming the box gives it a clear identity across a fleet — shown in the top bar, history and reports.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Organization link (USB)</b><p>A CSV on a USB drive carries the organization UUID that ties this device to the customer's account.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Why this screen matters</b><p>It's what turns a standalone box into part of your world — enabling print jobs from the printers, cloud-delivered presets and full traceability.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Flexible</b><p>Link now, or skip and assign it later from Settings — no dead end.</p></div></div>
+      </div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Onboarding & Organization — live</span></div>
+  </section>
+
+  <!-- 5 · LIVE: CURE PROCESS -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Software, Live · Core Flow</div>
+    <div class="showcase rev">
+      <div class="shot-points">
+        <h2>The cure process — <span class="accent">step by step</span></h2>
+        <div class="pt"><span class="d"></span><div><b>Starts from the program</b><p>The selected material defines the full sequence of phases and their settings.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Heating ramp</b><p>The chamber rises from ambient to the target; the phase timer only starts once at target.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Sequential phases</b><p>Drying → Heating → Cure → Bleaching → Cooling, each with its own temperature, time & UV intensity.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Live monitoring</b><p>Per-phase circular gauges, countdown timer and % progress as the run advances.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Completion</b><p>The chamber cools, the door opens and the run is saved to print history.</p></div></div>
+      </div>
+      <div class="panel-frame"><img src="screenshots/cure.png" alt="S-Cure live cure process"></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Cure Process — live</span></div>
+  </section>
+
+  <!-- 6 · LIVE: CURE HISTORY -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Software, Live · Traceability</div>
+    <div class="showcase">
+      <div class="panel-frame"><img src="screenshots/cure-history.png" alt="S-Cure cure history page"></div>
+      <div class="shot-points">
+        <h2>Process history — <span class="accent">every run, logged</span></h2>
+        <div class="pt"><span class="d"></span><div><b>Opened from the top bar</b><p>The history button (↺) opens a dedicated page listing every cure run.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Full record per run</b><p>Material, date & time, duration, steps completed and final status.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Status at a glance</b><p>Color-coded: completed, aborted or error — instantly readable.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Exportable report</b><p>Runs with telemetry can be downloaded (↓) as a per-cure report.</p></div></div>
+      </div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Cure History — live</span></div>
+  </section>
+
+  <!-- 7 · LIVE: ALERTS -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Software, Live · Diagnostics</div>
+    <div class="showcase">
+      <div class="panel-frame"><img src="screenshots/alerts.png" alt="S-Cure alerts and errors"></div>
+      <div class="shot-points">
+        <h2>Alerts & <span class="accent">errors</span></h2>
+        <div class="pt"><span class="d"></span><div><b>Critical vs. warnings</b><p>Color-coded by severity; 8 critical errors and 7 warnings defined.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Scan-to-docs QR</b><p>Each error carries a QR code that opens its troubleshooting page.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Editable by support</b><p>CS can edit descriptions & steps via <code style="color:#c4b5fd">errors.json</code> — no code changes.</p></div></div>
+      </div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Alerts & Errors — live</span></div>
+  </section>
+
+  <!-- 8 · LIVE: SETTINGS -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Software, Live · Maintenance</div>
+    <div class="showcase rev">
+      <div class="shot-points">
+        <h2>Settings & <span class="accent">diagnostics</span></h2>
+        <div class="pt"><span class="d"></span><div><b>Hardware controls</b><p>Damper, fans, chamber heating — direct technician control with PWM sliders.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Built-in diagnostics</b><p>Fan test & LED diagnostic with pass/fail readouts.</p></div></div>
+        <div class="pt"><span class="d"></span><div><b>Field serviceable</b><p>Log export to USB and signed software updates from USB.</p></div></div>
+      </div>
+      <div class="panel-frame"><img src="screenshots/settings.png" alt="S-Cure settings page"></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Settings — live</span></div>
+  </section>
+
+  <!-- 9 · AI DEVELOPMENT -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Our Approach · Key Message</div>
+    <h2>Built <span class="accent">with AI</span> — ahead of schedule</h2>
+    <p class="sub">The software is built using advanced AI tooling. Instead of long development cycles, we move from <b>requirement → working code</b> at a dramatically higher pace.</p>
+    <div class="grid g3">
+      <div class="card v"><h3><span class="ico">⚡</span>Speed</h3><p>Direct translation of SRS requirements into implementation — days, not weeks, per module.</p></div>
+      <div class="card v"><h3><span class="ico">🔁</span>Fast iteration</h3><p>Change a requirement → the implementation follows almost immediately. High agility in review.</p></div>
+      <div class="card v"><h3><span class="ico">📐</span>Consistency</h3><p>One set of patterns, one code style, a modular architecture across the whole system.</p></div>
+    </div>
+    <div class="grid g3" style="margin-top:16px">
+      <div class="stat"><div class="big">23+</div><div class="lbl">files / modules already implemented</div></div>
+      <div class="stat"><div class="big">13</div><div class="lbl">functional requirement areas defined</div></div>
+      <div class="stat"><div class="big">100%</div><div class="lbl">work driven by a signed requirements doc</div></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>AI-Driven Development</span></div>
+  </section>
+
+  <!-- 10 · AI QA -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Our Approach · Key Message</div>
+    <h2>QA <span class="accent">with AI</span> — quality built into the process</h2>
+    <p class="sub">Testing is not pushed to the end — it is generated alongside development. Every new feature ships with dedicated QA tests, and a visual test tool already lives in the project.</p>
+    <div class="duo" style="grid-template-columns:1fr 1fr">
+      <ul class="clean" style="margin-top:0">
+        <li><span class="b">✓</span><div><b>A test for every feature</b> <span>— each capability includes QA cases</span></div></li>
+        <li><span class="b">✓</span><div><b>Coverage by SRS</b> <span>— a traceability matrix links requirement → test</span></div></li>
+        <li><span class="b">✓</span><div><b>Safety testing</b> <span>— Abort, door lock, temperature & N₂ thresholds</span></div></li>
+        <li><span class="b">✓</span><div><b>Fast feedback</b> <span>— regressions caught early, not in the field</span></div></li>
+      </ul>
+      <div class="card g">
+        <h3><span class="ico">🧪</span>Visual QA tool</h3>
+        <p>A standalone HTML tool lets non-developers run and document test scenarios, including a visual error editor — no code required.</p>
+        <div style="margin-top:14px"><span class="badge b-ai">AI-Generated Tests</span></div>
+      </div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>AI-Driven QA</span></div>
+  </section>
+
+  <!-- 11 · REQUIREMENTS MAP -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Requirements Map · High Level</div>
+    <h2>The core <span class="accent">functional areas</span></h2>
+    <div class="grid g3" style="margin-top:20px">
+      <div class="card"><h3>⚙️ Setup & Config</h3><p>First-run wizard, device identity, organization linking via USB</p></div>
+      <div class="card"><h3>🏠 Home Screen</h3><p>Recent prints, material list, selection & start cure</p></div>
+      <div class="card"><h3>📋 Material Mgmt</h3><p>Touch CSV builder, import, validation, presets</p></div>
+      <div class="card r"><h3>🔥 Cure Process</h3><p>Phase sequence, heating ramp, N₂, completion & Abort <span class="badge b-crit">critical</span></p></div>
+      <div class="card r"><h3>🌡️ Temp Control</h3><p>PI controller, delta-sigma DAC, fan management <span class="badge b-crit">critical</span></p></div>
+      <div class="card"><h3>🔔 Alerts & Errors</h3><p>Critical errors, warnings, QR docs, troubleshooting</p></div>
+      <div class="card a"><h3>🛠️ Settings & Diag</h3><p>Hardware controls, diagnostics, log export, power</p></div>
+      <div class="card"><h3>🌐 Network</h3><p>Status, static IP, diagnostics (ping / traceroute)</p></div>
+      <div class="card v"><h3>⬆️ Software Update</h3><p>RSA-4096 signed .scu, USB install, auto-rollback</p></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Requirements Map</span></div>
+  </section>
+
+  <!-- 12 · MEETS REQUIREMENTS + FAST CHANGE -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">What "a good system" means here</div>
+    <h2>A system that meets <span class="accent">your requirements</span></h2>
+    <p class="sub">Success isn't an abstract benchmark. It's simple: the system does exactly what the requirements say — and when a requirement changes, we adapt at a fast pace.</p>
+    <div class="grid g2" style="margin-top:22px">
+      <div class="card g"><h3><span class="ico">✅</span>Meets the requirements</h3><p style="font-size:16px">Built directly from the signed SRS. Every functional area is implemented and traceable — requirement → component → test.</p></div>
+      <div class="card v"><h3><span class="ico">⚡</span>Changes at a fast pace</h3><p style="font-size:16px">Because development is AI-driven, a changed requirement turns into working code quickly — low cost to adjust, even late in the process.</p></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h3>🛡️ Reliable</h3><p>Fully offline · persists across reboots · auto-rollback on failed update</p></div>
+      <div class="card a"><h3>👆 Usable</h3><p>≥44px touch targets · dark industrial theme · no keyboard needed</p></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Meets Requirements · Adapts Fast</span></div>
+  </section>
+
+  <!-- 13 · ARCHITECTURE -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Architecture</div>
+    <h2>Three layers, <span class="accent">clean separation of concerns</span></h2>
+    <div class="stack">
+      <div class="layer"><div><div class="t">Frontend · UI</div><div class="d">Touch interface, UX, state management</div></div><div class="tech">React 19 · TypeScript · Vite</div></div>
+      <div class="arrow">▲ HTTP ▼</div>
+      <div class="layer"><div><div class="t">Middleware · Logic</div><div class="d">API, hardware abstraction, system commands</div></div><div class="tech">Python · Flask</div></div>
+      <div class="arrow">▲ pybind11 ▼</div>
+      <div class="layer"><div><div class="t">Driver · Real-time control</div><div class="d">GPIO, PWM, SPI, PI loop</div></div><div class="tech">C++ 17</div></div>
+      <div class="arrow">▲ GPIO ▼</div>
+      <div class="layer"><div><div class="t">Hardware</div><div class="d">Heater, UV, door, N₂ valve, sensors</div></div><div class="tech">RPi CM5</div></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Architecture</span></div>
+  </section>
+
+  <!-- 14 · TIMELINE -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Timeline</div>
+    <h2>The acceleration plan <span class="accent">with AI</span></h2>
+    <p class="sub">With AI-driven development and QA, we significantly shorten every stage and enable frequent feedback rounds.</p>
+    <div class="tl">
+      <div class="node"><div class="dot">1</div><h4>Approve requirements</h4><p>This review — lock the SRS and close open decisions</p></div>
+      <div class="node"><div class="dot">2</div><h4>Modular build</h4><p>Build modules with AI against the signed requirements</p></div>
+      <div class="node"><div class="dot">3</div><h4>Automated QA</h4><p>Tests alongside development + hardware integration</p></div>
+      <div class="node"><div class="dot">4</div><h4>Acceptance & delivery</h4><p>Customer acceptance testing and release</p></div>
+    </div>
+    <p class="sub" style="margin-top:32px;text-align:center">⏩ The sooner requirements lock today, the sooner development begins.</p>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Timeline</span></div>
+  </section>
+
+  <!-- 15 · WHAT WE NEED -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">The Core Ask · What We Need From You</div>
+    <h2>To start fast — we need <span class="accent">four things</span></h2>
+    <div class="grid g2" style="margin-top:20px">
+      <div class="card ask"><h3><span class="ico">✅</span>1 · Requirements sign-off</h3><p class="big-ask">Formal approval of SRS v1.1 as the basis for development — or mark what needs to change.</p></div>
+      <div class="card ask"><h3><span class="ico">🎯</span>2 · Priority confirmation</h3><p class="big-ask">Confirm what is <b>critical</b> and <b>required for release</b>, and what can be deferred.</p></div>
+      <div class="card ask"><h3><span class="ico">❓</span>3 · Decisions on open points</h3><p class="big-ask">Answer the open questions (next slide) — values, thresholds and behaviors.</p></div>
+      <div class="card ask"><h3><span class="ico">📏</span>4 · Acceptance criteria</h3><p class="big-ask">Agree on what an "approved system" looks like — what's tested and when it's done.</p></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>The Core Ask</span></div>
+  </section>
+
+  <!-- 16 · OPEN QUESTIONS -->
+  <section class="slide">
+    <div class="brandbar"></div>
+    <div class="kicker">Decision Points</div>
+    <h2>Open questions <span class="accent">that need answers</span></h2>
+    <ul class="clean">
+      <li><span class="b">?</span><div><b>Hardware spec</b> <span>— final sign-off on sensors, temp limits (20–80°C) and N₂ pressure (≥6 bar)</span></div></li>
+      <li><span class="b">?</span><div><b>Test plan (TEST-PLAN-001)</b> <span>— currently TBD: who defines acceptance scenarios?</span></div></li>
+      <li><span class="b">?</span><div><b>Material profiles</b> <span>— presets are provisioned & updated from the cloud / version updates: which ship by default, and how are they pushed?</span></div></li>
+      <li><span class="b">?</span><div><b>Safety validation</b> <span>— confirm Abort behavior, door lock and the 10-min cooldown</span></div></li>
+      <li><span class="b">?</span><div><b>Branding & language</b> <span>— English-only UI, or is multi-language support required?</span></div></li>
+    </ul>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Open Questions</span></div>
+  </section>
+
+  <!-- 17 · CLOSE -->
+  <section class="slide cover">
+    <div class="brandbar"></div>
+    <div class="kicker">Summary & Next Steps</div>
+    <h1 style="font-size:56px">Ready to start</h1>
+    <p class="sub">With requirements approved and open points decided, we move straight into implementation — AI-driven development and QA shortening the path to a working product.</p>
+    <div class="grid g3" style="margin-top:32px">
+      <div class="card g"><h3>📌 Today</h3><p>Approve the SRS + answer open questions</p></div>
+      <div class="card v"><h3>🚀 Right after</h3><p>Begin modular implementation by priority</p></div>
+      <div class="card"><h3>🔄 Weekly</h3><p>Progress demos and feedback rounds</p></div>
+    </div>
+    <div class="footer"><span class="logo">S<span>·</span>Cure</span><span>Thank you · Questions?</span></div>
+  </section>
+
+</div>
+
+<div class="progress"><i id="bar"></i></div>
+<div class="controls">
+  <button id="prev" title="Previous">‹</button>
+  <button id="next" title="Next">›</button>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0; const tot=slides.length;
+  document.getElementById('tot').textContent=tot;
+  function show(n){
+    n=Math.max(0,Math.min(tot-1,n));
+    slides.forEach((s,k)=>{s.classList.remove('active','prev');if(k===n)s.classList.add('active');else if(k<n)s.classList.add('prev');});
+    i=n;
+    document.getElementById('cur').textContent=n+1;
+    document.getElementById('bar').style.width=((n+1)/tot*100)+'%';
+  }
+  document.getElementById('next').onclick=(e)=>{e.stopPropagation();show(i+1)};
+  document.getElementById('prev').onclick=(e)=>{e.stopPropagation();show(i-1)};
+  document.addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key))show(i+1);
+    if(['ArrowLeft','PageUp'].includes(e.key))show(i-1);
+    if(e.key==='Home')show(0);
+    if(e.key==='End')show(tot-1);
+  });
+  document.getElementById('deck').addEventListener('click',e=>{
+    if(e.clientX > window.innerWidth/2) show(i+1); else show(i-1);
+  });
+  show(0);
+</script>
+</body>
+</html>
