@@ -104,8 +104,8 @@ class StatusLeds(threading.Thread):
             pass
         self._door_open_since = None      # when door-open-with-outputs began
         # Internet reachability, refreshed in the background every
-        # internet_check_sec (TCP to a public DNS server, 2 s timeout).
-        self.net_check_sec = max(5.0, float(st.get('internet_check_sec', 15)))
+        # internet_check_sec (TCP 443 to real endpoints, 2 s timeout).
+        self.net_check_sec = max(2.0, float(st.get('internet_check_sec', 5)))
         self._internet_ok = True          # optimistic until the first check
         self._stop_evt = threading.Event()
         self._last_frame = None
@@ -116,11 +116,14 @@ class StatusLeds(threading.Thread):
         internet? Runs in its own thread so a dead network (2 s timeouts)
         never stalls the LED animation or the door watchdog."""
         import socket
+        # HTTPS endpoints, not DNS port 53: some routers intercept and answer
+        # DNS locally even with the uplink dead, which would fake "online".
+        targets = (('www.google.com', 443), ('1.1.1.1', 443))
         while True:
             ok = False
-            for host in ('8.8.8.8', '1.1.1.1'):
+            for host, port in targets:
                 try:
-                    socket.create_connection((host, 53), timeout=2).close()
+                    socket.create_connection((host, port), timeout=2).close()
                     ok = True
                     break
                 except OSError:
