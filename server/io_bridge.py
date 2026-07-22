@@ -87,6 +87,7 @@ class StatusLeds(threading.Thread):
         self.rtl = str(st.get('busy_direction', 'rtl')).lower() != 'ltr'
         self._stop_evt = threading.Event()
         self._last_frame = None
+        self._warned = False              # first loop error is logged once
 
     def _mode(self):
         b = self.bridge
@@ -142,8 +143,10 @@ class StatusLeds(threading.Thread):
                 if frame != self._last_frame:
                     self.leds.fill(frame, self.brightness)
                     self._last_frame = frame
-            except Exception:             # noqa: BLE001 - never kill the status loop
-                pass
+            except Exception as e:        # noqa: BLE001 - never kill the status loop
+                if not self._warned:      # surface the first failure in the journal
+                    self._warned = True
+                    print(f'[API] RGB status loop error (strip writes failing): {e}')
 
     def stop(self):
         self._stop_evt.set()

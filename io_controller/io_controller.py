@@ -132,7 +132,7 @@ SERVO_INVERTED = True
 # --- Direct GPIO (pinctrl) -------------------------------------------------
 GPIO_SIGNALS = {
     "NITROGEN_VALVE": 13,   # nitrogen valve - GPIO13
-    "RGB_LED": 12,          # RGB status LEDs (TM3909 driver, RGB_LV line) - GPIO12
+    "RGB_LED": 12,          # RGB status LEDs (TM1903 driver, RGB_LV line) - GPIO12
     # GPIO16 (450nm SSR), GPIO20 (405nm SSR) and GPIO27 (voltage routing) are
     # driven by SystemController per the wavelength mode - see components.json
     # "led_power". They are not manual signals.
@@ -680,7 +680,7 @@ class IOController:
 
 
 # ===========================================================================
-#  RGB status LEDs (TM3909 driver on GPIO12, WS2812-style serial protocol)
+#  RGB status LEDs (TM1903 driver on GPIO12, WS2812-style serial protocol)
 # ===========================================================================
 RGB_GPIO_DEFAULT = 12
 RGB_COUNT_DEFAULT = 16          # writing more pixels than fitted is harmless
@@ -724,6 +724,13 @@ class RGBLeds:
         self.count = int(cfg.get("count", RGB_COUNT_DEFAULT))
         pin_num = int(cfg.get("gpio", RGB_GPIO_DEFAULT))
         order = cfg.get("order", RGB_ORDER_DEFAULT)
+        # Define the data line as a DRIVEN OUTPUT (low) before the serial
+        # protocol takes over - left floating/input the TM1903 sees no edges
+        # and the strip stays dark.
+        try:
+            _pinctrl("set", str(pin_num), "op", "dl")
+        except Exception:            # noqa: BLE001 - pinctrl absent off-Pi
+            pass
         import board                 # lazy: only needed for RGB use
         import neopixel
         self.px = neopixel.NeoPixel(getattr(board, f"D{pin_num}"), self.count,
@@ -1271,7 +1278,7 @@ def build_parser():
     gp.add_parser("status").add_argument("name", nargs="?", default="all")
     gp.add_parser("list")
 
-    # --- rgb status LEDs (TM3909 on GPIO12, colors) ---
+    # --- rgb status LEDs (TM1903 on GPIO12, colors) ---
     rgb = sub.add_parser("rgb", help="RGB status LEDs - colors (GPIO12)").add_subparsers(dest="cmd", required=True)
     rs = rgb.add_parser("set"); rs.add_argument("color", help="name (red/green/...) or hex RRGGBB")
     rs.add_argument("brightness", nargs="?", type=float, default=100.0, help="0-100%% (default 100)")
