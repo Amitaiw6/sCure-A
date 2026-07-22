@@ -15,6 +15,20 @@ import App from './App.tsx'
 // Served / dev builds keep normal history routing.
 const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter
 
+// The whole UI is designed on a fixed 800x480 canvas (#root). Stretch it to
+// fill the physical screen — 1280x720 on the device's DSI panel, any size in
+// the Windows desktop window. CSS alone can't do this (scale needs unitless
+// numbers, calc(100vw/800) yields a length), so compute the factors here.
+export const DESIGN_W = 800
+export const DESIGN_H = 480
+function fitToScreen() {
+  const root = document.getElementById('root')
+  if (root) root.style.scale =
+    `${window.innerWidth / DESIGN_W} ${window.innerHeight / DESIGN_H}`
+}
+window.addEventListener('resize', fitToScreen)
+fitToScreen()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Router>

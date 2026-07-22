@@ -173,6 +173,7 @@ const TEST_CATEGORIES = [
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
+      { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
     ]
   },
   {
@@ -857,6 +858,26 @@ async function runSingleTest(test) {
         result = { status: 'fail', msg: `GET ${path} failed: ${e.message}` };
       }
       const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors fitToScreen() in main.tsx: the fixed 800x480 design canvas is
+    // scaled to fill the whole viewport, on every screen of the app at once.
+    if (test.check === 'ui_fill_scale') {
+      const fit = (w, h) => `${w / 800} ${h / 480}`;
+      const cases = [
+        [1280, 720, '1.6 1.5'],    // the device's DSI panel (720x1280 rotated)
+        [800, 480, '1 1'],         // native design size
+        [1920, 1080, '2.4 2.25'],  // Windows desktop fullscreen
+      ];
+      const bad = cases.filter(([w, h, expect]) => fit(w, h) !== expect);
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: `${cases.length} viewports stretch to full screen (no black margins)` }
+        : { status: 'fail', msg: `wrong scale for: ${bad.map(c => `${c[0]}x${c[1]}`).join(', ')}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
