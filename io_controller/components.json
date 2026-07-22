@@ -31,7 +31,7 @@
   "rgb": {
     "gpio": 12,
     "count": 21,
-    "order": "GRB",
+    "order": "RGB",
     "status": {
       "normal": "green",
       "fault": "red",
@@ -39,7 +39,7 @@
       "brightness": 40,
       "blink_sec": 0.5
     },
-    "_comment": "RGB status LEDs (TM3909 driver on GPIO12, WS2812-style serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (GRB is the common default; if red/green come out swapped change to RGB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open. Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed."
+    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open. Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed."
   },
 
   "heater": {

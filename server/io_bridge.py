@@ -40,6 +40,12 @@ FAN_GROUPS = {
 
 DOOR_RELEASE_SEC = 2.0        # door-magnet energize time for /api/door/open
 
+# Automatic machine-status colors on the RGB strip (StatusLeds below):
+# fault -> blink red, door open -> blink, all OK -> solid normal color.
+# A manual /api/rgb override (bridge._rgb_state['on']) pauses the automatic
+# colors while it is active; they repaint as soon as it turns off.
+RGB_AUTO_STATUS = True
+
 # LED diagnostic: the board thermistor sitting at each LED module
 LED_TEST_SENSORS = [
     ('Left LED',  'TEMP_LEFT_ORIGIN'),
@@ -90,6 +96,11 @@ class StatusLeds(threading.Thread):
         phase = False
         while not self._stop_evt.wait(self.blink_sec):
             try:
+                # Manual /api/rgb override active -> leave the strip alone;
+                # force a repaint of the status color when it ends.
+                if getattr(self.bridge, '_rgb_state', {}).get('on'):
+                    self._last_frame = None
+                    continue
                 mode = self._mode()
                 phase = not phase
                 if mode == 'fault':
