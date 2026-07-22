@@ -122,15 +122,24 @@ export default function CureProcessPage() {
   // surface that instead of silently animating a phase that never started.
   const commandedPhaseRef = useRef(-1)
   const [phaseError, setPhaseError] = useState<string | null>(null)
-  const commandPhase = useCallback(async (phase: (typeof phases)[number]) => {
+  // deferUv: a cure/bleacher step that starts with a ramp heats FIRST and the
+  // UV LEDs stay OFF until the measured chamber temp reaches the target
+  // (startPhaseUv below) — UV only ever runs at the cure temperature.
+  const commandPhase = useCallback(async (phase: (typeof phases)[number], deferUv = false) => {
     if (!hw.apiConnected) return
     const temp = phase.temp ?? hw.chamberTemp
     let res: { ok: boolean; message: string; code?: number } | null = null
     switch (phase.type) {
       case 'heating': res = await heatToTargetTemperature(temp); break
       case 'drying': res = await dryToTargetTemperature(temp); break
-      case 'cure': res = await cureUv405(temp, phase.intensity ?? 30); break
-      case 'bleacher': res = await cureUv450(temp, phase.intensity ?? 30); break
+      case 'cure':
+        res = deferUv ? await heatToTargetTemperature(temp)
+                      : await cureUv405(temp, phase.intensity ?? 30)
+        break
+      case 'bleacher':
+        res = deferUv ? await heatToTargetTemperature(temp)
+                      : await cureUv450(temp, phase.intensity ?? 30)
+        break
       case 'cooling': res = await coolToTargetTemperature(phase.temp ?? AMBIENT_TEMP, phase.coolingMode); break
     }
     if (res && !res.ok) {
@@ -138,6 +147,21 @@ export default function CureProcessPage() {
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
     } else {
       setPhaseError(null)
+    }
+  }, [hw.apiConnected, hw.chamberTemp])
+
+  // Ramp finished for a cure/bleacher step → NOW turn the UV on (the heating
+  // loop keeps running; cure_uv on an active loop just re-targets it).
+  const startPhaseUv = useCallback(async (phase: (typeof phases)[number] | undefined) => {
+    if (!hw.apiConnected || !phase) return
+    if (phase.type !== 'cure' && phase.type !== 'bleacher') return
+    const temp = phase.temp ?? hw.chamberTemp
+    const res = phase.type === 'cure'
+      ? await cureUv405(temp, phase.intensity ?? 30)
+      : await cureUv450(temp, phase.intensity ?? 30)
+    if (!res.ok) {
+      setPhaseError(res.message || 'UV refused')
+      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
     }
   }, [hw.apiConnected, hw.chamberTemp])
 
@@ -179,6 +203,8 @@ export default function CureProcessPage() {
         if (hw.chamberTemp >= targetTemp - 0.5) {
           setIsRamping(false)
           setHeating(false)
+          // At target: cure/bleacher steps switch the UV LEDs on only now
+          startPhaseUv(phases[activePhase])
         }
         return
       }
@@ -236,7 +262,7 @@ export default function CureProcessPage() {
       }
       return next
     })
-  }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, hw.apiConnected, hw.chamberTemp, setChamberTemp, setHeating, setNitrogenActive])
+  }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, hw.apiConnected, hw.chamberTemp, setChamberTemp, setHeating, setNitrogenActive, startPhaseUv])
 
   // Temperature stall detection: every 1 min during ramp or cooling, check progress
   const isInTempPhase = isRamping || (isRunning && phases[activePhase]?.type === 'cooling')
@@ -311,23 +337,25 @@ export default function CureProcessPage() {
       return
     }
 
-    commandPhase(currentPhase)
+    // Will this phase start with a heat-up ramp? (not cooling, not nitrogen,
+    // not first phase which is handled on mount). Cure/bleacher steps that
+    // ramp keep the UV off until the target temperature is reached.
+    const willRamp = activePhase > 0 && currentPhase.temp != null &&
+      currentPhase.type !== 'cooling' && currentPhase.temp > hw.chamberTemp
+
+    commandPhase(currentPhase, willRamp)
 
     // Cooling: remember where the drop starts so the gauge can show real progress
     if (currentPhase.type === 'cooling') {
       setCoolStartTemp(hw.chamberTemp)
     }
 
-    // Phases with temperature that need ramp (not cooling, not nitrogen, not first phase which is handled on mount)
-    if (activePhase > 0 && currentPhase.temp != null && currentPhase.type !== 'cooling') {
-      const currentTemp = hw.chamberTemp
-      if (currentPhase.temp > currentTemp) {
-        setIsRamping(true)
-        setRampElapsed(0)
-        setRampStartTemp(currentTemp)
-        setTargetTemp(currentPhase.temp)
-        setHeating(true)
-      }
+    if (willRamp && currentPhase.temp != null) {
+      setIsRamping(true)
+      setRampElapsed(0)
+      setRampStartTemp(hw.chamberTemp)
+      setTargetTemp(currentPhase.temp)
+      setHeating(true)
     }
   }, [activePhase, isRunning, isComplete, isRamping, n2Purging, phases, commandPhase, hw.chamberTemp, hw.apiConnected, setNitrogenActive, setTargetTemp, setHeating])
 
@@ -408,7 +436,8 @@ export default function CureProcessPage() {
       const currentPhase = phases[activePhase]
       const isCure = currentPhase?.type === 'cure'
       const isBleacher = currentPhase?.type === 'bleacher'
-      const uvOn = isCure || isBleacher
+      // UV is off while still ramping to the cure temperature
+      const uvOn = (isCure || isBleacher) && !isRamping
       const uvType = isCure ? '405nm' as const : isBleacher ? '450nm' as const : null
       // Real per-module LED thermistors from the IO board when available;
       // simulated around chamber temp only off-Pi.
@@ -428,7 +457,7 @@ export default function CureProcessPage() {
       })
     }, 5000)
     return () => clearInterval(interval)
-  }, [isRunning, isComplete, cureLogId, hw.chamberTemp, hw.ledTemps, activePhase, phases, recordTelemetry])
+  }, [isRunning, isComplete, cureLogId, hw.chamberTemp, hw.ledTemps, activePhase, phases, recordTelemetry, isRamping])
 
   // Auto-start on mount
   useEffect(() => {
@@ -444,14 +473,18 @@ export default function CureProcessPage() {
       )
       setCureLogId(id)
       const firstPhase = phases[0]
+      // First phase always ramps when it has a temperature — cure/bleacher
+      // steps hold their UV off until the chamber reaches the target.
+      const firstWillRamp = firstPhase?.temp != null &&
+        firstPhase.type !== 'cooling' && firstPhase.type !== 'nitrogen'
       if (firstPhase && firstPhase.type !== 'nitrogen') {
         commandedPhaseRef.current = 0
-        commandPhase(firstPhase)
+        commandPhase(firstPhase, firstWillRamp)
       }
       if (firstPhase?.type === 'cooling') {
         setCoolStartTemp(hw.apiConnected ? hw.chamberTemp : AMBIENT_TEMP)
       }
-      if (firstPhase?.temp != null && firstPhase.type !== 'cooling' && firstPhase.type !== 'nitrogen') {
+      if (firstWillRamp) {
         setIsRamping(true)
         setRampElapsed(0)
         // Real hardware: ramp starts from the measured chamber temperature

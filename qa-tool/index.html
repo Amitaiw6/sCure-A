@@ -186,6 +186,7 @@ const TEST_CATEGORIES = [
       { id: 'temp_stop', name: 'Stop Heating', desc: 'Stop heating and verify', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
       { id: 'temp_ramp_live', name: 'Chamber Temp Reaches Target', desc: 'Command heat to 40°C, then verify /api/state chamberTemp actually rises toward the target — the Cure screen displays and follows this measured value', check: 'temp_ramp_live' },
       { id: 'temp_ramp_logic', name: 'Ramp Ends At Measured Temp', desc: 'Cure screen logic: the ramp keeps going while the measured chamber temp is below target−0.5°C, and the hold timer starts only when it reaches the target', check: 'temp_ramp_logic' },
+      { id: 'uv_after_ramp', name: 'UV Waits For Target Temp', desc: 'Cure screen logic: a Cure/Bleacher step that ramps heats FIRST with the UV off; the LEDs turn on only when the measured chamber temp reaches the target', check: 'uv_after_ramp' },
     ]
   },
   {
@@ -858,6 +859,29 @@ async function runSingleTest(test) {
         result = { status: 'fail', msg: `GET ${path} failed: ${e.message}` };
       }
       const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors CureProcessPage: during a cure/bleacher ramp only the heater
+    // runs (deferUv); the UV command is sent when chamberTemp >= target-0.5.
+    if (test.check === 'uv_after_ramp') {
+      const uvAllowed = (chamberTemp, target, ramping) => !ramping || chamberTemp >= target - 0.5;
+      const deferUv = (stepTemp, chamberTemp) => stepTemp != null && stepTemp > chamberTemp;
+      const cases = [
+        // [stepTemp, chamberTemp at start] -> UV deferred?
+        [45, 25, true],    // cold chamber: heat first, UV waits
+        [45, 44.8, false], // already at target: UV allowed immediately
+        [null, 30, false], // no temperature on the step: UV immediately
+      ];
+      const bad = cases.filter(([t, c, expect]) => deferUv(t, c) !== expect);
+      const gateOk = uvAllowed(44.5, 45, true) && !uvAllowed(44.4, 45, true) && uvAllowed(20, 45, false);
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0 && gateOk
+        ? { status: 'pass', msg: 'UV stays off during the ramp and turns on at the target temperature' }
+        : { status: 'fail', msg: `wrong UV gating for: ${bad.map(c => `step ${c[0]}°C @ ${c[1]}°C`).join(', ') || 'threshold check'}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
