@@ -1128,15 +1128,26 @@ class SystemController:
 
     def heater_health_check(self):
         """Re-verify fan + thermistor while the heater runs. Returns a fault
-        reason (and turns the heater OFF) on failure, else None."""
+        reason (and turns the heater OFF) on failure, else None.
+
+        The fan RPM is read non-blocking (pulse delta since the last call),
+        which can momentarily return 0/low on a single sampling glitch even
+        while the fan spins fine. A single bad read must NOT abort a running
+        cure, so a below-threshold reading is CONFIRMED with a blocking
+        measure_rpm() before the heater is shut down; a real stopped fan stays
+        low, a glitch recovers. The thermistor check stays immediate - it is
+        the actual over-temperature safety net."""
         if not self.heater_on:
             return None
         cfg = self.heater_cfg()
+        min_rpm = cfg["min_fan_rpm"]
         rpm = self.read_rpm(cfg["fan"])
-        if rpm is None or rpm < cfg["min_fan_rpm"]:
-            why = f"heater fan failure (RPM={'?' if rpm is None else int(rpm)})"
-            self.disable_heater(why)
-            return why
+        if rpm is None or rpm < min_rpm:
+            rpm = self.measure_rpm(cfg["fan"])        # blocking re-confirm (1 s window)
+            if rpm is None or rpm < min_rpm:
+                why = f"heater fan failure (RPM={'?' if rpm is None else int(rpm)})"
+                self.disable_heater(why)
+                return why
         ok_t, _t, why = self._thermistor_state(cfg)
         if not ok_t:
             self.disable_heater(why)
