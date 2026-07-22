@@ -1,0 +1,89 @@
+{
+  "_comment": "CureBox component configuration. Edit THIS FILE ONLY (no source changes) to add LEDs, change fan assignments, fan speeds, default intensity, or wavelength gating. LED and fan names must match the channel names in io_controller (PCA_CHANNELS).",
+
+  "led_power": {
+    "ssr_450nm": 16,
+    "ssr_405nm": 20,
+    "routing": 17,
+    "default_mode": "405nm",
+    "min_intensity": 10,
+    "led_max_duty": 60,
+    "modes": {
+      "450nm": { "ssr_450nm": 1, "ssr_405nm": 0, "routing": 1 },
+      "405nm": { "ssr_450nm": 1, "ssr_405nm": 1, "routing": 0 }
+    },
+    "_comment": "Software-driven LED-driver SSR + wavelength-select GPIOs (OUTPUTS). GPIO16 = 450nm SSR, GPIO20 = 405nm SSR, GPIO17 = wavelength select (HIGH=450nm, LOW=405nm). GPIO17 is set BEFORE the SSRs and read back to verify before any LED may operate; on a mode change all LEDs turn off first, then GPIO17 changes. (GPIO27 is the door sensor, not here.) Below 'min_intensity' (user-facing brightness %) an LED counts as OFF: its PWM is zeroed, and once no LED remains on the SSRs (GPIO16 + GPIO20) are switched off. 'led_max_duty' is the PWM duty that equals 100% brightness (must match LED_MAX_DUTY in the dashboards); it converts min_intensity into duty for SystemController.set_led."
+  },
+
+  "door_sensor": {
+    "gpio": 27,
+    "open_level": 0,
+    "_comment": "Door interlock input on GPIO27 (read via pinctrl). 'open_level' is the pin level that means the door is OPEN. Bench-confirmed 2026-07-22: GPIO27 HIGH = door CLOSED, LOW = door OPEN, hence open_level 0. When open: all LEDs + heater are forced OFF and cannot be enabled until the door closes."
+  },
+
+  "leds": {
+    "LED_LEFT":  { "fan": "FAN_LEFT",  "fan_speed": 100, "intensity": 100, "modes": ["405nm"] },
+    "LED_RIGHT": { "fan": "FAN_RIGHT", "fan_speed": 100, "intensity": 100, "modes": ["405nm"] },
+    "LED_BACK":  { "fan": "FAN_BACK",  "fan_speed": 100, "intensity": 100, "modes": ["405nm"] },
+    "LED_DOOR":  { "fan": "FAN_DOOR",  "fan_speed": 100, "intensity": 100, "modes": ["405nm", "450nm"] }
+  },
+
+  "rgb": {
+    "gpio": 12,
+    "count": 16,
+    "order": "GRB",
+    "_comment": "RGB status LEDs (TM3909 driver on GPIO12, WS2812-style serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (GRB is the common default; if red/green come out swapped change to RGB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off."
+  },
+
+  "heater": {
+    "channel": "PWM_HEATER",
+    "fan": "FAN_HEATER",
+    "fan_pwm": 100,
+    "thermistor": "TEMP_CHAMBER",
+    "min_fan_rpm": 100,
+    "temp_valid_min": -20,
+    "temp_valid_max": 120,
+    "health_check_sec": 10,
+    "_comment": "Heater safety. Before enabling, the cooling 'fan' is started at 'fan_pwm' (default 100% PWM) and must spin above 'min_fan_rpm', and 'thermistor' must read a valid temperature within [temp_valid_min, temp_valid_max]. While the heater is on, both are re-checked every 'health_check_sec' seconds; any failure turns the heater OFF immediately. Change 'fan_pwm' here only - no source change or recompile needed; each heater activation reads the latest value."
+  },
+
+  "heating": {
+    "target_temp": 60.0,
+    "target_min": 30.0,
+    "sample_sec": 1.0,
+    "kp": 8.0,
+    "ki": 0.3,
+    "kd": 0.0,
+    "integ_max": 85.0,
+    "pwm_min": 0.0,
+    "pwm_max": 100.0,
+    "at_temp_band": 1.5,
+    "cooldown_sec": 600,
+    "cooldown_fan_pwm": 100,
+    "_comment": "Heating mode (temperature_control.py, closed-loop chamber temperature). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode; then PWM_HEATER duty is PI-controlled toward the target (kp in %%PWM per C, ki per C*s, integral capped at 'integ_max' %%). |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
+  },
+
+  "cooling": {
+    "damper_open_angle": 180,
+    "damper_closed_angle": 0,
+    "heater_fan": "FAN_HEATER",
+    "heater_fan_pwm": 100,
+    "chamber_fan": "FAN_COOLING",
+    "thermistor": "TEMP_CHAMBER",
+    "rate_min": 0.0,
+    "rate_max": 5.0,
+    "target_temp": 25.0,
+    "sample_sec": 2.0,
+    "window_sec": 30.0,
+    "kp": 25.0,
+    "ki": 2.0,
+    "pwm_start": 50.0,
+    "pwm_min": 0.0,
+    "pwm_max": 100.0,
+    "temp_valid_min": -20,
+    "temp_valid_max": 120,
+    "_comment": "Cooling mode (closed-loop cooling-rate control). Entry sequence: damper (servo) to 'damper_open_angle', then 'heater_fan' fixed at 'heater_fan_pwm' % for the whole mode, then 'chamber_fan' under PI control. The loop samples 'thermistor' every 'sample_sec' s, estimates dT/dt over a sliding 'window_sec' s window and drives the chamber-fan PWM so the measured cooling rate tracks the user setpoint (clamped to [rate_min, rate_max] C/min; the setpoint can be changed while running). The mode ends automatically at 'target_temp': fans off, damper to 'damper_closed_angle'. kp/ki are PI gains in %%PWM per (C/min); verify damper angles on the bench."
+  },
+
+  "_modes_note": "In 450nm mode only LEDs whose 'modes' list contains '450nm' may turn on (the Door LED). In 405nm mode every LED whose 'modes' contains '405nm' may turn on. Each LED's 'fan' starts automatically at 'fan_speed' when the LED is turned on, and stops when the LED is turned off."
+}

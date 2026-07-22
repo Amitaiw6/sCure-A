@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CureBox — Flow Diagram (HSI)</title>
+<style>
+  :root {
+    --bg: #0a0b0d;
+    --header: #0f1013;
+    --card: #17181c;
+    --card2: #202229;
+    --border: #26282f;
+    --text: #f2f4f7;
+    --muted: #868c97;
+    --accent: #2ea6ff;      /* I2C0 */
+    --i2c1: #a78bfa;        /* I2C1 */
+    --gpout: #22c55e;       /* GPIO / SW -> HW */
+    --gpin: #f59e0b;        /* sensor input / HW -> SW */
+    --safety: #e5484d;      /* hardware safety chain */
+    --logic: #5b6472;       /* logical / config link */
+    --warnbg: rgba(245, 158, 11, .08);
+    --zone: #101116;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9;
+    --header: #ffffff;
+    --card: #ffffff;
+    --card2: #eef1f5;
+    --border: #d4d9e1;
+    --text: #171a20;
+    --muted: #5b6472;
+    --accent: #0b7fd6;
+    --i2c1: #7c5cd6;
+    --gpout: #178744;
+    --gpin: #b26a05;
+    --safety: #c92c33;
+    --logic: #8b93a1;
+    --warnbg: rgba(178, 106, 5, .08);
+    --zone: #e9edf2;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f6f9; --header: #ffffff; --card: #ffffff; --card2: #eef1f5;
+      --border: #d4d9e1; --text: #171a20; --muted: #5b6472;
+      --accent: #0b7fd6; --i2c1: #7c5cd6; --gpout: #178744; --gpin: #b26a05;
+      --safety: #c92c33; --logic: #8b93a1; --warnbg: rgba(178,106,5,.08);
+      --zone: #e9edf2;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .mono, .node h4, .chip, .edge-label, .buslabel {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+
+  header.page {
+    background: var(--header);
+    border-bottom: 1px solid var(--border);
+    padding: 28px 32px 22px;
+  }
+  header.page h1 { margin: 0 0 4px; font-size: 26px; font-weight: 650; letter-spacing: -.01em; }
+  header.page h1 .sys { color: var(--accent); }
+  header.page p.sub { margin: 0; color: var(--muted); font-size: 14px; max-width: 78ch; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 18px;
+    margin-top: 14px; font-size: 12.5px; color: var(--muted);
+  }
+  .legend .key { display: inline-flex; align-items: center; gap: 7px; }
+  .legend .swatch { width: 26px; height: 0; border-top: 3px solid; border-radius: 2px; }
+  .legend .swatch.dashed { border-top-style: dashed; }
+  .k-i2c0 { border-color: var(--accent); }
+  .k-i2c1 { border-color: var(--i2c1); }
+  .k-gpout { border-color: var(--gpout); }
+  .k-gpin { border-color: var(--gpin); }
+  .k-safety { border-color: var(--safety); }
+  .k-logic { border-color: var(--logic); }
+
+  .diagram-scroll { overflow-x: auto; padding: 0 16px 8px; }
+  #diagram {
+    position: relative;
+    min-width: 1180px;
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 10px 8px 30px;
+  }
+  #wires {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .layer {
+    position: relative;
+    border: 1px dashed var(--border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--zone) 55%, transparent);
+    margin: 0 0 64px;
+    padding: 30px 14px 16px;
+  }
+  .layer > .ltitle {
+    position: absolute; top: -11px; left: 18px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 12px;
+    font-size: 12px; color: var(--muted); letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .lrow { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: stretch; }
+  .lrow + .lrow { margin-top: 14px; }
+
+  .node {
+    position: relative; z-index: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 13px 10px;
+    min-width: 130px; max-width: 240px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    transition: opacity .15s, border-color .15s, box-shadow .15s;
+    cursor: default;
+  }
+  .node h4 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: .01em; }
+  .node .he { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .node .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip {
+    font-size: 10px; color: var(--muted);
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; white-space: nowrap;
+  }
+  .node.warn { border-color: color-mix(in srgb, var(--gpin) 65%, var(--border)); background: linear-gradient(var(--warnbg), var(--warnbg)), var(--card); }
+  .node.hw   { border-color: color-mix(in srgb, var(--safety) 55%, var(--border)); }
+  .node.core { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+
+  .node.hot { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+  #diagram.focus .node:not(.hot):not(.peer) { opacity: .25; }
+  #diagram.focus .node.peer { opacity: 1; }
+  #diagram.focus path.edge:not(.hot) { opacity: .08; }
+  #diagram.focus text.edge-label:not(.hot) { opacity: .05; }
+
+  path.edge { fill: none; stroke-width: 1.8; opacity: .8; transition: opacity .15s; }
+  path.edge.hot { stroke-width: 2.6; opacity: 1; }
+  .e-i2c0 { stroke: var(--accent); }
+  .e-i2c1 { stroke: var(--i2c1); }
+  .e-gpout { stroke: var(--gpout); }
+  .e-gpin { stroke: var(--gpin); stroke-dasharray: 5 4; }
+  .e-safety { stroke: var(--safety); stroke-width: 2.4; }
+  .e-logic { stroke: var(--logic); stroke-dasharray: 2 4; }
+  text.edge-label {
+    font-size: 9.5px; fill: var(--muted);
+    paint-order: stroke; stroke: var(--bg); stroke-width: 3px;
+    transition: opacity .15s;
+  }
+  text.edge-label.hot { fill: var(--text); }
+
+  section.notes { max-width: 1100px; margin: 8px auto 60px; padding: 0 32px; }
+  section.notes h2 { font-size: 18px; margin: 34px 0 10px; }
+  section.notes h2::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--accent); margin-right: 9px; }
+  section.notes h2.warn::before { background: var(--gpin); }
+  section.notes h2.hw::before { background: var(--safety); }
+  section.notes ul { margin: 0; padding-left: 22px; font-size: 13.5px; color: var(--text); }
+  section.notes li { margin-bottom: 7px; }
+  section.notes li b { font-weight: 650; }
+  section.notes .src { color: var(--muted); font-size: 12px; margin-top: 26px; border-top: 1px solid var(--border); padding-top: 12px; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: .92em;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .node, path.edge, text.edge-label { transition: none; }
+  }
+</style>
+</head>
+<body>
+<header class="page">
+  <h1><span class="sys">CureBox</span> — Full Connection Flow Diagram</h1>
+  <p class="sub">Based on the HSI document (HSI sCure) — every component, which bus it communicates over, where it connects physically, and where the safety chains run. Hover over any component to highlight all of its connections.</p>
+  <div class="legend">
+    <span class="key"><span class="swatch k-i2c0"></span>I2C0 (GPIO0/1, header pins 27/28)</span>
+    <span class="key"><span class="swatch k-i2c1"></span>I2C1 (GPIO2/3, header pins 3/5)</span>
+    <span class="key"><span class="swatch k-gpout"></span>GPIO output (SW→HW)</span>
+    <span class="key"><span class="swatch k-gpin dashed"></span>Sensor input (HW→SW)</span>
+    <span class="key"><span class="swatch k-safety"></span>Hardware safety chain (no software)</span>
+    <span class="key"><span class="swatch k-logic dashed"></span>Logical / config / log link</span>
+  </div>
+</header>
+
+<div class="diagram-scroll">
+<div id="diagram">
+  <svg id="wires" aria-hidden="true"></svg>
+
+  <!-- Layer 1: software UI -->
+  <div class="layer">
+    <span class="ltitle">User layer — software</span>
+    <div class="lrow">
+      <div class="node" id="dash"><h4>control_dashboard.py</h4><div class="he">Engineering dashboard (Tkinter) — control + live monitoring</div></div>
+      <div class="node" id="cli"><h4>io_controller.py CLI</h4><div class="he">Command line: pca / io / temp / led / mode / cooling / safe</div></div>
+      <div class="node" id="cfg"><h4>components.json</h4><div class="he">Config: LED ↔ fan mapping, wavelength, heater safety, cooling mode, door sensor</div></div>
+      <div class="node" id="log"><h4>system_log.py</h4><div class="he">Central rotating log → logs/curebox.log</div></div>
+    </div>
+  </div>
+
+  <!-- Layer 2: logic -->
+  <div class="layer">
+    <span class="ltitle">Logic layer — io_controller.py</span>
+    <div class="lrow">
+      <div class="node core" id="sysctl"><h4>SystemController</h4>
+        <div class="he">High-level logic: wavelength gating (405/450nm), automatic fan per LED, heater safety (RPM + thermistor every 10s), software door interlock; delegates cooling to cooling_mode.py</div></div>
+      <div class="node core" id="coolmode"><h4>cooling_mode.py</h4>
+        <div class="he">Dedicated cooling module: damper open + heater fan 100% → chamber-fan PI loop on measured dT/dt (0–5 °C/min, live setpoint), auto-stop at target. Standalone: python3 cooling_mode.py &lt;rate&gt; [--target T]</div></div>
+      <div class="node core" id="ioctl"><h4>IOController</h4>
+        <div class="he">Owns all drivers: PCA9685, TCA6424A, 4×ADS1115, servo, tachometers, pinctrl. Set-and-verify write-back on every component</div></div>
+    </div>
+  </div>
+
+  <!-- Layer 3: buses -->
+  <div class="layer">
+    <span class="ltitle">Communication channels</span>
+    <div class="lrow">
+      <div class="node" id="i2c0"><h4>I2C0</h4><div class="he">GPIO0/GPIO1 · header pins 27/28 · smbus2</div></div>
+      <div class="node" id="i2c1"><h4>I2C1</h4><div class="he">GPIO2/GPIO3 · header pins 3/5 · smbus2</div></div>
+      <div class="node" id="pctl"><h4>pinctrl — direct GPIO</h4><div class="he">Read/write individual pins via the system tool</div></div>
+      <div class="node" id="gz"><h4>gpiozero</h4><div class="he">Servo (software PWM) + pulse counting for tachometers</div></div>
+    </div>
+  </div>
+
+  <!-- Layer 4: board ICs -->
+  <div class="layer">
+    <span class="ltitle">Board ICs (BRD-74205 rev07)</span>
+    <div class="lrow">
+      <div class="node" id="pca"><h4>U15 · PCA9685</h4><div class="he">16 PWM channels (12-bit)</div>
+        <div class="chips"><span class="chip">I2C0</span><span class="chip">0x55</span></div></div>
+      <div class="node" id="tca"><h4>U1 · TCA6424A</h4><div class="he">24-bit I/O expander: valves, motor direction, NFC</div>
+        <div class="chips"><span class="chip">I2C0</span><span class="chip">0x23</span><span class="chip">INT→GPIO5 (unused)</span></div></div>
+      <div class="node" id="u6"><h4>U6 · ADS1115</h4><div class="he">Temperature ADC — right/left side</div>
+        <div class="chips"><span class="chip">I2C0</span><span class="chip">0x49</span></div></div>
+      <div class="node" id="u8"><h4>U8 · ADS1115</h4><div class="he">Analog ADC — motor sensors / pressure</div>
+        <div class="chips"><span class="chip">I2C0</span><span class="chip">0x48</span></div></div>
+      <div class="node" id="u7"><h4>U7 · ADS1115</h4><div class="he">Temperature ADC — back/door/chamber</div>
+        <div class="chips"><span class="chip">I2C1</span><span class="chip">0x49</span></div></div>
+      <div class="node" id="u10"><h4>U10 · ADS1115</h4><div class="he">ADC — light sensors + analog inputs</div>
+        <div class="chips"><span class="chip">I2C1</span><span class="chip">0x48</span></div></div>
+    </div>
+  </div>
+
+  <!-- Layer 5: physical world -->
+  <div class="layer">
+    <span class="ltitle">Actuators · sensors · connectors</span>
+    <div class="lrow">
+      <div class="node" id="fans"><h4>6× Fans</h4><div class="he">HEATER·DOOR·RIGHT·LEFT·BACK·COOLING — PWM speed, inverted logic</div>
+        <div class="chips"><span class="chip">PCA ch0–5</span><span class="chip">J4…</span></div></div>
+      <div class="node hw" id="heater"><h4>Heater element</h4><div class="he">ON/OFF only (ch6 digital) · passes through relay K3 → J19</div>
+        <div class="chips"><span class="chip">PCA ch6</span><span class="chip">K3</span></div></div>
+      <div class="node" id="uvleds"><h4>4× UV LEDs</h4><div class="he">LEFT·RIGHT·BACK·DOOR — intensity 0–100%, gated by door + wavelength mode</div>
+        <div class="chips"><span class="chip">PCA ch11–14</span></div></div>
+      <div class="node" id="l298"><h4>L298N — 2 motors</h4><div class="he">Speed from PCA (ch8/9) + direction from TCA (P21/22/24/25) → J12 / J13</div></div>
+      <div class="node" id="misc"><h4>LIGHT1 · BOFA</h4><div class="he">General light (ch7) + external fume extractor (ch10)</div>
+        <div class="chips"><span class="chip">PCA ch7,10</span></div></div>
+    </div>
+    <div class="lrow">
+      <div class="node" id="doormag"><h4>Door magnet / valves</h4><div class="he">P27 = door magnet (also "valve 1" in code) · P26 = valve 2 → U4 → J8</div>
+        <div class="chips"><span class="chip">TCA P26/P27</span></div></div>
+      <div class="node warn" id="fanbits"><h4>FAN1–6_ONOFF</h4><div class="he">⚠ Bits P11–P16 — no code mapping to any specific physical fan (open item)</div></div>
+      <div class="node" id="nfc"><h4>NFC_RESET</h4><div class="he">Reset pulse (P01, active-low) — the NFC SPI data path is not implemented yet</div></div>
+      <div class="node" id="ntc1"><h4>4× NTC right/left</h4><div class="he">TEMP_RIGHT(_ORIGIN)·TEMP_LEFT(_ORIGIN) — beta equation (β=3934)</div></div>
+      <div class="node" id="ntc2"><h4>3× NTC back/door/chamber</h4><div class="he">TEMP_CHAMBER (NTC7, J11) is used by the heater safety check</div></div>
+      <div class="node warn" id="press"><h4>Pressure + analog</h4><div class="he">⚠ SENSOR1_A1 is used as pressure in the dashboard — placeholder transfer function (TODO)</div>
+        <div class="chips"><span class="chip">U8 AIN0–3</span><span class="chip">J12/J13</span></div></div>
+      <div class="node warn" id="lightsens"><h4>Light sensors + AIN</h4><div class="he">⚠ LIGHT1/2 — no front-end circuit found in the schematic · AIN2/3 with ×2 divider (J14)</div></div>
+    </div>
+    <div class="lrow">
+      <div class="node hw" id="ssr450"><h4>SSR 450nm</h4><div class="he">GPIO16 → relay K1 → J20 → external SSR</div>
+        <div class="chips"><span class="chip">GPIO16 · pin 36</span></div></div>
+      <div class="node hw" id="ssr405"><h4>SSR 405nm</h4><div class="he">GPIO20 → relay K2 → J17.3 → external SSR</div>
+        <div class="chips"><span class="chip">GPIO20 · pin 38</span></div></div>
+      <div class="node warn" id="route17"><h4>Wavelength routing</h4><div class="he">⚠ GPIO17 — HIGH=450 / LOW=405, written and read back. Not found in the schematic netlist — verify the pin is actually wired!</div>
+        <div class="chips"><span class="chip">GPIO17 · pin 11</span></div></div>
+      <div class="node warn" id="door27"><h4>Door sensor (read)</h4><div class="he">⚠ GPIO27 — passive tap on the external sensor line. Verify polarity: open_level should probably be 0</div>
+        <div class="chips"><span class="chip">GPIO27 · pin 13</span></div></div>
+      <div class="node" id="n2"><h4>Nitrogen valve</h4><div class="he">GPIO13 → Q15 → J24 — digital open/close</div>
+        <div class="chips"><span class="chip">GPIO13 · pin 33</span></div></div>
+      <div class="node" id="servo"><h4>SG90 servo — vent damper</h4><div class="he">GPIO8 → Q16 → J2_MOTOR_DAMPER · software PWM, no read-back verification</div>
+        <div class="chips"><span class="chip">GPIO8 · pin 24</span></div></div>
+      <div class="node" id="tach"><h4>6× Tachometers</h4><div class="he">Fan pulses (2/rev) → RPM — used by the heater safety check</div>
+        <div class="chips"><span class="chip">GPIO 22·23·24·19·25·26</span></div></div>
+    </div>
+  </div>
+
+  <!-- Layer 6: hardware interlock -->
+  <div class="layer">
+    <span class="ltitle">Hardware-only safety interlock — Safety.SchDoc (works even with the Pi halted)</span>
+    <div class="lrow">
+      <div class="node hw" id="doorsw"><h4>External door sensor</h4><div class="he">J17.2 — the source of the line: door open = no drive = UV off</div></div>
+      <div class="node hw" id="r125"><h4>R125 (1kΩ)</h4><div class="he">Feeds all three relays in common · ⚠ verify drive current is sufficient (~0.7mA per relay)</div></div>
+      <div class="node hw" id="relays"><h4>K1 · K2 · K3 (CPC-1017N)</h4><div class="he">Hardware gates: K1→SSR 450 · K2→SSR 405 · K3→heater. Without drive from the door, commands physically cannot pass</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<section class="notes">
+  <h2>How it all connects — in short</h2>
+  <ul>
+    <li><b>Command chain:</b> the dashboard and CLI talk to <code>SystemController</code> (logic and safety), which drives <code>IOController</code> (the drivers). Every write to a component is read back and verified (set&nbsp;&amp;&nbsp;verify).</li>
+    <li><b>Two I2C buses:</b> I2C0 carries the control side (PCA9685, TCA6424A, U6, U8) and I2C1 the sensing side (U7, U10). All bus access is serialized by a single lock.</li>
+    <li><b>LED ↔ fan:</b> turning a UV LED on automatically starts its mapped fan per <code>components.json</code> — no code changes needed.</li>
+    <li><b>Heater is doubly interlocked:</b> in software (its fan must spin above 100 RPM + thermistor must be valid, rechecked every 10 seconds) and in hardware (relay K3, energized only while the door is closed).</li>
+    <li><b>Door = three guards:</b> the external sensor line physically disconnects K1/K2/K3; GPIO27 only listens to the line and reports to software; <code>SystemController</code> forces everything off the moment the door opens and blocks re-enabling.</li>
+  </ul>
+
+  <h2 class="warn">Open items from the HSI (verify before relying on these)</h2>
+  <ul>
+    <li><b>GPIO17 (wavelength routing):</b> no net with this name was found on any schematic sheet — the board may never have been updated for the move from GPIO27. A floating pin would return a false "verified" read-back. Two stale comments in the code still say GPIO27.</li>
+    <li><b>Door sensor polarity:</b> working assumption: door closed = HIGH. Once confirmed, <code>components.json</code> <code>open_level</code> must change from 1 to 0 (the current value encodes the opposite polarity: safe but inoperable).</li>
+    <li><b>Door sensor output type:</b> if it is a contact/open-collector with a weak pull-up, the relay LEDs will clamp the line (~1.2V) — the SSRs won't enable and the Pi will read LOW even with the door closed. Bench check required (measure at J17.2, <code>pinctrl get 27</code>, continuity through K1).</li>
+    <li><b>FAN1–6_ONOFF:</b> the expander's fan-enable bits are not mapped to any physical fan and are not driven by the automatic control.</li>
+    <li><b>Pressure:</b> the dashboard reads <code>SENSOR1_A1</code> with a placeholder formula; the dedicated pressure sensor (ABP2, I2C 0x28) from the old HSI does not exist in the code — confirm what is actually populated on the board.</li>
+    <li><b>Light sensors LIGHT1/2:</b> no visible front-end circuit in the schematic — the sheet may be missing or the design may have changed.</li>
+    <li><b>LED_SWITCH (P05) and LED_ANALOG5 (ch15):</b> mapped but unused by any code — confirm their purpose before use.</li>
+  </ul>
+
+  <h2 class="hw">On the board but not in the code yet</h2>
+  <ul>
+    <li><b>Full NFC:</b> SPI (GPIO9/10/11) + CS (GPIO4) + INT (GPIO7) — only the reset pulse is implemented.</li>
+    <li><b>GPIO5:</b> TCA6424A expander interrupt (the code polls instead of using the interrupt).</li>
+    <li><b>GPIO21:</b> THER — thermal fault flag from U4 (moved from GPIO12 in the current revision, to be confirmed).</li>
+    <li><b>GPIO6 / GPIO18:</b> BOFA_EN and BOFA_PRESENT detect — there is currently no way to enable the BOFA front end.</li>
+    <li><b>GPIO12:</b> chamber RGB light (J3) — a hardware-PWM pin, not implemented.</li>
+    <li><b>UART (GPIO14/15 → J23):</b> standard debug console.</li>
+  </ul>
+
+  <p class="src">Source: HSI sCure (3).xlsx — 93 rows, including address/bus corrections against io_controller.py and the BRD-74205 rev07 netlist. Updated: July 2026.</p>
+</section>
+
+<script>
+(function () {
+  const diagram = document.getElementById('diagram');
+  const svg = document.getElementById('wires');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // from, to, class, label
+  const EDGES = [
+    // UI -> logic
+    ['dash', 'sysctl', 'logic', ''],
+    ['cli', 'sysctl', 'logic', ''],
+    ['cfg', 'sysctl', 'logic', 'config'],
+    ['dash', 'log', 'logic', ''],
+    ['sysctl', 'log', 'logic', 'log'],
+    ['sysctl', 'ioctl', 'logic', ''],
+    // logic -> buses
+    ['ioctl', 'i2c0', 'i2c0', 'smbus2'],
+    ['ioctl', 'i2c1', 'i2c1', 'smbus2'],
+    ['ioctl', 'pctl', 'gpout', 'pinctrl'],
+    ['ioctl', 'gz', 'gpout', 'gpiozero'],
+    ['sysctl', 'pctl', 'gpout', 'led_power'],
+    // buses -> chips
+    ['i2c0', 'pca', 'i2c0', '0x55'],
+    ['i2c0', 'tca', 'i2c0', '0x23'],
+    ['i2c0', 'u6', 'i2c0', '0x49'],
+    ['i2c0', 'u8', 'i2c0', '0x48'],
+    ['i2c1', 'u7', 'i2c1', '0x49'],
+    ['i2c1', 'u10', 'i2c1', '0x48'],
+    // PCA9685 outputs
+    ['pca', 'fans', 'gpout', 'ch0–5 PWM'],
+    ['pca', 'heater', 'gpout', 'ch6'],
+    ['pca', 'uvleds', 'gpout', 'ch11–14'],
+    ['pca', 'l298', 'gpout', 'ch8/9 EN'],
+    ['pca', 'misc', 'gpout', 'ch7,10'],
+    // TCA outputs
+    ['tca', 'l298', 'gpout', 'P2x IN1/IN2'],
+    ['tca', 'doormag', 'gpout', 'P26/P27'],
+    ['tca', 'fanbits', 'gpout', 'P11–16'],
+    ['tca', 'nfc', 'gpout', 'P01'],
+    // ADC inputs (HW -> SW, dashed amber, arrow up)
+    ['ntc1', 'u6', 'gpin', 'AIN0–3'],
+    ['ntc2', 'u7', 'gpin', 'AIN0–2'],
+    ['press', 'u8', 'gpin', 'AIN0–3'],
+    ['lightsens', 'u10', 'gpin', 'AIN0–3'],
+    // direct GPIO
+    ['pctl', 'ssr450', 'gpout', 'GPIO16'],
+    ['pctl', 'ssr405', 'gpout', 'GPIO20'],
+    ['pctl', 'route17', 'gpout', 'GPIO17 ⇄'],
+    ['pctl', 'n2', 'gpout', 'GPIO13'],
+    ['door27', 'pctl', 'gpin', 'GPIO27'],
+    ['gz', 'servo', 'gpout', 'GPIO8'],
+    ['tach', 'gz', 'gpin', 'RPM'],
+    // hardware interlock chain
+    ['doorsw', 'r125', 'safety', ''],
+    ['r125', 'relays', 'safety', ''],
+    ['relays', 'ssr450', 'safety', 'K1'],
+    ['relays', 'ssr405', 'safety', 'K2'],
+    ['relays', 'heater', 'safety', 'K3'],
+    ['doorsw', 'door27', 'safety', 'D10 tap'],
+  ];
+
+  function anchor(el, side) {
+    const d = diagram.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const x = r.left - d.left + r.width / 2;
+    if (side === 'top') return [x, r.top - d.top];
+    return [x, r.bottom - d.top];
+  }
+
+  function draw() {
+    svg.innerHTML = '';
+    const defs = document.createElementNS(NS, 'defs');
+    const colors = { i2c0: 'var(--accent)', i2c1: 'var(--i2c1)', gpout: 'var(--gpout)', gpin: 'var(--gpin)', safety: 'var(--safety)', logic: 'var(--logic)' };
+    for (const [k, c] of Object.entries(colors)) {
+      const m = document.createElementNS(NS, 'marker');
+      m.setAttribute('id', 'arr-' + k);
+      m.setAttribute('viewBox', '0 0 8 8');
+      m.setAttribute('refX', '7'); m.setAttribute('refY', '4');
+      m.setAttribute('markerWidth', '5.5'); m.setAttribute('markerHeight', '5.5');
+      m.setAttribute('orient', 'auto-start-reverse');
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', 'M0,0 L8,4 L0,8 z');
+      p.setAttribute('fill', c);
+      m.appendChild(p);
+      defs.appendChild(m);
+    }
+    svg.appendChild(defs);
+
+    for (const [from, to, cls, label] of EDGES) {
+      const a = document.getElementById(from), b = document.getElementById(to);
+      if (!a || !b) continue;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const downward = rb.top >= ra.bottom - 4;
+      let p0, p1;
+      if (downward) { p0 = anchor(a, 'bottom'); p1 = anchor(b, 'top'); }
+      else { p0 = anchor(a, 'top'); p1 = anchor(b, 'bottom'); }
+      const dy = Math.max(26, Math.abs(p1[1] - p0[1]) * 0.45) * (downward ? 1 : -1);
+      const c1 = [p0[0], p0[1] + dy], c2 = [p1[0], p1[1] - dy];
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', `M${p0[0]},${p0[1]} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${p1[0]},${p1[1]}`);
+      path.setAttribute('class', 'edge e-' + cls);
+      path.setAttribute('marker-end', `url(#arr-${cls})`);
+      path.dataset.from = from; path.dataset.to = to;
+      svg.appendChild(path);
+      if (label) {
+        // cubic bezier midpoint
+        const mx = (p0[0] + 3 * c1[0] + 3 * c2[0] + p1[0]) / 8;
+        const my = (p0[1] + 3 * c1[1] + 3 * c2[1] + p1[1]) / 8;
+        const t = document.createElementNS(NS, 'text');
+        t.setAttribute('x', mx + 4); t.setAttribute('y', my - 3);
+        t.setAttribute('class', 'edge-label');
+        t.dataset.from = from; t.dataset.to = to;
+        t.textContent = label;
+        svg.appendChild(t);
+      }
+    }
+  }
+
+  let focused = null;
+  function setFocus(id) {
+    focused = id;
+    diagram.classList.toggle('focus', !!id);
+    const peers = new Set();
+    svg.querySelectorAll('path.edge, text.edge-label').forEach(el => {
+      const hot = id && (el.dataset.from === id || el.dataset.to === id);
+      el.classList.toggle('hot', !!hot);
+      if (hot) { peers.add(el.dataset.from); peers.add(el.dataset.to); }
+    });
+    diagram.querySelectorAll('.node').forEach(n => {
+      n.classList.toggle('hot', n.id === id);
+      n.classList.toggle('peer', peers.has(n.id) && n.id !== id);
+    });
+  }
+
+  diagram.querySelectorAll('.node').forEach(n => {
+    n.addEventListener('mouseenter', () => setFocus(n.id));
+    n.addEventListener('mouseleave', () => setFocus(null));
+    n.addEventListener('click', (e) => { e.stopPropagation(); setFocus(focused === n.id ? null : n.id); });
+    n.setAttribute('tabindex', '0');
+    n.addEventListener('focus', () => setFocus(n.id));
+    n.addEventListener('blur', () => setFocus(null));
+  });
+  document.addEventListener('click', () => setFocus(null));
+
+  draw();
+  let raf = null;
+  new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); }).observe(diagram);
+  window.addEventListener('resize', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); });
+})();
+</script>
+
+</body>
+</html>
