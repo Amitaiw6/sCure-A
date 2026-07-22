@@ -313,12 +313,27 @@ export default function CureProcessPage() {
     navigate('/')
   }
 
-  // SAFETY: the door opened mid-process. The server watchdog (2 s status
-  // loop) has already forced every output off — stop the program here too
-  // instead of letting the phase timers keep running (Err 6016).
+  // SAFETY: the door opened mid-process. The server watchdog gives a grace
+  // period (10 s) to close it — meanwhile a countdown warning is shown here.
+  // Only when the server flags doorAborted (the door STAYED open past the
+  // grace) is the program stopped (Err 6016).
+  const [doorCountdown, setDoorCountdown] = useState<number | null>(null)
+  useEffect(() => {
+    if (!isRunning || isComplete || !hw.apiConnected || hw.doorClosed !== false) {
+      setDoorCountdown(null)
+      return
+    }
+    setDoorCountdown(10)
+    const iv = setInterval(
+      () => setDoorCountdown(prev => (prev === null || prev <= 0 ? prev : prev - 1)),
+      1000)
+    return () => clearInterval(iv)
+  }, [isRunning, isComplete, hw.apiConnected, hw.doorClosed])
+
   useEffect(() => {
     if (!isRunning || isComplete) return
-    if (!hw.apiConnected || hw.doorClosed !== false) return
+    if (!hw.apiConnected || !hw.doorAborted) return
+    setDoorCountdown(null)
     stopCureOutputs(true)
     setIsRunning(false)
     setIsRamping(false)
@@ -330,7 +345,7 @@ export default function CureProcessPage() {
     if (cureLogId) abortCure(cureLogId, activePhase)
     window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: 6016 } }))
     navigate('/')
-  }, [isRunning, isComplete, hw.apiConnected, hw.doorClosed, cureLogId, activePhase,
+  }, [isRunning, isComplete, hw.apiConnected, hw.doorAborted, cureLogId, activePhase,
       abortCure, navigate, setHeating, setCooling, setUv, setNitrogenActive])
 
   // When entering a new phase: command the hardware, then start ramp / N2 purge
@@ -801,6 +816,28 @@ export default function CureProcessPage() {
         onClose={() => setShowAbort(false)}
         onAbort={handleAbort}
       />
+
+      {/* Door opened mid-process: grace-period countdown before the server
+          aborts the run (Err 6016). Closing the door resumes normally. */}
+      {doorCountdown !== null && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center">
+          <div className="bg-zinc-900 border-2 border-red-500 rounded-2xl p-6 mx-8 max-w-md text-center">
+            <AlertTriangle size={44} className="text-red-500 mx-auto mb-3" />
+            <h2 className="text-xl font-bold text-white mb-2">
+              Door Open — Process Paused
+            </h2>
+            <p className="text-zinc-300">
+              The chamber door was opened during an active process.
+              Running with an open chamber is not permitted.
+            </p>
+            <p className="text-zinc-300 mt-1 font-semibold">
+              Close the door now, or the process will be aborted in
+            </p>
+            <div className="text-5xl font-bold text-red-500 my-3">{doorCountdown}</div>
+            <p className="text-zinc-500 text-sm">seconds</p>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

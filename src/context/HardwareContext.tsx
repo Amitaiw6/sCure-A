@@ -11,6 +11,8 @@ export interface HardwareState {
   chamberTemp: number
   targetTemp: number | null
   doorClosed: boolean
+  /** True while the server's door watchdog has aborted a process (Err 6016) */
+  doorAborted: boolean
   isHeating: boolean
   heatingStartTime: number | null
   isCooling: boolean
@@ -54,6 +56,7 @@ const defaultState: HardwareState = {
   chamberTemp: 24.0,
   targetTemp: null,
   doorClosed: true,
+  doorAborted: false,
   isHeating: false,
   heatingStartTime: null,
   isCooling: false,
@@ -156,6 +159,7 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
             apiConnected: true,
             chamberTemp: data.chamberTemp != null ? Math.round(data.chamberTemp * 10) / 10 : prev.chamberTemp,
             doorClosed: data.doorClosed ?? prev.doorClosed,
+            doorAborted: data.doorAborted ?? false,
             targetTemp: data.targetTemp !== undefined ? data.targetTemp : prev.targetTemp,
             isHeating: data.isHeating ?? prev.isHeating,
             isCooling: data.isCooling ?? prev.isCooling,

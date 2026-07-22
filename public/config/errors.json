@@ -382,15 +382,16 @@
     {
       "code": 6016,
       "key": "DOOR_OPENED_MID_PROCESS",
-      "message": "Door Opened During Process",
+      "message": "Door Opened — Process Aborted",
       "severity": "critical",
       "category": "safety",
       "layer": "daemon",
-      "description": "The chamber door was opened while a cure process was running. The safety watchdog aborted the process and forced every output off (heater, UV, cooling, fans, nitrogen, BOFA, damper). The process cannot resume — start a new cure after closing the door.",
+      "description": "The chamber door was opened during an active process and remained open for more than 10 seconds. Running with an open chamber is not permitted, so for your safety the process was stopped and all outputs were switched off (heater, UV, cooling, fans, nitrogen). The interrupted cure cannot be resumed.",
       "troubleshooting": [
         "Close and seal the chamber door",
-        "Verify the part — the interrupted cure may be incomplete",
-        "Start a new cure program from the beginning"
+        "Inspect the part — an interrupted cure may be incomplete",
+        "Start a new cure program from the beginning",
+        "If the door was not physically opened, check the door sensor (GPIO27)"
       ],
       "supportUrl": "https://docs.scure.com/errors/6016"
     },

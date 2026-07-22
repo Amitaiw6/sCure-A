@@ -295,7 +295,7 @@ const TEST_CATEGORIES = [
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
       { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): any fault → BLINKING red beats door-open; open door → BLINKING door color; process running (heat/cool/UV) → yellow comet moving right-to-left; all OK → solid normal color; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
       { id: 'led_status_loop', name: 'LED Status Loop Every 2s', desc: 'StatusLeds watchdog re-classifies the machine state every status_sec=2s (animation keeps its own faster ticks) — any state change reaches the strip within 2 seconds', check: 'led_status_loop' },
-      { id: 'io_door_abort', name: 'Door-Open Safety Abort', desc: 'The 2s watchdog: door opened while ANY output is live (heater/cooling/UV/fans/N2/BOFA) → process aborted + ALL outputs forced off (Err 6016); door open while idle or an unreadable sensor never aborts', check: 'io_door_abort' },
+      { id: 'io_door_abort', name: 'Door-Open Safety Abort', desc: 'Watchdog: door opened while ANY output is live → 10s countdown warning on screen; if it STAYS open → process aborted + ALL outputs off + strip turns red (Err 6016). Closing in time resumes; idle/unreadable sensor never aborts', check: 'io_door_abort' },
       { id: 'io_damper_logic', name: 'Damper Open/Close Logic', desc: 'Damper (MG90S on GPIO8): opens ONLY when a drying step reaches its target temp or when cooling starts; closed during drying ramp, heating, cure, bleach, idle and after stop', check: 'io_damper_logic' },
     ]
   },
@@ -917,26 +917,30 @@ async function runSingleTest(test) {
       return;
     }
 
-    // Mirrors StatusLeds._evaluate + IOBridge.door_abort: opening the door
-    // while ANY output is live aborts the process and forces every output
-    // off. Door open while idle, or an unreadable sensor, never aborts.
+    // Mirrors StatusLeds._evaluate + IOBridge.door_abort: the door opening
+    // while ANY output is live starts a 10s grace countdown (UI shows it);
+    // only if the door STAYS open past the grace is the process aborted and
+    // every output forced off. Closing in time resumes; door open while
+    // idle, or an unreadable sensor, never aborts.
     if (test.check === 'io_door_abort') {
-      const shouldAbort = (doorOpen, outputs) =>
-        doorOpen === true && Object.values(outputs).some(Boolean);
+      const shouldAbort = (doorOpen, outputs, openSec, graceSec = 10) =>
+        doorOpen === true && Object.values(outputs).some(Boolean) && openSec >= graceSec;
       const cases = [
-        [true,  { heater: true },                 true],   // heating -> abort
-        [true,  { uv: true },                     true],   // UV on -> abort
-        [true,  { cooling: true },                true],   // cooling -> abort
-        [true,  { fan: true },                    true],   // manual fan -> abort
-        [true,  { n2: true },                     true],   // nitrogen -> abort
-        [true,  {},                               false],  // idle: nothing to abort
-        [false, { heater: true, uv: true },       false],  // door closed: run on
-        [null,  { heater: true },                 false],  // unreadable: no false abort
+        // [doorOpen, outputs, seconds-open] -> abort?
+        [true,  { heater: true },           12, true],   // heating, past grace -> abort
+        [true,  { uv: true },               10, true],   // exactly at grace -> abort
+        [true,  { cooling: true },          15, true],   // cooling, past grace -> abort
+        [true,  { fan: true },              11, true],   // manual fan -> abort
+        [true,  { heater: true },            3, false],  // closed in time: keep running
+        [true,  { uv: true },                9, false],  // still inside the grace
+        [true,  {},                         60, false],  // idle: nothing to abort
+        [false, { heater: true, uv: true }, 60, false],  // door closed: run on
+        [null,  { heater: true },           60, false],  // unreadable: no false abort
       ];
-      const bad = cases.filter(([d, o, expect]) => shouldAbort(d, o) !== expect);
+      const bad = cases.filter(([d, o, s, expect]) => shouldAbort(d, o, s) !== expect);
       const elapsed = Date.now() - t0;
       const result = bad.length === 0
-        ? { status: 'pass', msg: `${cases.length} door/output combinations abort exactly when they should (Err 6016)` }
+        ? { status: 'pass', msg: `${cases.length} door/output/grace combinations abort exactly when they should (10s grace, Err 6016)` }
         : { status: 'fail', msg: `wrong abort decision for ${bad.length} case(s)` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);

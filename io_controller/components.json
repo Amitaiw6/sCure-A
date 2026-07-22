@@ -18,7 +18,8 @@
   "door_sensor": {
     "gpio": 27,
     "open_level": 0,
-    "_comment": "Door interlock input on GPIO27 (read via pinctrl). 'open_level' is the pin level that means the door is OPEN. Bench-confirmed 2026-07-22: GPIO27 HIGH = door CLOSED, LOW = door OPEN, hence open_level 0. When open: all LEDs + heater are forced OFF and cannot be enabled until the door closes."
+    "abort_after_sec": 10,
+    "_comment": "Door interlock input on GPIO27 (read via pinctrl). 'open_level' is the pin level that means the door is OPEN. Bench-confirmed 2026-07-22: GPIO27 HIGH = door CLOSED, LOW = door OPEN, hence open_level 0. When open: all LEDs + heater are forced OFF and cannot be enabled until the door closes. 'abort_after_sec' (default 10 s) is the grace period of the mid-process door watchdog: if the door STAYS open that long while any output is live, the whole process is aborted (Err 6016) and the status strip turns red; closing the door within the grace lets the process continue."
   },
 
   "leds": {

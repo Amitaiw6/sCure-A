@@ -88,6 +88,17 @@ class StatusLeds(threading.Thread):
         # status_sec = how often the machine state is (re)classified AND the
         # door-open safety is enforced; animation keeps its own faster ticks.
         self.status_sec = max(0.5, float(st.get('status_sec', 2.0)))
+        # door grace: the process is aborted only if the door STAYS open this
+        # long (components.json door_sensor.abort_after_sec, default 10 s)
+        self.door_abort_sec = 10.0
+        try:
+            from io_controller import load_component_config
+            self.door_abort_sec = float(load_component_config()
+                                        .get('door_sensor', {})
+                                        .get('abort_after_sec', 10))
+        except Exception:                 # noqa: BLE001 - config optional
+            pass
+        self._door_open_since = None      # when door-open-with-outputs began
         self._stop_evt = threading.Event()
         self._last_frame = None
         self._warned = False              # first loop error is logged once
@@ -100,6 +111,10 @@ class StatusLeds(threading.Thread):
             cool = {}
         if b.temp.fault or b.sys.heater_fault or b.sys.led_fault or cool.get('fault'):
             return 'fault'
+        # A door abort shows RED for as long as doorAborted is flagged in
+        # /api/state (60 s, or until a new process command clears it).
+        if b._door_abort_ts and time.time() - b._door_abort_ts < 60:
+            return 'fault'
         if b.sys.door_open() is True:     # None (sensor unreadable) is not "open"
             return 'door'
         if b.temp.active or cool.get('active') or b._uv.get('on'):
@@ -108,18 +123,31 @@ class StatusLeds(threading.Thread):
 
     def _evaluate(self):
         """Runs every status_sec (default 2 s): classify the machine state for
-        the strip AND enforce the door safety - the door opening while ANY
-        output is live aborts the process and forces every output off.
-        The abort check is independent of the displayed mode, so it fires
-        even when a fault has priority on the strip."""
+        the strip AND enforce the door safety. The door opening mid-process
+        gets a grace period (door_abort_sec, default 10 s) to be closed;
+        only if it STAYS open that long is the process aborted and every
+        output forced off. The check is independent of the displayed mode,
+        so it fires even when a fault has priority on the strip."""
         b = self.bridge
         try:
+            outputs_on = False
             if b.sys.door_open() is True:
                 outputs_on = (b.temp.active or b.sys.cooling_status().get('active')
                               or b._uv.get('on') or b._n2_on or b._bofa_on
                               or any(d > 0 for d in b._fan_duty.values()))
-                if outputs_on:
+            if outputs_on:
+                now = time.time()
+                if self._door_open_since is None:
+                    self._door_open_since = now
+                    print(f'[SAFETY] Door opened mid-process - aborting in '
+                          f'{self.door_abort_sec:.0f}s unless it closes')
+                elif now - self._door_open_since >= self.door_abort_sec:
+                    self._door_open_since = None
                     b.door_abort()
+            else:
+                if self._door_open_since is not None:
+                    print('[SAFETY] Door closed in time - process continues')
+                self._door_open_since = None
         except Exception:                 # noqa: BLE001 - best-effort here; the
             pass                          # io_controller interlock still backs it up
         return self._mode()
@@ -342,6 +370,7 @@ class IOBridge:
     def heat_to_target(self, target_c):
         with self._op:
             self._drying = False
+            self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             self.sys.stop_cooling('user')
             self.set_damper(False)        # vent stays closed while heating
@@ -354,6 +383,7 @@ class IOBridge:
         vent out."""
         with self._op:
             self._drying = False
+            self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             self.sys.stop_cooling('user')
             self.set_damper(False)        # closed until the target is reached
@@ -395,6 +425,7 @@ class IOBridge:
     def cure_uv(self, target_c, intensity, wavelength):
         with self._op:
             self._drying = False
+            self._door_abort_ts = None    # new process: clear the door abort
             self.sys.stop_cooling('user')
             self.set_damper(False)        # vent stays closed while curing
             ok_h, why_h = self.temp.start(target_c)
@@ -410,6 +441,7 @@ class IOBridge:
     def cool_to_target(self, target_c, mode):
         with self._op:
             self._drying = False          # cooling owns the damper from here
+            self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             # Immediate full heater OFF (no fan run-on): cooling owns the
             # heater fan for the whole mode and reopens the damper itself.
