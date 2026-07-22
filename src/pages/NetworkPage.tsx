@@ -324,20 +324,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function InterfaceRow({ name, status, ip }: { name: string; status: string; ip: string }) {
-  return (
-    <div className="flex items-center justify-between py-1">
-      <div className="flex items-center gap-2">
-        <span className="text-foreground text-xs font-mono font-medium">{name}</span>
-        <span className={cn('text-[9px] px-1.5 py-0.5 rounded', status === 'UP' ? 'bg-green-500/20 text-green-400' : 'bg-destructive/20 text-destructive')}>
-          {status}
-        </span>
-      </div>
-      <span className="text-muted-foreground text-xs font-mono">{ip}</span>
-    </div>
-  )
-}
-
 function StaticIpDialog({ ip, onIpChange, gateway, onGatewayChange, subnet, onSubnetChange, dns, onDnsChange, onSave, onCancel }: {
   ip: string; onIpChange: (v: string) => void
   gateway: string; onGatewayChange: (v: string) => void

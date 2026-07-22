@@ -243,7 +243,6 @@ export default function PrintHistoryModal({ isOpen, onClose }: PrintHistoryModal
             </p>
           ) : (
             filteredLogs.map(log => {
-              const hasMaterial = materials.some(m => m.name === log.materialName)
               const isSelected = selectedIds.has(log.id)
 
               return (

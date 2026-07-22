@@ -29,7 +29,7 @@ export default function SCureLogo({ size = 24, className = '', color = 'currentC
       className={className}
       strokeLinecap="square"
       strokeLinejoin="miter"
-      strokeMiterLimit="100"
+      strokeMiterlimit="100"
     >
       {/* Top V */}
       <path d="M0 45 L50 0 L100 45" stroke={color} strokeWidth={sw} fill="none" />

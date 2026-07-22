@@ -15,11 +15,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { useMaterials } from '@/context/MaterialContext'
 import { exportCsvToUsb } from '@/services/hardware-api'
-import type { CureStep, Material, TimerMode, UvStartMode, CoolingMode } from '@/context/MaterialContext'
+import type { CureStep, Material } from '@/context/MaterialContext'
 
 interface CsvBuilderModalProps {
   isOpen: boolean

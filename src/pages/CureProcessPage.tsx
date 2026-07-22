@@ -61,7 +61,7 @@ export default function CureProcessPage() {
   const [n2Elapsed, setN2Elapsed] = useState(0)
 
   // Temperature stall detection (heating + cooling)
-  const [tempRetries, setTempRetries] = useState(0)
+  const [, setTempRetries] = useState(0)
   const lastCheckTemp = useRef(0)
   const stallCheckRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [showTempWarning, setShowTempWarning] = useState(false)

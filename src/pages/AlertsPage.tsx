@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, AlertOctagon, ChevronRight, ArrowLeft, Mail, Phone, MessageCircle, Wrench, FileText } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/button'
@@ -8,7 +7,6 @@ import { useAlerts } from '@/context/AlertsContext'
 import type { ErrorDef, ActiveAlert } from '@/context/AlertsContext'
 
 export default function AlertsPage() {
-  const navigate = useNavigate()
   const { criticalAlerts, warningAlerts, getErrorDef, dismissAlert, support } = useAlerts()
   const [selectedAlert, setSelectedAlert] = useState<{ alert: ActiveAlert; def: ErrorDef } | null>(null)
 
@@ -164,7 +162,7 @@ export default function AlertsPage() {
   )
 }
 
-function AlertRow({ alert, def, supportUrl, onSelect }: { alert: ActiveAlert; def: ErrorDef; supportUrl: string; onSelect: () => void }) {
+function AlertRow({ def, supportUrl, onSelect }: { alert: ActiveAlert; def: ErrorDef; supportUrl: string; onSelect: () => void }) {
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 cursor-pointer hover:bg-accent transition-colors touch-manipulation"

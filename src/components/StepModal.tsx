@@ -39,7 +39,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
   const [uvIntensity, setUvIntensity] = useState<number | null>(null)
   const [timerMode, setTimerMode] = useState<TimerMode>('on-target')
   const [uvStartMode, setUvStartMode] = useState<UvStartMode>('at-target')
-  const [uvRampPercent, setUvRampPercent] = useState<number>(50)
+  const [, setUvRampPercent] = useState<number>(50)
   const [coolingMode, setCoolingMode] = useState<CoolingMode>('medium')
 
   useEffect(() => {

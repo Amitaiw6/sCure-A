@@ -30,14 +30,6 @@ export function generateCureReport(log: CureLog) {
   }
 
   const timeLabels = JSON.stringify(times.map(formatTime))
-  const startDate = new Date(log.startedAt).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  })
-  const endDate = log.endedAt ? new Date(log.endedAt).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  }) : 'N/A'
   const reportDate = new Date().toLocaleString('en-GB', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit'

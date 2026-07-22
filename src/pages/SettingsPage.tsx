@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress'
 import { useHardware } from '@/context/HardwareContext'
 import { Download, Upload, Fan, Zap, Building2, Unlink, ShieldCheck } from 'lucide-react'
 import { useSystemConfig } from '@/context/SystemConfigContext'
-import { systemReboot, systemShutdown, exportLogs } from '@/services/hardware-api'
+import { systemReboot, exportLogs } from '@/services/hardware-api'
 import { COMPLIANCE_CONTROLS } from '@/lib/compliance'
 import UpdateModal from '@/components/UpdateModal'
 import ComplianceModal from '@/components/ComplianceModal'
@@ -18,7 +18,7 @@ function formatHours(h: number): string {
 }
 
 export default function SettingsPage() {
-  const { state: hw, setChamberTemp, setNitrogenMode, setNitrogenDuration, setNfcEnabled, setSystemName } = useHardware()
+  const { state: hw, setChamberTemp, setNitrogenMode, setNfcEnabled, setSystemName } = useHardware()
   const { config, setOrganization, resetSetup } = useSystemConfig()
   const orgFileInputRef = useRef<HTMLInputElement>(null)
   const [orgError, setOrgError] = useState<string | null>(null)

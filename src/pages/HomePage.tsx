@@ -112,7 +112,6 @@ export default function HomePage() {
       ) : (
         <div className="space-y-1.5">
           {recentLogs.map(log => {
-            const matchingMaterial = materials.find(m => m.name === log.materialName)
             return (
               <div key={log.id} className={cn(
                   'flex items-center gap-3 rounded-xl px-4 py-2.5 cursor-pointer transition-colors',
