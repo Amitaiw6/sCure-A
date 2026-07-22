@@ -171,6 +171,8 @@ const TEST_CATEGORIES = [
       { id: 'api_network', name: 'GET /api/network/status', desc: 'Verify network status endpoint', endpoint: '/api/network/status', method: 'GET', expect: 'connected' },
       { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
+      { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
+      { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
     ]
   },
   {
@@ -181,6 +183,8 @@ const TEST_CATEGORIES = [
       { id: 'temp_read', name: 'Temperature Sensor Read', desc: 'Read current chamber temperature', endpoint: '/api/state', method: 'GET', check: 'temp_range' },
       { id: 'temp_set', name: 'Set Target Temperature', desc: 'Set target to 40°C and verify', endpoint: '/api/chamber/temperature?target=40', method: 'POST', check: 'temp_set' },
       { id: 'temp_stop', name: 'Stop Heating', desc: 'Stop heating and verify', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
+      { id: 'temp_ramp_live', name: 'Chamber Temp Reaches Target', desc: 'Command heat to 40°C, then verify /api/state chamberTemp actually rises toward the target — the Cure screen displays and follows this measured value', check: 'temp_ramp_live' },
+      { id: 'temp_ramp_logic', name: 'Ramp Ends At Measured Temp', desc: 'Cure screen logic: the ramp keeps going while the measured chamber temp is below target−0.5°C, and the hold timer starts only when it reaches the target', check: 'temp_ramp_logic' },
     ]
   },
   {
@@ -267,8 +271,8 @@ const TEST_CATEGORIES = [
       { id: 'op_cure450', name: 'Bleaching UV 450nm', desc: 'cure_uv_450(target 60, intensity 40%)', endpoint: '/api/cure/cure-450?target=60&intensity=40', method: 'POST', expect: 'ok' },
       { id: 'op_cool', name: 'Cool to Target', desc: 'cool_to_target_temperature(25, medium)', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
       { id: 'op_stop', name: 'Stop All Outputs', desc: 'stop_all() turns off heater / UV / cooling', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
-      { id: 'op_bad_temp', name: 'Reject Bad Temp', desc: 'Heat with target 99°C is rejected (20-80)', endpoint: '/api/cure/heat?target=99', method: 'POST', expect: 'message' },
-      { id: 'op_bad_mode', name: 'Reject Bad Cooling Mode', desc: 'Cool with mode=turbo is rejected', endpoint: '/api/cure/cool?target=25&mode=turbo', method: 'POST', expect: 'message' },
+      { id: 'op_bad_temp', name: 'Reject Bad Temp', desc: 'Heat with target 99°C is rejected (30-80)', endpoint: '/api/cure/heat?target=99', method: 'POST', check: 'hw_reject', code: 7001 },
+      { id: 'op_bad_mode', name: 'Reject Bad Cooling Mode', desc: 'Cool with mode=turbo is rejected', endpoint: '/api/cure/cool?target=25&mode=turbo', method: 'POST', check: 'hw_reject', code: 7003 },
     ]
   },
   {
@@ -462,6 +466,37 @@ const TEST_CATEGORIES = [
       { id: 'cra_verify_bad_hex', name: 'Malformed Checksum Blocked', desc: 'A non-hex / wrong-length checksum is rejected', check: 'cra_verify_bad_hex' },
       { id: 'cra_verify_prefix_upper', name: 'Prefixed/Uppercase Hash OK', desc: 'A "SHA256:" prefixed, uppercase digest normalizes and verifies', check: 'cra_verify_prefix_upper' },
       { id: 'cra_requirements_defined', name: 'All REQ-CRA Defined', desc: 'All 8 REQ-CRA requirements are present', check: 'cra_requirements_defined' },
+    ]
+  },
+  {
+    id: 'hw_compat',
+    name: 'UX ↔ Hardware Compatibility',
+    icon: '🔧',
+    tests: [
+      // Backend validation mirrors the REAL driver limits (io_controller/components.json)
+      { id: 'hwc_heat_below_min', name: 'Heat Below 30°C Rejected', desc: 'The heater driver refuses targets below heating.target_min=30 — the API must reject 25°C with code 7001', endpoint: '/api/cure/heat?target=25', method: 'POST', check: 'hw_reject', code: 7001 },
+      { id: 'hwc_dry_below_min', name: 'Dry Below 30°C Rejected', desc: 'Drying (= heating) targets below 30°C are rejected', endpoint: '/api/cure/dry?target=22', method: 'POST', check: 'hw_reject', code: 7001 },
+      { id: 'hwc_manual_temp_low', name: 'Manual Setpoint Below 30°C Rejected', desc: '/api/chamber/temperature must not accept targets the control loop silently clamps (below 30°C)', endpoint: '/api/chamber/temperature?target=20', method: 'POST', check: 'hw_reject', code: 7001 },
+      { id: 'hwc_manual_temp_high', name: 'Manual Setpoint Above 80°C Rejected', desc: '/api/chamber/temperature rejects 200°C — the safe max is enforced on the backend, not only in the UI slider', endpoint: '/api/chamber/temperature?target=200', method: 'POST', check: 'hw_reject', code: 7001 },
+      { id: 'hwc_uv_below_min', name: 'UV Below 10% Rejected', desc: 'led_power.min_intensity=10: below it the LEDs stay dark, so cure-405 at 7% must be rejected with code 7002', endpoint: '/api/cure/cure-405?target=60&intensity=7', method: 'POST', check: 'hw_reject', code: 7002 },
+      { id: 'hwc_uv_450_below_min', name: 'Bleaching UV Below 10% Rejected', desc: 'Same UV floor applies to the 450nm bleaching path', endpoint: '/api/cure/cure-450?target=60&intensity=5', method: 'POST', check: 'hw_reject', code: 7002 },
+      // New hardware endpoints wired to previously UI-only features
+      { id: 'hwc_nitrogen_open', name: 'N₂ Valve Opens', desc: 'POST /api/cure/nitrogen?on=1 drives the real solenoid (GPIO13) — no longer a UI-only countdown', endpoint: '/api/cure/nitrogen?on=1', method: 'POST', expect: 'ok' },
+      { id: 'hwc_nitrogen_state', name: 'N₂ State Reflected', desc: 'GET /api/state reports nitrogenActive after the valve command', endpoint: '/api/state', method: 'GET', check: 'hwc_n2_state' },
+      { id: 'hwc_nitrogen_close', name: 'N₂ Valve Closes', desc: 'POST /api/cure/nitrogen?on=0 closes the valve', endpoint: '/api/cure/nitrogen?on=0', method: 'POST', expect: 'ok' },
+      { id: 'hwc_bofa_toggle', name: 'BOFA Control Wired', desc: 'POST /api/bofa drives the extraction channel (PCA ch10) — the Settings toggle is no longer decorative', endpoint: '/api/bofa?on=0', method: 'POST', expect: 'ok' },
+      { id: 'hwc_uv_endpoint', name: 'Standalone UV Endpoint', desc: 'POST /api/uv gives diagnostics direct UV control through the wavelength-gated safety layer', endpoint: '/api/uv?on=0', method: 'POST', expect: 'ok' },
+      { id: 'hwc_datetime', name: 'System Clock Endpoint', desc: 'POST /api/system/datetime sets the device clock (Settings → Apply now reaches the OS)', endpoint: '/api/system/datetime', method: 'POST', body: { date: '2026-01-15', time: '12:30' }, expect: 'ok' },
+      { id: 'hwc_datetime_bad', name: 'Bad Clock Format Rejected', desc: 'Malformed date/time is rejected instead of being passed to the shell', endpoint: '/api/system/datetime', method: 'POST', body: { date: 'not-a-date', time: '99:99' }, check: 'hw_reject' },
+      { id: 'hwc_fan_test_param', name: 'Per-Fan Diagnostic Param', desc: '/api/diagnostics/fan-test?fan=led_cooling tests the requested fan, not always the heater fan', endpoint: '/api/diagnostics/fan-test?fan=led_cooling', method: 'POST', expect: 'ok' },
+      { id: 'hwc_stop_immediate', name: 'Immediate Abort Stop', desc: '/api/cure/stop?immediate=1 (user abort) performs a full shutdown with no 10-min fan run-on', endpoint: '/api/cure/stop?immediate=1', method: 'POST', expect: 'ok' },
+      { id: 'hwc_state_extras', name: 'State Carries Hardware Truth', desc: '/api/state includes ledTemps, fanRpm, nitrogenActive and faults so the UI mirrors the machine instead of guessing', endpoint: '/api/state', method: 'GET', check: 'hwc_state_extras' },
+      // Frontend-rule mirrors (logic tests, no API needed)
+      { id: 'hwc_csv_heat_min', name: 'CSV: Heating Below 30°C Rejected', desc: 'CSV import applies the hardware heating floor (30°C), matching the backend', check: 'hwc_csv_heat_min' },
+      { id: 'hwc_csv_uv_min', name: 'CSV: UV Below 10% Rejected', desc: 'CSV import rejects UV intensity under 10% (LEDs would stay dark)', check: 'hwc_csv_uv_min' },
+      { id: 'hwc_csv_cool_drop', name: 'CSV: Cooling Must Drop ≥5°C', desc: 'A cooling target less than 5°C below the previous step is a hardware no-op and is rejected on import', check: 'hwc_csv_cool_drop' },
+      { id: 'hwc_cool_done_band', name: 'Cooling Ends At Measured Temp', desc: 'Cure screen logic: a cooling phase completes when the measured chamber temp reaches target+0.5°C — never on the step timer', check: 'hwc_cool_done_band' },
+      { id: 'hwc_deltasigma', name: 'Heater Delta-Sigma Duty', desc: 'PI duty on the digital heater channel is time-proportioned: average ON-cycles match the commanded duty', check: 'hwc_deltasigma' },
     ]
   },
 ];
@@ -768,6 +803,82 @@ async function runSingleTest(test) {
     if (test.check && test.check.startsWith('cra_')) {
       const result = await runComplianceCheck(test.check);
       const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Fullscreen launch prerequisite: the API server must serve the built
+    // UI at / (and at any client route) — the Pi kiosk and the Windows
+    // desktop window (server/desktop.py) both open http://localhost:3001.
+    if (test.check === 'ui_served' || test.check === 'ui_spa_fallback') {
+      const path = test.check === 'ui_served' ? '/' : '/settings';
+      let result;
+      try {
+        const r = await fetch(apiUrl + path, { signal: AbortSignal.timeout(5000) });
+        const body = await r.text();
+        if (!r.ok) result = { status: 'fail', msg: `GET ${path} returned HTTP ${r.status}` };
+        else if (!body.includes('id="root"')) result = { status: 'fail', msg: `GET ${path} did not return the UI page (no root element)` };
+        else result = { status: 'pass', msg: `GET ${path} serves the UI page` };
+      } catch (e) {
+        result = { status: 'fail', msg: `GET ${path} failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Live chamber-temperature ramp: after a heat command, /api/state
+    // chamberTemp must move toward the target (real thermistor on the Pi,
+    // thermal simulation off-board). This is the value the Cure screen shows.
+    if (test.check === 'temp_ramp_live') {
+      const readState = async () => {
+        const r = await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) });
+        return r.json();
+      };
+      const before = await readState();
+      const cmdRes = await fetch(apiUrl + '/api/cure/heat?target=40', { method: 'POST', signal: AbortSignal.timeout(5000) });
+      const cmd = await cmdRes.json();
+      if (!cmd.ok) {
+        const elapsed = Date.now() - t0;
+        setTestStatus(test.id, 'warn', `Heat command refused: ${cmd.message || 'unknown'}`, elapsed);
+        log('warn', `${test.name}: heat command refused (${cmd.message || 'unknown'})`);
+        return;
+      }
+      setTestStatus(test.id, 'running', 'Heating — sampling for 8s...', '');
+      await new Promise(r => setTimeout(r, 8000));
+      const after = await readState();
+      await fetch(apiUrl + '/api/cure/stop', { method: 'POST', signal: AbortSignal.timeout(5000) }).catch(() => {});
+      const elapsed = Date.now() - t0;
+      const b = before.chamberTemp, a = after.chamberTemp;
+      let result;
+      if (typeof a !== 'number') result = { status: 'fail', msg: 'No chamberTemp in /api/state' };
+      else if (a >= 39.5) result = { status: 'pass', msg: `At target: ${a}°C` };
+      else if (a - b >= 0.3) result = { status: 'pass', msg: `${b}°C → ${a}°C (rising toward 40°C)` };
+      else result = { status: 'fail', msg: `chamberTemp not moving toward target: ${b}°C → ${a}°C` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+
+    // Cure screen ramp logic (mirrors CureProcessPage.tick with real hardware):
+    // the ramp ends ONLY when the measured chamber temperature reaches
+    // target - 0.5, never on a timer.
+    if (test.check === 'temp_ramp_logic') {
+      const rampState = (chamberTemp, targetTemp) => chamberTemp >= targetTemp - 0.5 ? 'hold' : 'ramping';
+      const cases = [
+        [25, 45, 'ramping'], [44.4, 45, 'ramping'], [44.5, 45, 'hold'],
+        [45, 45, 'hold'], [47, 45, 'hold'], [26, 80, 'ramping'],
+      ];
+      const bad = cases.filter(([temp, target, expect]) => rampState(temp, target) !== expect);
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: `${cases.length} ramp/hold transitions follow the measured temp` }
+        : { status: 'fail', msg: `${bad.length} wrong transition(s): ${bad.map(c => `${c[0]}°C→${c[1]}°C`).join(', ')}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

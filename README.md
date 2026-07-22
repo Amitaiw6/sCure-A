@@ -1,3 +1,19 @@
+# sCure Box
+
+## Running the software
+
+**Windows (development/demo):** double-click `scripts\win-start.bat` (or the
+"sCure Box" desktop shortcut). It opens the software fullscreen in its own
+app window — not a browser — and runs the API server inside the same process
+(simulation mode off the Pi). First run sets up the Python environment and
+builds the UI automatically. Close with Alt+F4.
+
+**Raspberry Pi (the real device):** one-time `bash scripts/pi-setup.sh`, then
+every boot starts the server and opens the UI fullscreen automatically
+(Chromium kiosk). Manual start: `bash scripts/pi-start.sh`.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
