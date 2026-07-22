@@ -310,7 +310,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="!w-[550px] !max-w-[550px] h-[460px] max-h-[460px] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
+      <DialogContent className="!w-[96vw] !max-w-[96vw] h-[92vh] max-h-[92vh] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
         {/* Top bar */}
         <div className="flex items-center gap-4 px-4 py-2 shrink-0 border-b border-border">
           <DialogHeader className="p-0">
@@ -333,7 +333,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden scroll-hidden px-4 py-3" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}>
           <div className="flex gap-3 h-full items-center">
             {steps.map((step, i) => (
-              <div key={i} data-step-card className="border border-border rounded-xl p-3 shrink-0 w-[240px] overflow-y-auto scroll-hidden max-h-full">
+              <div key={i} data-step-card className="border border-border rounded-xl p-4 shrink-0 w-[300px] overflow-y-auto scroll-hidden max-h-full">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-primary text-sm font-medium">Step {step.step}</span>
                   <Button variant="ghost" size="icon-xs" onClick={() => removeStep(i)} disabled={steps.length <= 1}>
