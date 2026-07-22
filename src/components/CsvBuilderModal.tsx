@@ -313,8 +313,9 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      {/* Fixed 550x460 dialog per the design reference (design-handoff/sCure-UI.html) */}
-      <DialogContent className="!w-[550px] !max-w-[550px] h-[460px] max-h-[460px] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
+      {/* Near-fullscreen: fills the 800x480 design canvas (8px margin) so the
+          builder matches the physical screen proportions */}
+      <DialogContent className="!w-[784px] !max-w-[784px] h-[464px] max-h-[464px] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
         {/* Top bar */}
         <div className="flex items-center gap-4 px-4 py-2 shrink-0 border-b border-border">
           <DialogHeader className="p-0">
@@ -324,7 +325,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
           </DialogHeader>
           <label className="text-foreground text-sm whitespace-nowrap ml-auto">Name:</label>
           <div
-            className="w-[260px] h-10 flex items-center rounded-lg border border-input bg-transparent px-3 cursor-pointer hover:bg-accent/50 transition-colors"
+            className="flex-1 max-w-[420px] h-10 flex items-center rounded-lg border border-input bg-transparent px-3 cursor-pointer hover:bg-accent/50 transition-colors"
             onClick={() => setShowKeyboard(true)}
           >
             <span className={name ? 'text-foreground text-sm' : 'text-muted-foreground text-sm'}>

@@ -174,6 +174,7 @@ const TEST_CATEGORIES = [
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
       { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
+      { id: 'ui_builder_size', name: 'Program Builder Fills Screen', desc: 'Build Cure Program dialog (CsvBuilderModal) is 784x464 on the 800x480 canvas — at least 95% of the screen in both axes', check: 'ui_builder_size' },
     ]
   },
   {
@@ -924,6 +925,21 @@ async function runSingleTest(test) {
       const result = bad.length === 0 && gateOk
         ? { status: 'pass', msg: 'UV stays off during the ramp and turns on at the target temperature' }
         : { status: 'fail', msg: `wrong UV gating for: ${bad.map(c => `step ${c[0]}°C @ ${c[1]}°C`).join(', ') || 'threshold check'}` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors CsvBuilderModal: the Build Cure Program dialog must cover at
+    // least 95% of the 800x480 design canvas in both axes (screen proportions).
+    if (test.check === 'ui_builder_size') {
+      const DIALOG = { w: 784, h: 464 }, CANVAS = { w: 800, h: 480 };
+      const wOk = DIALOG.w / CANVAS.w >= 0.95, hOk = DIALOG.h / CANVAS.h >= 0.95;
+      const elapsed = Date.now() - t0;
+      const result = wOk && hOk
+        ? { status: 'pass', msg: `dialog ${DIALOG.w}x${DIALOG.h} covers ${Math.round(DIALOG.w / CANVAS.w * 100)}% x ${Math.round(DIALOG.h / CANVAS.h * 100)}% of the screen` }
+        : { status: 'fail', msg: `dialog ${DIALOG.w}x${DIALOG.h} leaves too much margin on the ${!wOk ? 'width' : 'height'}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
