@@ -352,6 +352,10 @@ class IOBridge:
         return {
             'chamberTemp': chamber if chamber is not None else heat.get('temp'),
             'targetTemp': target,
+            # Automatic internet watch (StatusLeds._net_watch): True/False,
+            # or null when the status thread is not running.
+            'internetOk': (bool(self.status_leds._internet_ok)
+                           if self.status_leds else None),
             # door_open(): True=open, False=closed, None=sensor unreadable.
             # Report null on unreadable so the UI keeps its last known state
             # instead of falsely flipping to "door open".

@@ -399,6 +399,14 @@ def network_status():
         info['code'] = 9084               # NETWORK_STATUS_UNAVAILABLE
         print(f"[NET] Error getting network status: {e}")
 
+    # Live internet reachability from the automatic background watch
+    # (io_bridge StatusLeds._net_watch). 'connected' above = LAN/IP level;
+    # 'internet' = the machine actually reaches the outside world.
+    if io_bridge is not None and getattr(io_bridge, 'status_leds', None):
+        info['internet'] = bool(io_bridge.status_leds._internet_ok)
+    else:
+        info['internet'] = info['connected']   # simulation: mirror LAN state
+
     return jsonify(info)
 
 

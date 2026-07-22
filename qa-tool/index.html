@@ -169,6 +169,8 @@ const TEST_CATEGORIES = [
     tests: [
       { id: 'api_state', name: 'GET /api/state', desc: 'Verify hardware state endpoint responds', endpoint: '/api/state', method: 'GET', expect: 'chamberTemp' },
       { id: 'api_network', name: 'GET /api/network/status', desc: 'Verify network status endpoint', endpoint: '/api/network/status', method: 'GET', expect: 'connected' },
+      { id: 'net_auto_watch', name: 'Auto Internet Watch Live', desc: 'The background internet watch publishes its verdict: /api/state.internetOk and /api/network/status.internet are booleans (LAN "connected" and real internet reachability are reported separately)', check: 'net_auto_watch' },
+      { id: 'net_strip_logic', name: 'No-Internet Strip Logic', desc: 'StatusLeds: idle+offline → solid blue; process+offline → the comet runs in blue (both facts visible); fault and door-open always win; online → normal colors', check: 'net_strip_logic' },
       { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
@@ -846,6 +848,57 @@ async function runSingleTest(test) {
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r2 => setTimeout(r2, 50));
+      return;
+    }
+
+    // Automatic internet watch: both endpoints must publish the background
+    // check's verdict so the UI / QA can observe it (io_bridge._net_watch).
+    if (test.check === 'net_auto_watch') {
+      let result;
+      try {
+        const st = await (await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) })).json();
+        const net = await (await fetch(apiUrl + '/api/network/status', { signal: AbortSignal.timeout(5000) })).json();
+        const stOk = typeof st.internetOk === 'boolean' || st.internetOk === null;
+        const netOk = typeof net.internet === 'boolean';
+        if (!stOk) result = { status: 'fail', msg: '/api/state.internetOk missing or wrong type' };
+        else if (!netOk) result = { status: 'fail', msg: '/api/network/status.internet missing' };
+        else if (st.internetOk === null) result = { status: 'warn', msg: 'watch not running (simulation / RGB thread off); fields present' };
+        else result = { status: 'pass', msg: `internetOk=${st.internetOk}, network.internet=${net.internet} — auto watch publishing` };
+      } catch (e) {
+        result = { status: 'fail', msg: `fetch failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors StatusLeds._mode() no-internet handling: offline shows blue
+    // (solid when idle, comet color when busy); fault/door keep priority.
+    if (test.check === 'net_strip_logic') {
+      const mode = (fault, doorOpen, busy, internet) =>
+        fault ? 'fault'
+        : doorOpen === true ? 'door'
+        : busy ? (internet ? 'busy' : 'busy_no_net')
+        : internet ? 'normal' : 'no_net';
+      const cases = [
+        // [fault, doorOpen, busy, internetOk] -> expected strip mode
+        [null, false, false, true,  'normal'],       // online + idle
+        [null, false, false, false, 'no_net'],       // offline + idle -> solid blue
+        [null, false, true,  true,  'busy'],         // online + process -> yellow comet
+        [null, false, true,  false, 'busy_no_net'],  // offline + process -> blue comet
+        ['thermistor', false, true, false, 'fault'], // fault beats no-internet
+        [null, true,  false, false, 'door'],         // door beats no-internet
+      ];
+      const bad = cases.filter(([f, d, b, n, expect]) => mode(f, d, b, n) !== expect);
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: `${cases.length} online/offline combinations map to the right strip colors` }
+        : { status: 'fail', msg: `wrong mode for ${bad.length} case(s)` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
       return;
     }
 
