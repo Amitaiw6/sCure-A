@@ -50,6 +50,69 @@ LED_TEST_SENSORS = [
 LED_TEST_MAX_TEMP = 80.0
 
 
+class StatusLeds(threading.Thread):
+    """Machine status on the addressable RGB strip (components.json "rgb").
+
+    Priority:  any active fault -> BLINKING fault color (red)
+               door open        -> BLINKING door color
+               otherwise        -> solid normal color
+    Colors / brightness / blink rate come from the "rgb"."status" config.
+    Best-effort by design: any LED error is swallowed - the strip must never
+    take down heating/cooling control.
+    """
+
+    def __init__(self, bridge, leds, rgb_cfg, parse_color):
+        super().__init__(daemon=True, name='rgb-status')
+        st = rgb_cfg.get('status', {})
+        self.bridge = bridge
+        self.leds = leds
+        self.color_normal = parse_color(str(st.get('normal', 'green')))
+        self.color_fault = parse_color(str(st.get('fault', 'red')))
+        self.color_door = parse_color(str(st.get('door_open', 'ff7800')))
+        self.brightness = float(st.get('brightness', 40))
+        self.blink_sec = max(0.1, float(st.get('blink_sec', 0.5)))
+        self._stop_evt = threading.Event()
+        self._last_frame = None
+
+    def _mode(self):
+        b = self.bridge
+        try:
+            cooling_fault = b.sys.cooling_status().get('fault')
+        except Exception:                 # noqa: BLE001
+            cooling_fault = None
+        if b.temp.fault or b.sys.heater_fault or b.sys.led_fault or cooling_fault:
+            return 'fault'
+        if b.sys.door_open() is True:     # None (sensor unreadable) is not "open"
+            return 'door'
+        return 'normal'
+
+    def run(self):
+        phase = False
+        while not self._stop_evt.wait(self.blink_sec):
+            try:
+                mode = self._mode()
+                phase = not phase
+                if mode == 'fault':
+                    frame = self.color_fault if phase else (0, 0, 0)
+                elif mode == 'door':
+                    frame = self.color_door if phase else (0, 0, 0)
+                else:
+                    frame = self.color_normal
+                if frame != self._last_frame:
+                    self.leds.fill(frame, self.brightness)
+                    self._last_frame = frame
+            except Exception:             # noqa: BLE001 - never kill the status loop
+                pass
+
+    def stop(self):
+        self._stop_evt.set()
+        try:
+            self.leds.off()
+            self.leds.close()
+        except Exception:                 # noqa: BLE001
+            pass
+
+
 class IOBridge:
     """Owns the io_controller stack and exposes the API-level operations.
 
@@ -77,6 +140,23 @@ class IOBridge:
             self.sys.startup_safe()       # known-OFF state before serving
             self.temp = TemperatureController(self.sys)
             self.available = True
+            # RGB strip: manual ON/OFF via /api/rgb for now. The automatic
+            # status colors (StatusLeds above) are ready but not enabled yet —
+            # flip RGB_AUTO_STATUS to True to turn them on.
+            self.status_leds = None
+            self._rgb = None              # RGBLeds, created on first /api/rgb use
+            self._rgb_state = {'on': False, 'color': None, 'brightness': None}
+            if RGB_AUTO_STATUS:
+                try:
+                    from io_controller import (RGBLeds, parse_rgb_color,
+                                               load_component_config)
+                    rgb_cfg = load_component_config().get('rgb', {})
+                    self.status_leds = StatusLeds(self, RGBLeds(), rgb_cfg,
+                                                  parse_rgb_color)
+                    self.status_leds.start()
+                    print('[API] RGB status LEDs: AUTO (normal/fault/door colors)')
+                except Exception as e:    # noqa: BLE001
+                    print(f'[API] RGB status LEDs unavailable: {e}')
         except FileNotFoundError as e:    # bad/missing components.json - NOT "no hardware"
             self.error = f'hardware config error: {e}'
         except Exception as e:            # noqa: BLE001 - off-Pi / no I2C
@@ -358,7 +438,8 @@ class IOBridge:
     #  Shutdown (atexit): everything OFF, no run-on
     # ------------------------------------------------------------------
     def shutdown(self):
-        for action in (lambda: self.temp.shutdown('user'),
+        for action in (lambda: self.status_leds and self.status_leds.stop(),
+                       lambda: self.temp.shutdown('user'),
                        lambda: self.sys.stop_cooling('user'),
                        lambda: self.sys.all_leds_off(),
                        lambda: self.set_nitrogen(False)):

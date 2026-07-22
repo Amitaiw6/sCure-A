@@ -292,6 +292,7 @@ const TEST_CATEGORIES = [
       { id: 'io_cool_on', name: 'Cooling Mode ON', desc: 'POST /api/cure/cool — damper opens, fans run under closed-loop rate control', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
       { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
+      { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): any fault → BLINKING red beats door-open; open door → BLINKING door color; all OK → solid normal color; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
     ]
   },
   {
@@ -859,6 +860,38 @@ async function runSingleTest(test) {
         result = { status: 'fail', msg: `GET ${path} failed: ${e.message}` };
       }
       const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors StatusLeds._mode() + blink in server/io_bridge.py: the RGB
+    // strip shows machine status — fault (blink red) > door open (blink) >
+    // normal (solid). door_open === null (unreadable sensor) is NOT "open".
+    if (test.check === 'io_rgb_status') {
+      const mode = (fault, doorOpen) => fault ? 'fault' : (doorOpen === true ? 'door' : 'normal');
+      const frame = (m, phase, colors) =>
+        m === 'fault' ? (phase ? colors.fault : 'off')
+        : m === 'door' ? (phase ? colors.door : 'off')
+        : colors.normal;
+      const C = { normal: 'green', fault: 'red', door: 'orange' };
+      const cases = [
+        [null, false, 'normal'],          // all OK -> solid normal color
+        [null, true, 'door'],             // door open -> door blink
+        ['heater fan', true, 'fault'],    // fault beats door
+        ['thermistor', false, 'fault'],
+        [null, null, 'normal'],           // unreadable sensor stays normal
+      ];
+      const bad = cases.filter(([f, d, expect]) => mode(f, d) !== expect);
+      const blinkOk =
+        frame('fault', true, C) === 'red' && frame('fault', false, C) === 'off' &&   // fault blinks
+        frame('door', true, C) === 'orange' && frame('door', false, C) === 'off' &&  // door blinks
+        frame('normal', true, C) === 'green' && frame('normal', false, C) === 'green'; // normal solid
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0 && blinkOk
+        ? { status: 'pass', msg: 'fault > door > normal priority and blink behavior correct' }
+        : { status: 'fail', msg: bad.length ? `wrong mode for: ${bad.map(c => `fault=${c[0]},door=${c[1]}`).join('; ')}` : 'blink pattern wrong' };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

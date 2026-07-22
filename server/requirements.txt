@@ -7,3 +7,4 @@ psycopg2-binary==2.9.10   # PostgreSQL data layer (db.py); optional — omit to 
 # Real IO board (io_controller bridge) — Raspberry Pi CM5 only; omit off-Pi for simulation mode
 smbus2==0.5.0             # I2C: PCA9685 (heater/fans/LEDs), TCA6424A, ADS1115 (thermistors)
 gpiozero==2.0.1           # fan tachometers (RPM) + damper servo (lgpio backend on CM5)
+adafruit-circuitpython-neopixel  # RGB status strip (21 LEDs, GPIO12): machine status colors
