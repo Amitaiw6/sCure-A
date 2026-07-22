@@ -102,6 +102,7 @@ class HardwareController:
         self.damper_open = False
         self.nitrogen_on = False
         self.bofa_on = False
+        self._door_reclose_at = None      # sim: door re-reads closed after release
         self.fans = {
             'led_cooling': 0,
             'chamber_intake': 0,
@@ -110,6 +111,9 @@ class HardwareController:
 
     def _sim_tick(self):
         """Advance the simulated chamber temperature toward the target."""
+        if self._door_reclose_at and time.time() >= self._door_reclose_at:
+            self.door_closed = True
+            self._door_reclose_at = None
         now = time.time()
         dt = min(max(now - self._sim_time, 0.0), 10.0)
         self._sim_time = now
@@ -193,11 +197,15 @@ class HardwareController:
         return True, None
 
     def open_door(self):
-        self.door_closed = False
         if self.bridge:
             return self.bridge.open_door()
         if HW_AVAILABLE:
             hw_driver.open_door()
+            return True, None
+        # Simulation: the magnet releases and the operator shuts the door
+        # again — mirror that so the door does not stay "open" forever.
+        self.door_closed = False
+        self._door_reclose_at = time.time() + 5.0
         return True, None
 
     # ---- low-level output control (driver calls are optional/guarded) ----

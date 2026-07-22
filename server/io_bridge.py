@@ -119,7 +119,10 @@ class IOBridge:
         return {
             'chamberTemp': chamber if chamber is not None else heat.get('temp'),
             'targetTemp': target,
-            'doorClosed': door_open is False,
+            # door_open(): True=open, False=closed, None=sensor unreadable.
+            # Report null on unreadable so the UI keeps its last known state
+            # instead of falsely flipping to "door open".
+            'doorClosed': None if door_open is None else (door_open is False),
             'isHeating': bool(self.temp.active),
             'isCooling': bool(cool.get('active')),
             'coolingMode': self._cooling_mode,

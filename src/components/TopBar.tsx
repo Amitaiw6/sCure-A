@@ -14,6 +14,7 @@ import {
 import { useHardware } from '@/context/HardwareContext'
 import { useAlerts } from '@/context/AlertsContext'
 import SCureLogo from '@/components/SCureLogo'
+import { doorOpen } from '@/services/hardware-api'
 
 export default function TopBar() {
   const navigate = useNavigate()
@@ -62,7 +63,11 @@ export default function TopBar() {
           {/* The door cannot be opened during a cure — hide the control while curing (safety) */}
           {!isCuring && (
             <button
-              onClick={() => hw.doorClosed && setDoorClosed(false)}
+              onClick={() => {
+                if (!hw.doorClosed) return
+                doorOpen()               // release the real door magnet
+                setDoorClosed(false)     // optimistic; the /api/state poll re-syncs
+              }}
               disabled={!hw.doorClosed}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors touch-manipulation border-r border-border ${
                 !hw.doorClosed
@@ -71,7 +76,7 @@ export default function TopBar() {
               }`}
             >
               {hw.doorClosed ? <DoorClosed size={24} /> : <DoorOpen size={24} />}
-              {hw.doorClosed ? 'Open' : 'Opened'}
+              {hw.doorClosed ? 'Open Door' : 'Door Open'}
             </button>
           )}
           <div className="flex items-center gap-2 px-4 py-1.5">
