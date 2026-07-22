@@ -74,6 +74,12 @@
     "_comment": "Heating mode (temperature_control.py, closed-loop chamber temperature). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode; then PWM_HEATER duty is PI-controlled toward the target (kp in %%PWM per C, ki per C*s, integral capped at 'integ_max' %%). |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
   },
 
+  "servo": {
+    "gpio": 8,
+    "signal_inverted": true,
+    "_comment": "Damper servo (MG90S) on GPIO8. The board buffers the signal through Q16 (transistor driver, J2_MOTOR_DAMPER) which INVERTS it - signal_inverted=true pre-inverts the PWM so the servo sees normal pulses. Set false only if the servo is wired directly to the GPIO pin."
+  },
+
   "cooling": {
     "damper_open_angle": 180,
     "damper_closed_angle": 0,

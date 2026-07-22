@@ -430,16 +430,39 @@ def ntc_resistance_to_temp(r):
 #  Servo (SG90) and direct GPIO (pinctrl)
 # ===========================================================================
 class Servo:
-    """SG90 via gpiozero (software PWM, lgpio backend on CM5)."""
+    """MG90S/SG90 damper servo - direct lgpio 50 Hz PWM on GPIO8.
+
+    The board routes the servo signal through Q16 (a transistor driver stage,
+    same as the Q15 nitrogen-valve driver) on its way to J2_MOTOR_DAMPER -
+    that stage INVERTS the logic level. A servo cannot decode inverted
+    pulses, so with components.json "servo": {"signal_inverted": true} the
+    PWM is generated pre-inverted and comes out of Q16 as normal servo
+    pulses. Set false for a servo wired directly to the GPIO."""
+
     def __init__(self, pin=SERVO_PIN):
-        from gpiozero import AngularServo
-        self.dev = AngularServo(
-            pin, min_angle=SERVO_MIN_ANGLE, max_angle=SERVO_MAX_ANGLE,
-            min_pulse_width=SERVO_MIN_PULSE, max_pulse_width=SERVO_MAX_PULSE)
+        cfg = {}
+        try:
+            cfg = load_component_config().get("servo", {})
+        except Exception:            # noqa: BLE001 - config optional
+            pass
+        self.pin = int(cfg.get("gpio", pin))
+        self.signal_inverted = bool(cfg.get("signal_inverted", False))
+        import lgpio
+        self._lgpio = lgpio
+        self.h = lgpio.gpiochip_open(0)
+        # idle level: LOW normally; HIGH when pre-inverting (post-Q16 low)
+        lgpio.gpio_claim_output(self.h, self.pin,
+                                1 if self.signal_inverted else 0)
 
     def goto(self, angle):
         angle = max(SERVO_MIN_ANGLE, min(SERVO_MAX_ANGLE, angle))
-        self.dev.angle = (SERVO_MAX_ANGLE + SERVO_MIN_ANGLE - angle) if SERVO_INVERTED else angle
+        a = (SERVO_MAX_ANGLE + SERVO_MIN_ANGLE - angle) if SERVO_INVERTED else angle
+        span = SERVO_MAX_ANGLE - SERVO_MIN_ANGLE
+        pulse = SERVO_MIN_PULSE + (a - SERVO_MIN_ANGLE) / span * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
+        duty = pulse / 0.02 * 100.0              # 50 Hz -> 20 ms period
+        if self.signal_inverted:
+            duty = 100.0 - duty
+        self._lgpio.tx_pwm(self.h, self.pin, 50, duty)
         return angle
 
     def sweep(self, step=10, delay=0.05, cycles=2):
@@ -450,8 +473,12 @@ class Servo:
                 self.goto(a); time.sleep(delay)
 
     def close(self):
-        self.dev.detach()
-        self.dev.close()
+        try:
+            self._lgpio.tx_pwm(self.h, self.pin, 0, 0)   # stop the pulse train
+            self._lgpio.gpio_free(self.h, self.pin)
+            self._lgpio.gpiochip_close(self.h)
+        except Exception:            # noqa: BLE001
+            pass
 
 
 class FanTach:
