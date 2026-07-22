@@ -64,6 +64,9 @@ class StatusLeds(threading.Thread):
                process running  -> busy color (yellow) as a comet MOVING
                                    right-to-left (heating / cooling / UV —
                                    any active cure step)
+               no internet      -> the comet runs in the no_internet color
+                                   (blue) while a process is running; solid
+                                   no_internet color while idle
                otherwise        -> solid normal color
     Colors / brightness / blink + chase rates come from "rgb"."status".
     Best-effort by design: any LED error is swallowed - the strip must never
@@ -79,6 +82,7 @@ class StatusLeds(threading.Thread):
         self.color_fault = parse_color(str(st.get('fault', 'red')))
         self.color_door = parse_color(str(st.get('door_open', 'ff7800')))
         self.color_busy = parse_color(str(st.get('busy', 'yellow')))
+        self.color_no_net = parse_color(str(st.get('no_internet', 'blue')))
         self.brightness = float(st.get('brightness', 40))
         self.blink_sec = max(0.1, float(st.get('blink_sec', 0.5)))
         # chase_sec = time per one-LED step of the moving busy animation
@@ -99,9 +103,34 @@ class StatusLeds(threading.Thread):
         except Exception:                 # noqa: BLE001 - config optional
             pass
         self._door_open_since = None      # when door-open-with-outputs began
+        # Internet reachability, refreshed in the background every
+        # internet_check_sec (TCP to a public DNS server, 2 s timeout).
+        self.net_check_sec = max(5.0, float(st.get('internet_check_sec', 15)))
+        self._internet_ok = True          # optimistic until the first check
         self._stop_evt = threading.Event()
         self._last_frame = None
         self._warned = False              # first loop error is logged once
+
+    def _net_watch(self):
+        """Background flag refresher: does the machine actually reach the
+        internet? Runs in its own thread so a dead network (2 s timeouts)
+        never stalls the LED animation or the door watchdog."""
+        import socket
+        while True:
+            ok = False
+            for host in ('8.8.8.8', '1.1.1.1'):
+                try:
+                    socket.create_connection((host, 53), timeout=2).close()
+                    ok = True
+                    break
+                except OSError:
+                    pass
+            if ok != self._internet_ok:
+                print(f'[API] Internet {"back online" if ok else "UNREACHABLE"}'
+                      ' - status strip updated')
+            self._internet_ok = ok
+            if self._stop_evt.wait(self.net_check_sec):
+                return
 
     def _mode(self):
         b = self.bridge
@@ -111,14 +140,18 @@ class StatusLeds(threading.Thread):
             cool = {}
         if b.temp.fault or b.sys.heater_fault or b.sys.led_fault or cool.get('fault'):
             return 'fault'
-        # A door abort shows RED for as long as doorAborted is flagged in
-        # /api/state (60 s, or until a new process command clears it).
-        if b._door_abort_ts and time.time() - b._door_abort_ts < 60:
+        # A door abort stays RED until the user acknowledges the Err 6016
+        # alert in the UI (POST /api/door-abort/ack) or starts a new process.
+        if b._door_abort_ts:
             return 'fault'
         if b.sys.door_open() is True:     # None (sensor unreadable) is not "open"
             return 'door'
         if b.temp.active or cool.get('active') or b._uv.get('on'):
-            return 'busy'
+            # A process without internet runs the comet in the no-internet
+            # color, so the strip shows BOTH facts at once.
+            return 'busy' if self._internet_ok else 'busy_no_net'
+        if not self._internet_ok:         # idle + offline -> no-internet color
+            return 'no_net'
         return 'normal'
 
     def _evaluate(self):
@@ -152,12 +185,13 @@ class StatusLeds(threading.Thread):
             pass                          # io_controller interlock still backs it up
         return self._mode()
 
-    def _paint_chase(self, offset):
+    def _paint_chase(self, offset, color=None):
         """One frame of the busy animation: a comet with a fading tail that
-        moves right-to-left across the strip (flip with busy_direction)."""
+        moves right-to-left across the strip (flip with busy_direction).
+        color overrides the comet color (no-internet runs it in blue)."""
         px, n = self.leds.px, self.leds.count
         level = max(0.0, min(1.0, self.brightness / 100.0))
-        r, g, b = self.color_busy
+        r, g, b = color or self.color_busy
         head = (n - 1 - offset) % n if self.rtl else offset % n
         for i in range(n):
             # tail trails where the head came from
@@ -170,6 +204,8 @@ class StatusLeds(threading.Thread):
         offset = 0
         mode = 'normal'
         last_eval = 0.0
+        threading.Thread(target=self._net_watch, daemon=True,
+                         name='rgb-net-watch').start()
         while not self._stop_evt.wait(self.chase_sec):
             try:
                 # State (+ door safety) every status_sec; the strip animates
@@ -183,10 +219,11 @@ class StatusLeds(threading.Thread):
                 if getattr(self.bridge, '_rgb_state', {}).get('on'):
                     self._last_frame = None
                     continue
-                if mode == 'busy':
+                if mode in ('busy', 'busy_no_net'):
                     offset = (offset + 1) % self.leds.count
-                    self._paint_chase(offset)
-                    self._last_frame = ('busy', offset)
+                    self._paint_chase(offset, self.color_no_net
+                                      if mode == 'busy_no_net' else None)
+                    self._last_frame = (mode, offset)
                     continue
                 # blink phase derived from wall time (loop ticks at chase_sec)
                 blink_on = int(time.time() / self.blink_sec) % 2 == 0
@@ -194,6 +231,8 @@ class StatusLeds(threading.Thread):
                     frame = self.color_fault if blink_on else (0, 0, 0)
                 elif mode == 'door':
                     frame = self.color_door if blink_on else (0, 0, 0)
+                elif mode == 'no_net':    # idle + no internet: solid blue
+                    frame = self.color_no_net
                 else:
                     frame = self.color_normal
                 if frame != self._last_frame:
@@ -314,9 +353,9 @@ class IOBridge:
             # Report null on unreadable so the UI keeps its last known state
             # instead of falsely flipping to "door open".
             'doorClosed': None if door_open is None else (door_open is False),
-            # True for 60 s after the door-open safety killed all outputs
-            'doorAborted': bool(self._door_abort_ts
-                                and time.time() - self._door_abort_ts < 60),
+            # True from the door-open abort until the user acknowledges the
+            # alert (or starts a new process) - the strip stays red meanwhile
+            'doorAborted': bool(self._door_abort_ts),
             'isHeating': bool(self.temp.active),
             'isCooling': bool(cool.get('active')),
             'coolingMode': self._cooling_mode,
@@ -465,6 +504,12 @@ class IOBridge:
             self.set_bofa(False)
             self._door_abort_ts = time.time()
         print('[SAFETY] Door opened mid-process - ALL outputs forced OFF')
+
+    def ack_door_abort(self):
+        """The user acknowledged the door-abort alert (Err 6016) in the UI -
+        clear the flag so the status strip returns from red to normal."""
+        self._door_abort_ts = None
+        return True, None
 
     def stop_all(self, immediate=False):
         """Stop every cure output (heater, UV, cooling, nitrogen).

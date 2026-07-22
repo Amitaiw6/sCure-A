@@ -70,6 +70,12 @@ export async function setDamper(open: boolean) {
   return apiCall(`/damper/${open ? 'open' : 'close'}`)
 }
 
+/** Acknowledge the door-open abort (Err 6016): the RGB status strip stays
+ *  red until the user confirms the alert — this clears it back to normal. */
+export async function ackDoorAbort() {
+  return apiCall('/door-abort/ack')
+}
+
 /** Run fan test for a specific fan (led_cooling / chamber_intake / chamber_heating) */
 export async function runFanTest(fan?: string) {
   return apiCall(`/diagnostics/fan-test${fan ? `?fan=${fan}` : ''}`)

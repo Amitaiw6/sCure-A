@@ -208,6 +208,12 @@ class HardwareController:
         self._door_reclose_at = time.time() + 5.0
         return True, None
 
+    def ack_door_abort(self):
+        """User acknowledged the door-abort alert: strip returns to normal."""
+        if self.bridge:
+            return self.bridge.ack_door_abort()
+        return True, None      # simulation: nothing to clear
+
     # ---- low-level output control (driver calls are optional/guarded) ----
     def set_heating(self, on):
         self.heating = bool(on)
@@ -578,6 +584,14 @@ def shutdown():
 def door_open():
     hw.open_door()
     return jsonify({'ok': True, 'message': 'Door opened'})
+
+
+@app.route('/api/door-abort/ack', methods=['POST'])
+def door_abort_ack():
+    """The user tapped 'Understood' on the Err 6016 alert - clear the abort
+    flag so the RGB status strip returns from red to the normal color."""
+    hw.ack_door_abort()
+    return jsonify({'ok': True, 'message': 'Door abort acknowledged'})
 
 
 @app.route('/api/chamber/temperature', methods=['POST'])

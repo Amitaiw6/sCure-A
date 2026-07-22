@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import { ackDoorAbort } from '@/services/hardware-api'
 // Bundled sample catalog — last-resort fallback when offline (single-file design build).
 import bundledErrors from '../../public/config/errors.json'
 
@@ -136,11 +137,20 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   }, [triggerAlert])
 
   const dismissAlert = useCallback((id: string) => {
-    setActiveAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a))
+    setActiveAlerts(prev => {
+      // Err 6016 (door opened mid-process): the RGB strip stays red until
+      // the user confirms this alert — acknowledging clears it to normal.
+      const target = prev.find(a => a.id === id)
+      if (target?.code === 6016 && !target.dismissed) ackDoorAbort()
+      return prev.map(a => a.id === id ? { ...a, dismissed: true } : a)
+    })
   }, [])
 
   const clearAll = useCallback(() => {
-    setActiveAlerts(prev => prev.map(a => ({ ...a, dismissed: true })))
+    setActiveAlerts(prev => {
+      if (prev.some(a => a.code === 6016 && !a.dismissed)) ackDoorAbort()
+      return prev.map(a => ({ ...a, dismissed: true }))
+    })
   }, [])
 
   const getErrorDef = useCallback((code: number) => {

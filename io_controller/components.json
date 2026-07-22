@@ -38,6 +38,8 @@
       "fault": "red",
       "door_open": "ff7800",
       "busy": "yellow",
+      "no_internet": "blue",
+      "internet_check_sec": 15,
       "busy_direction": "rtl",
       "chase_sec": 0.12,
       "chase_tail": 5,
@@ -45,7 +47,7 @@
       "blink_sec": 0.5,
       "status_sec": 2
     },
-    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 2 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper)."
+    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 2 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper). 'no_internet' marks a machine that cannot reach the internet (checked in the background every 'internet_check_sec' seconds, TCP to 8.8.8.8/1.1.1.1:53): while IDLE the strip is solid in this color, and while a PROCESS RUNS the moving comet switches from the 'busy' color to this color - process + no-internet are visible at once. Faults and door-open always take priority."
   },
 
   "heater": {
