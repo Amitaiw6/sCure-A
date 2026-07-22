@@ -22,8 +22,8 @@ html, body {
   height: 480px;
   overflow: hidden;
   transform-origin: center center;
-  /* Scale to fit viewport while maintaining 800x480 aspect ratio */
-  scale: min(calc(100vw / 800), calc(100vh / 480));
+  /* Stretch the 800x480 canvas to fill the whole viewport */
+  scale: calc(100vw / 800) calc(100vh / 480);
 }
 
 body {

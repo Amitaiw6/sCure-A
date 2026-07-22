@@ -10,5 +10,14 @@ for _ in $(seq 1 60); do
 done
 
 BROWSER="$(command -v chromium-browser || command -v chromium)"
-exec "$BROWSER" --kiosk --noerrdialogs --disable-infobars \
-  --disable-session-crashed-bubble --check-for-update-interval=31536000 "$URL"
+
+# Locked-down kiosk: fullscreen, no browser UI, no way to navigate away.
+# If Chromium is ever closed (Alt+F4, crash, etc.) it reopens immediately.
+while true; do
+  "$BROWSER" --kiosk --noerrdialogs --disable-infobars \
+    --disable-session-crashed-bubble --check-for-update-interval=31536000 \
+    --no-first-run --disable-translate --disable-pinch \
+    --overscroll-history-navigation=0 --disable-features=TranslateUI \
+    "$URL"
+  sleep 1
+done
