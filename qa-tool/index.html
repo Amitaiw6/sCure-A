@@ -294,6 +294,7 @@ const TEST_CATEGORIES = [
       { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
       { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): any fault → BLINKING red beats door-open; open door → BLINKING door color; process running (heat/cool/UV) → yellow comet moving right-to-left; all OK → solid normal color; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
+      { id: 'io_damper_logic', name: 'Damper Open/Close Logic', desc: 'Damper (MG90S on GPIO8): opens ONLY when a drying step reaches its target temp or when cooling starts; closed during drying ramp, heating, cure, bleach, idle and after stop', check: 'io_damper_logic' },
     ]
   },
   {
@@ -861,6 +862,34 @@ async function runSingleTest(test) {
         result = { status: 'fail', msg: `GET ${path} failed: ${e.message}` };
       }
       const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors the damper rules in server/io_bridge.py: the vent damper
+    // (MG90S servo, GPIO8) opens ONLY when (a) a DRYING step reaches its
+    // target temperature (_damper_watch one-shot) or (b) cooling mode runs
+    // (CoolingController owns it); every other state keeps it closed.
+    if (test.check === 'io_damper_logic') {
+      const damperOpen = (phase, atTemp) =>
+        phase === 'cooling' || (phase === 'drying' && atTemp === true);
+      const cases = [
+        // [phase, atTemp] -> expected damper state
+        ['drying', false, false],   // drying ramp: closed
+        ['drying', true, true],     // drying reached target: OPEN (vent moisture)
+        ['heating', true, false],   // heating: closed even at temp
+        ['cure', true, false],      // cure: closed
+        ['bleacher', true, false],  // bleaching: closed
+        ['cooling', false, true],   // cooling: OPEN from the start
+        ['idle', false, false],     // idle / after stop: closed
+      ];
+      const bad = cases.filter(([p, a, expect]) => damperOpen(p, a) !== expect);
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: 'damper opens only at drying-at-temp and during cooling; closed everywhere else' }
+        : { status: 'fail', msg: `wrong damper state for: ${bad.map(c => `${c[0]}${c[1] ? '@temp' : ''}`).join(', ')}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

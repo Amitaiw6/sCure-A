@@ -201,6 +201,16 @@ class IOBridge:
                     print('[API] RGB status LEDs: AUTO (normal/fault/door colors)')
                 except Exception as e:    # noqa: BLE001
                     print(f'[API] RGB status LEDs unavailable: {e}')
+            # Damper (MG90S servo on GPIO8). Creating the servo claims the
+            # pin as a driven PWM output; start from a known-CLOSED damper.
+            # It re-opens only when cooling starts, or when a DRYING step
+            # reaches its target temperature (_damper_watch below).
+            self._drying = False
+            ok_d, why_d = self.set_damper(False)
+            print('[API] damper servo ready (GPIO8, closed)' if ok_d
+                  else f'[API] damper servo unavailable: {why_d}')
+            threading.Thread(target=self._damper_watch, daemon=True,
+                             name='damper-watch').start()
         except FileNotFoundError as e:    # bad/missing components.json - NOT "no hardware"
             self.error = f'hardware config error: {e}'
         except Exception as e:            # noqa: BLE001 - off-Pi / no I2C
@@ -299,12 +309,41 @@ class IOBridge:
     # ------------------------------------------------------------------
     def heat_to_target(self, target_c):
         with self._op:
+            self._drying = False
             self.set_uv(False)
             self.sys.stop_cooling('user')
+            self.set_damper(False)        # vent stays closed while heating
             return self.temp.start(target_c)
 
     def dry_to_target(self, target_c):
-        return self.heat_to_target(target_c)
+        """Drying = the same closed-loop heating, plus damper handling:
+        CLOSED during the ramp, OPENED automatically the moment the chamber
+        reaches the target temperature (_damper_watch) so the moisture can
+        vent out."""
+        with self._op:
+            self._drying = False
+            self.set_uv(False)
+            self.sys.stop_cooling('user')
+            self.set_damper(False)        # closed until the target is reached
+            ok, why = self.temp.start(target_c)
+            self._drying = bool(ok)       # arm the at-temperature damper open
+            return ok, why
+
+    def _damper_watch(self):
+        """Open the damper when an armed DRYING step reaches its target
+        temperature. One-shot per drying step; every other state keeps the
+        damper closed (cooling mode owns it while cooling). Never dies."""
+        while True:
+            time.sleep(1.0)
+            try:
+                if (self._drying and self.temp.active
+                        and self.temp.status().get('at_temp')):
+                    self._drying = False          # fire once per drying step
+                    ok, why = self.set_damper(True)
+                    print('[API] drying at target temperature: damper OPEN'
+                          if ok else f'[API] drying damper open failed: {why}')
+            except Exception:             # noqa: BLE001 - watcher must survive
+                pass
 
     def set_target_temp(self, target_c):
         """Manual chamber setpoint: retarget the running loop, or start heating."""
@@ -323,7 +362,9 @@ class IOBridge:
     # ------------------------------------------------------------------
     def cure_uv(self, target_c, intensity, wavelength):
         with self._op:
+            self._drying = False
             self.sys.stop_cooling('user')
+            self.set_damper(False)        # vent stays closed while curing
             ok_h, why_h = self.temp.start(target_c)
             ok_u, why_u = self.set_uv(True, intensity, wavelength)
             if ok_h and ok_u:
@@ -336,6 +377,7 @@ class IOBridge:
     # ------------------------------------------------------------------
     def cool_to_target(self, target_c, mode):
         with self._op:
+            self._drying = False          # cooling owns the damper from here
             self.set_uv(False)
             # Immediate full heater OFF (no fan run-on): cooling owns the
             # heater fan for the whole mode and reopens the damper itself.
@@ -355,6 +397,7 @@ class IOBridge:
         immediate=False (normal end-of-cure): heater off with the standard
         fan cooldown run-on."""
         with self._op:
+            self._drying = False
             self.set_uv(False)
             self.set_nitrogen(False)
             self.sys.stop_cooling('user')
@@ -362,6 +405,7 @@ class IOBridge:
                 self.temp.shutdown('user')
             else:
                 self.temp.stop('user')
+            self.set_damper(False)        # idle state: vent closed
             self._damper_open = False
             return True, None
 
