@@ -174,7 +174,7 @@ const TEST_CATEGORIES = [
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
       { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
-      { id: 'ui_builder_size', name: 'Dialogs Scale With The Screen', desc: 'Dialog/Select portals render inside the scaled #root canvas, so the 550x460 Build Cure Program dialog shows at ~69% x ~96% of any screen — exactly the design proportions', check: 'ui_builder_size' },
+      { id: 'ui_builder_size', name: 'Dialogs Scale With The Screen', desc: 'Dialog/Select/OnScreenKeyboard portals render inside the scaled #root canvas, so the 550x460 Build Cure Program dialog shows at ~69% x ~96% of any screen and keyboard lettering scales up with the panel', check: 'ui_builder_size' },
     ]
   },
   {

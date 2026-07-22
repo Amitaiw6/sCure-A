@@ -33,17 +33,17 @@ function KeyboardUI({ value, onKey, onBackspace, onShift, shifted, onSpace, onCh
   numMode: boolean
   onToggleNum: () => void
 }) {
-  const keyClass = "flex-1 bg-[#1a1a1a] rounded-lg text-white text-lg font-medium active:bg-[#333] transition-colors select-none"
+  const keyClass = "flex-1 bg-[#1a1a1a] rounded-lg text-white text-2xl font-medium active:bg-[#333] transition-colors select-none"
   const rows = numMode ? numRows : letterRows
 
   return (
     <div className="fixed inset-0 flex flex-col" style={{ zIndex: 99999, background: '#0a0a0a' }}>
       {/* Input display */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: '1px solid #222' }}>
-        <p className="text-white text-xl font-semibold flex-1 truncate">
+        <p className="text-white text-2xl font-semibold flex-1 truncate">
           {value}<span style={{ color: '#0ea5e9' }} className="animate-pulse">|</span>
         </p>
-        <button onClick={onClose} className="ml-4 shrink-0 px-4 py-2 bg-[#1a1a1a] rounded-lg text-white text-sm active:bg-[#333]">
+        <button onClick={onClose} className="ml-4 shrink-0 px-4 py-2 bg-[#1a1a1a] rounded-lg text-white text-base active:bg-[#333]">
           Close Keyboard
         </button>
       </div>
@@ -56,7 +56,7 @@ function KeyboardUI({ value, onKey, onBackspace, onShift, shifted, onSpace, onCh
               {!numMode && shifted ? key.toUpperCase() : key}
             </button>
           ))}
-          <button onClick={onBackspace} className="flex-1 bg-red-600 rounded-lg text-white text-lg active:bg-red-500 flex items-center justify-center select-none">
+          <button onClick={onBackspace} className="flex-1 bg-red-600 rounded-lg text-white text-2xl active:bg-red-500 flex items-center justify-center select-none">
             ⌫
           </button>
         </div>
@@ -73,7 +73,7 @@ function KeyboardUI({ value, onKey, onBackspace, onShift, shifted, onSpace, onCh
           {numMode ? (
             <div className="flex-1" />
           ) : (
-            <button onClick={onShift} className={cn("flex-1 rounded-lg text-white text-lg select-none", shifted ? 'bg-[#333]' : 'bg-[#1a1a1a]')}>
+            <button onClick={onShift} className={cn("flex-1 rounded-lg text-white text-2xl select-none", shifted ? 'bg-[#333]' : 'bg-[#1a1a1a]')}>
               ⇧
             </button>
           )}
@@ -85,20 +85,20 @@ function KeyboardUI({ value, onKey, onBackspace, onShift, shifted, onSpace, onCh
           {numMode ? (
             <div className="flex-1" />
           ) : (
-            <button onClick={onShift} className={cn("flex-1 rounded-lg text-white text-lg select-none", shifted ? 'bg-[#333]' : 'bg-[#1a1a1a]')}>
+            <button onClick={onShift} className={cn("flex-1 rounded-lg text-white text-2xl select-none", shifted ? 'bg-[#333]' : 'bg-[#1a1a1a]')}>
               ⇧
             </button>
           )}
         </div>
 
         <div className="flex-1 flex gap-1.5">
-          <button onClick={onToggleNum} className={cn("w-[60px] rounded-lg text-white text-sm shrink-0 select-none active:bg-[#333]", numMode ? 'bg-[#333]' : 'bg-[#1a1a1a]')}>
+          <button onClick={onToggleNum} className={cn("w-[60px] rounded-lg text-white text-base shrink-0 select-none active:bg-[#333]", numMode ? 'bg-[#333]' : 'bg-[#1a1a1a]')}>
             {numMode ? 'ABC' : '?123'}
           </button>
-          <button onClick={() => onChar(',')} className="w-[48px] bg-[#1a1a1a] rounded-lg text-white text-lg active:bg-[#333] shrink-0 select-none">,</button>
+          <button onClick={() => onChar(',')} className="w-[48px] bg-[#1a1a1a] rounded-lg text-white text-2xl active:bg-[#333] shrink-0 select-none">,</button>
           <button onClick={onSpace} className="flex-1 bg-[#1a1a1a] rounded-lg active:bg-[#333] select-none" />
-          <button onClick={() => onChar('.')} className="w-[48px] bg-[#1a1a1a] rounded-lg text-white text-lg active:bg-[#333] shrink-0 select-none">.</button>
-          <button onClick={onClose} className="w-[90px] bg-sky-500 text-white rounded-lg text-sm font-semibold shrink-0 select-none active:bg-sky-400">Done</button>
+          <button onClick={() => onChar('.')} className="w-[48px] bg-[#1a1a1a] rounded-lg text-white text-2xl active:bg-[#333] shrink-0 select-none">.</button>
+          <button onClick={onClose} className="w-[90px] bg-sky-500 text-white rounded-lg text-base font-semibold shrink-0 select-none active:bg-sky-400">Done</button>
         </div>
       </div>
     </div>
@@ -138,6 +138,8 @@ export default function OnScreenKeyboard({ isOpen, value, onChange, onClose }: O
 
   if (!isOpen) return null
 
+  // Portal into the scaled #root canvas (like Dialog/Select), so the keyboard
+  // and its lettering scale with the screen instead of raw pixel sizes.
   return createPortal(
     <KeyboardUI
       value={value}
@@ -151,6 +153,6 @@ export default function OnScreenKeyboard({ isOpen, value, onChange, onClose }: O
       numMode={numMode}
       onToggleNum={handleToggleNum}
     />,
-    document.body
+    document.getElementById('root') ?? document.body
   )
 }
