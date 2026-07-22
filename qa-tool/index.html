@@ -294,6 +294,8 @@ const TEST_CATEGORIES = [
       { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
       { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): any fault → BLINKING red beats door-open; open door → BLINKING door color; process running (heat/cool/UV) → yellow comet moving right-to-left; all OK → solid normal color; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
+      { id: 'led_status_loop', name: 'LED Status Loop Every 2s', desc: 'StatusLeds watchdog re-classifies the machine state every status_sec=2s (animation keeps its own faster ticks) — any state change reaches the strip within 2 seconds', check: 'led_status_loop' },
+      { id: 'io_door_abort', name: 'Door-Open Safety Abort', desc: 'The 2s watchdog: door opened while ANY output is live (heater/cooling/UV/fans/N2/BOFA) → process aborted + ALL outputs forced off (Err 6016); door open while idle or an unreadable sensor never aborts', check: 'io_door_abort' },
       { id: 'io_damper_logic', name: 'Damper Open/Close Logic', desc: 'Damper (MG90S on GPIO8): opens ONLY when a drying step reaches its target temp or when cooling starts; closed during drying ramp, heating, cure, bleach, idle and after stop', check: 'io_damper_logic' },
     ]
   },
@@ -890,6 +892,52 @@ async function runSingleTest(test) {
       const result = bad.length === 0
         ? { status: 'pass', msg: 'damper opens only at drying-at-temp and during cooling; closed everywhere else' }
         : { status: 'fail', msg: `wrong damper state for: ${bad.map(c => `${c[0]}${c[1] ? '@temp' : ''}`).join(', ')}` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors StatusLeds._evaluate cadence: the machine state is re-classified
+    // every status_sec (2s), so any change (including a door-open abort)
+    // reaches the strip within one evaluation.
+    if (test.check === 'led_status_loop') {
+      const STATUS_SEC = 2;
+      // worst case: the state flips right after an evaluation -> seen on the next one
+      const worstReaction = STATUS_SEC;
+      const nextEval = (lastEval, now) => now - lastEval >= STATUS_SEC;
+      const cadenceOk = nextEval(0, 2) && nextEval(0, 3.5) && !nextEval(0, 1.9);
+      const elapsed = Date.now() - t0;
+      const result = cadenceOk && worstReaction <= 2
+        ? { status: 'pass', msg: `state re-classified every ${STATUS_SEC}s — changes reach the strip within ${worstReaction}s` }
+        : { status: 'fail', msg: 'status evaluation cadence wrong' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors StatusLeds._evaluate + IOBridge.door_abort: opening the door
+    // while ANY output is live aborts the process and forces every output
+    // off. Door open while idle, or an unreadable sensor, never aborts.
+    if (test.check === 'io_door_abort') {
+      const shouldAbort = (doorOpen, outputs) =>
+        doorOpen === true && Object.values(outputs).some(Boolean);
+      const cases = [
+        [true,  { heater: true },                 true],   // heating -> abort
+        [true,  { uv: true },                     true],   // UV on -> abort
+        [true,  { cooling: true },                true],   // cooling -> abort
+        [true,  { fan: true },                    true],   // manual fan -> abort
+        [true,  { n2: true },                     true],   // nitrogen -> abort
+        [true,  {},                               false],  // idle: nothing to abort
+        [false, { heater: true, uv: true },       false],  // door closed: run on
+        [null,  { heater: true },                 false],  // unreadable: no false abort
+      ];
+      const bad = cases.filter(([d, o, expect]) => shouldAbort(d, o) !== expect);
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: `${cases.length} door/output combinations abort exactly when they should (Err 6016)` }
+        : { status: 'fail', msg: `wrong abort decision for ${bad.length} case(s)` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

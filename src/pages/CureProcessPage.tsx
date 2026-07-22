@@ -313,6 +313,26 @@ export default function CureProcessPage() {
     navigate('/')
   }
 
+  // SAFETY: the door opened mid-process. The server watchdog (2 s status
+  // loop) has already forced every output off — stop the program here too
+  // instead of letting the phase timers keep running (Err 6016).
+  useEffect(() => {
+    if (!isRunning || isComplete) return
+    if (!hw.apiConnected || hw.doorClosed !== false) return
+    stopCureOutputs(true)
+    setIsRunning(false)
+    setIsRamping(false)
+    setN2Purging(false)
+    setHeating(false)
+    setCooling(false)
+    setUv(false)
+    setNitrogenActive(false)
+    if (cureLogId) abortCure(cureLogId, activePhase)
+    window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: 6016 } }))
+    navigate('/')
+  }, [isRunning, isComplete, hw.apiConnected, hw.doorClosed, cureLogId, activePhase,
+      abortCure, navigate, setHeating, setCooling, setUv, setNitrogenActive])
+
   // When entering a new phase: command the hardware, then start ramp / N2 purge
   useEffect(() => {
     if (!isRunning || isComplete || isRamping || n2Purging) return

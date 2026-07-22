@@ -85,6 +85,9 @@ class StatusLeds(threading.Thread):
         self.chase_sec = max(0.03, float(st.get('chase_sec', 0.12)))
         self.chase_tail = max(1, int(st.get('chase_tail', 5)))
         self.rtl = str(st.get('busy_direction', 'rtl')).lower() != 'ltr'
+        # status_sec = how often the machine state is (re)classified AND the
+        # door-open safety is enforced; animation keeps its own faster ticks.
+        self.status_sec = max(0.5, float(st.get('status_sec', 2.0)))
         self._stop_evt = threading.Event()
         self._last_frame = None
         self._warned = False              # first loop error is logged once
@@ -103,6 +106,23 @@ class StatusLeds(threading.Thread):
             return 'busy'
         return 'normal'
 
+    def _evaluate(self):
+        """Runs every status_sec (default 2 s): classify the machine state for
+        the strip AND enforce the door safety - the door opening while ANY
+        output is live aborts the process and forces every output off."""
+        mode = self._mode()
+        if mode == 'door':
+            b = self.bridge
+            try:
+                outputs_on = (b.temp.active or b.sys.cooling_status().get('active')
+                              or b._uv.get('on') or b._n2_on or b._bofa_on
+                              or any(d > 0 for d in b._fan_duty.values()))
+                if outputs_on:
+                    b.door_abort()
+            except Exception:             # noqa: BLE001 - best-effort here; the
+                pass                      # io_controller interlock still backs it up
+        return mode
+
     def _paint_chase(self, offset):
         """One frame of the busy animation: a comet with a fading tail that
         moves right-to-left across the strip (flip with busy_direction)."""
@@ -119,14 +139,21 @@ class StatusLeds(threading.Thread):
 
     def run(self):
         offset = 0
+        mode = 'normal'
+        last_eval = 0.0
         while not self._stop_evt.wait(self.chase_sec):
             try:
+                # State (+ door safety) every status_sec; the strip animates
+                # between evaluations with the last classified mode.
+                now = time.time()
+                if now - last_eval >= self.status_sec:
+                    last_eval = now
+                    mode = self._evaluate()
                 # Manual /api/rgb override active -> leave the strip alone;
                 # force a repaint of the status color when it ends.
                 if getattr(self.bridge, '_rgb_state', {}).get('on'):
                     self._last_frame = None
                     continue
-                mode = self._mode()
                 if mode == 'busy':
                     offset = (offset + 1) % self.leds.count
                     self._paint_chase(offset)
@@ -174,6 +201,7 @@ class IOBridge:
         self._fan_duty = {name: 0 for name in FAN_GROUPS}   # last commanded %
         self._n2_on = False               # nitrogen valve state (GPIO13)
         self._bofa_on = False             # BOFA extraction (PCA ch 10)
+        self._door_abort_ts = None        # when the door-open safety last fired
         try:
             from io_controller import (SystemController, PCA_CHANNELS,
                                        PCA_FANS, GPIO_SIGNALS, set_gpio_level)
@@ -257,6 +285,9 @@ class IOBridge:
             # Report null on unreadable so the UI keeps its last known state
             # instead of falsely flipping to "door open".
             'doorClosed': None if door_open is None else (door_open is False),
+            # True for 60 s after the door-open safety killed all outputs
+            'doorAborted': bool(self._door_abort_ts
+                                and time.time() - self._door_abort_ts < 60),
             'isHeating': bool(self.temp.active),
             'isCooling': bool(cool.get('active')),
             'coolingMode': self._cooling_mode,
@@ -388,6 +419,19 @@ class IOBridge:
                 self._cooling_mode = mode
                 self._damper_open = True
             return ok, why
+
+    def door_abort(self):
+        """SAFETY: the door opened while outputs were live. Kill EVERY output
+        immediately - heater, UV, cooling, fans, nitrogen, BOFA, damper - and
+        flag the abort so the UI stops the running program (doorAborted in
+        /api/state). Fired by the StatusLeds status watchdog (every 2 s)."""
+        with self._op:
+            self.stop_all(immediate=True)
+            for fan in list(self._fan_duty):    # manual fan writes too
+                self.set_fan_speed(fan, 0)
+            self.set_bofa(False)
+            self._door_abort_ts = time.time()
+        print('[SAFETY] Door opened mid-process - ALL outputs forced OFF')
 
     def stop_all(self, immediate=False):
         """Stop every cure output (heater, UV, cooling, nitrogen).
