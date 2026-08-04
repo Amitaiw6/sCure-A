@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sCure Box — Management Deck</title>
+<style>
+  :root {
+    --page-bg: #eef0f4;
+    --page-text: #3a4050;
+    --ctrl-bg: #ffffff;
+    --ctrl-border: #d4d8e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page-bg: #14161c; --page-text: #9aa2b4; --ctrl-bg: #1c2029; --ctrl-border: #2c3140; }
+  }
+  :root[data-theme="dark"] { --page-bg: #14161c; --page-text: #9aa2b4; --ctrl-bg: #1c2029; --ctrl-border: #2c3140; }
+  :root[data-theme="light"] { --page-bg: #eef0f4; --page-text: #3a4050; --ctrl-bg: #ffffff; --ctrl-border: #d4d8e2; }
+
+  /* Slides are deliberately dark — a fixed projection canvas, theme-independent */
+  body {
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: "Segoe UI", Arial, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.2rem;
+    box-sizing: border-box;
+  }
+  .deck {
+    width: min(1280px, 100%, calc((100vh - 7.5rem) * 16 / 9));
+    display: flex;
+    flex-direction: column;
+    gap: .9rem;
+  }
+
+  .stage {
+    position: relative;
+    aspect-ratio: 16 / 9;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    background: #0b0e16;
+    color: #e8eaf2;
+    border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(10, 12, 24, .45);
+    padding: 3% 3.6%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    container-type: inline-size;
+    opacity: 0;
+    transform: translateX(3%);
+    visibility: hidden;
+    transition: opacity .35s ease, transform .35s ease, visibility 0s linear .35s;
+  }
+  .slide.active {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition: opacity .35s ease, transform .35s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .slide, .slide.active { transition: none; transform: none; }
+  }
+
+  /* faint UV glow in the corner — a nod to the cure lamps */
+  .slide::before {
+    content: "";
+    position: absolute;
+    inset: auto auto -35% -12%;
+    width: 46%;
+    aspect-ratio: 1;
+    background: radial-gradient(closest-side, rgba(124, 108, 240, .22), transparent 70%);
+    pointer-events: none;
+  }
+
+  .mono { font-family: "Cascadia Code", Consolas, "Courier New", monospace; }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: .7em;
+    font-size: 1.5cqw;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: #a99ef7;
+    font-weight: 600;
+  }
+  .eyebrow .num {
+    color: #59607a;
+    font-weight: 400;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, rgba(169, 158, 247, .5), transparent);
+  }
+
+  h1 {
+    font-size: 3.9cqw;
+    line-height: 1.12;
+    margin: .3em 0 .15em;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+  .subtitle {
+    font-size: 1.7cqw;
+    color: #9aa3ba;
+    margin: 0 0 1.7cqw;
+    max-width: 78ch;
+    line-height: 1.42;
+  }
+  .subtitle strong { color: #cdd2e4; font-weight: 600; }
+
+  /* ---- Slide 1: architecture strip ---- */
+  .arch {
+    display: flex;
+    align-items: stretch;
+    gap: 1cqw;
+    margin-bottom: 2cqw;
+  }
+  .arch-node {
+    flex: 1;
+    background: #131828;
+    border: 1px solid #232a42;
+    border-radius: 8px;
+    padding: 1.1cqw 1.3cqw;
+    display: flex;
+    flex-direction: column;
+    gap: .3cqw;
+  }
+  .arch-node b { font-size: 1.6cqw; font-weight: 600; color: #e8eaf2; }
+  .arch-node .stack { font-size: 1.2cqw; color: #a99ef7; letter-spacing: .02em; }
+  .arch-node span { font-size: 1.25cqw; color: #8a93a8; line-height: 1.35; }
+  .arch-proto {
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .2cqw;
+  }
+  .arch-proto .arrow { color: #7c6cf0; font-size: 2cqw; line-height: 1; }
+  .arch-proto small { font-size: 1cqw; color: #59607a; letter-spacing: .04em; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.3cqw;
+    margin-top: auto;
+  }
+  .card {
+    background: #10141f;
+    border: 1px solid #1d2334;
+    border-radius: 8px;
+    padding: 1.3cqw 1.5cqw;
+  }
+  .card h3 {
+    margin: 0 0 .5em;
+    font-size: 1.5cqw;
+    color: #a99ef7;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .card ul { margin: 0; padding-inline-start: 1.1em; }
+  .card li { font-size: 1.35cqw; line-height: 1.5; color: #b9c0d4; }
+  .card li + li { margin-top: .3em; }
+  .card code {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: .92em;
+    color: #cbc2ff;
+    background: rgba(124, 108, 240, .12);
+    padding: .06em .35em;
+    border-radius: 4px;
+  }
+
+  /* ---- Slide 2: stats + comparison + contributions ---- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.3cqw;
+    margin-bottom: 1.5cqw;
+  }
+  .stat {
+    background: #131828;
+    border: 1px solid #232a42;
+    border-radius: 8px;
+    padding: 1cqw 1.4cqw;
+  }
+  .stat .value {
+    font-size: 2.9cqw;
+    font-weight: 700;
+    color: #cbc2ff;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .stat .label { font-size: 1.22cqw; color: #8a93a8; margin-top: .25em; line-height: 1.3; }
+
+  .versus {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.3cqw;
+    margin-bottom: 1.5cqw;
+  }
+  .versus .col {
+    border-radius: 8px;
+    padding: 1cqw 1.4cqw;
+    border: 1px solid #1d2334;
+  }
+  .versus .without { background: #10141f; }
+  .versus .with {
+    background: linear-gradient(135deg, rgba(124, 108, 240, .14), rgba(124, 108, 240, .04));
+    border-color: rgba(124, 108, 240, .45);
+  }
+  .versus h3 {
+    margin: 0 0 .45em;
+    font-size: 1.35cqw;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .versus .without h3 { color: #8a93a8; }
+  .versus .with h3 { color: #a99ef7; }
+  .versus ul { margin: 0; padding-inline-start: 1.1em; }
+  .versus li { font-size: 1.32cqw; line-height: 1.5; color: #b9c0d4; }
+  .versus li + li { margin-top: .2em; }
+  .versus .with li b { color: #e8eaf2; }
+
+  .contrib {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .8cqw 2.2cqw;
+  }
+  .contrib-item {
+    display: flex;
+    gap: .8cqw;
+    align-items: flex-start;
+  }
+  .contrib-item .tick {
+    color: #7c6cf0;
+    font-size: 1.4cqw;
+    line-height: 1.5;
+    flex: none;
+  }
+  .contrib-item p { margin: 0; font-size: 1.32cqw; line-height: 1.45; color: #b9c0d4; }
+  .contrib-item p b { color: #e8eaf2; font-weight: 600; }
+
+  .takeaway {
+    margin-top: auto;
+    background: linear-gradient(to right, rgba(124, 108, 240, .16), rgba(124, 108, 240, .04));
+    border-left: 3px solid #7c6cf0;
+    border-radius: 6px;
+    padding: 1cqw 1.5cqw;
+    font-size: 1.45cqw;
+    line-height: 1.45;
+    color: #d7daea;
+  }
+  .takeaway b { color: #fff; }
+
+  /* ---- Controls ---- */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+  }
+  .nav-btn {
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--ctrl-border);
+    background: var(--ctrl-bg);
+    color: var(--page-text);
+    font-size: 1.15rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .nav-btn:hover { border-color: #7c6cf0; color: #7c6cf0; }
+  .nav-btn:focus-visible { outline: 2px solid #7c6cf0; outline-offset: 2px; }
+  .nav-btn:disabled { opacity: .35; cursor: default; }
+  .nav-btn:disabled:hover { border-color: var(--ctrl-border); color: var(--page-text); }
+
+  .dots { display: flex; gap: .55rem; }
+  .dot {
+    width: .6rem;
+    height: .6rem;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    background: var(--ctrl-border);
+    cursor: pointer;
+    transition: background .15s ease, transform .15s ease;
+  }
+  .dot.active { background: #7c6cf0; transform: scale(1.25); }
+  .dot:focus-visible { outline: 2px solid #7c6cf0; outline-offset: 2px; }
+
+  .counter {
+    font-size: .85rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .06em;
+    min-width: 3.2em;
+    text-align: center;
+  }
+  .hint { font-size: .78rem; letter-spacing: .03em; text-align: center; }
+
+  /* ---- Print: both slides, one per page ---- */
+  @media print {
+    body { background: #fff; padding: 0; display: block; }
+    .deck { width: 100%; gap: 0; }
+    .stage { aspect-ratio: auto; }
+    .slide {
+      position: static;
+      opacity: 1;
+      transform: none;
+      visibility: visible;
+      aspect-ratio: 16 / 9;
+      border-radius: 0;
+      box-shadow: none;
+      break-inside: avoid;
+      break-after: page;
+    }
+    .controls, .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="deck">
+  <div class="stage">
+
+    <!-- ================= Slide 1 ================= -->
+    <section class="slide active" aria-label="Slide 1 — System overview">
+      <div class="eyebrow"><span class="num">1 / 2</span> sCure Box · System Architecture</div>
+      <h1>Full-Stack Control System — Touchscreen to I/O</h1>
+      <p class="subtitle">
+        Embedded control platform for a UV cure chamber: lamps, heater, fans, vent damper (servo),
+        door interlock, RGB status strip and temperature sensors — one closed control loop from the UI down to the pins.
+      </p>
+
+      <div class="arch">
+        <div class="arch-node">
+          <b>HMI</b>
+          <span class="stack">React · TypeScript · Vite</span>
+          <span>Kiosk UI — cure programs, materials, process reports</span>
+        </div>
+        <div class="arch-proto"><span class="arrow">▶</span><small class="mono">REST / HTTP</small></div>
+        <div class="arch-node">
+          <b>Control Server</b>
+          <span class="stack">Python · Flask</span>
+          <span>Process state machine, safety logic, data layer (PostgreSQL)</span>
+        </div>
+        <div class="arch-proto"><span class="arrow">▶</span><small class="mono">io_bridge</small></div>
+        <div class="arch-node">
+          <b>I/O Controller</b>
+          <span class="stack">Python drivers</span>
+          <span>Real-time hardware access over I²C; simulation mode off-target</span>
+        </div>
+        <div class="arch-proto"><span class="arrow">▶</span><small class="mono">I²C / GPIO / PWM</small></div>
+        <div class="arch-node">
+          <b>Plant</b>
+          <span class="stack">Raspberry Pi</span>
+          <span>UV · heater · fans · damper servo · door lock · sensors</span>
+        </div>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <h3>Safety &amp; Fault Handling</h3>
+          <ul>
+            <li>Door-open aborts a running process (<code>Err 6016</code>) after a 10&nbsp;s on-screen grace countdown</li>
+            <li>2&nbsp;s status watchdog; heater-fan tach monitoring with glitch filtering</li>
+            <li>Central error registry — unique code per fault, surfaced in UI and SRS</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Process &amp; Data</h3>
+          <ul>
+            <li>Measured chamber temperature drives the cure ramp; UV gated on target temp</li>
+            <li>Programs, materials and cure reports persisted in PostgreSQL (JSON fallback)</li>
+            <li>Connectivity watch: TCP&nbsp;443 probe every 5&nbsp;s with UI status indication</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Deployment &amp; Verification</h3>
+          <ul>
+            <li>Raspberry Pi kiosk — boots straight into the app, unattended</li>
+            <li>Windows build with full hardware simulation for development and demos</li>
+            <li>Dedicated QA harness covering every feature; SRS with flow &amp; sequence diagrams</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Slide 2 ================= -->
+    <section class="slide" aria-label="Slide 2 — AI-assisted development">
+      <div class="eyebrow"><span class="num">2 / 2</span> AI-Assisted Engineering</div>
+      <h1>Built with an AI Coding Agent — Spec to Machine</h1>
+      <p class="subtitle">
+        Developed with <strong>Claude Code</strong>: the engineer specifies requirements and validates on the real hardware;
+        the AI agent implements, tests and documents across every layer of the stack.
+      </p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="value">~19,000</div>
+          <div class="label">lines of code — UI, server, drivers, tooling</div>
+        </div>
+        <div class="stat">
+          <div class="value">44</div>
+          <div class="label">integrated releases (commits) — features &amp; fixes</div>
+        </div>
+        <div class="stat">
+          <div class="value">~5 mo</div>
+          <div class="label">concept to working machine</div>
+        </div>
+        <div class="stat">
+          <div class="value">1 + AI</div>
+          <div class="label">one engineer with an AI agent</div>
+        </div>
+      </div>
+
+      <div class="versus">
+        <div class="col without">
+          <h3>Without AI — typical effort</h3>
+          <ul>
+            <li>Separate frontend, backend and embedded roles — 3–4 engineers</li>
+            <li>Documentation and test coverage lag behind the code</li>
+            <li>Each hardware bug means a debug cycle across team boundaries</li>
+          </ul>
+        </div>
+        <div class="col with">
+          <h3>With AI — this project</h3>
+          <ul>
+            <li><b>One engineer</b> covers the full stack; the agent holds the whole system in context</li>
+            <li><b>QA tests and SRS updates ship with every feature</b> — same commit, same day</li>
+            <li><b>Requirement → running on the machine</b> typically within one working day</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="contrib">
+        <div class="contrib-item"><span class="tick">✔</span>
+          <p><b>Full-stack implementation:</b> React HMI, Flask control server, I²C hardware drivers, Pi install scripts.</p>
+        </div>
+        <div class="contrib-item"><span class="tick">✔</span>
+          <p><b>Safety engineering:</b> designed and implemented door-abort logic, watchdog and the central error registry.</p>
+        </div>
+        <div class="contrib-item"><span class="tick">✔</span>
+          <p><b>Real hardware debugging:</b> diagnosed an inverted servo signal at the driver stage and a false-trip fan tach reading.</p>
+        </div>
+        <div class="contrib-item"><span class="tick">✔</span>
+          <p><b>Engineering documentation:</b> SRS with draw.io flow charts and PlantUML sequence diagrams, kept in sync with code.</p>
+        </div>
+      </div>
+
+      <div class="takeaway">
+        <b>Bottom line:</b> the AI agent multiplies engineering capacity — production code, QA coverage and documentation
+        at single-engineer cost, while human time goes where it matters: requirements and validation on the machine.
+      </div>
+    </section>
+
+  </div>
+
+  <div class="controls">
+    <button class="nav-btn" id="prev" aria-label="Previous slide">‹</button>
+    <div class="dots" id="dots" role="tablist"></div>
+    <span class="counter" id="counter">1 / 2</span>
+    <button class="nav-btn" id="next" aria-label="Next slide">›</button>
+  </div>
+  <p class="hint">Navigate with ← → or Space · F11 for fullscreen · print to PDF for one slide per page</p>
+</div>
+
+<script>
+  (function () {
+    var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    var prevBtn = document.getElementById('prev');
+    var nextBtn = document.getElementById('next');
+    var counter = document.getElementById('counter');
+    var dotsBox = document.getElementById('dots');
+    var current = 0;
+
+    slides.forEach(function (_, i) {
+      var d = document.createElement('button');
+      d.className = 'dot';
+      d.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+      d.addEventListener('click', function () { show(i); });
+      dotsBox.appendChild(d);
+    });
+    var dots = Array.prototype.slice.call(dotsBox.children);
+
+    function show(i) {
+      current = Math.max(0, Math.min(slides.length - 1, i));
+      slides.forEach(function (s, j) { s.classList.toggle('active', j === current); });
+      dots.forEach(function (d, j) { d.classList.toggle('active', j === current); });
+      counter.textContent = (current + 1) + ' / ' + slides.length;
+      prevBtn.disabled = current === 0;
+      nextBtn.disabled = current === slides.length - 1;
+    }
+
+    prevBtn.addEventListener('click', function () { show(current - 1); });
+    nextBtn.addEventListener('click', function () { show(current + 1); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(current + 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(current - 1); }
+      if (e.key === 'Home') { show(0); }
+      if (e.key === 'End') { show(slides.length - 1); }
+    });
+
+    show(0);
+  })();
+</script>
+</body>
+</html>
