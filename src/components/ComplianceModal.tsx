@@ -87,7 +87,7 @@ export default function ComplianceModal({ isOpen, onClose }: ComplianceModalProp
           </section>
 
           <p className="text-muted-foreground/70 text-[9px] leading-snug border-t border-border pt-2">
-            Full EN 40000 / CRA conformity is a certification process; this panel reflects the
+            Full EN 18031 / CRA conformity is a certification process; this panel reflects the
             code-level controls and the requirements they map to.
           </p>
         </div>

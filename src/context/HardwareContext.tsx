@@ -66,7 +66,7 @@ const defaultState: HardwareState = {
   nitrogenActive: false,
   nitrogenDuration: 120,
   n2LinePressure: 6.0,          // simulated, from sensor in production
-  systemName: localStorage.getItem('scure-system-name') || 'S-Cure',
+  systemName: localStorage.getItem('scure-system-name') || 'sCure',
   nfcEnabled: true,
   networkConnected: navigator.onLine,
   apiConnected: false,
@@ -154,22 +154,30 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
           // The hardware is authoritative: mirror the real readback so the
           // heating/cooling/UV/target indicators reflect the machine, not
           // the UI's optimistic local state.
-          setState(prev => ({
+          setState(prev => {
+            const isHeating = data.isHeating ?? prev.isHeating
+            return {
             ...prev,
             apiConnected: true,
             chamberTemp: data.chamberTemp != null ? Math.round(data.chamberTemp * 10) / 10 : prev.chamberTemp,
             doorClosed: data.doorClosed ?? prev.doorClosed,
             doorAborted: data.doorAborted ?? false,
             targetTemp: data.targetTemp !== undefined ? data.targetTemp : prev.targetTemp,
-            isHeating: data.isHeating ?? prev.isHeating,
+            isHeating,
+            // keep the heating stopwatch honest when heating starts/stops
+            // outside this UI (Settings slider, API, diagnostics)
+            heatingStartTime: isHeating
+              ? (prev.isHeating ? prev.heatingStartTime : Date.now())
+              : null,
             isCooling: data.isCooling ?? prev.isCooling,
+            coolingRate: data.isCooling ? (data.coolingRate ?? null) : null,
             uvOn: data.uvOn ?? prev.uvOn,
             uvIntensity: data.uvIntensity ?? prev.uvIntensity,
             nitrogenActive: data.nitrogenActive ?? prev.nitrogenActive,
             n2LinePressure: data.n2LinePressure ?? prev.n2LinePressure,
             faults: data.faults ?? prev.faults,
             ledTemps: data.ledTemps ?? prev.ledTemps,
-          }))
+          }})
         } else {
           if (alertRef.current.wasConnected) raiseAlert(9089)  // HW_API_UNREACHABLE
           alertRef.current.wasConnected = false
@@ -183,7 +191,9 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
     }
 
     checkStatus()
-    const interval = setInterval(checkStatus, 2000)
+    // 1 s sampling: every hardware reading (temps, door, UV, faults) is at
+    // most one second old in the UI.
+    const interval = setInterval(checkStatus, 1000)
 
     // Browser online/offline events
     const onOnline = () => setState(prev => ({ ...prev, networkConnected: true }))

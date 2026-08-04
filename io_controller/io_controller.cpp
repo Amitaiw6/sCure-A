@@ -158,6 +158,12 @@ const std::vector<std::pair<std::string,Chan>> TEMP_SENSORS = {
 constexpr double NTC_R0 = 10000.0, NTC_BETA = 3934.0, NTC_T0 = 298.15;
 constexpr double NTC_R_SERIES = 10000.0, NTC_VREF = 3.3;
 const std::string NTC_DIVIDER = "pullup";
+// TEMP_CHAMBER calibration against a Pico TC-08 inside the chamber
+// (2026-08-04, scripts/calibrate_scure_temp.py): actual = GAIN * raw + OFFSET,
+// exact at steady state over raw 31.5-76.6 C. The Python controller
+// (io_controller.py _chamber_corrected) additionally applies rate-based
+// compensation for ramps; these CLI one-shot reads are static-only.
+constexpr double CHAMBER_CAL_GAIN = 1.0979, CHAMBER_CAL_OFFSET = -3.9813;
 
 // direct GPIO (pinctrl)
 const std::map<std::string,int> GPIO_SIGNALS = {
@@ -430,6 +436,13 @@ static double ntc_r_to_temp(double r) {
     double inv_t = (1.0 / cfg::NTC_T0) + (1.0 / cfg::NTC_BETA) * std::log(r / cfg::NTC_R0);
     return (1.0 / inv_t) - 273.15;
 }
+// per-sensor temperature: applies the TEMP_CHAMBER calibration
+static double ntc_temp_for(const std::string& name, double v) {
+    double t = ntc_r_to_temp(ntc_v_to_r(v));
+    if (name == "TEMP_CHAMBER" && !std::isnan(t))
+        t = cfg::CHAMBER_CAL_GAIN * t + cfg::CHAMBER_CAL_OFFSET;
+    return t;
+}
 
 // ===========================================================================
 //  Direct GPIO / Servo via pinctrl
@@ -648,9 +661,9 @@ static int cmd_temp(const std::vector<std::string>& a) {
         return 0;
     }
     auto s = open_adcs(cfg::TEMP_ADCS, cfg::TEMP_PGA);
-    auto read = [&](const cfg::Chan& ch) {
+    auto read = [&](const std::string& name, const cfg::Chan& ch) {
         double v = s.adcs[ch.chip]->read_voltage(ch.ch);
-        return std::make_pair(v, ntc_r_to_temp(ntc_v_to_r(v)));
+        return std::make_pair(v, ntc_temp_for(name, v));
     };
     if (cmd == "raw") {
         for (auto& kv : cfg::TEMP_SENSORS)
@@ -660,7 +673,7 @@ static int cmd_temp(const std::vector<std::string>& a) {
         std::string sel = a.size() > 1 ? upper(a[1]) : "ALL";
         for (auto& kv : cfg::TEMP_SENSORS) {
             if (sel != "ALL" && sel != kv.first) continue;
-            auto pr = read(kv.second);
+            auto pr = read(kv.first, kv.second);
             if (std::isnan(pr.second))
                 std::printf("  %s: -   (%.3f V)\n", kv.first.c_str(), pr.first);
             else
@@ -769,7 +782,7 @@ static int cmd_status() {
         auto s = open_adcs(cfg::TEMP_ADCS, cfg::TEMP_PGA);
         for (auto& kv : cfg::TEMP_SENSORS) {
             double v = s.adcs[kv.second.chip]->read_voltage(kv.second.ch);
-            double t = ntc_r_to_temp(ntc_v_to_r(v));
+            double t = ntc_temp_for(kv.first, v);
             if (std::isnan(t)) std::printf("  %s: -\n", kv.first.c_str());
             else               std::printf("  %s: %.1f C\n", kv.first.c_str(), t);
         }
@@ -871,7 +884,7 @@ static double cool_read_chamber_temp(AdcSet& s) {
     for (const auto& kv : cfg::TEMP_SENSORS)
         if (kv.first == cool::THERMISTOR) {
             double v = s.adcs[kv.second.chip]->read_voltage(kv.second.ch);
-            return ntc_r_to_temp(ntc_v_to_r(v));
+            return ntc_temp_for(kv.first, v);
         }
     return NAN;
 }

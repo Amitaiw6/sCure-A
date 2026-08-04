@@ -104,7 +104,7 @@ export default function HomePage() {
           <Building2 size={18} className="text-muted-foreground/50 shrink-0" />
           <div>
             <p className="text-muted-foreground text-sm">No organization</p>
-            <p className="text-muted-foreground/50 text-[10px]">Connect to an organization in Settings to view print history</p>
+            <p className="text-muted-foreground/50 text-[10px]">Link an organization in Settings to view print history</p>
           </div>
         </div>
       ) : recentLogs.length === 0 ? (
@@ -131,7 +131,7 @@ export default function HomePage() {
                   <span className="text-foreground text-sm font-medium block truncate">{log.printName}</span>
                   <span className="text-muted-foreground text-xs block truncate">{log.materialName}</span>
                 </div>
-                <span className="text-cyan-400 text-xs shrink-0">{log.duration}min</span>
+                <span className="text-cyan-400 text-xs shrink-0">{log.duration} min</span>
                 <span className="text-muted-foreground text-xs shrink-0">{timeAgo(log.date)}</span>
                 <span className="text-muted-foreground/50 text-sm shrink-0">{log.printerName}</span>
                 <ChevronRight size={14} className="text-muted-foreground shrink-0" />
@@ -144,7 +144,7 @@ export default function HomePage() {
       {/* Material List Section — sticky header stays visible while the list scrolls */}
       <div className="flex items-center justify-between mb-3 pt-5 pb-2 sticky top-0 z-20 bg-background">
         <h2 className="text-white text-base font-semibold">
-          Material List
+          Program List
           <span className="text-muted-foreground text-xs font-normal ml-2">({materials.length})</span>
         </h2>
         <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export default function HomePage() {
         <p className="text-muted-foreground text-sm text-center py-8">Loading materials...</p>
       ) : materials.length === 0 ? (
         <p className="text-muted-foreground text-sm text-center py-8">
-          No materials yet. Upload a CSV or create a new program.
+          No materials yet. Upload a CSV or create a new material.
         </p>
       ) : (
         [...materials]
@@ -183,7 +183,7 @@ export default function HomePage() {
             <div className="flex-1">
               <MaterialItem
                 label={mat.name}
-                duration={`${mat.totalDuration}min`}
+                duration={`${mat.totalDuration} min`}
                 isSelected={selectedMaterialId === mat.id}
                 isPreset={mat.isPreset}
                 isFavorite={favoriteIds.includes(mat.id)}
@@ -249,12 +249,12 @@ export default function HomePage() {
           <div className="w-20 h-20 rounded-full bg-destructive/20 flex items-center justify-center">
             <AlertTriangle size={48} className="text-destructive" />
           </div>
-          <h2 className="text-foreground text-xl font-bold">Cannot Start Program</h2>
+          <h2 className="text-foreground text-xl font-bold">Cannot Start Cure</h2>
           <p className="text-muted-foreground text-sm text-center max-w-xs">
-            This program contains only nitrogen purge steps, but nitrogen is not enabled on the system.
+            This material contains only nitrogen purge steps, but nitrogen is not enabled on the system.
           </p>
           <p className="text-muted-foreground text-xs text-center max-w-xs">
-            Enable nitrogen in Settings or choose a different program.
+            Enable nitrogen in Settings or choose a different material.
           </p>
           <button
             onClick={() => setN2Error(false)}

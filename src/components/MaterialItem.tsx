@@ -41,7 +41,7 @@ export default function MaterialItem({ label, duration, isCommand, isSelected, i
         ) : (
           <PlusCircle size={20} className="text-muted-foreground" />
         )}
-        <span className="text-muted-foreground text-sm">{label}</span>
+        <span className="text-white text-[17.5px]">{label}</span>
       </div>
       <div className="flex items-center gap-2">
         {duration && (

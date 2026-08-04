@@ -122,7 +122,7 @@ export default function UpdateModal({ isOpen, onClose }: UpdateModalProps) {
               <p className="text-muted-foreground">The update will:</p>
               <p className="text-foreground">1. Find the update file on USB</p>
               <p className="text-foreground">2. Verify integrity (SHA-256)</p>
-              <p className="text-foreground">3. Backup current version</p>
+              <p className="text-foreground">3. Back up current version</p>
               <p className="text-foreground">4. Install new version</p>
               <p className="text-foreground">5. Restart services</p>
             </div>
@@ -148,7 +148,7 @@ export default function UpdateModal({ isOpen, onClose }: UpdateModalProps) {
               <div className="bg-green-500/10 rounded-lg p-3 mt-2">
                 <p className="text-green-400 text-xs font-semibold">Update successful!</p>
                 {version && <p className="text-green-400/80 text-[10px]">Version: {version}</p>}
-                <p className="text-muted-foreground text-[10px] mt-1">System will reload.</p>
+                <p className="text-muted-foreground text-[10px] mt-1">The system will restart.</p>
               </div>
             )}
 
@@ -156,7 +156,7 @@ export default function UpdateModal({ isOpen, onClose }: UpdateModalProps) {
               <div className="bg-destructive/10 rounded-lg p-3 mt-2">
                 <p className="text-destructive text-xs font-semibold">Update failed</p>
                 <p className="text-destructive/80 text-[10px]">{message}</p>
-                <p className="text-muted-foreground text-[10px] mt-1">Previous version was restored.</p>
+                <p className="text-muted-foreground text-[10px] mt-1">The previous version was restored.</p>
               </div>
             )}
           </div>

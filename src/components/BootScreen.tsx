@@ -84,7 +84,7 @@ export default function BootScreen({ onComplete }: BootScreenProps) {
       </div>
 
       {phase === 'logo' && (
-        <p className="text-cyan-500 text-lg font-bold mt-4 tracking-widest animate-pulse">S-CURE</p>
+        <p className="text-cyan-500 text-lg font-bold mt-4 tracking-widest animate-pulse">sCure</p>
       )}
 
       {/* System checks */}

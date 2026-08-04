@@ -7,8 +7,8 @@ IO-board drivers in ../io_controller (Raspberry Pi CM5).
 Architecture:
     React UI -> Flask API (app.py) -> IOBridge -> io_controller/
         SystemController        LED wavelength gating, heater safety, door interlock
-        TemperatureController   closed-loop heating (PI on PWM_HEATER)
-        CoolingController       closed-loop cooling (damper + fans)
+        TemperatureController   ON/OFF thermostat heating (PWM_HEATER)
+        CoolingController       fixed-fan cooling (damper + fans)
 
 The bridge is safe to import off-Pi: if the drivers cannot start (no smbus2 /
 no I2C buses), `available` stays False and app.py keeps its simulation mode.
@@ -28,8 +28,16 @@ IO_CONTROLLER_DIR = os.path.normpath(os.path.join(
 if os.path.isdir(IO_CONTROLLER_DIR) and IO_CONTROLLER_DIR not in sys.path:
     sys.path.insert(0, IO_CONTROLLER_DIR)
 
-# UI cooling modes -> cooling-rate setpoint (C/min, see components.json "cooling")
-COOLING_MODE_RATES = {'fast': 5.0, 'medium': 2.5, 'slow': 1.0}
+# UI cooling modes -> FIXED chamber-fan duty (%). The cooling loop holds the
+# fan at this constant duty for the whole mode (no closed-loop rate control);
+# components.json "cooling.mode_pwms" overrides these defaults.
+COOLING_MODE_PWMS = {'fast': 100, 'medium': 60, 'slow': 30}
+
+# Drying: the chamber intake/cooling fan (FAN_COOLING) runs at this duty for the
+# WHOLE drying step - from the start of the ramp through the hold - so the
+# chamber keeps a gentle airflow that carries moisture out. Turned off the
+# moment any other step (heat / cure / cool / stop) takes over.
+DRY_INTAKE_FAN_PWM = 30
 
 # UI fan names -> PCA9685 fan channels (io_controller PCA_CHANNELS)
 FAN_GROUPS = {
@@ -83,6 +91,10 @@ class StatusLeds(threading.Thread):
         self.color_door = parse_color(str(st.get('door_open', 'ff7800')))
         self.color_busy = parse_color(str(st.get('busy', 'yellow')))
         self.color_no_net = parse_color(str(st.get('no_internet', 'blue')))
+        # Manual chamber heating (Settings slider) gets its own SOLID color -
+        # steady orange, no comet / no blink - so it is visually distinct from
+        # a running cure program (moving yellow) and from door-open (blinking).
+        self.color_manual = parse_color(str(st.get('manual_heat', 'ff8c00')))
         self.brightness = float(st.get('brightness', 40))
         self.blink_sec = max(0.1, float(st.get('blink_sec', 0.5)))
         # chase_sec = time per one-LED step of the moving busy animation
@@ -91,7 +103,8 @@ class StatusLeds(threading.Thread):
         self.rtl = str(st.get('busy_direction', 'rtl')).lower() != 'ltr'
         # status_sec = how often the machine state is (re)classified AND the
         # door-open safety is enforced; animation keeps its own faster ticks.
-        self.status_sec = max(0.5, float(st.get('status_sec', 2.0)))
+        # HSI sampling-time rule: every reading is sampled at most every 1 s.
+        self.status_sec = max(0.5, float(st.get('status_sec', 1.0)))
         # door grace: the process is aborted only if the door STAYS open this
         # long (components.json door_sensor.abort_after_sec, default 10 s)
         self.door_abort_sec = 10.0
@@ -130,7 +143,7 @@ class StatusLeds(threading.Thread):
                     pass
             if ok != self._internet_ok:
                 print(f'[API] Internet {"back online" if ok else "UNREACHABLE"}'
-                      ' - status strip updated')
+                      ' - status strip updated', flush=True)
             self._internet_ok = ok
             if self._stop_evt.wait(self.net_check_sec):
                 return
@@ -149,6 +162,11 @@ class StatusLeds(threading.Thread):
             return 'fault'
         if b.sys.door_open() is True:     # None (sensor unreadable) is not "open"
             return 'door'
+        # Manual chamber heating (Settings slider, /api/chamber/temperature):
+        # its own steady color, checked BEFORE the generic busy animation.
+        if (b.temp.active and getattr(b, '_manual_heat', False)
+                and not cool.get('active') and not b._uv.get('on')):
+            return 'manual_heat'
         if b.temp.active or cool.get('active') or b._uv.get('on'):
             # A process without internet runs the comet in the no-internet
             # color, so the strip shows BOTH facts at once.
@@ -158,7 +176,7 @@ class StatusLeds(threading.Thread):
         return 'normal'
 
     def _evaluate(self):
-        """Runs every status_sec (default 2 s): classify the machine state for
+        """Runs every status_sec (default 1 s): classify the machine state for
         the strip AND enforce the door safety. The door opening mid-process
         gets a grace period (door_abort_sec, default 10 s) to be closed;
         only if it STAYS open that long is the process aborted and every
@@ -176,13 +194,15 @@ class StatusLeds(threading.Thread):
                 if self._door_open_since is None:
                     self._door_open_since = now
                     print(f'[SAFETY] Door opened mid-process - aborting in '
-                          f'{self.door_abort_sec:.0f}s unless it closes')
+                          f'{self.door_abort_sec:.0f}s unless it closes',
+                          flush=True)
                 elif now - self._door_open_since >= self.door_abort_sec:
                     self._door_open_since = None
                     b.door_abort()
             else:
                 if self._door_open_since is not None:
-                    print('[SAFETY] Door closed in time - process continues')
+                    print('[SAFETY] Door closed in time - process continues',
+                          flush=True)
                 self._door_open_since = None
         except Exception:                 # noqa: BLE001 - best-effort here; the
             pass                          # io_controller interlock still backs it up
@@ -234,6 +254,8 @@ class StatusLeds(threading.Thread):
                     frame = self.color_fault if blink_on else (0, 0, 0)
                 elif mode == 'door':
                     frame = self.color_door if blink_on else (0, 0, 0)
+                elif mode == 'manual_heat':   # Settings-slider heating: solid orange
+                    frame = self.color_manual
                 elif mode == 'no_net':    # idle + no internet: solid blue
                     frame = self.color_no_net
                 else:
@@ -266,7 +288,8 @@ class IOBridge:
         self.available = False
         self.error = None
         self._op = threading.RLock()      # serializes compound operations
-        self._damper_open = False
+        self._damper_open = None          # None = never driven; set on first command
+        self._dry_fan_on = False          # chamber intake fan held at 30% while drying
         self._cooling_mode = None         # UI mode name while cooling is active
         self._uv = {'on': False, 'intensity': 0, 'wavelength': None}
         self._fan_duty = {name: 0 for name in FAN_GROUPS}   # last commanded %
@@ -305,6 +328,7 @@ class IOBridge:
             # It re-opens only when cooling starts, or when a DRYING step
             # reaches its target temperature (_damper_watch below).
             self._drying = False
+            self._manual_heat = False     # True only for Settings-slider heating
             ok_d, why_d = self.set_damper(False)
             print('[API] damper servo ready (GPIO8, closed)' if ok_d
                   else f'[API] damper servo unavailable: {why_d}')
@@ -363,6 +387,9 @@ class IOBridge:
             # True from the door-open abort until the user acknowledges the
             # alert (or starts a new process) - the strip stays red meanwhile
             'doorAborted': bool(self._door_abort_ts),
+            # Internet reachability (StatusLeds background check, ~5s cadence)
+            'internetOk': (self.status_leds._internet_ok
+                           if self.status_leds else True),
             'isHeating': bool(self.temp.active),
             'isCooling': bool(cool.get('active')),
             'coolingMode': self._cooling_mode,
@@ -379,6 +406,7 @@ class IOBridge:
             'atTemp': bool(heat.get('at_temp')),
             'heaterPwm': heat.get('pwm'),
             'coolingRate': cool.get('rate_meas'),
+            'coolingFanPwm': cool.get('pwm') if cool.get('active') else None,
             'faults': {
                 'heater': self.temp.fault or self.sys.heater_fault,
                 'cooling': cool.get('fault'),
@@ -413,9 +441,25 @@ class IOBridge:
     # ------------------------------------------------------------------
     #  Heating / drying (closed loop, heater safety pre-flight inside)
     # ------------------------------------------------------------------
+    def _start_dry_fan(self):
+        """Chamber intake/cooling fan ON at DRY_INTAKE_FAN_PWM for the drying step."""
+        self._dry_fan_on = True
+        ok, why = self.set_fan_speed('chamber_intake', DRY_INTAKE_FAN_PWM)
+        print(f'[API] drying intake fan -> {DRY_INTAKE_FAN_PWM}% '
+              f'({"ok" if ok else "FAILED: " + str(why)})', flush=True)
+
+    def _stop_dry_fan(self):
+        """Turn the drying intake fan off when leaving the drying step."""
+        if self._dry_fan_on:
+            self._dry_fan_on = False
+            self.set_fan_speed('chamber_intake', 0)
+            print('[API] drying intake fan -> 0% (step ended)', flush=True)
+
     def heat_to_target(self, target_c):
         with self._op:
             self._drying = False
+            self._stop_dry_fan()          # not drying anymore
+            self._manual_heat = False     # program heating, not the manual slider
             self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             self.sys.stop_cooling('user')
@@ -423,24 +467,29 @@ class IOBridge:
             return self.temp.start(target_c)
 
     def dry_to_target(self, target_c):
-        """Drying = the same closed-loop heating, plus damper handling:
-        CLOSED during the ramp, OPENED automatically the moment the chamber
-        reaches the target temperature (_damper_watch) so the moisture can
-        vent out."""
+        """Drying = the same closed-loop heating, plus, the moment the chamber
+        reaches the target temperature (_damper_watch): the damper OPENS and
+        the chamber intake/cooling fan turns on at DRY_INTAKE_FAN_PWM (30%)
+        together - venting the moisture. Both stay on for the rest of the step
+        and turn off when any other step takes over. During the ramp the damper
+        is closed and the intake fan is off, so heating is not slowed."""
         with self._op:
             self._drying = False
+            self._manual_heat = False     # program heating, not the manual slider
             self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             self.sys.stop_cooling('user')
             self.set_damper(False)        # closed until the target is reached
             ok, why = self.temp.start(target_c)
-            self._drying = bool(ok)       # arm the at-temperature damper open
+            self._drying = bool(ok)       # arm the at-temperature damper + fan
             return ok, why
 
     def _damper_watch(self):
-        """Open the damper when an armed DRYING step reaches its target
-        temperature. One-shot per drying step; every other state keeps the
-        damper closed (cooling mode owns it while cooling). Never dies."""
+        """When an armed DRYING step reaches its target temperature: open the
+        damper AND turn the chamber intake fan on at 30% together, to vent the
+        moisture. One-shot per drying step; every other state keeps the damper
+        closed and the fan off (cooling mode owns them while cooling). Never
+        dies."""
         while True:
             time.sleep(1.0)
             try:
@@ -448,20 +497,28 @@ class IOBridge:
                         and self.temp.status().get('at_temp')):
                     self._drying = False          # fire once per drying step
                     ok, why = self.set_damper(True)
-                    print('[API] drying at target temperature: damper OPEN'
+                    if ok:
+                        self._start_dry_fan()     # fan comes on WITH the damper
+                    print('[API] drying at target: damper OPEN + intake fan 30%'
                           if ok else f'[API] drying damper open failed: {why}')
             except Exception:             # noqa: BLE001 - watcher must survive
                 pass
 
     def set_target_temp(self, target_c):
-        """Manual chamber setpoint: retarget the running loop, or start heating."""
+        """Manual chamber setpoint: retarget the running loop, or start heating.
+        Flags the heat as MANUAL so the RGB strip shows its dedicated solid
+        color instead of the cure-program animation."""
         with self._op:
             if self.temp.active:
                 self.temp.set_target(target_c)
+                self._manual_heat = True
                 return True, None
-            return self.temp.start(target_c)
+            ok, why = self.temp.start(target_c)
+            self._manual_heat = bool(ok)
+            return ok, why
 
     def stop_heating(self):
+        self._manual_heat = False
         self.temp.stop('user')            # heater off now; fan cooldown run-on continues
         return True, None
 
@@ -471,6 +528,8 @@ class IOBridge:
     def cure_uv(self, target_c, intensity, wavelength):
         with self._op:
             self._drying = False
+            self._stop_dry_fan()          # not drying anymore
+            self._manual_heat = False     # program heating, not the manual slider
             self._door_abort_ts = None    # new process: clear the door abort
             self.sys.stop_cooling('user')
             self.set_damper(False)        # vent stays closed while curing
@@ -482,18 +541,33 @@ class IOBridge:
             return False, '; '.join(problems) or 'cure blocked'
 
     # ------------------------------------------------------------------
-    #  Cooling (closed-loop rate control; damper + fans owned by the mode)
+    #  Cooling (fixed chamber-fan duty per mode; damper + fans owned by it)
     # ------------------------------------------------------------------
     def cool_to_target(self, target_c, mode):
         with self._op:
             self._drying = False          # cooling owns the damper from here
+            self._dry_fan_on = False      # cooling takes over FAN_COOLING itself
+            self._manual_heat = False
             self._door_abort_ts = None    # new process: clear the door abort
-            self.set_uv(False)
-            # Immediate full heater OFF (no fan run-on): cooling owns the
-            # heater fan for the whole mode and reopens the damper itself.
-            self.temp.shutdown('user')
-            rate = COOLING_MODE_RATES.get(mode, COOLING_MODE_RATES['medium'])
-            ok, why = self.sys.start_cooling(rate, target_c)
+            pwms = dict(COOLING_MODE_PWMS)
+            pwms.update(self.sys.config.get('cooling', {}).get('mode_pwms', {}))
+            pwm = pwms.get(mode, pwms['medium'])
+            try:
+                already_cooling = bool(self.sys.cooling_status().get('active'))
+            except Exception:             # noqa: BLE001
+                already_cooling = False
+            # Only tear the heater down on a FRESH entry into cooling. Doing it
+            # while cooling is already running (a mode change) runs the heater's
+            # end-of-process routine, which CLOSES the damper and kills the
+            # cooling fans - and start_cooling's already-running path would only
+            # update the fan duty, never reopening the damper. So when already
+            # cooling we just retarget/re-rate: the damper stays open.
+            if not already_cooling:
+                self.set_uv(False)
+                # Immediate full heater OFF (no fan run-on): cooling owns the
+                # heater fan for the whole mode and reopens the damper itself.
+                self.temp.shutdown('user')
+            ok, why = self.sys.start_cooling(pwm, target_c)
             if ok:
                 self._cooling_mode = mode
                 self._damper_open = True
@@ -503,14 +577,17 @@ class IOBridge:
         """SAFETY: the door opened while outputs were live. Kill EVERY output
         immediately - heater, UV, cooling, fans, nitrogen, BOFA, damper - and
         flag the abort so the UI stops the running program (doorAborted in
-        /api/state). Fired by the StatusLeds status watchdog (every 2 s)."""
+        /api/state). Fired by the StatusLeds status watchdog (every 1 s).
+        This is the ONLY stop path with no heater-fan run-on."""
         with self._op:
-            self.stop_all(immediate=True)
+            self.temp.shutdown('door open')   # heater + fan OFF now, no run-on
+            self.stop_all()
             for fan in list(self._fan_duty):    # manual fan writes too
                 self.set_fan_speed(fan, 0)
             self.set_bofa(False)
             self._door_abort_ts = time.time()
-        print('[SAFETY] Door opened mid-process - ALL outputs forced OFF')
+        print('[SAFETY] Door opened mid-process - ALL outputs forced OFF',
+              flush=True)
 
     def ack_door_abort(self):
         """The user acknowledged the door-abort alert (Err 6016) in the UI -
@@ -521,19 +598,21 @@ class IOBridge:
     def stop_all(self, immediate=False):
         """Stop every cure output (heater, UV, cooling, nitrogen).
 
-        immediate=True (user abort): full heater shutdown right now, no
-        10-minute fan run-on - matches the UI promise of an immediate stop.
-        immediate=False (normal end-of-cure): heater off with the standard
-        fan cooldown run-on."""
+        The heater ELEMENT turns off right away in both cases; after heating,
+        the heater fan always keeps running its cooldown run-on
+        (cooldown_fan_pwm % for cooldown_sec, default 30% / 10 min) to carry
+        residual heat off the element - including on a user abort. The only
+        full-kill paths with NO run-on are door_abort() (safety) and
+        shutdown() (process exit). `immediate` is kept for API compatibility;
+        both values now behave the same."""
         with self._op:
             self._drying = False
+            self._stop_dry_fan()
+            self._manual_heat = False
             self.set_uv(False)
             self.set_nitrogen(False)
             self.sys.stop_cooling('user')
-            if immediate:
-                self.temp.shutdown('user')
-            else:
-                self.temp.stop('user')
+            self.temp.stop('user')        # heater off now; fan run-on continues
             self.set_damper(False)        # idle state: vent closed
             self._damper_open = False
             return True, None
@@ -585,11 +664,18 @@ class IOBridge:
         return True, None
 
     def set_damper(self, open_state):
+        # Command the servo only when the position actually changes. Many code
+        # paths re-assert "damper closed" (every heat/dry/cure/stop) - without
+        # this guard each one re-drives the servo and it buzzes. The first call
+        # (self._damper_open is None) always goes through to set a known state.
+        want = bool(open_state)
+        if self._damper_open is want:
+            return True, None
         try:
-            self.sys.cooling._set_damper(bool(open_state))
+            self.sys.cooling._set_damper(want)
         except Exception as e:            # noqa: BLE001 - servo unavailable
             return False, f'damper failed: {e}'
-        self._damper_open = bool(open_state)
+        self._damper_open = want
         return True, None
 
     def open_door(self):

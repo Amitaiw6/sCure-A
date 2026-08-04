@@ -97,7 +97,7 @@ export function parseCsv(csvContent: string): CsvParseResult {
 
     const process = cols[1]
     if (!VALID_PROCESSES.includes(process as any)) {
-      errors.push(`Row ${i}: Invalid process "${process}" (must be Heating, Drying, Cure, Cooling or Bleacher)`)
+      errors.push(`Row ${i}: Invalid process "${process}" (must be Heating, Drying, Cure, Cooling, Bleacher, or Nitrogen)`)
       continue
     }
 
@@ -130,10 +130,11 @@ export function parseCsv(csvContent: string): CsvParseResult {
     }
 
     // Temperature validation — hardware limits: the heater refuses targets
-    // below 30°C (heating.target_min); cooling targets are 20-75°C.
+    // below 30°C (heating.target_min); the chamber cannot cool below ambient
+    // (~30°C) either, so cooling targets are 30-75°C.
     const temp = cols[2] ? Number(cols[2]) : null
     if (temp !== null) {
-      const [tMin, tMax] = proc === 'Cooling' ? [20, 75] : [30, 80]
+      const [tMin, tMax] = proc === 'Cooling' ? [30, 75] : [30, 80]
       if (isNaN(temp) || temp < tMin || temp > tMax) {
         errors.push(`Row ${i}: Invalid temperature "${cols[2]}" (must be ${tMin}-${tMax} for ${proc})`)
         continue
@@ -200,7 +201,7 @@ export function parseCsv(csvContent: string): CsvParseResult {
     if (s.process === 'Nitrogen') {
       n2Count++
       if (n2Count > 2) {
-        errors.push(`Step ${s.step}: Maximum 2 nitrogen purge steps allowed`)
+        errors.push(`Step ${s.step}: A maximum of 2 nitrogen purge steps is allowed`)
       }
     }
 
@@ -215,7 +216,7 @@ export function parseCsv(csvContent: string): CsvParseResult {
     if (prev && (prev.process === 'Cure' || prev.process === 'Bleacher')) {
       const prevPrev = i > 1 ? steps[i - 2] : null
       if (prevPrev?.process === 'Nitrogen' && s.process !== 'Cooling') {
-        errors.push(`Step ${s.step}: After the Cure/Bleaching that follows N₂, only Cooling is allowed`)
+        errors.push(`Step ${s.step}: Only Cooling is allowed after the Cure/Bleaching step that follows the N₂ purge`)
       }
     }
 
@@ -226,7 +227,7 @@ export function parseCsv(csvContent: string): CsvParseResult {
     // Temperature must go up (unless after Cooling)
     if (s.process !== 'Cooling' && s.process !== 'Nitrogen' && s.temperature != null) {
       if (lastTemp !== null && s.temperature < lastTemp) {
-        errors.push(`Step ${s.step}: Temperature (${s.temperature}°C) cannot be lower than previous (${lastTemp}°C) without a Cooling step`)
+        errors.push(`Step ${s.step}: Temperature (${s.temperature}°C) cannot be lower than the previous step (${lastTemp}°C) without a Cooling step`)
       }
       lastTemp = s.temperature
     }
@@ -255,7 +256,7 @@ export function parseCsv(csvContent: string): CsvParseResult {
       if (afterN2 && (s.process === 'Cure' || s.process === 'Bleacher')) { foundProcessAfterN2 = true; break }
     }
     if (!foundProcessAfterN2) {
-      errors.push('Add a Cure or Bleaching step after N₂ purge')
+      errors.push('Add a Cure or Bleaching step after the N₂ purge')
     }
   }
 

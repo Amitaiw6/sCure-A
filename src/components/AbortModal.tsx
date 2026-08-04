@@ -25,8 +25,8 @@ export default function AbortModal({ isOpen, onClose, onAbort }: AbortModalProps
           </div>
           <DialogTitle className="text-2xl">Abort Cure Process?</DialogTitle>
           <DialogDescription>
-            This will <span className="text-destructive font-semibold">immediately stop</span> the active heating cycle.
-            The material may be damaged and the cycle cannot be resumed.
+            This will <span className="text-destructive font-semibold">immediately stop</span> the active cure cycle.
+            The material may be damaged, and the cycle cannot be resumed.
             Are you sure you want to abort?
           </DialogDescription>
         </DialogHeader>

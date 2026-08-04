@@ -82,7 +82,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         newStep = { ...base, process: 'Cure', intensity: 30 }
       } else if (beforeLast?.process === 'Nitrogen' && (last?.process === 'Cure' || last?.process === 'Bleacher')) {
         // After the Cure/Bleaching that followed N₂ — only Cooling is allowed
-        newStep = { ...base, process: 'Cooling', temperature: 25, coolingMode: 'medium', time: 0 }
+        newStep = { ...base, process: 'Cooling', temperature: 30, coolingMode: 'medium', time: 0 }
       }
       const next = [...prev, newStep]
       scrollToStep(next.length - 1)
@@ -99,10 +99,13 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
       if (i !== index) return s
       if (field === 'process') {
         const proc = value as ProcessType
+        // A Cooling target can never exceed 5°C below the previous step's
+        // temperature (you can only cool the chamber DOWN, at least 5°C).
+        const coolMax = Math.max(COOL_MIN_TEMP, getCoolingMaxTemp(index))
         return {
           ...s,
           process: proc,
-          temperature: proc === 'Nitrogen' ? null : proc === 'Cooling' ? (s.temperature ?? 25) : (s.temperature ?? 40),
+          temperature: proc === 'Nitrogen' ? null : proc === 'Cooling' ? Math.min(s.temperature ?? coolMax, coolMax) : (s.temperature ?? 40),
           intensity: (proc === 'Cure' || proc === 'Bleacher') ? (s.intensity ?? 30) : null,
           coolingMode: proc === 'Cooling' ? (s.coolingMode ?? 'medium') : undefined,
           time: proc === 'Cooling' || proc === 'Nitrogen' ? 0 : (s.time || 10),
@@ -117,6 +120,9 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
   // the heater driver refuses lower targets). A Cooling step in between
   // resets the minimum back to that floor.
   const HEAT_MIN_TEMP = 30
+  // Lowest coolable target: the chamber cannot cool below ambient (~30 °C on
+  // this machine), so a lower setpoint would never be reached and would stall.
+  const COOL_MIN_TEMP = 30
   const getMinTemp = (index: number): number => {
     for (let i = index - 1; i >= 0; i--) {
       if (steps[i].process === 'Cooling') return HEAT_MIN_TEMP
@@ -133,14 +139,23 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     return 75
   }
 
-  // When temperature changes, also fix any following steps that are now below the new min
+  // When a step's temperature changes, keep the following steps consistent:
+  //  - heat-type steps can't sit below the new value (pushed up)
+  //  - a Cooling step can't exceed 5°C below the step right before it, so it
+  //    is clamped DOWN if the chamber it cools from just got colder.
   const updateStepTemp = (index: number, value: number) => {
     setSteps(prev => {
       const next = [...prev]
       next[index] = { ...next[index], temperature: value }
-      // Push up temperatures of following non-cooling steps (until a Cooling step)
       for (let i = index + 1; i < next.length; i++) {
-        if (next[i].process === 'Cooling') break
+        if (next[i].process === 'Cooling') {
+          const prevTemp = next[i - 1].temperature
+          if (prevTemp != null && next[i].temperature != null) {
+            const maxCool = Math.max(COOL_MIN_TEMP, prevTemp - 5)
+            if (next[i].temperature! > maxCool) next[i] = { ...next[i], temperature: maxCool }
+          }
+          break                       // cooling ends the heat-propagation chain
+        }
         if (next[i].temperature != null && next[i].temperature! < value) {
           next[i] = { ...next[i], temperature: value }
         }
@@ -239,8 +254,8 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     browserDownloadCsv(csv, filename)
     setCsvMsg({
       text: res.message?.includes('No USB')
-        ? 'No USB drive — downloaded the file instead'
-        : 'Downloaded the file',
+        ? 'No USB drive found — file downloaded instead'
+        : 'File downloaded',
       error: true,
     })
   }
@@ -255,10 +270,10 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
       const next = steps[i + 1]
       const after = steps[i + 2]
       if (!next || (next.process !== 'Cure' && next.process !== 'Bleacher')) {
-        return 'After N₂ purge, add a Cure or Bleaching step'
+        return 'After an N₂ purge, add a Cure or Bleaching step'
       }
       if (!after || after.process !== 'Cooling') {
-        return 'After the Cure/Bleaching that follows N₂, add a Cooling step'
+        return 'Add a Cooling step after the Cure/Bleaching step that follows the N₂ purge'
       }
     }
     return null
@@ -266,7 +281,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
   // Validation error message
   const saveError = (() => {
-    if (!name.trim()) return 'Enter a program name'
+    if (!name.trim()) return 'Enter a material name'
     if (steps.length === 0) return 'Add at least one step'
     if (hasNitrogen && n2BlockError) return n2BlockError
     return null
@@ -321,16 +336,16 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
         <div className="flex items-center gap-4 px-4 py-2 shrink-0 border-b border-border">
           <DialogHeader className="p-0">
             <DialogTitle className="text-lg whitespace-nowrap">
-              {isEditing ? 'Edit Program' : 'Build Cure Program'}
+              {isEditing ? 'Edit Program' : 'New Program'}
             </DialogTitle>
           </DialogHeader>
-          <label className="text-foreground text-sm whitespace-nowrap ml-auto">Name:</label>
+          <label className="text-foreground text-sm whitespace-nowrap ml-auto">Name</label>
           <div
             className="w-[260px] h-10 flex items-center rounded-lg border border-input bg-transparent px-3 cursor-pointer hover:bg-accent/50 transition-colors"
             onClick={() => setShowKeyboard(true)}
           >
             <span className={name ? 'text-foreground text-sm' : 'text-muted-foreground text-sm'}>
-              {name || 'Tap to enter name...'}
+              {name || 'Tap to enter a name...'}
             </span>
           </div>
         </div>
@@ -370,16 +385,16 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
                   {step.process === 'Nitrogen' ? (
                     <div className="text-muted-foreground text-xs px-1">
-                      N₂ purge runs automatically if nitrogen is enabled.
+                      The N₂ purge runs automatically if nitrogen is enabled; otherwise it is skipped.
                     </div>
                   ) : step.process === 'Cooling' ? (
                     <>
                       <div className="flex items-center justify-between gap-3">
                         <label className="text-foreground text-sm">Target Temp</label>
                         <TouchNumber
-                          value={step.temperature ?? 25}
+                          value={step.temperature ?? COOL_MIN_TEMP}
                           onChange={v => updateStep(i, 'temperature', v)}
-                          min={20} max={getCoolingMaxTemp(i)} step={5} suffix="°C"
+                          min={COOL_MIN_TEMP} max={Math.max(COOL_MIN_TEMP, getCoolingMaxTemp(i))} step={5} suffix="°C"
                           className="w-[140px]"
                         />
                       </div>
@@ -411,7 +426,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
                   {false && (step.process === 'Cure' || step.process === 'Bleacher') && (
                     <div className="flex items-center justify-between gap-3">
-                      <label className="text-foreground text-sm">Intensity:</label>
+                      <label className="text-foreground text-sm">Intensity</label>
                       <TouchNumber
                         value={step.intensity}
                         onChange={v => updateStep(i, 'intensity', v)}
@@ -423,7 +438,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
 
                   {step.process !== 'Cooling' && step.process !== 'Nitrogen' && (
                     <div className="flex items-center justify-between gap-3">
-                      <label className="text-foreground text-sm">Time:</label>
+                      <label className="text-foreground text-sm">Time</label>
                       <TouchNumber
                         value={step.time}
                         onChange={v => updateStep(i, 'time', v ?? 1)}
@@ -437,7 +452,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                   {(step.process === 'Cure' || step.process === 'Bleacher') && (
                     <>
                       <div className="flex items-center justify-between gap-3">
-                        <label className="text-foreground text-sm">Timer start:</label>
+                        <label className="text-foreground text-sm">Timer Start</label>
                         <Select value={step.timerMode ?? 'on-target'} onValueChange={v => updateStep(i, 'timerMode', v)}>
                           <SelectTrigger className="w-[140px] h-9">
                             <SelectValue />
@@ -450,7 +465,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                       </div>
 
                       <div className="flex items-center justify-between gap-3">
-                        <label className="text-foreground text-sm">UV Intensity:</label>
+                        <label className="text-foreground text-sm">UV Intensity</label>
                         <TouchNumber
                           value={step.uvIntensity ?? 30}
                           onChange={v => updateStep(i, 'uvIntensity', v)}
@@ -460,7 +475,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                       </div>
 
                       <div className="flex items-center justify-between gap-3">
-                        <label className="text-foreground text-sm">UV starts:</label>
+                        <label className="text-foreground text-sm">UV Start</label>
                         <Select value={step.uvStartMode ?? 'at-target'} onValueChange={v => updateStep(i, 'uvStartMode', v)}>
                           <SelectTrigger className="w-[140px] h-9">
                             <SelectValue />
@@ -511,7 +526,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
               onPointerLeave={() => setShowSaveError(false)}
               className={`min-w-[120px] ${saveError ? 'opacity-50' : ''}`}
             >
-              {isEditing ? 'Update' : 'Save Program'}
+              {isEditing ? 'Update Program' : 'Save Program'}
             </Button>
           </div>
         </div>

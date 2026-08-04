@@ -143,7 +143,7 @@ export default function CureProcessPage() {
       case 'cooling': res = await coolToTargetTemperature(phase.temp ?? AMBIENT_TEMP, phase.coolingMode); break
     }
     if (res && !res.ok) {
-      setPhaseError(res.message || 'Hardware refused the command')
+      setPhaseError(res.message || 'The hardware refused the command')
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
     } else {
       setPhaseError(null)
@@ -160,7 +160,7 @@ export default function CureProcessPage() {
       ? await cureUv405(temp, phase.intensity ?? 30)
       : await cureUv450(temp, phase.intensity ?? 30)
     if (!res.ok) {
-      setPhaseError(res.message || 'UV refused')
+      setPhaseError(res.message || 'UV command refused')
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
     }
   }, [hw.apiConnected, hw.chamberTemp])
@@ -302,7 +302,7 @@ export default function CureProcessPage() {
   }
 
   const handleTempWarningAbort = () => {
-    stopCureOutputs(true)      // abort = immediate full stop, no fan run-on
+    stopCureOutputs(true)      // abort: outputs stop now, heater fan runs its cooldown
     setShowTempWarning(false)
     setIsRunning(false)
     setIsRamping(false)
@@ -364,7 +364,7 @@ export default function CureProcessPage() {
       if (hw.apiConnected) {
         setNitrogenValve(true).then(res => {
           if (!res.ok) {
-            setPhaseError(res.message || 'Nitrogen valve refused')
+            setPhaseError(res.message || 'Nitrogen valve command refused')
             window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
           }
         })
@@ -534,7 +534,7 @@ export default function CureProcessPage() {
   }, [phaseElapsed.length])
 
   const handleAbort = () => {
-    stopCureOutputs(true)      // abort = immediate full stop, no fan run-on
+    stopCureOutputs(true)      // abort: outputs stop now, heater fan runs its cooldown
     setIsRunning(false)
     setIsRamping(false)
     setN2Purging(false)
@@ -583,7 +583,7 @@ export default function CureProcessPage() {
         gaugeProgress: isActiveRamping ? rampProgress : status === 'completed' ? 100 : progress,
         rangeStart: `${isActiveRamping ? rampStartTemp : AMBIENT_TEMP}°C`,
         rangeEnd: `${phase.temp ?? 80}°C`,
-        statusText: isActiveRamping ? `Ramping ...` : status === 'active' ? `${label} ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+        statusText: isActiveRamping ? `Ramping...` : status === 'active' ? `${label}...` : status === 'completed' ? 'Done' : 'Waiting...',
       }
     }
     if (phase.type === 'cure') {
@@ -593,7 +593,7 @@ export default function CureProcessPage() {
         gaugeProgress: status === 'completed' ? 100 : progress,
         rangeStart: '0%',
         rangeEnd: `${phase.intensity ?? 100}%`,
-        statusText: status === 'active' ? `UV curing at ${phase.intensity}% ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+        statusText: status === 'active' ? `UV curing at ${phase.intensity}%...` : status === 'completed' ? 'Done' : 'Waiting...',
       }
     }
     if (phase.type === 'nitrogen') {
@@ -604,7 +604,7 @@ export default function CureProcessPage() {
         gaugeProgress: n2Progress,
         rangeStart: '0s',
         rangeEnd: `${hw.nitrogenDuration}s`,
-        statusText: status === 'active' && n2Purging ? `N₂ purging ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+        statusText: status === 'active' && n2Purging ? `N₂ purging...` : status === 'completed' ? 'Done' : 'Waiting...',
       }
     }
     // Cooling (default): progress follows the MEASURED chamber temperature
@@ -621,7 +621,7 @@ export default function CureProcessPage() {
       gaugeProgress: coolProgress,
       rangeStart: `${Math.round(coolStartTemp)}°C`,
       rangeEnd: `${coolTarget}°C`,
-      statusText: status === 'active' ? `Cooling to ${coolTarget}°C ...` : status === 'completed' ? 'Done' : 'Waiting ...',
+      statusText: status === 'active' ? `Cooling to ${coolTarget}°C...` : status === 'completed' ? 'Done' : 'Waiting...',
     }
   }
 
@@ -680,7 +680,7 @@ export default function CureProcessPage() {
           {isComplete ? (
             <>
               <Badge className="bg-green-500 text-white text-[10px]">Done</Badge>
-              <span className="text-foreground font-bold text-sm">Cure finished!</span>
+              <span className="text-foreground font-bold text-sm">Cure complete!</span>
             </>
           ) : n2Purging ? (
             <>
@@ -697,7 +697,7 @@ export default function CureProcessPage() {
           ) : isRunning ? (
             <>
               <Badge variant="outline" className="text-cyan-400 border-cyan-500 text-[10px]">Next</Badge>
-              <span className="text-foreground font-bold text-sm">{nextPhase?.name ?? 'Final'}</span>
+              <span className="text-foreground font-bold text-sm">{nextPhase?.name ?? 'Final phase'}</span>
               <span className="text-muted-foreground text-xs">({getNextPhaseDesc()})</span>
             </>
           ) : (
@@ -763,10 +763,10 @@ export default function CureProcessPage() {
           <h2 className="text-foreground text-xl font-bold">Temperature Warning</h2>
           <p className="text-muted-foreground text-sm text-center max-w-xs">
             The system is unable to reach the target temperature of <span className="text-foreground font-semibold">{targetTemp}°C</span>.
-            Current temperature: <span className="text-foreground font-semibold">{hw.chamberTemp}°C</span>
+            Current temperature: <span className="text-foreground font-semibold">{hw.chamberTemp}°C</span>.
           </p>
           <p className="text-yellow-400 text-sm text-center max-w-xs font-medium">
-            Continuing may cause distortions in the models.
+            Continuing may cause distortion of the printed models.
           </p>
           <p className="text-muted-foreground text-xs text-center">Do you want to continue?</p>
           <div className="flex gap-4 mt-2">
@@ -828,7 +828,7 @@ export default function CureProcessPage() {
             </h2>
             <p className="text-zinc-300">
               The chamber door was opened during an active process.
-              Running with an open chamber is not permitted.
+              The process cannot continue while the door is open.
             </p>
             <p className="text-zinc-300 mt-1 font-semibold">
               Close the door now, or the process will be aborted in

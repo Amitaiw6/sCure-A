@@ -54,7 +54,7 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
         </span>
         <span className="text-xs">{config.icon}</span>
         <span className={cn('text-xs font-semibold truncate', config.textColor)}>
-          {step.processType}
+          {step.processType === 'Bleacher' ? 'Bleaching' : step.processType}
         </span>
         <Button variant="ghost" size="icon-xs" onClick={() => onEdit(step)} className="ml-auto shrink-0">
           <Pencil size={12} />
@@ -70,7 +70,7 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
           <p>Mode: <span className="text-foreground font-semibold capitalize">{step.coolingMode}</span></p>
         )}
         {step.intensity != null && (
-          <p>Int: <span className="text-foreground font-semibold">{step.intensity}%</span></p>
+          <p>Intensity: <span className="text-foreground font-semibold">{step.intensity}%</span></p>
         )}
         {(step.processType === 'Cure' || step.processType === 'Bleacher') && step.uvIntensity != null && step.uvIntensity > 0 && (
           <p>UV: <span className="text-purple-400 font-semibold">{step.uvIntensity}%</span></p>

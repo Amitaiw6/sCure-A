@@ -56,7 +56,7 @@ export async function verifyUpdatePackage(
   }
   const actual = await sha256Hex(packageBytes)
   if (actual !== expected) {
-    return { ok: false, reason: 'Checksum mismatch — package corrupt or tampered', expected, actual }
+    return { ok: false, reason: 'Checksum mismatch — the package is corrupt or has been tampered with', expected, actual }
   }
   return { ok: true, reason: 'Integrity verified (SHA-256)', expected, actual }
 }

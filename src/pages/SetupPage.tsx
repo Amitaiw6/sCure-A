@@ -98,10 +98,10 @@ export default function SetupPage() {
           {/* Title with shimmer */}
           <div className="text-center">
             <h1 className="text-2xl font-bold tracking-widest animate-welcome-title">
-              <span className="welcome-shimmer-text">S-Cure</span>
+              <span className="welcome-shimmer-text">sCure</span>
             </h1>
             <p className="text-muted-foreground text-xs mt-1 leading-relaxed animate-welcome-subtitle">
-              Congratulations on your new <span className="text-primary font-semibold">S-Cure</span> curing system.<br />
+              Congratulations on your new <span className="text-primary font-semibold">sCure</span> curing system.<br />
               Let's set it up in just a few steps.
             </p>
           </div>
@@ -194,7 +194,7 @@ export default function SetupPage() {
           {/* Right – Org content */}
           <div className="flex flex-col gap-4 w-[320px]">
             <div>
-              <h1 className="text-lg font-bold text-foreground">Connect Organization</h1>
+              <h1 className="text-lg font-bold text-foreground">Link Organization</h1>
               <p className="text-muted-foreground text-xs mt-1">
                 Link <span className="text-primary font-medium">{deviceName}</span> to your organization
               </p>
@@ -260,7 +260,7 @@ export default function SetupPage() {
                 className="w-full h-11 text-sm font-semibold gap-2 rounded-xl"
               >
                 <Usb size={14} />
-                Assign Organization to S-Cure
+                Link Organization
                 <ArrowRight size={14} />
               </Button>
 

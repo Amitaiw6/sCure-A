@@ -8,7 +8,7 @@ import { useHardware } from '@/context/HardwareContext'
 import { Download, Upload, Fan, Zap, Building2, Unlink, ShieldCheck } from 'lucide-react'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import {
-  systemReboot, exportLogs, setTargetTemperature, setFanSpeed,
+  systemReboot, exportLogs, setTargetTemperature, stopChamberHeating, setFanSpeed,
   setDamper, runFanTest, runLedDiagnostic,
   setBofaControl as apiSetBofa, setSystemDateTime,
 } from '@/services/hardware-api'
@@ -40,7 +40,9 @@ export default function SettingsPage() {
   const [ledCoolingAirflow, setLedCoolingAirflow] = useState(0)
   const [chamberIntakeFan, setChamberIntakeFan] = useState(0)
   const [chamberHeatingFan, setChamberHeatingFan] = useState(0)
-  const [chamberHeating, setChamberHeatingLocal] = useState(62)
+  // Rest position 25°C = heater OFF. Heating only starts once the user moves
+  // the slider to 30°C or above (the heater's minimum target).
+  const [chamberHeating, setChamberHeatingLocal] = useState(25)
   const [damperOpen, setDamperOpen] = useState(false)
   const [bofaControl, setBofaControl] = useState(true)
   const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null; ok?: boolean }>>({})
@@ -93,10 +95,15 @@ export default function SettingsPage() {
   // Debounced hardware writes: sliders fire on every step while dragging
   const tempDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleChamberHeatingChange = (val: number | null) => {
-    const v = Math.max(val ?? 30, 30)   // heater refuses targets below 30°C
+    // Below the 30°C heater floor the slider snaps to the 25°C rest position,
+    // which means OFF: the heater is stopped, never commanded.
+    const v = (val ?? 25) < 30 ? 25 : (val as number)
     setChamberHeatingLocal(v)
     if (tempDebounceRef.current) clearTimeout(tempDebounceRef.current)
-    tempDebounceRef.current = setTimeout(() => setTargetTemperature(v), 400)
+    tempDebounceRef.current = setTimeout(() => {
+      if (v <= 25) stopChamberHeating()
+      else setTargetTemperature(v)
+    }, 400)
   }
 
   const fanDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -172,13 +179,13 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <Label className="shrink-0">Chamber Heating</Label>
               <div className="flex-1 h-4 bg-gradient-to-r from-blue-500 via-yellow-500 to-orange-500 rounded-full relative">
-                <input type="range" min={30} max={80} value={chamberHeating}
+                <input type="range" min={25} max={80} value={chamberHeating}
                   onChange={e => handleChamberHeatingChange(Number(e.target.value))}
                   className="absolute inset-0 w-full opacity-0 cursor-pointer touch-manipulation" />
                 <div className="absolute top-1/2 w-5 h-5 bg-white rounded-full shadow-lg border-2 border-primary pointer-events-none"
-                  style={{ left: `calc(10px + (100% - 20px) * ${(chamberHeating - 30) / 50})`, transform: 'translate(-50%, -50%)' }} />
+                  style={{ left: `calc(10px + (100% - 20px) * ${(chamberHeating - 25) / 55})`, transform: 'translate(-50%, -50%)' }} />
               </div>
-              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={30} max={80} step={1} suffix="°C" className="w-[120px] shrink-0" />
+              <TouchNumber value={chamberHeating} onChange={handleChamberHeatingChange} min={25} max={80} step={1} suffix="°C" className="w-[120px] shrink-0" />
             </div>
           </Card>
 
@@ -215,7 +222,7 @@ export default function SettingsPage() {
           {/* Row 5: Info grid */}
           <Card>
             <div className="grid grid-cols-3 gap-x-6 gap-y-1.5">
-              <InfoItem label="Lead On Time" value={`${config.leadOnTimeHours} hours`} />
+              <InfoItem label="LED On Time" value={`${config.leadOnTimeHours} hours`} />
               <InfoItem label="N₂ Pressure"
                 value={hw.n2LinePressure != null ? `${hw.n2LinePressure.toFixed(1)} bar` : 'N/A'} />
               <div className="flex items-center justify-between">
@@ -300,14 +307,14 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
-            <InfoItem label="S.N" value={config.serialNumber} />
+            <InfoItem label="S/N" value={config.serialNumber} />
           </Card>
 
           <Card>
-            <Label>Dump Logs <span className="text-muted-foreground/60">(USB)</span></Label>
+            <Label>Export Logs <span className="text-muted-foreground/60">(USB)</span></Label>
             <Button variant="outline" size="sm" className="w-full text-[10px] h-8 gap-1 mt-1.5" onClick={handleExportLogs} disabled={logsStatus === 'loading'}>
               <Download size={13} className={logsStatus === 'loading' ? 'animate-bounce' : ''} />
-              {logsStatus === 'loading' ? 'Exporting...' : logsStatus === 'success' ? '✓ Done!' : logsStatus === 'error' ? '✗ No USB found' : 'Export LOGS'}
+              {logsStatus === 'loading' ? 'Exporting...' : logsStatus === 'success' ? '✓ Done!' : logsStatus === 'error' ? '✗ No USB drive found' : 'Export Logs'}
             </Button>
           </Card>
 
@@ -322,7 +329,7 @@ export default function SettingsPage() {
             <Label>Compliance <span className="text-muted-foreground/60">(CRA / EN 18031)</span></Label>
             <Button variant="outline" size="sm" className="w-full text-[10px] h-8 gap-1 mt-1.5" onClick={() => setShowCompliance(true)}>
               <ShieldCheck size={13} className="text-green-500" />
-              {COMPLIANCE_CONTROLS.filter(c => c.status === 'active').length} controls active
+              {COMPLIANCE_CONTROLS.filter(c => c.status === 'active').length} {COMPLIANCE_CONTROLS.filter(c => c.status === 'active').length === 1 ? 'control' : 'controls'} active
             </Button>
           </Card>
 

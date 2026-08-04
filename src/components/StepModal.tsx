@@ -154,7 +154,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
               <TouchNumber
                 value={tempValue}
                 onChange={setTempValue}
-                min={processType === 'Cooling' ? 20 : Math.max(minTemp, HEAT_MIN_TEMP)}
+                min={processType === 'Cooling' ? 30 : Math.max(minTemp, HEAT_MIN_TEMP)}
                 max={processType === 'Cooling' ? maxCoolingTemp : 80}
                 step={5}
                 suffix="°C"
@@ -166,7 +166,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
           {/* Nitrogen info */}
           {processType === 'Nitrogen' && (
             <div className="text-muted-foreground text-xs px-1">
-              N₂ purge will run automatically if nitrogen is enabled. Skipped otherwise.
+              The N₂ purge runs automatically if nitrogen is enabled; otherwise it is skipped.
             </div>
           )}
 
@@ -206,14 +206,14 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
           {/* Time - not shown for Cooling/Nitrogen */}
           {processType !== 'Cooling' && processType !== 'Nitrogen' && (
             <div className="flex items-center justify-between gap-4">
-              <label className="text-foreground text-sm whitespace-nowrap">Time:</label>
+              <label className="text-foreground text-sm whitespace-nowrap">Time</label>
               <TouchNumber
                 value={time}
                 onChange={v => setTime(v ?? 1)}
                 min={1}
                 max={processType === 'Bleacher' ? 720 : 120}
                 step={1}
-                suffix="min"
+                suffix=" min"
                 className="w-[160px]"
               />
             </div>
@@ -224,7 +224,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             <>
               {/* Timer Mode */}
               <div className="flex items-center justify-between gap-4">
-                <label className="text-foreground text-sm whitespace-nowrap">Timer start:</label>
+                <label className="text-foreground text-sm whitespace-nowrap">Timer Start</label>
                 <Select value={timerMode} onValueChange={v => setTimerMode(v as TimerMode)}>
                   <SelectTrigger className="w-[160px] h-10">
                     <SelectValue />
@@ -238,7 +238,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
 
               {/* UV intensity + start mode */}
               <div className="flex items-center justify-between gap-4">
-                <label className="text-foreground text-sm whitespace-nowrap">UV Intensity:</label>
+                <label className="text-foreground text-sm whitespace-nowrap">UV Intensity</label>
                 <TouchNumber
                   value={uvIntensity ?? 30}
                   onChange={v => setUvIntensity(v)}
@@ -251,7 +251,7 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
               </div>
 
               <div className="flex items-center justify-between gap-4">
-                <label className="text-foreground text-sm whitespace-nowrap">UV starts:</label>
+                <label className="text-foreground text-sm whitespace-nowrap">UV Start</label>
                 <Select value={uvStartMode} onValueChange={v => setUvStartMode(v as UvStartMode)}>
                   <SelectTrigger className="w-[160px] h-10">
                     <SelectValue />

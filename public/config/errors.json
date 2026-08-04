@@ -75,7 +75,7 @@
       "severity": "critical",
       "category": "provisioning",
       "layer": "daemon",
-      "description": "During setup the serial number could not be restored from the SD backup to Storage. Provisioning cannot continue until a valid serial number is available.",
+      "description": "During setup the serial number could not be restored from the SD backup to device storage. Provisioning cannot continue until a valid serial number is available.",
       "troubleshooting": [
         "Check the SD card is seated and readable",
         "Verify the backup configuration file exists on SD",
@@ -91,7 +91,7 @@
       "severity": "critical",
       "category": "provisioning",
       "layer": "backend",
-      "description": "The device could not obtain a serial number from the cloud within the allowed number of attempts during setup (problem communicating with the cloud).",
+      "description": "During setup, the device could not obtain a serial number from the cloud within the allowed number of attempts due to a communication problem.",
       "troubleshooting": [
         "Check the internet connection",
         "Verify the device can reach the sCure cloud service",
@@ -107,9 +107,9 @@
       "severity": "warning",
       "category": "network",
       "layer": "backend",
-      "description": "During setup the device has no internet connection, so it cannot request a serial number from the cloud. The user can connect the network and retry.",
+      "description": "During setup the device has no internet connection, so it cannot request a serial number from the cloud. Restore the network connection and retry.",
       "troubleshooting": [
-        "Connect the ethernet cable",
+        "Connect the Ethernet cable",
         "Verify the network/router is online",
         "Retry once the connection is restored"
       ],
@@ -125,7 +125,7 @@
       "description": "The device name entered on the Setup Name screen is empty. A non-empty name is required to continue.",
       "troubleshooting": [
         "Enter a name for the device",
-        "Avoid leading/trailing spaces only"
+        "The name cannot consist of spaces only"
       ],
       "supportUrl": "https://docs.scure.com/errors/4001"
     },
@@ -151,7 +151,7 @@
       "severity": "warning",
       "category": "storage",
       "layer": "backend",
-      "description": "The configuration was saved to primary Storage but the secondary backup copy to the SD card failed. Whether this blocks the flow or is a warning-only follows system policy (SRS OI-6).",
+      "description": "The configuration was saved to primary storage but the secondary backup copy to the SD card failed. Whether this blocks setup or is only a warning is determined by system policy.",
       "troubleshooting": [
         "Check the SD card is inserted and writable",
         "Verify free space on the SD card",
@@ -261,7 +261,7 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A row in the imported CSV names a process that is not recognised (expected Heating, Drying, Cure, Bleaching, Cooling or Nitrogen).",
+      "description": "A row in the imported CSV names a process that is not recognized (expected Heating, Drying, Cure, Bleaching, Cooling, or Nitrogen).",
       "troubleshooting": [
         "Correct the process name in the offending row",
         "Re-export the CSV from the recipe builder"
@@ -275,9 +275,9 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A row in the imported CSV has a temperature outside the accepted 20–80°C range.",
+      "description": "A row in the imported CSV has a temperature outside the accepted range (30–80°C; Cooling steps 20–75°C).",
       "troubleshooting": [
-        "Set the row temperature between 20°C and 80°C"
+        "Set the row temperature between 30°C and 80°C (20–75°C for Cooling steps)"
       ],
       "supportUrl": "https://docs.scure.com/errors/6008"
     },
@@ -288,7 +288,7 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A row in the imported CSV has a time outside the accepted range (1–120, Bleaching 1–720). Note: per-step time has since been removed from the recipe model (SRS OI-17); this check is retained only for legacy CSV files.",
+      "description": "A row in the imported CSV has a time outside the accepted range (1–120 minutes; Bleaching: 1–720 minutes). Note: per-step time has since been removed from the recipe model; this check is retained only for legacy CSV files.",
       "troubleshooting": [
         "Correct the time value in the offending row",
         "Re-export the CSV from the current recipe builder"
@@ -315,9 +315,9 @@
       "severity": "warning",
       "category": "io",
       "layer": "ui",
-      "description": "The recipe builder could not save the generated program CSV to USB; it falls back to a browser download.",
+      "description": "The recipe builder could not save the generated program CSV to USB; the file was downloaded in the browser instead.",
       "troubleshooting": [
-        "Insert a writable USB stick and retry",
+        "Insert a writable USB drive and retry",
         "Use the downloaded file from the browser instead"
       ],
       "supportUrl": "https://docs.scure.com/errors/6011"
@@ -370,7 +370,7 @@
       "severity": "critical",
       "category": "safety",
       "layer": "daemon",
-      "description": "The pre-cure hardware check did not pass (e.g. chamber not ready, door/seal open or N₂ line not pressurised). The cure was not started and no outputs were energised.",
+      "description": "The pre-cure hardware check did not pass (e.g. chamber not ready, door/seal open, or N₂ line not pressurized). The cure was not started and no outputs were energized.",
       "troubleshooting": [
         "Close and seal the chamber door",
         "Verify the N₂ line pressure (if nitrogen is enabled)",
@@ -386,7 +386,7 @@
       "severity": "critical",
       "category": "safety",
       "layer": "daemon",
-      "description": "The chamber door was opened during an active process and remained open for more than 10 seconds. Running with an open chamber is not permitted, so for your safety the process was stopped and all outputs were switched off (heater, UV, cooling, fans, nitrogen). The interrupted cure cannot be resumed.",
+      "description": "The chamber door was opened during an active process and remained open for more than 10 seconds. The process cannot continue while the door is open, so for your safety it was stopped and all outputs were switched off (heater, UV, cooling, fans, nitrogen). The interrupted cure cannot be resumed.",
       "troubleshooting": [
         "Close and seal the chamber door",
         "Inspect the part — an interrupted cure may be incomplete",
@@ -402,9 +402,9 @@
       "severity": "warning",
       "category": "validation",
       "layer": "backend",
-      "description": "A cure operation requested a target temperature outside the accepted 20–80°C range. The backend rejected the command and energised no outputs.",
+      "description": "A cure operation requested a target temperature outside the accepted range (heating 30–80°C; cooling 20–80°C). The backend rejected the command and no outputs were energized.",
       "troubleshooting": [
-        "Edit the recipe step so the target is between 20°C and 80°C",
+        "Edit the recipe step so the heating target is between 30°C and 80°C (cooling 20–80°C)",
         "Re-import the program CSV if the value came from a file"
       ],
       "supportUrl": "https://docs.scure.com/errors/7001"
@@ -416,9 +416,9 @@
       "severity": "warning",
       "category": "validation",
       "layer": "backend",
-      "description": "A Cure (405 nm) or Bleaching (450 nm) step requested a UV intensity outside the accepted 5–100% range. The backend rejected the command.",
+      "description": "A Cure (405 nm) or Bleaching (450 nm) step requested a UV intensity outside the accepted 10–100% range. The backend rejected the command.",
       "troubleshooting": [
-        "Set the UV intensity between 5% and 100%",
+        "Set the UV intensity between 10% and 100%",
         "Re-import the program CSV if the value came from a file"
       ],
       "supportUrl": "https://docs.scure.com/errors/7002"
@@ -444,7 +444,7 @@
       "severity": "warning",
       "category": "process",
       "layer": "ui",
-      "description": "During a cure the chamber failed to move toward its target across five consecutive 5-minute stall checks. The user is warned that continuing may cause distortions, and may Continue or Abort.",
+      "description": "During a cure, the chamber temperature failed to move toward its target across five consecutive 5-minute stall checks. The user is warned that continuing may distort the printed models, and may Continue or Abort.",
       "troubleshooting": [
         "Choose Abort to stop, or Continue at your own risk",
         "Check heater/cooling operation and chamber insulation",
@@ -489,9 +489,9 @@
       "layer": "backend",
       "description": "An export operation could not locate a mounted USB drive on the device.",
       "troubleshooting": [
-        "Insert a USB stick into the machine",
+        "Insert a USB drive into the machine",
         "Wait a few seconds for it to mount, then retry",
-        "Try a different USB port or stick"
+        "Try a different USB port or drive"
       ],
       "supportUrl": "https://docs.scure.com/errors/9081"
     },
@@ -502,11 +502,11 @@
       "severity": "critical",
       "category": "storage",
       "layer": "backend",
-      "description": "The backend found a USB drive but failed to write the file to it (full, read-only or removed mid-write).",
+      "description": "The backend found a USB drive but failed to write the file to it (the drive may be full, read-only, or was removed mid-write).",
       "troubleshooting": [
-        "Check the USB stick has free space and is not write-protected",
-        "Do not remove the USB stick during export",
-        "Reformat the USB stick (FAT32) and retry"
+        "Check that the USB drive has free space and is not write-protected",
+        "Do not remove the USB drive during export",
+        "Reformat the USB drive (FAT32) and retry"
       ],
       "supportUrl": "https://docs.scure.com/errors/9082"
     },
@@ -519,7 +519,7 @@
       "layer": "backend",
       "description": "The backend failed to copy the system logs to the USB drive.",
       "troubleshooting": [
-        "Insert a writable USB stick and retry",
+        "Insert a writable USB drive and retry",
         "Check available space on the USB drive"
       ],
       "supportUrl": "https://docs.scure.com/errors/9083"
@@ -533,7 +533,7 @@
       "layer": "backend",
       "description": "The backend could not read the device network status (IP / MAC / gateway).",
       "troubleshooting": [
-        "Check the ethernet cable and link LEDs",
+        "Check the Ethernet cable and link LEDs",
         "Reboot the system",
         "Verify network settings"
       ],
@@ -578,7 +578,7 @@
       "description": "No update package (or its manifest) could be found on the connected USB drive.",
       "troubleshooting": [
         "Copy the .scu update package and its manifest to the USB root",
-        "Insert the USB stick and retry"
+        "Insert the USB drive and retry"
       ],
       "supportUrl": "https://docs.scure.com/errors/9087"
     },
@@ -589,7 +589,7 @@
       "severity": "critical",
       "category": "security",
       "layer": "ui",
-      "description": "The update package failed SHA-256 integrity verification (missing/malformed checksum or a mismatch — corrupt or tampered package). Installation is blocked (EN 18031 secure update).",
+      "description": "The update package failed SHA-256 integrity verification (missing/malformed checksum or a mismatch — a corrupt or tampered-with package). Installation is blocked (EN 18031 secure update).",
       "troubleshooting": [
         "Re-download the update package from the official portal",
         "Verify the checksum/manifest matches the package",

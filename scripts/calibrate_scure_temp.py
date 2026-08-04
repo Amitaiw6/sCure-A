@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+calibrate_scure_temp.py - fit a correction from the sCure chamber sensor to the
+actual chamber temperature measured by a Pico TC-08 inside the box.
+
+Samples BOTH at the same moments:
+  - sCure raw reading:  GET http://<pi>:3001/api/state  -> chamberTemp
+  - actual temperature: TC-08 average across connected thermocouples
+
+and keeps going until the actual temperature stabilizes (span over the last
+--stable-window minutes below --stable-band degC), then least-squares fits
+
+    actual = a * raw + b
+
+Outputs in --out-dir:
+  scure_temp_calibration.csv   - the paired samples
+  scure_temp_calibration.png   - scatter + fitted line
+  scure_temp_correction.py     - drop-in function with the fitted constants
+
+Usage:
+    python scripts/calibrate_scure_temp.py [--host 192.168.154.141]
+        [--interval 5] [--stable-window 3] [--stable-band 0.25]
+        [--min-minutes 5] [--max-minutes 45]
+"""
+
+import argparse
+import csv
+import ctypes
+import datetime as dt
+import json
+import math
+import os
+import sys
+import time
+import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from picolog_report import _add_pico_dll_dirs  # noqa: E402
+
+SURFACE, SERIES, INK, MUTED, GRID, BASELINE = (
+    "#fcfcfb", "#2a78d6", "#0b0b0b", "#898781", "#e1e0d9", "#c3c2b7")
+
+
+def read_scure(host, timeout=5):
+    """Raw chamber temperature from the sCure API (None on failure)."""
+    try:
+        with urllib.request.urlopen(f"http://{host}:3001/api/state", timeout=timeout) as r:
+            t = json.load(r).get("chamberTemp")
+            return float(t) if t is not None else None
+    except Exception:
+        return None
+
+
+class TC08:
+    def __init__(self, tc_type="K"):
+        _add_pico_dll_dirs()
+        from picosdk.usbtc08 import usbtc08 as tc08
+        self._lib = tc08
+        self.handle = tc08.usb_tc08_open_unit()
+        if self.handle <= 0:
+            raise SystemExit("TC-08 not found (or in use by PicoLog).")
+        tc08.usb_tc08_set_mains(self.handle, 50)
+        tc08.usb_tc08_set_channel(self.handle, 0, ord('C'))
+        for c in range(1, 9):
+            tc08.usb_tc08_set_channel(self.handle, c, ord(tc_type))
+        self._temp = (ctypes.c_float * 9)()
+        self._ovf = ctypes.c_int16(0)
+        self._units = tc08.USBTC08_UNITS["USBTC08_UNITS_CENTIGRADE"]
+
+    def average(self):
+        """Average degC across connected channels (None if nothing reads)."""
+        ok = self._lib.usb_tc08_get_single(
+            self.handle, ctypes.byref(self._temp), ctypes.byref(self._ovf), self._units)
+        if not ok:
+            return None
+        vals = [float(self._temp[c]) for c in range(1, 9)
+                if math.isfinite(self._temp[c])]
+        return sum(vals) / len(vals) if vals else None
+
+    def close(self):
+        self._lib.usb_tc08_close_unit(self.handle)
+
+
+def fit_and_report(samples, out_dir):
+    import numpy as np
+
+    raw = np.array([s[1] for s in samples])
+    act = np.array([s[2] for s in samples])
+    a, b = np.polyfit(raw, act, 1)
+    pred = a * raw + b
+    ss_res = float(np.sum((act - pred) ** 2))
+    ss_tot = float(np.sum((act - act.mean()) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    rms = float(np.sqrt(np.mean((act - pred) ** 2)))
+
+    csv_path = os.path.join(out_dir, "scure_temp_calibration.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["time", "scure_raw_degC", "actual_degC"])
+        for t, r, x in samples:
+            w.writerow([t.strftime("%Y-%m-%d %H:%M:%S"), round(r, 3), round(x, 3)])
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(8, 6), facecolor=SURFACE)
+    ax.set_facecolor(SURFACE)
+    ax.scatter(raw, act, s=18, color=SERIES, alpha=0.6, edgecolors="none")
+    xs = np.linspace(raw.min(), raw.max(), 50)
+    ax.plot(xs, a * xs + b, color=INK, linewidth=1.5)
+    ax.set_title(f"actual = {a:.4f} x raw + {b:+.3f}   "
+                 f"(R\N{SUPERSCRIPT TWO}={r2:.4f}, RMS {rms:.2f} \N{DEGREE SIGN}C)",
+                 color=INK, fontsize=12, loc="left", pad=12)
+    ax.set_xlabel("sCure sensor reading (\N{DEGREE SIGN}C)", color=MUTED)
+    ax.set_ylabel("actual chamber temp (\N{DEGREE SIGN}C)", color=MUTED)
+    ax.grid(color=GRID, linewidth=0.8)
+    ax.tick_params(colors=MUTED)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(BASELINE)
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "scure_temp_calibration.png"),
+                dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+
+    lo, hi = float(raw.min()), float(raw.max())
+    func_path = os.path.join(out_dir, "scure_temp_correction.py")
+    with open(func_path, "w", encoding="utf-8") as f:
+        f.write(f'''"""Auto-generated by calibrate_scure_temp.py on {dt.datetime.now():%Y-%m-%d %H:%M}.
+Fitted on {len(samples)} paired samples, raw range {lo:.1f}-{hi:.1f} degC,
+R^2={r2:.4f}, residual RMS {rms:.2f} degC. Re-run the calibration if the
+sensor, its placement, or the chamber changes.
+"""
+
+# actual = CAL_GAIN * raw + CAL_OFFSET
+CAL_GAIN = {a:.6f}
+CAL_OFFSET = {b:.6f}
+CAL_RAW_RANGE = ({lo:.1f}, {hi:.1f})   # raw range the fit was measured over
+
+
+def actual_chamber_temp(raw_c):
+    """Corrected chamber temperature (degC) from the sCure sensor reading.
+
+    Valid within CAL_RAW_RANGE; outside it the line is extrapolated.
+    Returns None if the reading is missing.
+    """
+    if raw_c is None:
+        return None
+    return CAL_GAIN * float(raw_c) + CAL_OFFSET
+''')
+    return a, b, r2, rms, csv_path, func_path
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Calibrate sCure chamber sensor against a TC-08.")
+    ap.add_argument("--host", default="192.168.154.141")
+    ap.add_argument("--interval", type=float, default=5.0, help="seconds between samples")
+    ap.add_argument("--stable-window", type=float, default=3.0,
+                    help="minutes the actual temp must hold to count as stable")
+    ap.add_argument("--stable-band", type=float, default=0.25,
+                    help="max degC span over the window to count as stable")
+    ap.add_argument("--min-minutes", type=float, default=5.0)
+    ap.add_argument("--max-minutes", type=float, default=45.0,
+                    help="safety cap; 0 = no cap, run until stable")
+    ap.add_argument("--tc-type", default="K", choices=list("BEJKNRST"))
+    ap.add_argument("--out-dir", default=".")
+    args = ap.parse_args()
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    tc = TC08(args.tc_type)
+    samples = []          # (datetime, scure_raw, actual)
+    window = []           # (monotonic, actual) for the stability test
+    start = time.monotonic()
+    misses = 0
+    print(f"Calibrating: sCure @ {args.host} vs TC-08, every {args.interval:g}s.")
+    print(f"Stops when actual temp span < {args.stable_band} degC over "
+          f"{args.stable_window:g} min (min {args.min_minutes:g}, max {args.max_minutes:g} min).")
+    try:
+        while True:
+            now_m = time.monotonic()
+            actual = tc.average()
+            raw = read_scure(args.host)
+            if actual is not None and raw is not None:
+                samples.append((dt.datetime.now(), raw, actual))
+                window.append((now_m, actual))
+                misses = 0
+                print(f"  {dt.datetime.now():%H:%M:%S}  raw {raw:6.2f}  actual {actual:6.2f}  "
+                      f"delta {actual - raw:+.2f}", flush=True)
+            else:
+                misses += 1
+                which = "TC-08" if actual is None else "sCure API"
+                print(f"  {dt.datetime.now():%H:%M:%S}  missed sample ({which})", flush=True)
+                if misses >= 12:
+                    raise SystemExit(f"12 consecutive failures reading the {which} - aborting.")
+
+            window = [(t, x) for t, x in window if now_m - t <= args.stable_window * 60]
+            elapsed_min = (now_m - start) / 60
+            if elapsed_min >= args.min_minutes and len(window) >= 10:
+                span = max(x for _, x in window) - min(x for _, x in window)
+                covered = now_m - window[0][0] >= args.stable_window * 60 * 0.9
+                if covered and span <= args.stable_band:
+                    print(f"Stable: span {span:.2f} degC over last {args.stable_window:g} min.")
+                    break
+            if args.max_minutes > 0 and elapsed_min >= args.max_minutes:
+                print("Max duration reached - fitting with what we have.")
+                break
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("\nStopped early - fitting with what we have.")
+    finally:
+        tc.close()
+
+    if len(samples) < 10:
+        raise SystemExit(f"Only {len(samples)} paired samples - not enough to fit.")
+
+    a, b, r2, rms, csv_path, func_path = fit_and_report(samples, args.out_dir)
+    print(f"\nFit over {len(samples)} samples:  actual = {a:.4f} * raw {b:+.3f}")
+    print(f"R^2 = {r2:.4f}, residual RMS = {rms:.2f} degC")
+    print(f"Data:     {csv_path}")
+    print(f"Function: {func_path}")
+
+
+if __name__ == "__main__":
+    main()

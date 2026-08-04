@@ -618,27 +618,27 @@ class HardwareHub:
         return 10
 
     # --- cooling mode (all logic in SystemController; these just delegate) -
-    def request_cooling(self, on, rate=None, target=None):
+    def request_cooling(self, on, pwm=None, target=None):
         if on:
             if self._cooling_thread and self._cooling_thread.is_alive():
                 return
             self._cooling_thread = threading.Thread(
-                target=self._enable_cooling_seq, args=(rate, target), daemon=True)
+                target=self._enable_cooling_seq, args=(pwm, target), daemon=True)
             self._cooling_thread.start()
         elif self.sys:
             self.sys.stop_cooling("user")
         else:
             self._sim_cooling = False
 
-    def _enable_cooling_seq(self, rate, target):
+    def _enable_cooling_seq(self, pwm, target):
         if self.sys:
-            self.sys.start_cooling(rate, target)   # damper + fans + PI loop, hardware side
+            self.sys.start_cooling(pwm, target)    # damper + fixed-duty fans, hardware side
         else:
             self._sim_cooling = True
 
-    def set_cooling_rate(self, rate):
+    def set_cooling_pwm(self, pwm):
         if self.sys and self.sys.is_cooling_on():
-            self.sys.set_cooling_rate(rate)
+            self.sys.set_cooling_pwm(pwm)
 
     def cooling_status(self):
         if self.sys:
@@ -992,11 +992,11 @@ class Dashboard:
         rate.columnconfigure(1, weight=1)
         self._label(rate, "Rate", font="small", fg="muted").grid(row=0, column=0, sticky="w")
         self.cooling_rate_slider = Slider(
-            rate, parent_bg=COLORS["card"], lo=0.0, hi=5.0, value=1.0,
-            command=lambda v: self.cooling_rate_lbl.config(text=f"{v:.1f} °C/min"),
+            rate, parent_bg=COLORS["card"], lo=0.0, hi=100.0, value=60.0,
+            command=lambda v: self.cooling_rate_lbl.config(text=f"{v:.0f} %"),
             release=self._on_cooling_rate_release)
         self.cooling_rate_slider.grid(row=0, column=1, sticky="ew", padx=8)
-        self.cooling_rate_lbl = self._label(rate, "1.0 °C/min", font="mono", fg="accent")
+        self.cooling_rate_lbl = self._label(rate, "60 %", font="mono", fg="accent")
         self.cooling_rate_lbl.grid(row=0, column=2, sticky="e")
 
         tgt = tk.Frame(box, bg=COLORS["card"])
@@ -1024,17 +1024,17 @@ class Dashboard:
 
     def _on_cooling_toggle(self, on):
         if on:
-            rate = self.cooling_rate_slider.get()
-            self._log(f"cooling mode START (rate {rate:.1f} C/min, "
+            pwm = self.cooling_rate_slider.get()
+            self._log(f"cooling mode START (fan {pwm:.0f}%, "
                       f"target {self.cooling_target_entry.get()} C)")
-            self.hub.request_cooling(True, rate, self._cooling_target())
+            self.hub.request_cooling(True, pwm, self._cooling_target())
         else:
             self._log("cooling mode STOP (user)")
             self.hub.request_cooling(False)
 
     def _on_cooling_rate_release(self, val):
-        self._log(f"cooling rate setpoint {val:.1f} C/min")
-        self.hub.set_cooling_rate(val)             # live update while the mode runs
+        self._log(f"cooling fan duty {val:.0f}%")
+        self.hub.set_cooling_pwm(val)              # live update while the mode runs
 
     def _build_pressure(self, parent):
         wrap, box = self._section(parent, "PRESSURE")

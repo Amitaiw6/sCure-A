@@ -69,14 +69,25 @@ BEGIN
 
   INSERT INTO printers (serial_number, model, status) VALUES
     ('OR200001', 'Origin One', 'online'),
-    ('OR200002', 'Origin One', 'online')
+    ('OR200002', 'Origin One', 'online'),
+    ('TZ', 'Origin One', 'online')
   ON CONFLICT (serial_number) DO NOTHING;
 
   INSERT INTO cure_boxes (serial_number, model, status) VALUES
     ('SC-DEMO-01', 'sCure Box', 'online')
   ON CONFLICT (serial_number) DO NOTHING;
 
-  -- #105 Demo Dental Model — error (newest)
+  -- #106 ST45 (preset) from printer TZ — completed (newest); same job as #104
+  INSERT INTO jobs (material_id) VALUES ((SELECT id FROM materials WHERE name='ST45' LIMIT 1)) RETURNING id INTO jid;
+  INSERT INTO prints (ext_id, printer_id, job_id, name, start_time, end_time, status)
+    VALUES ('demo-print-6', (SELECT id FROM printers WHERE serial_number='TZ'), jid, 'Print #106',
+            TIMESTAMPTZ '2026-07-23 09:00:00+00', TIMESTAMPTZ '2026-07-23 09:35:00+00', 'completed') RETURNING id INTO pid;
+  INSERT INTO cure_runs (ext_id, print_id, cure_box_id, steps, steps_completed, target_temp, phases, started_at, ended_at, status)
+    VALUES ('demo-print-6', pid, (SELECT id FROM cure_boxes WHERE serial_number='SC-DEMO-01'), 5, 5, 60,
+            '["Drying","Heating","Cure","Cooling","Drying"]'::jsonb,
+            TIMESTAMPTZ '2026-07-23 09:00:00+00', TIMESTAMPTZ '2026-07-23 09:35:00+00', 'completed');
+
+  -- #105 Demo Dental Model — error
   INSERT INTO jobs (material_id) VALUES ((SELECT id FROM materials WHERE name='Demo Dental Model' LIMIT 1)) RETURNING id INTO jid;
   INSERT INTO prints (ext_id, printer_id, job_id, name, start_time, end_time, status)
     VALUES ('demo-print-5', (SELECT id FROM printers WHERE serial_number='OR200001'), jid, 'Print #105',

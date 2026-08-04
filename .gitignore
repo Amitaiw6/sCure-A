@@ -28,3 +28,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Durable server-side user data (work programs, etc.) — persists on the SSD
+server/data/

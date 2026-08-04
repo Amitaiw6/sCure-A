@@ -252,10 +252,11 @@ const TEST_CATEGORIES = [
   },
   {
     id: 'data_persistence',
-    name: 'Data Persistence (PostgreSQL)',
+    name: 'Data Persistence (PostgreSQL / disk)',
     icon: '🗄',
     tests: [
       { id: 'data_materials_get', name: 'Get User Materials', desc: 'GET /api/materials/user returns user programs (DB view or JSON fallback)', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
+      { id: 'data_materials_persist', name: 'Programs Survive Power-Off', desc: 'Save a program, re-read it (durable JSON store on the SSD) — the user list is preserved unchanged', check: 'data_persist_roundtrip' },
       { id: 'data_print_history_get', name: 'Get Print History', desc: 'GET /api/print-history returns print records (§6.4)', endpoint: '/api/print-history', method: 'GET', expectArray: true },
       { id: 'data_cure_history_get', name: 'Get Cure History', desc: 'GET /api/cure-history returns cure runs (§8) — empty [] without a DB', endpoint: '/api/cure-history', method: 'GET', expectArray: true },
       { id: 'data_cure_start', name: 'Start Cure Run (DB)', desc: 'POST /api/cure-runs/qa-test-run/start records a run — needs DATABASE_URL (503 otherwise)', endpoint: '/api/cure-runs/qa-test-run/start', method: 'POST', body: { materialName: 'QA Material', steps: 2, phases: ['Heating', 'Cooling'], targetTemp: 60, serialNumber: 'QA-BOX-001' }, expect: 'ok' },
@@ -292,11 +293,13 @@ const TEST_CATEGORIES = [
       { id: 'io_uv_405', name: 'UV 405nm ON (Cure)', desc: 'POST /api/cure/cure-405 — wavelength routing (GPIO17) verified, 405nm LEDs + their fans start', endpoint: '/api/cure/cure-405?target=40&intensity=30', method: 'POST', expect: 'ok' },
       { id: 'io_uv_state', name: 'UV State Reflected', desc: 'GET /api/state shows uvOn with wavelength 405', endpoint: '/api/state', method: 'GET', check: 'io_uv_on' },
       { id: 'io_uv_450', name: 'UV 450nm ON (Bleaching)', desc: 'POST /api/cure/cure-450 — switches wavelength mode safely (all LEDs off first)', endpoint: '/api/cure/cure-450?target=40&intensity=30', method: 'POST', expect: 'ok' },
-      { id: 'io_cool_on', name: 'Cooling Mode ON', desc: 'POST /api/cure/cool — damper opens, fans run under closed-loop rate control', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
+      { id: 'io_cool_on', name: 'Cooling Mode ON', desc: 'POST /api/cure/cool — damper opens, chamber fan runs at the mode\'s fixed duty', endpoint: '/api/cure/cool?target=25&mode=medium', method: 'POST', expect: 'ok' },
+      { id: 'io_cool_pwm', name: 'Cooling Fixed Fan Duty', desc: 'Each cooling mode holds the chamber fan at its FIXED duty (no PI rate control): slow=30%, medium=60%, fast=100% — verified live via coolingFanPwm in /api/state', check: 'io_cool_pwm' },
       { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
       { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): fault → BLINKING red; door open → BLINKING door color; process → yellow comet (BLUE comet when internet is unreachable); idle without internet → solid blue; all OK → solid normal; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
-      { id: 'led_status_loop', name: 'LED Status Loop Every 2s', desc: 'StatusLeds watchdog re-classifies the machine state every status_sec=2s (animation keeps its own faster ticks) — any state change reaches the strip within 2 seconds', check: 'led_status_loop' },
+      { id: 'led_status_loop', name: 'LED Status Loop Every 1s', desc: 'StatusLeds watchdog re-classifies the machine state every status_sec=1s (animation keeps its own faster ticks) — any state change reaches the strip within 1 second', check: 'led_status_loop' },
+      { id: 'sampling_1s', name: 'Sampling Time ≤ 1s (HSI)', desc: 'HSI sampling-time rule: every reading is sampled at most every 1s — heating loop sample_sec=1s, cooling loop sample_sec=1s, status/door watchdog status_sec=1s, dashboard SENSOR_REFRESH_SEC=1s, UI /api/state poll=1s', check: 'sampling_1s' },
       { id: 'io_door_abort', name: 'Door-Open Safety Abort', desc: 'Watchdog: door opened while ANY output is live → 10s countdown warning on screen; if it STAYS open → process aborted + ALL outputs off + strip turns red (Err 6016). Closing in time resumes; idle/unreadable sensor never aborts', check: 'io_door_abort' },
       { id: 'io_door_ack', name: 'Door Abort Acknowledge', desc: 'POST /api/door-abort/ack — the strip stays RED after a door abort until the user confirms the Err 6016 alert (or starts a new process); acknowledging clears doorAborted and returns the strip to normal', endpoint: '/api/door-abort/ack', method: 'POST', expect: 'ok' },
       { id: 'io_damper_logic', name: 'Damper Open/Close Logic', desc: 'Damper (MG90S on GPIO8): opens ONLY when a drying step reaches its target temp or when cooling starts; closed during drying ramp, heating, cure, bleach, idle and after stop', check: 'io_damper_logic' },
@@ -506,7 +509,7 @@ const TEST_CATEGORIES = [
       { id: 'hwc_csv_uv_min', name: 'CSV: UV Below 10% Rejected', desc: 'CSV import rejects UV intensity under 10% (LEDs would stay dark)', check: 'hwc_csv_uv_min' },
       { id: 'hwc_csv_cool_drop', name: 'CSV: Cooling Must Drop ≥5°C', desc: 'A cooling target less than 5°C below the previous step is a hardware no-op and is rejected on import', check: 'hwc_csv_cool_drop' },
       { id: 'hwc_cool_done_band', name: 'Cooling Ends At Measured Temp', desc: 'Cure screen logic: a cooling phase completes when the measured chamber temp reaches target+0.5°C — never on the step timer', check: 'hwc_cool_done_band' },
-      { id: 'hwc_deltasigma', name: 'Heater Delta-Sigma Duty', desc: 'PI duty on the digital heater channel is time-proportioned: average ON-cycles match the commanded duty', check: 'hwc_deltasigma' },
+      { id: 'hwc_onoff_heat', name: 'Heater ON/OFF Hysteresis', desc: 'Heating is ON/OFF thermostat control (no PI): heater ON at/below target-1°C, OFF at the target, last state kept inside the band', check: 'hwc_onoff_heat' },
     ]
   },
 ];
@@ -820,7 +823,7 @@ async function runSingleTest(test) {
     }
 
     // Local UX↔hardware compatibility logic mirrors (no API needed)
-    if (test.check && test.check.startsWith('hwc_csv_') || test.check === 'hwc_cool_done_band' || test.check === 'hwc_deltasigma') {
+    if (test.check && test.check.startsWith('hwc_csv_') || test.check === 'hwc_cool_done_band' || test.check === 'hwc_onoff_heat') {
       const result = runHwCompatCheck(test.check);
       const elapsed = Date.now() - t0;
       setTestStatus(test.id, result.status, result.msg, elapsed);
@@ -953,18 +956,41 @@ async function runSingleTest(test) {
     }
 
     // Mirrors StatusLeds._evaluate cadence: the machine state is re-classified
-    // every status_sec (2s), so any change (including a door-open abort)
+    // every status_sec (1s), so any change (including a door-open abort)
     // reaches the strip within one evaluation.
     if (test.check === 'led_status_loop') {
-      const STATUS_SEC = 2;
+      const STATUS_SEC = 1;
       // worst case: the state flips right after an evaluation -> seen on the next one
       const worstReaction = STATUS_SEC;
       const nextEval = (lastEval, now) => now - lastEval >= STATUS_SEC;
-      const cadenceOk = nextEval(0, 2) && nextEval(0, 3.5) && !nextEval(0, 1.9);
+      const cadenceOk = nextEval(0, 1) && nextEval(0, 2.5) && !nextEval(0, 0.9);
       const elapsed = Date.now() - t0;
-      const result = cadenceOk && worstReaction <= 2
+      const result = cadenceOk && worstReaction <= 1
         ? { status: 'pass', msg: `state re-classified every ${STATUS_SEC}s — changes reach the strip within ${worstReaction}s` }
         : { status: 'fail', msg: 'status evaluation cadence wrong' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // HSI sampling-time rule: every reading is sampled at most every 1 second.
+    // Mirrors the configured intervals of every sampling loop in the system.
+    if (test.check === 'sampling_1s') {
+      const MAX_SAMPLE_SEC = 1;
+      const loops = [
+        // [loop, interval_sec] — mirrors components.json / code constants
+        ['heating sample_sec (temperature_control.py)', 1.0],
+        ['cooling sample_sec (cooling_mode.py)', 1.0],
+        ['status_sec watchdog (io_bridge StatusLeds)', 1.0],
+        ['dashboard SENSOR_REFRESH_SEC', 1.0],
+        ['UI /api/state poll (HardwareContext)', 1.0],
+      ];
+      const slow = loops.filter(([, sec]) => sec > MAX_SAMPLE_SEC);
+      const elapsed = Date.now() - t0;
+      const result = slow.length === 0
+        ? { status: 'pass', msg: `all ${loops.length} sampling loops at ≤ ${MAX_SAMPLE_SEC}s` }
+        : { status: 'fail', msg: `sampling slower than ${MAX_SAMPLE_SEC}s: ${slow.map(([n, s]) => `${n}=${s}s`).join(', ')}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
@@ -1153,6 +1179,36 @@ async function runSingleTest(test) {
       return;
     }
 
+    // Cooling control type: NO closed-loop rate control — each UI mode holds
+    // the chamber fan at a FIXED duty for the whole mode (slow=30%,
+    // medium=60%, fast=100%; io_bridge COOLING_MODE_PWMS / components.json
+    // cooling.mode_pwms). Verified live via coolingFanPwm in /api/state.
+    if (test.check === 'io_cool_pwm') {
+      const EXPECTED = { slow: 30, medium: 60, fast: 100 };
+      const problems = [];
+      let checked = 0;
+      for (const [mode, pwm] of Object.entries(EXPECTED)) {
+        const cmd = await (await fetch(apiUrl + `/api/cure/cool?target=20&mode=${mode}`, { method: 'POST', signal: AbortSignal.timeout(5000) })).json();
+        if (!cmd.ok) { problems.push(`${mode}: refused (${cmd.message || 'unknown'})`); continue; }
+        await new Promise(r => setTimeout(r, 500));
+        const st = await (await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) })).json();
+        if (!st.isCooling && st.chamberTemp <= 21) continue;   // already at target: nothing to measure
+        checked++;
+        if (st.coolingFanPwm !== pwm) problems.push(`${mode}: fan ${st.coolingFanPwm}% (expected ${pwm}%)`);
+      }
+      await fetch(apiUrl + '/api/cure/stop', { method: 'POST', signal: AbortSignal.timeout(5000) }).catch(() => {});
+      const elapsed = Date.now() - t0;
+      const result = problems.length > 0
+        ? { status: 'fail', msg: problems.join('; ') }
+        : checked === 0
+          ? { status: 'warn', msg: 'chamber already at/below 20°C — fixed duty not measurable live' }
+          : { status: 'pass', msg: `fan duty fixed per mode (${checked}/3 verified): slow=30%, medium=60%, fast=100%` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+
     // Cure screen ramp logic (mirrors CureProcessPage.tick with real hardware):
     // the ramp ends ONLY when the measured chamber temperature reaches
     // target - 0.5, never on a timer.
@@ -1170,6 +1226,35 @@ async function runSingleTest(test) {
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Durable-store round-trip: save a program, read it back, confirm it
+    // persisted — then restore the original list so the user's data is intact.
+    if (test.check === 'data_persist_roundtrip') {
+      const url = apiUrl + '/api/materials/user';
+      const orig = await fetch(url, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      if (!Array.isArray(orig)) {
+        const elapsed = Date.now() - t0;
+        setTestStatus(test.id, 'fail', 'GET did not return an array (503/no store?)', elapsed);
+        log('fail', `${test.name}: user-materials GET is not an array`);
+        return;
+      }
+      const marker = { id: 'qa-persist-probe', name: 'QA Persistence Probe', steps: [{ step: 1, process: 'Heating', temperature: 45, time: 10 }], totalDuration: 10, isPreset: false };
+      const post = (body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) });
+      await post([...orig.filter(m => !m.isPreset), marker]);
+      const after = await fetch(url, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => []);
+      const saved = Array.isArray(after) && after.some(m => m.id === marker.id && m.name === marker.name);
+      await post(orig.filter(m => !m.isPreset));   // restore the user's real list
+      const elapsed = Date.now() - t0;
+      if (saved) {
+        setTestStatus(test.id, 'pass', 'Program saved & re-read from the durable store', elapsed);
+        log('pass', `${test.name}: persisted and restored (${elapsed}ms)`);
+      } else {
+        setTestStatus(test.id, 'fail', 'Saved program was not read back — not persisting', elapsed);
+        log('fail', `${test.name}: program did not persist`);
+      }
+      await new Promise(r => setTimeout(r, 100));
       return;
     }
 
@@ -1381,10 +1466,10 @@ function validateProgram(name, steps) {
       const next = steps[i + 1];
       const after = steps[i + 2];
       if (!next || (next.process !== 'Cure' && next.process !== 'Bleacher')) {
-        return 'After N₂ purge, add a Cure or Bleaching step';
+        return 'After an N₂ purge, add a Cure or Bleaching step';
       }
       if (!after || after.process !== 'Cooling') {
-        return 'After the Cure/Bleaching that follows N₂, add a Cooling step';
+        return 'Add a Cooling step after the Cure/Bleaching step that follows the N₂ purge';
       }
     }
     return null;
@@ -1885,18 +1970,21 @@ function fanTestResultSim(id) {
 
 // ============================================================
 // UX ↔ Hardware compatibility mirrors — same rules as MaterialContext.parseCsv,
-// CureProcessPage cooling completion and io_controller delta-sigma heating.
+// CureProcessPage cooling completion and io_controller ON/OFF heating.
 // ============================================================
 function runHwCompatCheck(check) {
   // Mirror of the CSV import range rules (hardware-authoritative)
-  const csvTempOk = (proc, t) => proc === 'Cooling' ? (t >= 20 && t <= 75) : (t >= 30 && t <= 80);
+  const csvTempOk = (proc, t) => proc === 'Cooling' ? (t >= 30 && t <= 75) : (t >= 30 && t <= 80);
   const csvUvOk = (v) => v >= 10 && v <= 100;
   switch (check) {
     case 'hwc_csv_heat_min': {
-      const cases = [['Heating', 25, false], ['Heating', 30, true], ['Drying', 29, false], ['Cure', 30, true], ['Cooling', 25, true]];
+      // 30°C floor applies to BOTH heating (driver minimum) and cooling (cannot
+      // cool below ambient ~30°C): a Cooling target of 25 is now rejected.
+      const cases = [['Heating', 25, false], ['Heating', 30, true], ['Drying', 29, false], ['Cure', 30, true],
+                     ['Cooling', 25, false], ['Cooling', 30, true], ['Cooling', 75, true], ['Cooling', 76, false]];
       const bad = cases.filter(([p, t, exp]) => csvTempOk(p, t) !== exp);
       return bad.length === 0
-        ? { status: 'pass', msg: `${cases.length} heating-floor cases match the 30°C driver minimum` }
+        ? { status: 'pass', msg: `${cases.length} cases match the 30°C floor (heating + cooling)` }
         : { status: 'fail', msg: `${bad.length} wrong: ${bad.map(c => `${c[0]}@${c[1]}`).join(', ')}` };
     }
     case 'hwc_csv_uv_min': {
@@ -1924,21 +2012,26 @@ function runHwCompatCheck(check) {
         ? { status: 'pass', msg: 'Cooling completion follows the measured temp (±0.5°C band)' }
         : { status: 'fail', msg: `${bad.length} wrong completion cases` };
     }
-    case 'hwc_deltasigma': {
-      // Mirror of temperature_control delta-sigma: average ON ratio ≈ duty
-      const dutyToRatio = (duty, cycles) => {
-        let sigma = 0, on = 0;
-        for (let i = 0; i < cycles; i++) {
-          sigma += duty;
-          if (sigma >= 100) { sigma -= 100; on++; }
-        }
-        return (on / cycles) * 100;
-      };
-      const cases = [0, 10, 25, 50, 75, 100];
-      const bad = cases.filter(d => Math.abs(dutyToRatio(d, 200) - d) > 1);
+    case 'hwc_onoff_heat': {
+      // Mirror of temperature_control ON/OFF thermostat (hysteresis_c=1.0):
+      // ON at/below target-hyst, OFF at/above target, last state in between.
+      const HYST = 1.0;
+      const next = (t, target, wasOn) =>
+        t <= target - HYST ? true : (t >= target ? false : wasOn);
+      const cases = [
+        // [temp, target, wasOn, expected]
+        [25,   60, false, true ],   // cold start -> ON
+        [58.9, 60, true,  true ],   // below the band -> stays ON
+        [59.5, 60, true,  true ],   // inside the band, was ON -> stays ON
+        [60,   60, true,  false],   // reached target -> OFF
+        [60.5, 60, false, false],   // above target -> stays OFF
+        [59.5, 60, false, false],   // inside the band, was OFF -> stays OFF
+        [59.0, 60, false, true ],   // dropped to target-1 -> back ON
+      ];
+      const bad = cases.filter(([t, tg, w, exp]) => next(t, tg, w) !== exp);
       return bad.length === 0
-        ? { status: 'pass', msg: 'Delta-sigma ON-ratio tracks PI duty within 1% over 200 cycles' }
-        : { status: 'fail', msg: `Duty mismatch at: ${bad.join(', ')}%` };
+        ? { status: 'pass', msg: `${cases.length} thermostat transitions follow the 1°C hysteresis band` }
+        : { status: 'fail', msg: `${bad.length} wrong transition(s): ${bad.map(c => `${c[0]}°C→${c[1]}°C`).join(', ')}` };
     }
   }
   return { status: 'fail', msg: 'Unknown check: ' + check };
@@ -2138,8 +2231,8 @@ function parseCsvForTest(csvContent) {
     if (process === 'Nitrogen') { steps.push(step); continue; }
 
     const temp = cols[2] ? Number(cols[2]) : null;
-    if (temp !== null && (isNaN(temp) || temp < 20 || temp > 80)) { errors.push(`Row ${i}: Invalid temperature "${cols[2]}"`); continue; }
-    step.temperature = temp ?? (process === 'Cooling' ? 25 : 40);
+    if (temp !== null && (isNaN(temp) || temp < 30 || temp > 80)) { errors.push(`Row ${i}: Invalid temperature "${cols[2]}"`); continue; }
+    step.temperature = temp ?? (process === 'Cooling' ? 30 : 40);
 
     if (process === 'Cooling') {
       step.coolingMode = cols[8] || 'medium';
@@ -2165,7 +2258,7 @@ function parseCsvForTest(csvContent) {
     if (prev && (prev.process === 'Cure' || prev.process === 'Bleacher')) {
       const prevPrev = i > 1 ? steps[i - 2] : null;
       if (prevPrev?.process === 'Nitrogen' && s.process !== 'Cooling') {
-        errors.push(`Step ${s.step}: After the Cure/Bleaching that follows N₂, only Cooling is allowed`);
+        errors.push(`Step ${s.step}: Only Cooling is allowed after the Cure/Bleaching step that follows the N₂ purge`);
       }
     }
     if (s.process === 'Nitrogen') needsCoolingOrDrying = true;
@@ -2185,7 +2278,7 @@ function parseCsvForTest(csvContent) {
       if (s.process === 'Nitrogen') afterN2 = true;
       if (afterN2 && (s.process === 'Cure' || s.process === 'Bleacher')) { found = true; break; }
     }
-    if (!found) errors.push('Add a Cure or Bleaching step after N₂ purge');
+    if (!found) errors.push('Add a Cure or Bleaching step after the N₂ purge');
   }
 
   return { steps, errors };

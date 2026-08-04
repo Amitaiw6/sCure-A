@@ -13,11 +13,15 @@ BROWSER="$(command -v chromium-browser || command -v chromium)"
 
 # Locked-down kiosk: fullscreen, no browser UI, no way to navigate away.
 # If Chromium is ever closed (Alt+F4, crash, etc.) it reopens immediately.
+# Translate is disabled twice: modern Chromium ignores the legacy
+# --disable-translate flag, so the feature itself is switched off too.
 while true; do
   "$BROWSER" --kiosk --noerrdialogs --disable-infobars \
     --disable-session-crashed-bubble --check-for-update-interval=31536000 \
     --no-first-run --disable-translate --disable-pinch \
-    --overscroll-history-navigation=0 --disable-features=TranslateUI \
+    --overscroll-history-navigation=0 \
+    --disable-features=Translate,TranslateUI \
+    --lang=en-US \
     "$URL"
   sleep 1
 done

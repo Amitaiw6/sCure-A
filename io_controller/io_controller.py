@@ -27,6 +27,7 @@ import json
 import time
 import math
 import threading
+from collections import deque
 
 try:
     from smbus2 import SMBus
@@ -122,6 +123,24 @@ TEMP_SENSORS = {
 }
 NTC_R0, NTC_BETA, NTC_T0 = 10000.0, 3934.0, 298.15
 NTC_R_SERIES, NTC_VREF, NTC_DIVIDER = 10000.0, 3.3, "pullup"
+
+# TEMP_CHAMBER calibration against a Pico TC-08 inside the chamber
+# (2026-08-04, scripts/calibrate_scure_temp.py, 724 paired samples over a
+# 31->80 C heat-up, 80 C hold and fan cool-down).
+#   static part (exact at steady state, raw 31.5-76.6 C):
+#       actual = GAIN * raw + OFFSET
+#   rate compensation on top of it (rate = raw-reading slope, C/min over the
+#   last RATE_WINDOW_SEC):
+#       heating (rate > LEAD_DEADBAND): sensor lags the chamber
+#           += LEAD * (rate - LEAD_DEADBAND)          RMS 3.4 -> 1.1 C
+#       fan cooling (rate < COOL_GATE): intake air chills the sensor, bias
+#       scales with height above ambient, not with rate
+#           += COOL_COEF * (raw - AMBIENT)            RMS 3.6 -> 2.7 C
+CHAMBER_CAL_GAIN, CHAMBER_CAL_OFFSET = 1.0979, -3.9813
+CHAMBER_CAL_LEAD, CHAMBER_CAL_LEAD_DEADBAND = 2.1873, 0.3   # C per C/min, C/min
+CHAMBER_CAL_COOL_COEF, CHAMBER_CAL_COOL_GATE = 0.0956, -1.0  # C per C, C/min
+CHAMBER_CAL_AMBIENT = 25.0
+CHAMBER_RATE_WINDOW_SEC = 45.0
 
 # --- Servo (SG90 via gpiozero) --------------------------------------------
 SERVO_PIN = 8
@@ -447,23 +466,56 @@ class Servo:
             pass
         self.pin = int(cfg.get("gpio", pin))
         self.signal_inverted = bool(cfg.get("signal_inverted", False))
+        # After reaching a position the pulse train is stopped ("released") so
+        # the servo stops hunting/buzzing. settle_sec = time to keep driving
+        # before releasing (0 = hold forever).
+        self.settle_sec = float(cfg.get("settle_sec", 0.6))
+        self._last_angle = None                  # dedup: last angle actually driven
+        self._release_timer = None
         import lgpio
         self._lgpio = lgpio
         self.h = lgpio.gpiochip_open(0)
         # idle level: LOW normally; HIGH when pre-inverting (post-Q16 low)
-        lgpio.gpio_claim_output(self.h, self.pin,
-                                1 if self.signal_inverted else 0)
+        self._idle = 1 if self.signal_inverted else 0
+        lgpio.gpio_claim_output(self.h, self.pin, self._idle)
 
-    def goto(self, angle):
+    def goto(self, angle, force=False):
+        """Drive the servo to `angle`, then (after settle_sec) stop the pulse
+        train so it stops buzzing. A repeat request for the SAME angle is
+        skipped (force=True overrides) so re-asserting the damper state does not
+        re-issue the pulse and make the servo twitch."""
         angle = max(SERVO_MIN_ANGLE, min(SERVO_MAX_ANGLE, angle))
+        if not force and self._last_angle == angle:
+            return angle                         # already here: send nothing
         a = (SERVO_MAX_ANGLE + SERVO_MIN_ANGLE - angle) if SERVO_INVERTED else angle
         span = SERVO_MAX_ANGLE - SERVO_MIN_ANGLE
         pulse = SERVO_MIN_PULSE + (a - SERVO_MIN_ANGLE) / span * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
         duty = pulse / 0.02 * 100.0              # 50 Hz -> 20 ms period
         if self.signal_inverted:
             duty = 100.0 - duty
+        self._cancel_release()
         self._lgpio.tx_pwm(self.h, self.pin, 50, duty)
+        self._last_angle = angle
+        if self.settle_sec > 0:                  # let it reach position, then go quiet
+            self._release_timer = threading.Timer(self.settle_sec, self._release)
+            self._release_timer.daemon = True
+            self._release_timer.start()
         return angle
+
+    def _release(self):
+        """Stop the pulse train so the servo goes silent (no more buzzing).
+        Keeps the pin at its idle level; the servo holds by gear friction."""
+        try:
+            self._lgpio.tx_pwm(self.h, self.pin, 0, 0)   # stop the 50 Hz train
+            self._lgpio.gpio_write(self.h, self.pin, self._idle)
+        except Exception:            # noqa: BLE001 - best-effort, never raise
+            pass
+
+    def _cancel_release(self):
+        t = self._release_timer
+        if t is not None:
+            t.cancel()
+            self._release_timer = None
 
     def sweep(self, step=10, delay=0.05, cycles=2):
         for _ in range(cycles):
@@ -473,6 +525,7 @@ class Servo:
                 self.goto(a); time.sleep(delay)
 
     def close(self):
+        self._cancel_release()                           # don't fire after close
         try:
             self._lgpio.tx_pwm(self.h, self.pin, 0, 0)   # stop the pulse train
             self._lgpio.gpio_free(self.h, self.pin)
@@ -654,7 +707,41 @@ class IOController:
         chip, ch = TEMP_SENSORS[name]
         v = self.temp[chip].read_voltage(ch)
         r = ntc_voltage_to_resistance(v)
-        return {"voltage": v, "resistance": r, "temp": ntc_resistance_to_temp(r)}
+        t = ntc_resistance_to_temp(r)
+        if name == "TEMP_CHAMBER" and t is not None:
+            t = self._chamber_corrected(t)
+        return {"voltage": v, "resistance": r, "temp": t}
+
+    def _chamber_corrected(self, raw_c):
+        """TEMP_CHAMBER raw reading -> actual chamber temperature (C).
+
+        Static calibration plus rate compensation - see the CHAMBER_CAL_*
+        constants. Keeps a rolling window of raw readings to estimate the
+        rate; with fewer than 3 samples or under 10 s of span it falls back
+        to the static correction alone."""
+        hist = self.__dict__.setdefault("_chamber_hist", deque())
+        now = time.monotonic()
+        hist.append((now, raw_c))
+        while hist and now - hist[0][0] > CHAMBER_RATE_WINDOW_SEC:
+            hist.popleft()
+        est = CHAMBER_CAL_GAIN * raw_c + CHAMBER_CAL_OFFSET
+        pts = list(hist)
+        span = pts[-1][0] - pts[0][0]
+        if len(pts) < 3 or span < 10.0:
+            return est
+        # least-squares slope in C/min
+        n = len(pts)
+        mt = sum(p[0] for p in pts) / n
+        mv = sum(p[1] for p in pts) / n
+        den = sum((p[0] - mt) ** 2 for p in pts)
+        if den <= 0:
+            return est
+        rate = sum((p[0] - mt) * (p[1] - mv) for p in pts) / den * 60.0
+        if rate > CHAMBER_CAL_LEAD_DEADBAND:
+            est += CHAMBER_CAL_LEAD * (rate - CHAMBER_CAL_LEAD_DEADBAND)
+        elif rate < CHAMBER_CAL_COOL_GATE:
+            est += CHAMBER_CAL_COOL_COEF * (raw_c - CHAMBER_CAL_AMBIENT)
+        return est
 
     def read_analog(self, name):
         chip, ch = ANALOG_SENSORS[name]
@@ -1201,11 +1288,11 @@ class SystemController:
             self._cooling = CoolingController(self)
         return self._cooling
 
-    def start_cooling(self, rate, target_temp=None):
-        return self.cooling.start(rate, target_temp)
+    def start_cooling(self, pwm, target_temp=None):
+        return self.cooling.start(pwm, target_temp)
 
-    def set_cooling_rate(self, rate):
-        return self.cooling.set_rate(rate)
+    def set_cooling_pwm(self, pwm):
+        return self.cooling.set_pwm(pwm)
 
     def stop_cooling(self, reason="user"):
         if self._cooling is not None:
@@ -1256,7 +1343,7 @@ def build_parser():
   python3 io_controller.py analog read LIGHT1    # read a light sensor
   python3 io_controller.py servo angle 90        # SG90 to center
   python3 io_controller.py gpio on NITROGEN_VALVE
-  python3 io_controller.py cooling run 2 --target 30   # cool at 2 C/min down to 30 C
+  python3 io_controller.py cooling run 60 --target 30  # cool with the fan at 60% down to 30 C
   python3 io_controller.py status                # snapshot of *all* components at once
   python3 io_controller.py safe                  # return the whole system to a safe state
 """)
@@ -1318,11 +1405,11 @@ def build_parser():
     led.add_parser("off").add_argument("led")
     led.add_parser("list")
 
-    # --- cooling mode (closed-loop cooling-rate control) ---
-    cl = sub.add_parser("cooling", help="closed-loop cooling mode (damper + fans)"
+    # --- cooling mode (fixed chamber-fan duty) ---
+    cl = sub.add_parser("cooling", help="cooling mode - fixed fan duty (damper + fans)"
                         ).add_subparsers(dest="cmd", required=True)
     cr = cl.add_parser("run", help="run cooling mode (blocking; Ctrl+C stops)")
-    cr.add_argument("rate", type=float, help="desired cooling rate in C/min (0-5)")
+    cr.add_argument("pwm", type=float, help="chamber-fan duty in %% (0-100)")
     cr.add_argument("--target", type=float, default=None,
                     help="target temperature C (default from components.json)")
 
@@ -1606,7 +1693,7 @@ def cmd_cooling(args):
     """Delegates to cooling_mode.py - the module responsible for cooling."""
     _load_config_or_exit()                 # fail early with a clear message
     from cooling_mode import run_cli
-    run_cli(args.rate, args.target)
+    run_cli(args.pwm, args.target)
 
 
 def cmd_status(_args):

@@ -114,7 +114,7 @@ export default function NetworkPage() {
           <Card>
             <InfoRow label="IP Address" value={net.ip} />
             <InfoRow label="MAC" value={net.mac} />
-            <InfoRow label="Wireguard IP" value={net.wireguardIp} />
+            <InfoRow label="WireGuard IP" value={net.wireguardIp} />
           </Card>
 
           {/* Connection Details */}
@@ -234,7 +234,7 @@ function DiagnosticsTab() {
   const tools = [
     { id: 'ping' as const, label: 'Ping' },
     { id: 'traceroute' as const, label: 'Traceroute' },
-    { id: 'nslookup' as const, label: 'NS Lookup' },
+    { id: 'nslookup' as const, label: 'DNS Lookup' },
   ]
 
   return (
@@ -267,7 +267,7 @@ function DiagnosticsTab() {
         <div
           className="bg-secondary rounded-lg h-10 flex items-center px-3 mb-1 cursor-pointer"
           onClick={() => {
-            const val = prompt('IP/Address:', address)
+            const val = prompt('IP address or hostname:', address)
             if (val !== null) setAddress(val)
           }}
         >
@@ -275,7 +275,7 @@ function DiagnosticsTab() {
             {address || 'Enter address...'}
           </span>
         </div>
-        <span className="text-muted-foreground text-[10px]">IP/Address</span>
+        <span className="text-muted-foreground text-[10px]">IP address or hostname</span>
 
         {/* Execute */}
         <Button

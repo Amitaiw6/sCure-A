@@ -51,7 +51,7 @@ export default function CureHistoryPage() {
 
       {logs.length === 0 ? (
         <div className="text-center py-12">
-          <span className="text-muted-foreground text-sm">No cure sessions yet</span>
+          <span className="text-muted-foreground text-sm">No cure sessions yet.</span>
         </div>
       ) : (
         <div className="space-y-1.5">

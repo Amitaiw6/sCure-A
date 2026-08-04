@@ -84,6 +84,8 @@ SIM_AMBIENT = 24.0
 SIM_HEAT_RATE = 0.5                      # C/s while heating toward target
 SIM_COOL_RATES = {'fast': 5.0 / 60, 'medium': 2.5 / 60, 'slow': 1.0 / 60}  # C/s
 SIM_IDLE_RATE = 0.05                     # C/s drift back to ambient when idle
+# UI cooling modes -> fixed chamber-fan duty % (mirrors io_bridge COOLING_MODE_PWMS)
+COOLING_MODE_PWMS = {'fast': 100, 'medium': 60, 'slow': 30}
 
 
 class HardwareController:
@@ -148,6 +150,8 @@ class HardwareController:
             'isHeating': self.heating,
             'isCooling': self.cooling,
             'coolingMode': self.cooling_mode,
+            'coolingFanPwm': (COOLING_MODE_PWMS.get(self.cooling_mode)
+                              if self.cooling else None),
             'uvOn': self.uv_on,
             'uvIntensity': self.uv_intensity,
             'uvWavelength': self.uv_wavelength,
@@ -466,28 +470,65 @@ def _require_db():
     return jsonify({'ok': False, 'message': 'Database not configured (set DATABASE_URL)'}), 503
 
 
+# --- Persistent user-program store (JSON file on the SSD) ------------------
+# When Postgres is NOT configured, user work programs are still saved to a file
+# on disk so they SURVIVE A POWER-OFF. Browser localStorage alone is fragile
+# (per-browser, cleared on profile reset) - this file is the durable store.
+# It lives in server/data/ (gitignored, so `git pull` never deletes it) and is
+# written atomically (temp file + fsync + rename) so a power cut mid-write
+# cannot corrupt it.
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+_USER_MATERIALS_FILE = os.path.join(_DATA_DIR, 'user_materials.json')
+
+
+def _load_user_materials_file():
+    try:
+        with open(_USER_MATERIALS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except FileNotFoundError:
+        return []
+    except Exception as e:  # noqa: BLE001 - corrupt/unreadable: start empty, don't crash
+        print(f"[DATA] user programs read failed: {e}")
+        return []
+
+
+def _save_user_materials_file(materials):
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    tmp = _USER_MATERIALS_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(materials, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())          # force the bytes to the SSD before rename
+    os.replace(tmp, _USER_MATERIALS_FILE)   # atomic swap
+
+
 @app.route('/api/materials/presets', methods=['GET'])
 def get_preset_materials():
     """System-provided material programs (presets), from Postgres."""
     if not _db_on():
-        return _require_db()
+        return _require_db()          # UI falls back to its bundled presets
     return jsonify(db.get_materials(presets_only=True))
 
 
 @app.route('/api/materials/user', methods=['GET'])
 def get_user_materials():
-    """User-created material programs, from Postgres."""
-    if not _db_on():
-        return _require_db()
-    return jsonify(db.get_materials(presets_only=False))
+    """User-created work programs. Postgres when configured, else the durable
+    JSON file on disk (survives power-off)."""
+    if _db_on():
+        return jsonify(db.get_materials(presets_only=False))
+    return jsonify(_load_user_materials_file())
 
 
 @app.route('/api/materials/user', methods=['POST'])
 def save_all_user_materials():
-    """Save all user materials (full replace)."""
-    if not _db_on():
-        return _require_db()
-    db.replace_user_materials(request.json or [])
+    """Save all user work programs (full replace). Postgres when configured,
+    else persisted to the JSON file on disk."""
+    materials = request.json or []
+    if _db_on():
+        db.replace_user_materials(materials)
+    else:
+        _save_user_materials_file(materials)
     return jsonify({'ok': True})
 
 
@@ -736,7 +777,9 @@ def cure_nitrogen():
 
 @app.route('/api/cure/stop', methods=['POST'])
 def cure_stop():
-    """Stop all cure outputs. ?immediate=1 (abort) skips the heater-fan run-on."""
+    """Stop all cure outputs. The heater fan always runs its cooldown run-on
+    after heating (30% / 10 min); only the door-open safety abort skips it.
+    ?immediate=1 is kept for compatibility (same behavior)."""
     immediate = request.args.get('immediate', '0') not in ('0', 'false', '')
     hw.stop_all(immediate)
     return jsonify({'ok': True, 'message': 'All cure outputs stopped'

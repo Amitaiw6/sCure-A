@@ -91,7 +91,7 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
           >
             <Folder size={36} className="mb-2 text-yellow-400" />
             <p className="text-muted-foreground text-xs">
-              Tap to browse or drag files
+              Tap to browse or drag files here
             </p>
             <p className="text-muted-foreground text-[10px] mt-1">Unlimited files</p>
           </div>
@@ -116,10 +116,10 @@ export default function ImportCsvModal({ isOpen, onClose }: ImportCsvModalProps)
                 <tr><td className="py-0.5 text-muted-foreground">3</td><td>Nitrogen</td><td></td><td></td><td></td><td></td></tr>
                 <tr><td className="py-0.5 text-muted-foreground">4</td><td>Cure</td><td>60</td><td>15</td><td>30</td><td></td></tr>
                 <tr><td className="py-0.5 text-muted-foreground">5</td><td>Bleacher</td><td>60</td><td>10</td><td>40</td><td></td></tr>
-                <tr><td className="py-0.5 text-muted-foreground">6</td><td>Cooling</td><td>25</td><td></td><td></td><td>medium</td></tr>
+                <tr><td className="py-0.5 text-muted-foreground">6</td><td>Cooling</td><td>30</td><td></td><td></td><td>medium</td></tr>
               </tbody>
             </table>
-            <p className="text-[9px] text-muted-foreground/60 mt-1.5">Temp: 20-80°C · Time: 1-120min · UV: 5-100% · Mode: fast/medium/slow</p>
+            <p className="text-[9px] text-muted-foreground/60 mt-1.5">Temp: 30-80°C (Cooling 30-75°C) · Time: 1-120 min (Bleaching up to 720) · UV: 10-100% · Mode: fast/medium/slow</p>
           </div>
         </div>
 

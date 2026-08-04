@@ -177,6 +177,37 @@
     background: var(--card2); border: 1px solid var(--border);
     border-radius: 4px; padding: 0 4px;
   }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .tabs .tab {
+    font: inherit; font-size: 13px; color: var(--muted);
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 16px; cursor: pointer;
+    transition: color .15s, border-color .15s, box-shadow .15s;
+  }
+  .tabs .tab:hover { color: var(--text); }
+  .tabs .tab.active {
+    color: var(--text); border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+  body.tab-control .legend,
+  body.tab-control .diagram-scroll,
+  body.tab-control section.notes { display: none; }
+  #control-tab { display: none; }
+  body.tab-control #control-tab { display: block; }
+  #control-tab .flow {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin: 10px 0 18px;
+    font-size: 13px;
+  }
+  #control-tab .flow ol { margin: 0; padding-left: 22px; }
+  #control-tab .flow li { margin-bottom: 6px; }
+  #control-tab table.params {
+    border-collapse: collapse; font-size: 12.5px; margin: 10px 0 18px; width: 100%;
+  }
+  #control-tab table.params th, #control-tab table.params td {
+    border: 1px solid var(--border); padding: 5px 10px; text-align: left;
+  }
+  #control-tab table.params th { background: var(--card2); font-weight: 650; }
   @media (prefers-reduced-motion: reduce) {
     .node, path.edge, text.edge-label { transition: none; }
   }
@@ -186,6 +217,10 @@
 <header class="page">
   <h1><span class="sys">CureBox</span> — Full Connection Flow Diagram</h1>
   <p class="sub">Based on the HSI document (HSI sCure) — every component, which bus it communicates over, where it connects physically, and where the safety chains run. Hover over any component to highlight all of its connections.</p>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="diagram" role="tab" aria-selected="true">Flow diagram</button>
+    <button class="tab" data-tab="control" role="tab" aria-selected="false">Control — heating &amp; cooling</button>
+  </nav>
   <div class="legend">
     <span class="key"><span class="swatch k-i2c0"></span>I2C0 (GPIO0/1, header pins 27/28)</span>
     <span class="key"><span class="swatch k-i2c1"></span>I2C1 (GPIO2/3, header pins 3/5)</span>
@@ -258,8 +293,8 @@
   <div class="layer">
     <span class="ltitle">Actuators · sensors · connectors</span>
     <div class="lrow">
-      <div class="node" id="fans"><h4>6× Fans</h4><div class="he">HEATER·DOOR·RIGHT·LEFT·BACK·COOLING — PWM speed, inverted logic</div>
-        <div class="chips"><span class="chip">PCA ch0–5</span><span class="chip">J4…</span></div></div>
+      <div class="node" id="fans"><h4>6× Fans</h4><div class="he">HEATER·DOOR·RIGHT·LEFT·BACK·COOLING — PWM speed, inverted logic. Heater fan: 9GT0824P4S001; all other fans: CBM-979433B-135-540-22</div>
+        <div class="chips"><span class="chip">PCA ch0–5</span><span class="chip">J4…</span><span class="chip">HEATER: 9GT0824P4S001</span><span class="chip">others: CBM-979433B-135-540-22</span></div></div>
       <div class="node hw" id="heater"><h4>Heater element</h4><div class="he">ON/OFF only (ch6 digital) · passes through relay K3 → J19</div>
         <div class="chips"><span class="chip">PCA ch6</span><span class="chip">K3</span></div></div>
       <div class="node" id="uvleds"><h4>4× UV LEDs</h4><div class="he">LEFT·RIGHT·BACK·DOOR — intensity 0–100%, gated by door + wavelength mode</div>
@@ -269,7 +304,7 @@
         <div class="chips"><span class="chip">PCA ch7,10</span></div></div>
     </div>
     <div class="lrow">
-      <div class="node" id="doormag"><h4>Door magnet / valves</h4><div class="he">P27 = door magnet (also "valve 1" in code) · P26 = valve 2 → U4 → J8</div>
+      <div class="node" id="doormag"><h4>Door magnet / valves</h4><div class="he">P26 = valve 2 = door magnet (DOOR_MAGNET; "Open Door" drives it HIGH for 2 s, then auto-LOW) · P27 = valve 1 → U4 → J8</div>
         <div class="chips"><span class="chip">TCA P26/P27</span></div></div>
       <div class="node warn" id="fanbits"><h4>FAN1–6_ONOFF</h4><div class="he">⚠ Bits P11–P16 — no code mapping to any specific physical fan (open item)</div></div>
       <div class="node" id="nfc"><h4>NFC_RESET</h4><div class="he">Reset pulse (P01, active-low) — the NFC SPI data path is not implemented yet</div></div>
@@ -317,6 +352,7 @@
     <li><b>LED ↔ fan:</b> turning a UV LED on automatically starts its mapped fan per <code>components.json</code> — no code changes needed.</li>
     <li><b>Heater is doubly interlocked:</b> in software (its fan must spin above 100 RPM + thermistor must be valid, rechecked every 10 seconds) and in hardware (relay K3, energized only while the door is closed).</li>
     <li><b>Door = three guards:</b> the external sensor line physically disconnects K1/K2/K3; GPIO27 only listens to the line and reports to software; <code>SystemController</code> forces everything off the moment the door opens and blocks re-enabling.</li>
+    <li><b>Sampling time — up to 1 second:</b> every reading in the system is sampled at most every 1&nbsp;s. Heating control loop (<code>temperature_control.py</code>, <code>sample_sec</code>) — 1&nbsp;s; cooling control loop (<code>cooling_mode.py</code>, <code>sample_sec</code>) — 1&nbsp;s; machine-state classification + door-open safety watchdog (<code>io_bridge</code>, <code>status_sec</code>) — 1&nbsp;s; engineering dashboard sensor refresh (<code>SENSOR_REFRESH_SEC</code>) — 1&nbsp;s; UI poll of <code>/api/state</code> (temperatures, door, UV, faults) — 1&nbsp;s. Exception: the heater health re-check (RPM + thermistor validity) stays at <code>health_check_sec</code> = 10&nbsp;s and the internet reachability probe at <code>internet_check_sec</code> = 5&nbsp;s — neither is a sensor reading used for control.</li>
   </ul>
 
   <h2 class="warn">Open items from the HSI (verify before relying on these)</h2>
@@ -342,6 +378,79 @@
 
   <p class="src">Source: HSI sCure (3).xlsx — 93 rows, including address/bus corrections against io_controller.py and the BRD-74205 rev07 netlist. Updated: July 2026.</p>
 </section>
+
+<section class="notes" id="control-tab">
+  <h2>Heating control — <code>temperature_control.py</code></h2>
+  <p class="sub">Closed-loop chamber heating: a PI(D) controller drives the heater element so <code>TEMP_CHAMBER</code> (NTC7, J11 → U7 ADS1115) tracks the target temperature. Entered from the UI / API via <code>POST /api/cure/heat?target=T</code> (io_bridge → SystemController → TemperatureController).</p>
+  <div class="flow">
+    <ol>
+      <li><b>Pre-flight (<code>enable_heater</code>)</b> — the element may turn on only after ALL pass: door closed, cooling mode off, heater fan (<code>FAN_HEATER</code>, 9GT0824P4S001) started at 100% PWM and <b>verified spinning</b> above <code>min_fan_rpm</code> = 100 RPM (tachometer), and the chamber thermistor reading valid within [−20, 120] °C.</li>
+      <li><b>PI(D) loop, every 1 s</b> — <code>error = target − TEMP_CHAMBER</code>; duty = <code>kp·error + ki·∫error·dt + kd·d(error)/dt</code>, clamped to 0–100%. Anti-windup: the integral term is capped at <code>integ_max</code> = 85% duty.</li>
+      <li><b>Delta-sigma output</b> — the heater channel (PCA ch6 → relay K3) is digital ON/OFF, so the PI duty is applied by delta-sigma time-proportioning across the 1 s sample cycles: the average power still tracks the controller output.</li>
+      <li><b>At temperature</b> — reported when |error| ≤ <code>at_temp_band</code> = 1.5 °C. The loop keeps regulating (it does not stop at target).</li>
+      <li><b>Ongoing safety</b> — heater health re-check every 10 s (fan RPM + thermistor validity); the door interlock (software + hardware relay K3) can force the heater off at any moment. Any failure ends the mode with a fault.</li>
+      <li><b>Exit</b> — element OFF immediately; the heater fan runs on for <code>cooldown_sec</code> = 600 s at 100% to carry residual heat off the element, then ALL fans stop and the damper closes (fans owned by LEDs still on are left running).</li>
+    </ol>
+  </div>
+  <table class="params">
+    <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+    <tr><td><code>sample_sec</code></td><td>1.0 s</td><td>Loop period — the HSI sampling-time rule (≤ 1 s per reading)</td></tr>
+    <tr><td><code>kp</code></td><td>8.0</td><td>% duty per °C of error</td></tr>
+    <tr><td><code>ki</code></td><td>0.3</td><td>% duty per °C·s of error (integral)</td></tr>
+    <tr><td><code>kd</code></td><td>0.0</td><td>% duty per °C/s (derivative, off by default)</td></tr>
+    <tr><td><code>integ_max</code></td><td>85%</td><td>Integral-term cap (anti-windup)</td></tr>
+    <tr><td><code>at_temp_band</code></td><td>1.5 °C</td><td>|error| below this reports "at temperature"</td></tr>
+    <tr><td><code>target_min</code></td><td>30 °C</td><td>Lowest enterable target; lower setpoints are rejected / clamped</td></tr>
+    <tr><td><code>cooldown_sec</code> / <code>cooldown_fan_pwm</code></td><td>600 s / 100%</td><td>Fan run-on after the element turns off</td></tr>
+  </table>
+
+  <h2>Cooling control — <code>cooling_mode.py</code></h2>
+  <p class="sub">Closed-loop cooling-<b>rate</b> control: the user sets a cooling rate in °C/min (0–5, live-adjustable) plus a target temperature, and a PI controller drives the chamber-fan PWM so the <b>measured</b> dT/dt tracks that setpoint. Entered via <code>POST /api/cure/cool?target=T&amp;mode=...</code>.</p>
+  <div class="flow">
+    <ol>
+      <li><b>Entry sequence</b> — vent damper (MG90S servo, GPIO8) opens to <code>damper_open_angle</code> = 180°; the heater fan (<code>FAN_HEATER</code>) runs fixed at 100% for the whole mode; the chamber fan (<code>FAN_COOLING</code>) goes under PI control.</li>
+      <li><b>Rate measurement, every 1 s</b> — each sample of <code>TEMP_CHAMBER</code> enters a sliding 30 s window; dT/dt is the least-squares slope over the window (needs ≥ 3 samples spanning ≥ 10 s for a stable estimate — until then the fan holds its last PWM).</li>
+      <li><b>PI loop</b> — <code>error = rate_set − rate_measured</code> (positive = cooling too slowly → more fan); PWM = <code>kp·error + ki·∫error·dt</code>, clamped 0–100%, bumpless start at <code>pwm_start</code> = 50%, anti-windup keeps the integral inside the PWM range. A <b>limited</b> flag is raised when the fan is saturated at 100% and cooling is still too slow.</li>
+      <li><b>Auto-stop</b> — the moment <code>TEMP_CHAMBER</code> reaches the target: all fans OFF (verified), damper CLOSED; fans owned by LEDs still on are left running.</li>
+      <li><b>Faults</b> — an invalid thermistor reading or an unverified fan write ends the mode safely (outputs off, fault reported).</li>
+    </ol>
+  </div>
+  <table class="params">
+    <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+    <tr><td><code>sample_sec</code></td><td>1.0 s</td><td>Loop period — the HSI sampling-time rule (≤ 1 s per reading)</td></tr>
+    <tr><td><code>window_sec</code></td><td>30 s</td><td>Sliding window for the least-squares dT/dt estimate</td></tr>
+    <tr><td><code>rate_min</code> / <code>rate_max</code></td><td>0 / 5 °C/min</td><td>Allowed cooling-rate setpoint range (changeable while running)</td></tr>
+    <tr><td><code>kp</code></td><td>25.0</td><td>% PWM per °C/min of rate error</td></tr>
+    <tr><td><code>ki</code></td><td>2.0</td><td>% PWM per (°C/min)·s (integral)</td></tr>
+    <tr><td><code>pwm_start</code></td><td>50%</td><td>Initial chamber-fan PWM (bumpless start)</td></tr>
+    <tr><td><code>target_temp</code></td><td>25 °C</td><td>Auto-stop temperature</td></tr>
+  </table>
+
+  <h2>Common to both loops</h2>
+  <ul>
+    <li><b>Sampling time ≤ 1 s:</b> both control loops sample <code>TEMP_CHAMBER</code> every 1 s, matching the system-wide HSI sampling-time rule.</li>
+    <li><b>No hardware of their own:</b> both modules drive the heater, fans and damper ONLY through the IOController verified activation functions (set&nbsp;&amp;&nbsp;verify on every write), serialized by the shared I2C lock, behind SystemController's safety layer.</li>
+    <li><b>Tuning lives in <code>components.json</code></b> ("heating" / "cooling" sections) and is re-read on every activation — parameter changes need no code change or restart.</li>
+    <li><b>Mutual exclusion:</b> heating and cooling never run together — entering one stops the other; the door interlock overrides both.</li>
+  </ul>
+  <p class="src">Sources: temperature_control.py, cooling_mode.py, components.json ("heating" / "cooling" / "heater" sections), server/io_bridge.py.</p>
+</section>
+
+<script>
+(function () {
+  const tabs = document.querySelectorAll('.tabs .tab');
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    tabs.forEach(b => {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.body.classList.toggle('tab-control', btn.dataset.tab === 'control');
+    // returning to the diagram: let the wire layer re-measure node positions
+    if (btn.dataset.tab === 'diagram') window.dispatchEvent(new Event('resize'));
+  }));
+})();
+</script>
 
 <script>
 (function () {

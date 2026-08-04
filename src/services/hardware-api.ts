@@ -60,6 +60,11 @@ export async function setTargetTemperature(tempC: number) {
   return apiCall(`/chamber/temperature?target=${tempC}`)
 }
 
+/** Stop chamber heating (Settings slider back to its 25°C rest position) */
+export async function stopChamberHeating() {
+  return apiCall('/chamber/stop')
+}
+
 /** Set fan speed (0-100%) */
 export async function setFanSpeed(fan: string, percent: number) {
   return apiCall(`/fans/${fan}?speed=${percent}`)
@@ -150,8 +155,9 @@ export async function dryToTargetTemperature(targetC: number) {
   return apiCall(`/cure/dry?target=${targetC}`)
 }
 
-/** Stop all cure outputs (heater, UV, cooling, N₂).
- *  immediate=true (user abort): full heater shutdown with no fan run-on. */
+/** Stop all cure outputs (heater, UV, cooling, N₂). The heater element stops
+ *  immediately in both cases; after heating, the heater fan keeps running its
+ *  cooldown run-on (30% for 10 min) — only the door-open safety abort skips it. */
 export async function stopCureOutputs(immediate = false) {
   return apiCall(`/cure/stop${immediate ? '?immediate=1' : ''}`)
 }
@@ -272,7 +278,7 @@ export async function updateSoftware(): Promise<{
       steps: [
         { step: 'Finding USB drive', status: 'ok' },
         { step: 'Looking for update package', status: 'ok' },
-        { step: 'Verifying signature', status: 'ok' },
+        { step: 'Verifying package integrity', status: 'ok' },
         { step: 'Version: 1.0.1', status: 'ok' },
         { step: 'Installing update', status: 'ok' },
       ]

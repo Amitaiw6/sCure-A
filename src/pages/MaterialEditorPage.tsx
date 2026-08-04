@@ -58,7 +58,7 @@ export default function MaterialEditorPage() {
     <main className="px-4 pb-16">
       {/* Material Name */}
       <div className="flex items-center gap-4 mt-6">
-        <span className="text-muted-foreground text-sm whitespace-nowrap">Material Name:</span>
+        <span className="text-muted-foreground text-sm whitespace-nowrap">Program Name:</span>
         <div
           className="flex-1 cursor-pointer flex items-center justify-between"
           onClick={() => setShowKeyboard(true)}
@@ -72,7 +72,7 @@ export default function MaterialEditorPage() {
         onClick={() => setShowImportModal(true)}
         className="mt-5 rounded-full"
       >
-        + Add CSV
+        + Import CSV
       </Button>
 
       {/* Process Sequence */}
@@ -103,7 +103,7 @@ export default function MaterialEditorPage() {
       {/* Save Program button */}
       <div className="fixed bottom-4 right-4">
         <Button className="rounded-2xl px-6 py-3 shadow-lg">
-          Save Program
+          Save Material
         </Button>
       </div>
 
@@ -118,10 +118,10 @@ export default function MaterialEditorPage() {
         minTemp={(() => {
           const idx = editingStep ? editingStep.stepNumber - 1 : steps.length
           for (let i = idx - 1; i >= 0; i--) {
-            if (steps[i].processType === 'Cooling') return 20
+            if (steps[i].processType === 'Cooling') return 30
             if (steps[i].temperature != null) return steps[i].temperature!
           }
-          return 20
+          return 30
         })()}
         maxCoolingTemp={(() => {
           const idx = editingStep ? editingStep.stepNumber - 1 : steps.length

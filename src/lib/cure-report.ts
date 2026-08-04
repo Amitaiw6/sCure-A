@@ -221,12 +221,12 @@ export function generateCureReport(log: CureLog) {
     </svg>
     <div class="brand-divider" aria-hidden="true"></div>
     <div>
-      <div class="brand-product">S-Cure</div>
+      <div class="brand-product">sCure</div>
       <div class="brand-sub">Process Report</div>
     </div>
   </div>
   <div class="meta-right">
-    <div class="report-id">S.N · ${log.serialNumber ?? '------'}</div>
+    <div class="report-id">S/N · ${log.serialNumber ?? '------'}</div>
     <div class="report-id" style="margin-top:2px">Report · ${log.id.slice(0, 8)}</div>
     <div class="report-ts">${reportDate}</div>
   </div>
@@ -265,16 +265,16 @@ export function generateCureReport(log: CureLog) {
     <div class="value ${uv405Duration > 0 ? 'cure' : 'muted'}">${uv405Str}</div>
   </div>
   <div class="info-card">
-    <div class="label">Bleach · 450 nm</div>
+    <div class="label">Bleaching · 450 nm</div>
     <div class="value ${uv450Duration > 0 ? 'bleach' : 'muted'}">${uv450Str}</div>
   </div>
 </div>
 
 <!-- Phase ribbon -->
 <div class="phases">
-  <span class="phases-label">Programme</span>
+  <span class="phases-label">Program</span>
   ${log.phases.map(p => {
-    const label = p === 'Cure' ? 'Cure · 405 nm' : p === 'Bleacher' ? 'Bleach · 450 nm' : p === 'Nitrogen' ? 'N\u2082 Purge' : p
+    const label = p === 'Cure' ? 'Cure · 405 nm' : p === 'Bleacher' ? 'Bleaching · 450 nm' : p === 'Nitrogen' ? 'N\u2082 Purge' : p
     return `<span class="phase-badge phase-${p.toLowerCase()}">${label}</span>`
   }).join('')}
 </div>
@@ -287,7 +287,7 @@ export function generateCureReport(log: CureLog) {
   <div class="legend-row">
     <div class="legend-item"><div class="legend-dot" style="background:var(--sts-heat)"></div>Chamber temperature</div>
     <div class="legend-item"><div class="legend-dot" style="background:rgba(109,40,217,0.35)"></div>Cure 405 nm — ON</div>
-    <div class="legend-item"><div class="legend-dot" style="background:rgba(8,145,178,0.35)"></div>Bleach 450 nm — ON</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(8,145,178,0.35)"></div>Bleaching 450 nm — ON</div>
   </div>
 </div>
 
@@ -316,7 +316,7 @@ export function generateCureReport(log: CureLog) {
       </svg>
       <text x="44" y="33" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="1.5" fill="#8A97A3">STRATASYS</text>
     </svg>
-    <span>S-Cure · Report generated ${reportDate}</span>
+    <span>sCure · Report generated ${reportDate}</span>
   </div>
   <div class="fine">Software v1.1.0 · Confidential — for internal process review</div>
 </div>
@@ -362,7 +362,7 @@ new Chart(document.getElementById('tempChart'), {
     labels,
     datasets: [
       {
-        label: 'Cure 405nm',
+        label: 'Cure 405 nm',
         data: ${JSON.stringify(uv405Scaled)},
         backgroundColor: 'rgba(109, 40, 217, 0.18)',
         borderColor: 'rgba(109, 40, 217, 0.35)',
@@ -370,7 +370,7 @@ new Chart(document.getElementById('tempChart'), {
         yAxisID: 'y', order: 2,
       },
       {
-        label: 'Bleach 450nm',
+        label: 'Bleaching 450 nm',
         data: ${JSON.stringify(uv450Scaled)},
         backgroundColor: 'rgba(8, 145, 178, 0.15)',
         borderColor: 'rgba(8, 145, 178, 0.35)',
@@ -399,7 +399,7 @@ new Chart(document.getElementById('tempChart'), {
         callbacks: {
           label: function(ctx) {
             if (ctx.datasetIndex === 0) return ctx.raw ? 'Cure 405 nm · ON' : null;
-            if (ctx.datasetIndex === 1) return ctx.raw ? 'Bleach 450 nm · ON' : null;
+            if (ctx.datasetIndex === 1) return ctx.raw ? 'Bleaching 450 nm · ON' : null;
             return 'Chamber · ' + ctx.raw + ' °C';
           }
         }

@@ -45,9 +45,9 @@
       "chase_tail": 5,
       "brightness": 100,
       "blink_sec": 0.5,
-      "status_sec": 2
+      "status_sec": 1
     },
-    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 2 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper). 'no_internet' marks a machine that cannot reach the internet (checked in the background every 'internet_check_sec' seconds, default 5 s - TCP 443 to www.google.com / 1.1.1.1, so a router that fakes DNS answers cannot spoof \"online\"): while IDLE the strip is solid in this color, and while a PROCESS RUNS the moving comet switches from the 'busy' color to this color - process + no-internet are visible at once. Faults and door-open always take priority."
+    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 1 s - the HSI sampling-time rule: every reading is sampled at most every 1 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper). 'no_internet' marks a machine that cannot reach the internet (checked in the background every 'internet_check_sec' seconds, default 5 s - TCP 443 to www.google.com / 1.1.1.1, so a router that fakes DNS answers cannot spoof \"online\"): while IDLE the strip is solid in this color, and while a PROCESS RUNS the moving comet switches from the 'busy' color to this color - process + no-internet are visible at once. Faults and door-open always take priority."
   },
 
   "heater": {
@@ -66,44 +66,37 @@
     "target_temp": 60.0,
     "target_min": 30.0,
     "sample_sec": 1.0,
-    "kp": 8.0,
-    "ki": 0.3,
-    "kd": 0.0,
-    "integ_max": 85.0,
-    "pwm_min": 0.0,
-    "pwm_max": 100.0,
+    "hysteresis_c": 1.0,
+    "on_pwm": 100,
     "at_temp_band": 1.5,
     "cooldown_sec": 600,
-    "cooldown_fan_pwm": 100,
-    "_comment": "Heating mode (temperature_control.py, closed-loop chamber temperature). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode; then PWM_HEATER duty is PI-controlled toward the target (kp in %%PWM per C, ki per C*s, integral capped at 'integ_max' %%). |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
+    "cooldown_fan_pwm": 30,
+    "_comment": "Heating mode (temperature_control.py, ON/OFF thermostat control). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode; then PWM_HEATER is switched ON/OFF like a thermostat: ON (at 'on_pwm' %%) when the chamber drops to target - 'hysteresis_c' C or below, OFF when it reaches the target; in between it keeps its last state (hysteresis prevents rapid relay chatter). |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
   },
 
   "servo": {
     "gpio": 8,
     "signal_inverted": true,
+    "settle_sec": 0.6,
     "_comment": "Damper servo (MG90S) on GPIO8. The board buffers the signal through Q16 (transistor driver, J2_MOTOR_DAMPER) which INVERTS it - signal_inverted=true pre-inverts the PWM so the servo sees normal pulses. Set false only if the servo is wired directly to the GPIO pin."
   },
 
   "cooling": {
-    "damper_open_angle": 180,
-    "damper_closed_angle": 0,
+    "damper_open_angle": 0,
+    "damper_closed_angle": 90,
     "heater_fan": "FAN_HEATER",
     "heater_fan_pwm": 100,
     "chamber_fan": "FAN_COOLING",
     "thermistor": "TEMP_CHAMBER",
-    "rate_min": 0.0,
-    "rate_max": 5.0,
+    "mode_pwms": { "fast": 100, "medium": 60, "slow": 30 },
     "target_temp": 25.0,
-    "sample_sec": 2.0,
+    "sample_sec": 1.0,
     "window_sec": 30.0,
-    "kp": 25.0,
-    "ki": 2.0,
-    "pwm_start": 50.0,
     "pwm_min": 0.0,
     "pwm_max": 100.0,
     "temp_valid_min": -20,
     "temp_valid_max": 120,
-    "_comment": "Cooling mode (closed-loop cooling-rate control). Entry sequence: damper (servo) to 'damper_open_angle', then 'heater_fan' fixed at 'heater_fan_pwm' % for the whole mode, then 'chamber_fan' under PI control. The loop samples 'thermistor' every 'sample_sec' s, estimates dT/dt over a sliding 'window_sec' s window and drives the chamber-fan PWM so the measured cooling rate tracks the user setpoint (clamped to [rate_min, rate_max] C/min; the setpoint can be changed while running). The mode ends automatically at 'target_temp': fans off, damper to 'damper_closed_angle'. kp/ki are PI gains in %%PWM per (C/min); verify damper angles on the bench."
+    "_comment": "Cooling mode (FIXED chamber-fan duty, no closed-loop rate control). Entry sequence: damper (servo) to 'damper_open_angle', then 'heater_fan' fixed at 'heater_fan_pwm' % for the whole mode, then 'chamber_fan' at a constant duty for the whole mode - the UI modes map to duties via 'mode_pwms' (fast=100, medium=60, slow=30 %). The loop samples 'thermistor' every 'sample_sec' s and estimates dT/dt over a sliding 'window_sec' s window for status/telemetry only. The mode ends automatically at 'target_temp': fans off, damper to 'damper_closed_angle'. Verify damper angles on the bench."
   },
 
   "_modes_note": "In 450nm mode only LEDs whose 'modes' list contains '450nm' may turn on (the Door LED). In 405nm mode every LED whose 'modes' contains '405nm' may turn on. Each LED's 'fan' starts automatically at 'fan_speed' when the LED is turned on, and stops when the LED is turned off."

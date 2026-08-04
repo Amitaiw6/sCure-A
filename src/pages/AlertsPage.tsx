@@ -136,7 +136,7 @@ export default function AlertsPage() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle size={16} className="text-orange-400" />
-              <span className="text-orange-400 text-sm font-bold">Non-Critical Errors</span>
+              <span className="text-orange-400 text-sm font-bold">Warnings</span>
             </div>
             <div className="bg-card rounded-xl overflow-hidden">
               {warningAlerts.map(alert => {
@@ -154,7 +154,7 @@ export default function AlertsPage() {
         {criticalAlerts.length === 0 && warningAlerts.length === 0 && (
           <div className="text-center py-12">
             <span className="text-green-400 text-lg font-bold block">All Clear</span>
-            <span className="text-muted-foreground text-xs">No active alerts</span>
+            <span className="text-muted-foreground text-xs">No active alerts.</span>
           </div>
         )}
       </div>
