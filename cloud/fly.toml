@@ -1,0 +1,29 @@
+# sCure Cloud portal on Fly.io
+# Deploy (from the cloud/ directory):
+#   fly launch --copy-config --no-deploy    # first time: creates the app
+#   fly volumes create portal_data --size 1
+#   fly secrets set PORTAL_PASSWORD=... PORTAL_MACHINE_KEYS='{"CureBox-1":"<key>"}'
+#   fly deploy
+app = "scure-cloud"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORTAL_DATA_DIR = "/data"
+
+[[mounts]]
+  source = "portal_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

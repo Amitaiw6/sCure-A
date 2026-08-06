@@ -35,12 +35,25 @@ from flask import Flask, request, jsonify, make_response
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE, 'portal_config.json')
-DB_PATH = os.path.join(BASE, 'data', 'portal.sqlite3')
+# On a PaaS (Fly.io etc.) mount a persistent volume and point PORTAL_DATA_DIR
+# at it - the SQLite DB must survive machine restarts/redeploys.
+DATA_DIR = os.environ.get('PORTAL_DATA_DIR') or os.path.join(BASE, 'data')
+DB_PATH = os.path.join(DATA_DIR, 'portal.sqlite3')
 
 app = Flask(__name__)
 
 
 def load_config():
+    """Config from env (PaaS: fly secrets) or portal_config.json (self-host).
+
+    Env form:  PORTAL_PASSWORD=...  PORTAL_MACHINE_KEYS='{"CureBox-1":"<key>"}'
+    """
+    if os.environ.get('PORTAL_PASSWORD'):
+        try:
+            keys = json.loads(os.environ.get('PORTAL_MACHINE_KEYS') or '{}')
+        except Exception:                 # noqa: BLE001 - malformed env JSON
+            keys = {}
+        return {'password': os.environ['PORTAL_PASSWORD'], 'machine_keys': keys}
     with open(CONFIG_PATH, encoding='utf-8') as f:
         return json.load(f)
 
@@ -387,7 +400,7 @@ setInterval(load, 10000);
 
 
 if __name__ == '__main__':
-    if not os.path.exists(CONFIG_PATH):
+    if not os.environ.get('PORTAL_PASSWORD') and not os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
             json.dump({'password': secrets.token_urlsafe(9),
                        'machine_keys': {'CureBox-1': secrets.token_urlsafe(24)}}, f, indent=2)
