@@ -250,14 +250,22 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
       setCsvMsg({ text: res.message || 'Saved to USB', error: false })
       return
     }
-    // Fallback (dev, or no USB connected): hand the file to the browser.
+    // The machine answered but could NOT write (no USB inserted / write error):
+    // tell the user to connect a USB — do NOT silently drop the file in the
+    // browser's downloads.
+    if (res.code) {
+      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code } }))
+      setCsvMsg({
+        text: res.code === 9081
+          ? 'No USB connected — insert a USB drive and try again'
+          : (res.message || 'Could not save to USB'),
+        error: true,
+      })
+      return
+    }
+    // Only in dev / when the API is unreachable: hand the file to the browser.
     browserDownloadCsv(csv, filename)
-    setCsvMsg({
-      text: res.message?.includes('No USB')
-        ? 'No USB drive found — file downloaded instead'
-        : 'File downloaded',
-      error: true,
-    })
+    setCsvMsg({ text: 'File downloaded', error: true })
   }
 
   const hasNitrogen = steps.some(s => s.process === 'Nitrogen')

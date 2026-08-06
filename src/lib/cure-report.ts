@@ -1,9 +1,16 @@
 import type { CureLog } from '@/context/CureHistoryContext'
-import { saveCureReport } from '@/services/hardware-api'
+import { saveCureReport, exportReportToUsb } from '@/services/hardware-api'
 
-export function generateCureReport(log: CureLog) {
+export interface ReportResult {
+  ok: boolean
+  /** true when the report was written to (or attempted on) the machine's USB drive */
+  usb: boolean
+  message: string
+}
+
+export async function generateCureReport(log: CureLog): Promise<ReportResult> {
   const telemetry = log.telemetry ?? []
-  if (telemetry.length === 0) return
+  if (telemetry.length === 0) return { ok: false, usb: false, message: 'No telemetry recorded' }
 
   const times = telemetry.map(s => s.t)
   const chamberTemps = telemetry.map(s => s.chamberTemp)
@@ -451,11 +458,26 @@ new Chart(document.getElementById('ledChart'), {
     endedAt: log.endedAt,
   })
 
+  const filename = `cure-report-${log.materialName}-${new Date(log.startedAt).toISOString().slice(0, 10)}.html`
+
+  // Primary path: write the report straight to the USB drive on the machine.
+  const usbRes = await exportReportToUsb(filename, html)
+  if (usbRes.ok) return { ok: true, usb: true, message: usbRes.message || 'Saved to USB' }
+
+  // The machine answered but could not write (no stick, write error) —
+  // raise the alert instead of silently dropping the file in ~/Downloads.
+  if (usbRes.code) {
+    window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: usbRes.code } }))
+    return { ok: false, usb: true, message: usbRes.message }
+  }
+
+  // Dev / API unreachable: hand the file to the browser.
   const blob = new Blob([html], { type: 'text/html' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `cure-report-${log.materialName}-${new Date(log.startedAt).toISOString().slice(0, 10)}.html`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+  return { ok: true, usb: false, message: 'Downloaded in browser' }
 }

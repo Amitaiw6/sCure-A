@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { CheckCircle, XCircle, AlertTriangle, Clock, Play, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCureHistory } from '@/context/CureHistoryContext'
@@ -40,6 +41,20 @@ function formatDuration(seconds: number | null) {
 
 export default function CureHistoryPage() {
   const { logs } = useCureHistory()
+  // Per-row export feedback: on the machine the report goes to the USB drive,
+  // so the button must show whether the write actually happened.
+  const [reportStatus, setReportStatus] = useState<Record<string, 'saving' | 'ok' | 'fail'>>({})
+
+  const handleReport = async (log: CureLog) => {
+    setReportStatus(prev => ({ ...prev, [log.id]: 'saving' }))
+    const res = await generateCureReport(log)
+    setReportStatus(prev => ({ ...prev, [log.id]: res.ok ? 'ok' : 'fail' }))
+    setTimeout(() => setReportStatus(prev => {
+      const next = { ...prev }
+      delete next[log.id]
+      return next
+    }), 2500)
+  }
 
   return (
     <main className="overflow-y-auto scroll-hidden h-full p-3">
@@ -95,10 +110,16 @@ export default function CureHistoryPage() {
 
               {log.telemetry && log.telemetry.length > 0 && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); generateCureReport(log) }}
+                  onClick={(e) => { e.stopPropagation(); if (!reportStatus[log.id]) handleReport(log) }}
                   className="shrink-0 p-1.5 rounded-lg hover:bg-accent transition-colors touch-manipulation"
                 >
-                  <Download size={14} className="text-primary" />
+                  {reportStatus[log.id] === 'ok' ? (
+                    <CheckCircle size={14} className="text-green-500" />
+                  ) : reportStatus[log.id] === 'fail' ? (
+                    <XCircle size={14} className="text-destructive" />
+                  ) : (
+                    <Download size={14} className={reportStatus[log.id] === 'saving' ? 'text-muted-foreground animate-pulse' : 'text-primary'} />
+                  )}
                 </button>
               )}
             </div>

@@ -22,13 +22,37 @@ USB_DEVICES = ["/dev/sda1", "/dev/sdb1"]
 
 
 def find_usb_mount():
-    """Find mounted USB drive or try to mount one."""
-    # Check already-mounted paths
+    """Find a mounted USB drive, wherever the system put it, and try to mount
+    one if none is mounted.
+
+    The desktop auto-mounts a stick to /media/<user>/<label> or
+    /run/media/<user>/<label> (e.g. /media/testingpi/MYUSB) - NOT the fixed
+    /media/usb - so the reliable check is: any /dev/sd* partition mounted under
+    a media directory. That is tried first."""
+    # 1. Any /dev/sd* partition already mounted (covers desktop auto-mount).
+    try:
+        with open('/proc/mounts', 'r', encoding='utf-8') as f:
+            entries = [ln.split() for ln in f if ln.startswith('/dev/sd')]
+        cands = []
+        for e in entries:
+            mp = e[1].replace('\\040', ' ')   # /proc/mounts escapes spaces
+            if (mp.startswith('/media/') or mp.startswith('/run/media/')
+                    or mp in USB_MOUNT_POINTS):
+                cands.append(mp)
+        for mp in cands:                      # prefer a writable mount
+            if os.path.ismount(mp) and os.access(mp, os.W_OK):
+                return mp
+        if cands:
+            return cands[0]
+    except Exception:
+        pass
+
+    # 2. The classic fixed mount points.
     for path in USB_MOUNT_POINTS:
         if os.path.ismount(path):
             return path
 
-    # Try to mount
+    # 3. Last resort: mount a raw device ourselves.
     mount_point = "/media/usb"
     os.makedirs(mount_point, exist_ok=True)
     for dev in USB_DEVICES:

@@ -33,6 +33,12 @@ if os.path.isdir(IO_CONTROLLER_DIR) and IO_CONTROLLER_DIR not in sys.path:
 # components.json "cooling.mode_pwms" overrides these defaults.
 COOLING_MODE_PWMS = {'fast': 100, 'medium': 60, 'slow': 30}
 
+# FAST cooling boost: the four LED-cooling fans (FAN_LEFT/RIGHT/BACK/DOOR)
+# join the chamber fan at this duty to move extra air through the chamber.
+# components.json "cooling.fast_led_fan_pwm" overrides; 0 disables the boost.
+# They are released (OFF) the moment cooling ends or the mode leaves 'fast'.
+FAST_COOL_LED_FAN_PWM = 100
+
 # Drying: the chamber intake/cooling fan (FAN_COOLING) runs at this duty for the
 # WHOLE drying step - from the start of the ramp through the hold - so the
 # chamber keeps a gentle airflow that carries moisture out. Turned off the
@@ -291,6 +297,7 @@ class IOBridge:
         self._damper_open = None          # None = never driven; set on first command
         self._dry_fan_on = False          # chamber intake fan held at 30% while drying
         self._cooling_mode = None         # UI mode name while cooling is active
+        self._cool_led_fans = False       # LED fans boosting a FAST cool
         self._uv = {'on': False, 'intensity': 0, 'wavelength': None}
         self._fan_duty = {name: 0 for name in FAN_GROUPS}   # last commanded %
         self._n2_on = False               # nitrogen valve state (GPIO13)
@@ -348,6 +355,7 @@ class IOBridge:
         if not cool.get('active') and self._cooling_mode:
             self._cooling_mode = None     # cooling auto-ended: damper was closed
             self._damper_open = False
+            self._set_cool_led_fans(False)  # release the FAST-cool LED-fan boost
         try:
             with self.sys.lock:
                 chamber = self.sys.io.read_temp('TEMP_CHAMBER')['temp']
@@ -543,6 +551,35 @@ class IOBridge:
     # ------------------------------------------------------------------
     #  Cooling (fixed chamber-fan duty per mode; damper + fans owned by it)
     # ------------------------------------------------------------------
+    def _set_cool_led_fans(self, on):
+        """FAST-cool boost: run/release the four LED-cooling fans together
+        with the chamber fan. Best-effort - a fan write error must never
+        block the cooling mode itself. No-op when nothing changes, and the
+        fans are never touched while any LED is lit (their fans then belong
+        to the LED-cooling logic)."""
+        if bool(on) == self._cool_led_fans:
+            return
+        if getattr(self.sys, '_leds_on', None):
+            return                        # LED logic owns these fans right now
+        pwm = self.sys.config.get('cooling', {}).get('fast_led_fan_pwm',
+                                                     FAST_COOL_LED_FAN_PWM)
+        try:
+            pwm = max(0, min(100, float(pwm)))
+        except (TypeError, ValueError):
+            pwm = FAST_COOL_LED_FAN_PWM
+        if on and pwm <= 0:
+            return                        # boost disabled in components.json
+        try:
+            with self.sys.lock:
+                for name in FAN_GROUPS['led_cooling']:
+                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[name],
+                                             pwm if on else 0)
+        except Exception as e:            # noqa: BLE001 - I2C write failed
+            print(f'[HW] FAST-cool LED-fan boost failed: {e}', flush=True)
+            return
+        self._cool_led_fans = bool(on)
+        self._fan_duty['led_cooling'] = int(pwm) if on else 0
+
     def cool_to_target(self, target_c, mode):
         with self._op:
             self._drying = False          # cooling owns the damper from here
@@ -571,6 +608,9 @@ class IOBridge:
             if ok:
                 self._cooling_mode = mode
                 self._damper_open = True
+                # FAST mode: the LED-cooling fans join in; any other mode
+                # (including a fast->medium/slow change) releases them.
+                self._set_cool_led_fans(mode == 'fast')
             return ok, why
 
     def door_abort(self):
@@ -612,6 +652,7 @@ class IOBridge:
             self.set_uv(False)
             self.set_nitrogen(False)
             self.sys.stop_cooling('user')
+            self._set_cool_led_fans(False)  # release the FAST-cool LED-fan boost
             self.temp.stop('user')        # heater off now; fan run-on continues
             self.set_damper(False)        # idle state: vent closed
             self._damper_open = False
@@ -653,6 +694,8 @@ class IOBridge:
             return False, 'heater fan is controlled by the heating loop while it is active'
         if fan == 'chamber_intake' and self.sys.cooling_status().get('active'):
             return False, 'intake fan is controlled by the cooling loop while it is active'
+        if fan == 'led_cooling' and self._cool_led_fans:
+            return False, 'LED fans are boosting the fast cooling while it is active'
         try:
             with self.sys.lock:
                 for name in names:

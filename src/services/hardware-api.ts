@@ -170,10 +170,10 @@ export async function stopCureOutputs(immediate = false) {
 export async function exportCsvToUsb(
   filename: string,
   content: string,
-): Promise<{ ok: boolean; message: string; path?: string }> {
+): Promise<{ ok: boolean; message: string; path?: string; code?: number }> {
   if (IS_DEV) {
     console.log(`[HW-API] export-csv ${filename} (simulated — no USB in dev)`)
-    return { ok: false, message: 'No USB in dev mode' }
+    return { ok: false, message: 'No USB in dev mode' }   // no code → dev browser fallback
   }
   try {
     const res = await fetch(`${API_BASE}/system/export-csv`, {
@@ -185,6 +185,34 @@ export async function exportCsvToUsb(
     return await res.json()
   } catch (err) {
     console.error('[HW-API] Error calling /system/export-csv:', err)
+    return { ok: false, message: String(err) }
+  }
+}
+
+/**
+ * Write a generated cure-report HTML to the USB drive connected to the machine.
+ * Returns the backend error `code` (9081 no USB / 9082 write failed) when the
+ * machine answered but could not write; in dev (no Pi) ok:false without a code
+ * so the caller can fall back to a normal browser download.
+ */
+export async function exportReportToUsb(
+  filename: string,
+  content: string,
+): Promise<{ ok: boolean; message: string; code?: number; path?: string }> {
+  if (IS_DEV) {
+    console.log(`[HW-API] export-report ${filename} (simulated — no USB in dev)`)
+    return { ok: false, message: 'No USB in dev mode' }
+  }
+  try {
+    const res = await fetch(`${API_BASE}/system/export-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.json()
+  } catch (err) {
+    console.error('[HW-API] Error calling /system/export-report:', err)
     return { ok: false, message: String(err) }
   }
 }

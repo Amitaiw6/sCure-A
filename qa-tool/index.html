@@ -175,6 +175,7 @@ const TEST_CATEGORIES = [
       { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
       { id: 'history_durable', name: 'Histories Durable Without DB', desc: 'Print history AND cure history are served from a durable store (Postgres or the server/data files) — both GET endpoints return arrays, never 503, so recorded prints and cure sessions survive a power-off', check: 'history_durable' },
+      { id: 'cloud_sync', name: 'Cloud Sync Agent Status', desc: '/api/state.cloudSync reports the portal sync agent: enabled + a recent successful sync when server/data/cloud.json is configured; cleanly disabled (no error) when not. Data-only by design — the portal can never actuate hardware', check: 'cloud_sync' },
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
       { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
@@ -192,6 +193,8 @@ const TEST_CATEGORIES = [
       { id: 'temp_ramp_live', name: 'Chamber Temp Reaches Target', desc: 'Command heat to 40°C, then verify /api/state chamberTemp actually rises toward the target — the Cure screen displays and follows this measured value', check: 'temp_ramp_live' },
       { id: 'temp_ramp_logic', name: 'Ramp Ends At Measured Temp', desc: 'Cure screen logic: the ramp keeps going while the measured chamber temp is below target−0.5°C, and the hold timer starts only when it reaches the target', check: 'temp_ramp_logic' },
       { id: 'uv_after_ramp', name: 'UV Start Mode Gating', desc: 'Cure screen logic: with UV Start = "At temperature" a ramping Cure/Bleacher step heats FIRST with the UV off until the measured chamber temp reaches the target; with "On ramp start" the LEDs light from the very start of the ramp', check: 'uv_after_ramp' },
+      { id: 'telemetry_report', name: 'Report Telemetry Sampling', desc: 'Cure screen logic: telemetry samples at t=0 and then every 5s, immune to the 1s status polling — so every run (even one aborted seconds in) has at least one sample and its report is downloadable from Cure History', check: 'telemetry_report' },
+      { id: 'report_usb_export', name: 'Report Export To USB', desc: 'Cure History download button: on the machine the report HTML is written straight to the USB drive (POST /api/system/export-report); a machine-side failure (9081 no USB / 9082 write failed) raises the alert instead of silently downloading; only dev/API-unreachable falls back to a browser download', check: 'report_usb_export' },
     ]
   },
   {
@@ -506,6 +509,7 @@ const TEST_CATEGORIES = [
       { id: 'hwc_datetime_bad', name: 'Bad Clock Format Rejected', desc: 'Malformed date/time is rejected instead of being passed to the shell', endpoint: '/api/system/datetime', method: 'POST', body: { date: 'not-a-date', time: '99:99' }, check: 'hw_reject' },
       { id: 'hwc_fan_test_param', name: 'Per-Fan Diagnostic Param', desc: '/api/diagnostics/fan-test?fan=led_cooling tests the requested fan, not always the heater fan', endpoint: '/api/diagnostics/fan-test?fan=led_cooling', method: 'POST', expect: 'ok' },
       { id: 'hwc_stop_immediate', name: 'Immediate Abort Stop', desc: '/api/cure/stop?immediate=1 (user abort) performs a full shutdown with no 10-min fan run-on', endpoint: '/api/cure/stop?immediate=1', method: 'POST', expect: 'ok' },
+      { id: 'hwc_fastcool_ledfans', name: 'Fast Cool Engages LED Fans', desc: 'Cooling in FAST mode also runs the four LED-cooling fans (fans.led_cooling > 0); they release on stop', check: 'hwc_fastcool_ledfans' },
       { id: 'hwc_state_extras', name: 'State Carries Hardware Truth', desc: '/api/state includes ledTemps, fanRpm, nitrogenActive and faults so the UI mirrors the machine instead of guessing', endpoint: '/api/state', method: 'GET', check: 'hwc_state_extras' },
       // Frontend-rule mirrors (logic tests, no API needed)
       { id: 'hwc_csv_heat_min', name: 'CSV: Heating Below 30°C Rejected', desc: 'CSV import applies the hardware heating floor (30°C), matching the backend', check: 'hwc_csv_heat_min' },
@@ -835,6 +839,37 @@ async function runSingleTest(test) {
       return;
     }
 
+    // FAST cooling engages the four LED-cooling fans, and stop releases them.
+    if (test.check === 'hwc_fastcool_ledfans') {
+      const readFans = async () => {
+        const r = await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) });
+        return (await r.json()).fans || {};
+      };
+      const cool = await (await fetch(apiUrl + '/api/cure/cool?target=30&mode=fast', { method: 'POST', signal: AbortSignal.timeout(8000) })).json();
+      let result;
+      if (!cool.ok) {
+        result = { status: 'warn', msg: `Cool command refused: ${cool.message || 'unknown'}` };
+      } else {
+        await new Promise(r => setTimeout(r, 500));
+        const during = await readFans();
+        await fetch(apiUrl + '/api/cure/stop', { method: 'POST', signal: AbortSignal.timeout(8000) }).catch(() => {});
+        await new Promise(r => setTimeout(r, 500));
+        const after = await readFans();
+        if (!(during.led_cooling > 0)) {
+          result = { status: 'fail', msg: `LED fans NOT engaged in fast cool (led_cooling=${during.led_cooling})` };
+        } else if (after.led_cooling !== 0) {
+          result = { status: 'fail', msg: `LED fans not released after stop (led_cooling=${after.led_cooling})` };
+        } else {
+          result = { status: 'pass', msg: `LED fans at ${during.led_cooling}% during fast cool, 0% after stop` };
+        }
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
     // Negative API test: the endpoint must REJECT the request (ok:false),
     // optionally with a specific registry error code.
     if (test.check === 'hw_reject') {
@@ -894,6 +929,36 @@ async function runSingleTest(test) {
         else if (!lanOk) result = { status: 'fail', msg: '/api/network/status.connected missing (NetworkPage LAN dot)' };
         else if (st.internetOk === null) result = { status: 'warn', msg: 'watch not running (simulation / RGB thread off); fields present' };
         else result = { status: 'pass', msg: `internetOk=${st.internetOk}, network.internet=${net.internet} — auto watch publishing` };
+      } catch (e) {
+        result = { status: 'fail', msg: `fetch failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Cloud portal sync agent: /api/state must always publish its status.
+    // Configured -> enabled with a recent successful sync (or a visible
+    // error); not configured -> cleanly disabled with no error.
+    if (test.check === 'cloud_sync') {
+      let result;
+      try {
+        const st = await (await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) })).json();
+        const cs = st.cloudSync;
+        if (!cs || typeof cs.enabled !== 'boolean')
+          result = { status: 'fail', msg: '/api/state.cloudSync missing' };
+        else if (!cs.enabled)
+          result = cs.error
+            ? { status: 'fail', msg: `agent off with error: ${cs.error}` }
+            : { status: 'warn', msg: 'not configured (no server/data/cloud.json) — fields present' };
+        else if (cs.error)
+          result = { status: 'warn', msg: `enabled but failing: ${cs.error}` };
+        else if (!cs.lastSyncOk || (Date.now() / 1000 - cs.lastSyncOk) > 120)
+          result = { status: 'fail', msg: 'enabled but no successful sync in the last 2 min' };
+        else
+          result = { status: 'pass', msg: `synced ${Math.round(Date.now() / 1000 - cs.lastSyncOk)}s ago` };
       } catch (e) {
         result = { status: 'fail', msg: `fetch failed: ${e.message}` };
       }
@@ -1204,6 +1269,74 @@ async function runSingleTest(test) {
       const result = bad.length === 0 && gateOk
         ? { status: 'pass', msg: 'at-target defers UV until the target temp; at-start lights the UV from ramp start' }
         : { status: 'fail', msg: `wrong UV gating for: ${bad.map(c => `step ${c[0]}°C @ ${c[1]}°C (${c[2]})`).join(', ') || 'threshold check'}` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors CureProcessPage telemetry + the CureHistory Download button:
+    // the sampler takes one sample at t=0 and one every 5s, reading live
+    // values through a ref. The buggy design kept those values in the effect
+    // deps, so the 1s status poll re-created the interval every second — the
+    // 5s timer never fired, runs got ZERO samples and no report. The
+    // Download button shows only when a run has at least one sample.
+    if (test.check === 'telemetry_report') {
+      // samples(run, resetEvery, t0): resetEvery simulates the interval being
+      // re-created by a dep change every N seconds (Infinity = stable ref
+      // design); t0 = whether a sample is taken immediately on start.
+      const samples = (runSeconds, resetEvery, t0) => {
+        let n = t0 ? 1 : 0, sinceReset = 0, sinceSample = 0;
+        for (let t = 1; t <= runSeconds; t++) {
+          sinceReset++; sinceSample++;
+          if (sinceSample >= 5) { n++; sinceSample = 0; }
+          if (sinceReset >= resetEvery) { sinceSample = 0; sinceReset = 0; }
+        }
+        return n;
+      };
+      const canDownload = (n) => n > 0;                       // CureHistoryPage gate
+      const buggy9s = samples(9, 1, false);                   // old design, 1s polling
+      const cases = [
+        // [runSeconds] -> expected samples with the fixed design
+        [3, 1],    // aborted seconds in: still gets the t=0 sample -> report
+        [9, 2],    // the reported "ggg" case: t=0 + t=5
+        [60, 13],  // full minute: t=0 + 12 five-second samples
+      ];
+      const bad = cases.filter(([run, expect]) => samples(run, Infinity, true) !== expect);
+      const bugReproduced = buggy9s === 0 && !canDownload(buggy9s);
+      const allDownloadable = cases.every(([run]) => canDownload(samples(run, Infinity, true)));
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0 && bugReproduced && allDownloadable
+        ? { status: 'pass', msg: 'sampler survives 1s polling; every run (even a seconds-long abort) has a downloadable report' }
+        : { status: 'fail', msg: bad.length ? `wrong sample count for: ${bad.map(c => `${c[0]}s run`).join(', ')}` : (!bugReproduced ? 'buggy design not reproduced' : 'download gate wrong') };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors generateCureReport routing + the export-report endpoint contract:
+    // ok → written to USB; server answered with a code (9081 no USB / 9082
+    // write failed) → raise the alert, NO silent browser fallback; no code
+    // (dev / API unreachable) → browser download. Filename is forced to .html.
+    if (test.check === 'report_usb_export') {
+      const route = (ok, code) => ok ? 'usb' : code ? 'alert' : 'browser';
+      const cases = [
+        // [server ok, error code] -> expected action
+        [true, undefined, 'usb'],      // stick present: file lands on the USB
+        [false, 9081, 'alert'],        // no stick: alert 9081, nothing downloads
+        [false, 9082, 'alert'],        // write failed: alert 9082
+        [false, undefined, 'browser'], // dev / server down: browser download
+      ];
+      const bad = cases.filter(([ok, code, expect]) => route(ok, code) !== expect);
+      const forceHtml = (name) => name.toLowerCase().endsWith('.html') ? name : name + '.html';
+      const nameOk = forceHtml('cure-report-x-2026-08-06.html') === 'cure-report-x-2026-08-06.html'
+        && forceHtml('report') === 'report.html';
+      const validCodes = [9081, 9082].every(c => c >= 9080 && c <= 9099);   // storage/backend range
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0 && nameOk && validCodes
+        ? { status: 'pass', msg: 'USB write when present; 9081/9082 alert with no silent fallback; browser download only off-machine' }
+        : { status: 'fail', msg: bad.length ? `wrong routing for: ${bad.map(c => `ok=${c[0]},code=${c[1]}`).join('; ')}` : 'filename/code contract broken' };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

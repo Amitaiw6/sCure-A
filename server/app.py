@@ -315,6 +315,10 @@ class HardwareController:
         self.set_uv(False)
         self.set_heating(False)
         self.set_cooling(True, mode)
+        # FAST cooling: the LED-cooling fans join the chamber fan (mirrors
+        # the io_bridge behavior so the UI sees the same fans state off-Pi).
+        self.fans['led_cooling'] = 100 if mode == 'fast' else 0
+        self.fans['chamber_intake'] = COOLING_MODE_PWMS.get(mode, 60)
         return True, None
 
     def stop_all(self, immediate=False):
@@ -326,6 +330,8 @@ class HardwareController:
         self.set_uv(False)
         self.set_heating(False)
         self.set_cooling(False)
+        self.fans['led_cooling'] = 0
+        self.fans['chamber_intake'] = 0
         return True, None
 
     def run_fan_test(self, fan=None):
@@ -464,6 +470,7 @@ def get_state():
     """Get current hardware state - polled by frontend"""
     state = hw.get_state()
     state['counters'] = counters.hours()
+    state['cloudSync'] = cloud_sync.status()
     return jsonify(state)
 
 
@@ -794,6 +801,158 @@ class _CureFileStore:
 _cure_files = _CureFileStore()
 
 
+# ============================================================
+# Cloud sync agent (sCure Cloud portal, cloud/portal.py)
+# ============================================================
+class CloudSync:
+    """Connects the machine OUT to the sCure Cloud portal.
+
+    Enabled by server/data/cloud.json:
+        {"url": "https://portal.example.com", "key": "<machine secret>",
+         "name": "CureBox-1", "interval": 10}
+    Every `interval` seconds it POSTs a snapshot (state, counters, programs,
+    prints, cure summaries) to /api/agent/sync and applies the returned
+    DATA-ONLY commands:
+        upsert_program / delete_program - work programs (work points)
+        send_print                      - simulated received print
+    There is deliberately no command that actuates hardware - heater/UV can
+    only be started at the machine. Outbound-only: no inbound ports needed,
+    works behind any NAT/firewall. Applied command ids are acked on the
+    next sync so a command is never applied twice.
+    """
+
+    def __init__(self):
+        self.enabled = False
+        self.last_ok = None           # epoch of the last successful sync
+        self.error = None
+        self.cfg = {}
+        try:
+            with open(os.path.join(_DATA_DIR, 'cloud.json'), encoding='utf-8') as f:
+                self.cfg = json.load(f)
+        except FileNotFoundError:
+            return                    # not configured - agent stays off
+        except Exception as e:        # noqa: BLE001 - unreadable config
+            self.error = f'bad cloud.json: {e}'
+            return
+        if not (self.cfg.get('url') and self.cfg.get('key')):
+            self.error = 'cloud.json needs "url" and "key"'
+            return
+        self.enabled = True
+        self._ack = []
+        threading.Thread(target=self._run, daemon=True, name='cloud-sync').start()
+        print(f"[CLOUD] sync agent ON -> {self.cfg['url']}")
+
+    def status(self):
+        return {'enabled': self.enabled, 'lastSyncOk': self.last_ok,
+                'error': self.error}
+
+    # -- data access through the same stores the API uses ------------------
+    @staticmethod
+    def _get_programs():
+        return db.get_materials(presets_only=False) if _db_on() \
+            else _load_user_materials_file()
+
+    @staticmethod
+    def _put_programs(mats):
+        if _db_on():
+            db.replace_user_materials(mats)
+        else:
+            _save_user_materials_file(mats)
+
+    @staticmethod
+    def _get_prints():
+        if _db_on():
+            return db.get_print_history()
+        with _history_lock:
+            return _load_json_file(_PRINT_HISTORY_FILE, [])
+
+    @staticmethod
+    def _put_prints(logs):
+        if _db_on():
+            db.replace_print_history(logs)
+        else:
+            with _history_lock:
+                _save_json_file(_PRINT_HISTORY_FILE, logs)
+
+    def _snapshot(self):
+        try:
+            s = hw.get_state()
+            state = {k: s.get(k) for k in ('chamberTemp', 'doorClosed',
+                                           'isHeating', 'isCooling', 'uvOn',
+                                           'internetOk')}
+            state['counters'] = counters.hours()
+        except Exception:             # noqa: BLE001 - snapshot must never die
+            state = {}
+        cures = db.get_cure_history() if _db_on() else _cure_files.list()
+        cures = [{k: v for k, v in c.items() if k != 'telemetry'}
+                 for c in cures[:10]]
+        return {'name': self.cfg.get('name', 'CureBox'), 'state': state,
+                'programs': self._get_programs(),
+                'prints': self._get_prints()[:20], 'cures': cures,
+                'ackIds': self._ack}
+
+    def _apply(self, cmd):
+        ctype, p = cmd.get('type'), cmd.get('payload') or {}
+        if ctype == 'upsert_program':
+            mats = [m for m in self._get_programs() if m.get('id') != p.get('id')]
+            self._put_programs(mats + [p])
+            print(f"[CLOUD] program saved from portal: {p.get('name')}")
+        elif ctype == 'delete_program':
+            self._put_programs([m for m in self._get_programs()
+                                if m.get('id') != p.get('id')])
+            print(f"[CLOUD] program deleted from portal: {p.get('id')}")
+        elif ctype == 'send_print':
+            prog = next((m for m in self._get_programs()
+                         if m.get('name') == p.get('materialName')), None)
+            log = {'id': f'cloud-{int(time.time() * 1000)}',
+                   'printName': p.get('printName') or 'Job',
+                   'materialName': p.get('materialName') or '',
+                   'printerName': p.get('printerName') or 'CLOUD',
+                   'date': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                   'duration': int(p.get('duration')
+                                   or (prog or {}).get('totalDuration') or 20),
+                   'status': 'completed',
+                   'steps': len((prog or {}).get('steps') or []) or int(p.get('steps') or 0),
+                   'csvFile': p.get('csvFile') or ''}
+            self._put_prints([log] + self._get_prints())
+            print(f"[CLOUD] simulated print received: {log['printName']} "
+                  f"({log['printerName']})")
+        else:
+            return False
+        return True
+
+    def _run(self):
+        import urllib.request
+        interval = max(3.0, float(self.cfg.get('interval', 10)))
+        url = self.cfg['url'].rstrip('/') + '/api/agent/sync'
+        while True:
+            try:
+                req = urllib.request.Request(
+                    url, data=json.dumps(self._snapshot()).encode('utf-8'),
+                    method='POST',
+                    headers={'Content-Type': 'application/json',
+                             'X-Machine-Key': self.cfg['key']})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    resp = json.load(r)
+                self.last_ok = time.time()
+                self.error = None
+                acked = []
+                for cmd in resp.get('commands') or []:
+                    try:
+                        if self._apply(cmd):
+                            acked.append(cmd.get('id'))
+                    except Exception as e:  # noqa: BLE001 - one bad command
+                        print(f"[CLOUD] command {cmd.get('type')} failed: {e}")
+                        acked.append(cmd.get('id'))   # ack anyway: don't loop
+                self._ack = acked
+            except Exception as e:    # noqa: BLE001 - portal unreachable
+                self.error = str(e)
+            time.sleep(interval)
+
+
+cloud_sync = CloudSync()
+
+
 @app.route('/api/print-history', methods=['GET'])
 def get_print_history():
     """Print history: Postgres when configured, else the durable file."""
@@ -1121,6 +1280,30 @@ def export_csv_to_usb():
                             'message': 'No USB drive found. Please insert a USB stick.'})
         dest = os.path.join(usb, filename)
         with open(dest, 'w', newline='') as f:
+            f.write(content)
+        os.system('sync')
+        return jsonify({'ok': True, 'message': f'Saved {filename} to USB', 'path': dest})
+    except Exception as e:
+        return jsonify({'ok': False, 'code': 9082, 'message': str(e)})
+
+
+@app.route('/api/system/export-report', methods=['POST'])
+def export_report_to_usb():
+    """Write a generated cure-report HTML to the USB drive connected to the machine."""
+    data = request.get_json(silent=True) or {}
+    content = data.get('content', '')
+    filename = os.path.basename(data.get('filename') or 'cure-report.html')
+    if not filename.lower().endswith('.html'):
+        filename += '.html'
+    print(f"[SYSTEM] Exporting report '{filename}' to USB...")
+    try:
+        from updater import find_usb_mount
+        usb = find_usb_mount()
+        if not usb:
+            return jsonify({'ok': False, 'code': 9081,
+                            'message': 'No USB drive found. Please insert a USB stick.'})
+        dest = os.path.join(usb, filename)
+        with open(dest, 'w', encoding='utf-8') as f:
             f.write(content)
         os.system('sync')
         return jsonify({'ok': True, 'message': f'Saved {filename} to USB', 'path': dest})

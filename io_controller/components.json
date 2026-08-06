@@ -89,6 +89,7 @@
     "chamber_fan": "FAN_COOLING",
     "thermistor": "TEMP_CHAMBER",
     "mode_pwms": { "fast": 100, "medium": 60, "slow": 30 },
+    "fast_led_fan_pwm": 100,
     "target_temp": 25.0,
     "sample_sec": 1.0,
     "window_sec": 30.0,

@@ -465,12 +465,19 @@ export default function CureProcessPage() {
     }
   }, [isRunning, isComplete, tick])
 
-  // Telemetry recording every 5 seconds
+  // Telemetry recording: one sample at start, then every 5 seconds.
+  // The changing inputs are read through a ref — putting them in the effect
+  // deps would tear the interval down on every 1s status poll, so the 5s
+  // timer would never fire and runs would end up with no telemetry (and no
+  // downloadable report).
   const telemetryStartRef = useRef<number>(0)
+  const telemetrySnapRef = useRef({ chamberTemp: hw.chamberTemp, ledTemps: hw.ledTemps, phases, activePhase, isRamping })
+  telemetrySnapRef.current = { chamberTemp: hw.chamberTemp, ledTemps: hw.ledTemps, phases, activePhase, isRamping }
   useEffect(() => {
     if (!isRunning || isComplete || !cureLogId) return
     telemetryStartRef.current = Date.now()
-    const interval = setInterval(() => {
+    const sample = () => {
+      const { chamberTemp, ledTemps, phases, activePhase, isRamping } = telemetrySnapRef.current
       const elapsed = Math.round((Date.now() - telemetryStartRef.current) / 1000)
       const currentPhase = phases[activePhase]
       const isCure = currentPhase?.type === 'cure'
@@ -481,11 +488,11 @@ export default function CureProcessPage() {
       const uvType = isCure ? '405nm' as const : isBleacher ? '450nm' as const : null
       // Real per-module LED thermistors from the IO board when available;
       // simulated around chamber temp only off-Pi.
-      const base = hw.chamberTemp
-      const real = hw.ledTemps
+      const base = chamberTemp
+      const real = ledTemps
       recordTelemetry(cureLogId, {
         t: elapsed,
-        chamberTemp: hw.chamberTemp,
+        chamberTemp,
         uvOn,
         uvType,
         ledTemps: {
@@ -495,9 +502,11 @@ export default function CureProcessPage() {
           back: real?.back ?? base + Math.round(Math.random() * 3 - 1),
         }
       })
-    }, 5000)
+    }
+    sample()  // t=0 — even a run aborted seconds in gets a report
+    const interval = setInterval(sample, 5000)
     return () => clearInterval(interval)
-  }, [isRunning, isComplete, cureLogId, hw.chamberTemp, hw.ledTemps, activePhase, phases, recordTelemetry, isRamping])
+  }, [isRunning, isComplete, cureLogId, recordTelemetry])
 
   // Auto-start on mount
   useEffect(() => {
