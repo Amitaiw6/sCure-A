@@ -178,8 +178,10 @@ PAGE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sCure Cloud</title>
 <style>
-  :root { --bg:#0b0e16; --panel:#131828; --line:#232a42; --text:#e8eaf2;
-          --mut:#8a93a8; --acc:#7c6cf0; --acc2:#a99ef7; --ok:#3ecf8e; --err:#e5484d; }
+  /* Same tokens as the machine UI (src/index.css): near-black ground,
+     #111 cards, #222 borders, sky-blue primary, red destructive. */
+  :root { --bg:#0a0a0a; --panel:#111111; --line:#222222; --text:#ffffff;
+          --mut:#a1a1aa; --acc:#0ea5e9; --acc2:#38bdf8; --ok:#22c55e; --err:#dc2626; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
          font:15px/1.45 "Segoe UI", Arial, sans-serif; }
@@ -195,7 +197,7 @@ PAGE = r"""<!DOCTYPE html>
   table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
   th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); }
   th { color:var(--mut); font-weight:600; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
-  input, select, button, textarea { background:#0e1220; color:var(--text);
+  input, select, button, textarea { background:#1a1a1a; color:var(--text);
     border:1px solid var(--line); border-radius:7px; padding:.45rem .7rem; font:inherit; }
   input:focus, select:focus, textarea:focus { outline:none; border-color:var(--acc); }
   button { cursor:pointer; }
@@ -203,8 +205,8 @@ PAGE = r"""<!DOCTYPE html>
   button.danger { color:var(--err); }
   .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
   .pill { display:inline-block; padding:.1rem .55rem; border-radius:999px; font-size:.78rem; }
-  .pill.on { background:rgba(62,207,142,.15); color:var(--ok); }
-  .pill.off { background:rgba(229,72,77,.15); color:var(--err); }
+  .pill.on { background:rgba(34,197,94,.15); color:var(--ok); }
+  .pill.off { background:rgba(220,38,38,.15); color:var(--err); }
   .stat { display:inline-flex; flex-direction:column; margin-right:1.6rem; }
   .stat b { font-size:1.25rem; }
   .stat span { color:var(--mut); font-size:.78rem; }
@@ -221,6 +223,18 @@ PAGE = r"""<!DOCTYPE html>
 <script>
 const $ = s => document.querySelector(s);
 let MACHINES = [];
+let editing = false;   // an editor is open: auto-refresh must not wipe it
+
+// True while the user is interacting with any form on the page — the
+// periodic refresh skips re-rendering so it never eats typed input.
+function userBusy() {
+  if (editing) return true;
+  const a = document.activeElement;
+  if (a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) return true;
+  // half-filled send-print form counts as busy too
+  return [...document.querySelectorAll('[id^="job-"], [id^="printer-"]')]
+    .some(el => el.value && el.value.trim() !== '');
+}
 
 async function api(path, opts) {
   const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
@@ -248,8 +262,10 @@ function fmtAgo(t) {
   return s < 60 ? s + 's ago' : s < 3600 ? Math.round(s/60) + 'm ago' : Math.round(s/3600) + 'h ago';
 }
 
-async function load() {
+async function load(force) {
+  if (!force && userBusy()) return;   // never re-render under the user's hands
   try { MACHINES = await api('/api/machines'); } catch { return; }
+  if (!force && userBusy()) return;
   render();
 }
 
@@ -319,6 +335,7 @@ function stepRow(s, j) {
 }
 
 function openEditor(i, prog) {
+  editing = true;
   const el = $('#editor-' + i);
   const steps = prog ? JSON.parse(JSON.stringify(prog.steps||[])) : [{process:'Drying',temperature:45,time:10}];
   el.dataset.progId = prog ? prog.id : '';
@@ -338,7 +355,7 @@ function openEditor(i, prog) {
     $('#ptable-'+i).insertAdjacentHTML('beforeend', stepRow({process:'Cure'}, $('#ptable-'+i).rows.length-1));
     wireStepDeletes(i);
   };
-  $('#pcancel-'+i).onclick = () => { el.innerHTML=''; };
+  $('#pcancel-'+i).onclick = () => { el.innerHTML=''; editing = false; };
   $('#psave-'+i).onclick = () => saveProgram(i, prog);
   wireStepDeletes(i);
 }
@@ -365,7 +382,9 @@ async function saveProgram(i, prog) {
                     totalDuration: total, createdAt: new Date().toISOString(), isPreset: false };
   await api(`/api/machines/${MACHINES[i].name}/commands`,
             {method:'POST', body: JSON.stringify({type:'upsert_program', payload})});
-  $('#pmsg-'+i).textContent = 'Queued — the machine applies it on its next sync (≤10 s)';
+  $('#pmsg-'+i).textContent = 'Saved — the machine applies it on its next sync (≤10 s)';
+  setTimeout(() => { const el = $('#editor-'+i); if (el) el.innerHTML = '';
+                     editing = false; load(true); }, 1600);
 }
 
 function wireCard(m, i) {
@@ -390,7 +409,9 @@ function wireCard(m, i) {
     };
     await api(`/api/machines/${m.name}/commands`,
               {method:'POST', body: JSON.stringify({type:'send_print', payload})});
-    $('#msg-'+i).textContent = 'Print queued — it appears on the machine within ~10 s';
+    $('#job-'+i).value = '';
+    $('#printer-'+i).value = '';
+    $('#msg-'+i).textContent = 'Print sent — it appears on the machine within ~10 s';
   };
 }
 
