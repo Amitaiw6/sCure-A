@@ -66,7 +66,7 @@
     "target_temp": 60.0,
     "target_min": 30.0,
     "sample_sec": 0.05,
-    "kp": 0.08,
+    "kp": 0.22,
     "ki": 0.00015,
     "kd": 0.0,
     "integ_max": 0.85,

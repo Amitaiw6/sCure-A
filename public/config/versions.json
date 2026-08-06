@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.3.1",
+      "date": "2026-08-06",
+      "notes": [
+        "Heating PI tuning: kp raised 0.08 -> 0.22 (faster ramp response; ki/kd unchanged)"
+      ]
+    },
+    {
       "version": "0.3.0",
       "date": "2026-08-06",
       "notes": [
