@@ -953,6 +953,32 @@ class CloudSync:
 cloud_sync = CloudSync()
 
 
+@app.route('/api/cloud/config', methods=['POST'])
+def cloud_config():
+    """Write the cloud-portal sync config (server/data/cloud.json).
+
+    The server runs as root, so this is the supported way to configure the
+    agent (the data dir is not writable by the desktop user). If the agent
+    is not yet running it starts immediately; if it was already running with
+    an old config, a server restart applies the new one.
+    """
+    global cloud_sync
+    d = request.get_json(silent=True) or {}
+    if not (d.get('url') and d.get('key')):
+        return jsonify({'ok': False, 'message': 'url and key required'}), 400
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    cfg = {'url': d['url'], 'key': d['key'],
+           'name': d.get('name', 'CureBox'),
+           'interval': d.get('interval', 10)}
+    with open(os.path.join(_DATA_DIR, 'cloud.json'), 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, indent=2)
+    if cloud_sync.enabled:
+        return jsonify({'ok': True,
+                        'message': 'Config saved - restart to apply (agent already running)'})
+    cloud_sync = CloudSync()              # starts the agent with the new config
+    return jsonify({'ok': True, 'message': 'Cloud sync agent started'})
+
+
 @app.route('/api/print-history', methods=['GET'])
 def get_print_history():
     """Print history: Postgres when configured, else the durable file."""
@@ -1277,7 +1303,7 @@ def export_csv_to_usb():
         usb = find_usb_mount()
         if not usb:
             return jsonify({'ok': False, 'code': 9081,
-                            'message': 'No USB drive found. Please insert a USB stick.'})
+                            'message': 'No Disk-on-Key found. Please connect a Disk-on-Key (USB drive).'})
         dest = os.path.join(usb, filename)
         with open(dest, 'w', newline='') as f:
             f.write(content)
@@ -1301,7 +1327,7 @@ def export_report_to_usb():
         usb = find_usb_mount()
         if not usb:
             return jsonify({'ok': False, 'code': 9081,
-                            'message': 'No USB drive found. Please insert a USB stick.'})
+                            'message': 'No Disk-on-Key found. Please connect a Disk-on-Key (USB drive).'})
         dest = os.path.join(usb, filename)
         with open(dest, 'w', encoding='utf-8') as f:
             f.write(content)

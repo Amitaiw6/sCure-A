@@ -35,3 +35,4 @@ server/data/
 # Cloud portal secrets + data (per deployment)
 cloud/portal_config.json
 cloud/data/
+cloud/portal_secrets.local.txt
