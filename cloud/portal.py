@@ -358,6 +358,8 @@ function openEditor(i, prog) {
   $('#pcancel-'+i).onclick = () => { el.innerHTML=''; editing = false; };
   $('#psave-'+i).onclick = () => saveProgram(i, prog);
   wireStepDeletes(i);
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('#pname-'+i).focus();
 }
 function wireStepDeletes(i) {
   [...document.querySelectorAll(`#ptable-${i} .sx`)].forEach(b =>
