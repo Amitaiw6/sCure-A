@@ -72,12 +72,14 @@ const defaultState: HardwareState = {
   apiConnected: false,
   faults: null,
   ledTemps: null,
+  // Real accumulated ON-hours, counted and persisted by the server
+  // (ComponentCounters in app.py); zeros until the first /api/state arrives.
   counters: {
-    led405: 124.5,
-    led450: 87.2,
-    coolingFan: 312.8,
-    heater: 198.3,
-    heaterFan: 245.6,
+    led405: 0,
+    led450: 0,
+    coolingFan: 0,
+    heater: 0,
+    heaterFan: 0,
   },
 }
 
@@ -133,9 +135,6 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code } }))
 
     const checkStatus = async () => {
-      // Browser online/offline
-      setState(prev => ({ ...prev, networkConnected: navigator.onLine }))
-
       // API health check
       try {
         const res = await fetch(`${API_BASE}/state`, { signal: AbortSignal.timeout(3000) })
@@ -159,6 +158,10 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
             return {
             ...prev,
             apiConnected: true,
+            // Real reachability from the machine's background internet watch
+            // (TCP 443 every 5s) — NOT navigator.onLine, which is always true
+            // on the kiosk because the UI talks to localhost.
+            networkConnected: data.internetOk ?? prev.networkConnected,
             chamberTemp: data.chamberTemp != null ? Math.round(data.chamberTemp * 10) / 10 : prev.chamberTemp,
             doorClosed: data.doorClosed ?? prev.doorClosed,
             doorAborted: data.doorAborted ?? false,
@@ -177,16 +180,18 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
             n2LinePressure: data.n2LinePressure ?? prev.n2LinePressure,
             faults: data.faults ?? prev.faults,
             ledTemps: data.ledTemps ?? prev.ledTemps,
+            counters: data.counters ?? prev.counters,
           }})
         } else {
           if (alertRef.current.wasConnected) raiseAlert(9089)  // HW_API_UNREACHABLE
           alertRef.current.wasConnected = false
-          setState(prev => ({ ...prev, apiConnected: false }))
+          // No API to ask — the browser's own flag is the only signal left
+          setState(prev => ({ ...prev, apiConnected: false, networkConnected: navigator.onLine }))
         }
       } catch {
         if (alertRef.current.wasConnected) raiseAlert(9089)
         alertRef.current.wasConnected = false
-        setState(prev => ({ ...prev, apiConnected: false }))
+        setState(prev => ({ ...prev, apiConnected: false, networkConnected: navigator.onLine }))
       }
     }
 

@@ -28,6 +28,7 @@ CAL_LEAD = 2.1873          # C per C/min of heating rate above the deadband
 CAL_LEAD_DEADBAND = 0.3    # C/min - holds/steady state stay untouched
 CAL_COOL_COEF = 0.0956     # C per C above ambient during fan cooling
 CAL_COOL_GATE = -1.0       # C/min - faster cooling than this = fan active
+CAL_COOL_FULL = -2.5       # C/min at which the cooling term is fully blended in
 CAL_AMBIENT = 25.0
 RATE_WINDOW_SEC = 45.0
 CAL_RAW_RANGE = (31.5, 76.6)
@@ -66,7 +67,10 @@ class ChamberTempCorrector:
         if rate > CAL_LEAD_DEADBAND:
             est += CAL_LEAD * (rate - CAL_LEAD_DEADBAND)
         elif rate < CAL_COOL_GATE:
-            est += CAL_COOL_COEF * (raw_c - CAL_AMBIENT)
+            # blend in gradually (0 at the gate, full at CAL_COOL_FULL) so the
+            # reported value cannot step when cooling starts
+            f = min(1.0, (CAL_COOL_GATE - rate) / (CAL_COOL_GATE - CAL_COOL_FULL))
+            est += f * CAL_COOL_COEF * (raw_c - CAL_AMBIENT)
         return est
 
     def _rate_per_min(self):

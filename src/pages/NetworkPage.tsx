@@ -23,21 +23,25 @@ interface NetworkInfo {
   connectionName: string
   protocol: string
   interfaces: { name: string; status: string; ip: string }[]
+  lanConnected: boolean | null       // eth0 has an IP (null = not known yet)
+  internet: boolean | null           // machine's live TCP-443 reachability watch
+  statusKnown: boolean               // /api/network/status answered at least once
 }
 
 const defaultNet: NetworkInfo = {
-  ip: '192.168.2.218',
-  mac: '48:b0:2d:21:c4:56',
-  gateway: '192.168.2.254',
-  wireguardIp: '10.145.13.115/32',
-  connectionName: 'dhcp-eth0',
+  ip: '—',
+  mac: '—',
+  gateway: '—',
+  wireguardIp: '—',
+  connectionName: '—',
   protocol: 'ethernet',
-  interfaces: [
-    { name: 'eth0', status: 'UP', ip: '192.168.2.218' },
-    { name: 'wg0', status: 'UP', ip: '10.145.13.115' },
-    { name: 'lo', status: 'UP', ip: '127.0.0.1' },
-  ],
+  interfaces: [],
+  lanConnected: null,
+  internet: null,
+  statusKnown: false,
 }
+
+const NET_POLL_MS = 3000
 
 export default function NetworkPage() {
   const [tab, setTab] = useState<Tab>('status')
@@ -50,43 +54,37 @@ export default function NetworkPage() {
   const { state: hw } = useHardware()
   const [net, setNet] = useState<NetworkInfo>(defaultNet)
 
-  // Fetch network info: try API first, fallback to WebRTC local IP detection
+  // Live network status: poll the machine every NET_POLL_MS so pulling the
+  // cable / losing the uplink shows here within seconds. `connected` is the
+  // LAN/IP level; `internet` is the machine's real background reachability
+  // watch (TCP 443 every 5s) — never navigator.onLine, which is meaningless
+  // on the kiosk (the UI talks to localhost).
   useEffect(() => {
+    let cancelled = false
     async function fetchNet() {
-      // Try Python API
       try {
         const res = await fetch(`${API_BASE}/network/status`, { signal: AbortSignal.timeout(3000) })
         if (res.ok) {
           const data = await res.json()
+          if (cancelled) return
           setNet(prev => ({
             ...prev,
-            ip: data.ip || prev.ip,
+            ip: data.ip && data.ip !== '0.0.0.0' ? data.ip : '—',
             mac: data.mac || prev.mac,
-            gateway: data.gateway || prev.gateway,
+            gateway: data.gateway || '—',
             interfaces: data.interfaces?.length ? data.interfaces : prev.interfaces,
+            lanConnected: data.connected ?? null,
+            internet: data.internet ?? null,
+            statusKnown: true,
           }))
           return
         }
-      } catch { /* fallback */ }
-
-      // Fallback: use public IP detection service
-      try {
-        const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) })
-        if (res.ok) {
-          const data = await res.json()
-          setNet(prev => ({
-            ...prev,
-            ip: data.ip,
-            connectionName: 'browser-detected',
-            protocol: navigator.onLine ? 'connected' : 'offline',
-            interfaces: [
-              { name: 'wan', status: 'UP', ip: data.ip },
-            ],
-          }))
-        }
-      } catch { /* no internet */ }
+      } catch { /* API unreachable */ }
+      if (!cancelled) setNet(prev => ({ ...prev, lanConnected: null, internet: null, statusKnown: false }))
     }
     fetchNet()
+    const interval = setInterval(fetchNet, NET_POLL_MS)
+    return () => { cancelled = true; clearInterval(interval) }
   }, [])
 
   return (
@@ -99,14 +97,24 @@ export default function NetworkPage() {
 
       {tab === 'status' && (
         <div className="space-y-2">
-          {/* Connection status */}
+          {/* Connection status — live from the machine, refreshed every 3s */}
           <Card>
             <div className="flex items-center gap-2 mb-1">
-              <div className={cn('w-2.5 h-2.5 rounded-full', hw.networkConnected ? 'bg-green-500' : 'bg-destructive')} />
-              <span className={cn('text-xs font-medium', hw.networkConnected ? 'text-green-400' : 'text-destructive')}>
-                {hw.networkConnected ? 'Connected' : 'No Network'}
+              <div className={cn('w-2.5 h-2.5 rounded-full',
+                !net.statusKnown ? 'bg-orange-400' : net.lanConnected ? 'bg-green-500' : 'bg-destructive')} />
+              <span className={cn('text-xs font-medium',
+                !net.statusKnown ? 'text-orange-400' : net.lanConnected ? 'text-green-400' : 'text-destructive')}>
+                {!net.statusKnown ? 'Status unavailable' : net.lanConnected ? 'Connected' : 'No Network'}
               </span>
               {hw.apiConnected && <span className="text-[9px] text-muted-foreground ml-2">API: OK</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className={cn('w-2.5 h-2.5 rounded-full',
+                !net.statusKnown ? 'bg-orange-400' : net.internet ? 'bg-green-500' : 'bg-destructive')} />
+              <span className={cn('text-xs font-medium',
+                !net.statusKnown ? 'text-orange-400' : net.internet ? 'text-green-400' : 'text-destructive')}>
+                {!net.statusKnown ? 'Internet: unknown' : net.internet ? 'Internet: OK' : 'No Internet'}
+              </span>
             </div>
           </Card>
 
@@ -195,15 +203,8 @@ function DiagnosticsTab() {
   const [result, setResult] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
 
-  const simulateResults: Record<string, (addr: string) => string> = {
-    ping: (addr) =>
-      `PING ${addr} (${addr}) 56(84) bytes of data.\n64 bytes from ${addr}: icmp_seq=1 ttl=118 time=12.3 ms\n64 bytes from ${addr}: icmp_seq=2 ttl=118 time=11.8 ms\n64 bytes from ${addr}: icmp_seq=3 ttl=118 time=12.1 ms\n64 bytes from ${addr}: icmp_seq=4 ttl=118 time=11.9 ms\n\n--- ${addr} ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss\nrtt min/avg/max = 11.8/12.0/12.3 ms`,
-    traceroute: (addr) =>
-      `traceroute to ${addr}, 30 hops max\n 1  192.168.2.254  1.2 ms  1.1 ms  1.0 ms\n 2  10.0.0.1       5.4 ms  5.2 ms  5.1 ms\n 3  172.16.0.1     8.7 ms  8.5 ms  8.6 ms\n 4  ${addr}        12.1 ms  12.0 ms  11.9 ms`,
-    nslookup: (addr) =>
-      `Server:    8.8.8.8\nAddress:   8.8.8.8#53\n\nNon-authoritative answer:\nName:  ${addr}\nAddress: ${addr.includes('.') ? addr : '93.184.216.34'}`,
-  }
-
+  // Diagnostics run ONLY on the machine — a failed call shows a real error,
+  // never a fabricated "success" printout.
   const handleExecute = async () => {
     if (!address.trim()) return
     setRunning(true)
@@ -214,21 +215,19 @@ function DiagnosticsTab() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tool, address: address.trim() }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(60000),
       })
       if (res.ok) {
         const data = await res.json()
-        setResult(data.result)
+        setResult(data.result || '(no output — host unreachable or command produced nothing)')
         setRunning(false)
         return
       }
-    } catch { /* fallback to simulation */ }
-
-    // Simulation fallback
-    setTimeout(() => {
-      setResult(simulateResults[tool](address.trim()))
-      setRunning(false)
-    }, 1500)
+      setResult(`Diagnostics failed: API returned ${res.status}`)
+    } catch {
+      setResult('Diagnostics unavailable: the hardware API is not reachable.')
+    }
+    setRunning(false)
   }
 
   const tools = [

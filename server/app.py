@@ -20,6 +20,7 @@ import os
 import sys
 import json
 import subprocess
+import threading
 import time
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -351,6 +352,108 @@ class HardwareController:
 
 hw = HardwareController(io_bridge)
 
+
+# ============================================================
+# Component runtime counters (real ON-hours, persisted)
+# ============================================================
+class ComponentCounters:
+    """Accumulates the real ON-time of the wear components and persists it.
+
+    Samples the authoritative hardware state every TICK seconds:
+      led405 / led450 - UV on at that wavelength
+      heater          - heater element actually energized (heaterPwm > 0,
+                        not merely "heating mode": the ON/OFF thermostat
+                        cycles the element)
+      heaterFan       - measured tach RPM (fallback: commanded duty)
+      coolingFan      - measured tach RPM (fallback: commanded duty)
+
+    Seconds are flushed atomically (tmp + os.replace) to a JSON file every
+    FLUSH_SEC while something is running, and once more on process exit, so
+    the totals survive reboots and power cuts (worst case: the last minute).
+    """
+
+    KEYS = ('led405', 'led450', 'coolingFan', 'heater', 'heaterFan')
+    TICK = 2.0
+    FLUSH_SEC = 60.0
+
+    def __init__(self, path):
+        self.path = path
+        self._lock = threading.Lock()
+        self._dirty = False
+        self.seconds = {k: 0.0 for k in self.KEYS}
+        try:
+            with open(self.path, encoding='utf-8') as f:
+                saved = json.load(f)
+            for k in self.KEYS:
+                self.seconds[k] = max(0.0, float(saved.get(k, 0.0)))
+            print(f"[COUNTERS] loaded: " +
+                  ', '.join(f'{k}={v/3600:.1f}h' for k, v in self.seconds.items()))
+        except FileNotFoundError:
+            print("[COUNTERS] no saved counters - starting from zero")
+        except Exception as e:  # noqa: BLE001 - corrupt file: keep zeros, will rewrite
+            print(f"[COUNTERS] load failed ({e}) - starting from zero")
+        threading.Thread(target=self._run, daemon=True,
+                         name='component-counters').start()
+
+    def hours(self):
+        """Current totals in hours (1 decimal), for /api/state."""
+        with self._lock:
+            return {k: round(v / 3600.0, 1) for k, v in self.seconds.items()}
+
+    def flush(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with self._lock:
+            payload = {k: round(v, 1) for k, v in self.seconds.items()}
+        tmp = self.path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(payload, f)
+        os.replace(tmp, self.path)
+
+    def _sample(self):
+        s = hw.get_state()
+        rpm = s.get('fanRpm') or {}
+        duty = s.get('fans') or {}
+        heater_pwm = s.get('heaterPwm')
+        return {
+            'led405': bool(s.get('uvOn')) and s.get('uvWavelength') == 405,
+            'led450': bool(s.get('uvOn')) and s.get('uvWavelength') == 450,
+            'heater': (heater_pwm > 0) if heater_pwm is not None
+                      else bool(s.get('isHeating')),
+            'heaterFan': rpm.get('chamber_heating', 0) > 0
+                         or duty.get('chamber_heating', 0) > 0,
+            'coolingFan': rpm.get('chamber_intake', 0) > 0
+                          or duty.get('chamber_intake', 0) > 0,
+        }
+
+    def _run(self):
+        last_flush = time.monotonic()
+        while True:
+            time.sleep(self.TICK)
+            try:
+                on = self._sample()
+            except Exception:  # noqa: BLE001 - state read failed: skip the tick
+                continue
+            with self._lock:
+                for k, active in on.items():
+                    if active:
+                        self.seconds[k] += self.TICK
+                        self._dirty = True
+            if self._dirty and time.monotonic() - last_flush >= self.FLUSH_SEC:
+                try:
+                    self.flush()
+                    self._dirty = False
+                    last_flush = time.monotonic()
+                except Exception as e:  # noqa: BLE001 - disk hiccup: retry next round
+                    print(f"[COUNTERS] flush failed: {e}")
+
+
+counters = ComponentCounters(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 'data', 'component_counters.json'))
+
+import atexit
+atexit.register(lambda: counters.flush())
+
 # ============================================================
 # API Endpoints
 # (Print data, released materials and cure data are managed in PostgreSQL — db.py.)
@@ -359,7 +462,9 @@ hw = HardwareController(io_bridge)
 @app.route('/api/state', methods=['GET'])
 def get_state():
     """Get current hardware state - polled by frontend"""
-    return jsonify(hw.get_state())
+    state = hw.get_state()
+    state['counters'] = counters.hours()
+    return jsonify(state)
 
 
 @app.route('/api/network/status', methods=['GET'])

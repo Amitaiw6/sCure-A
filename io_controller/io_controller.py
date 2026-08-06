@@ -139,6 +139,7 @@ NTC_R_SERIES, NTC_VREF, NTC_DIVIDER = 10000.0, 3.3, "pullup"
 CHAMBER_CAL_GAIN, CHAMBER_CAL_OFFSET = 1.0979, -3.9813
 CHAMBER_CAL_LEAD, CHAMBER_CAL_LEAD_DEADBAND = 2.1873, 0.3   # C per C/min, C/min
 CHAMBER_CAL_COOL_COEF, CHAMBER_CAL_COOL_GATE = 0.0956, -1.0  # C per C, C/min
+CHAMBER_CAL_COOL_FULL = -2.5   # C/min at which the cooling term is fully blended in
 CHAMBER_CAL_AMBIENT = 25.0
 CHAMBER_RATE_WINDOW_SEC = 45.0
 
@@ -740,7 +741,11 @@ class IOController:
         if rate > CHAMBER_CAL_LEAD_DEADBAND:
             est += CHAMBER_CAL_LEAD * (rate - CHAMBER_CAL_LEAD_DEADBAND)
         elif rate < CHAMBER_CAL_COOL_GATE:
-            est += CHAMBER_CAL_COOL_COEF * (raw_c - CHAMBER_CAL_AMBIENT)
+            # blend in gradually (0 at COOL_GATE, full at COOL_FULL) so the
+            # reported value cannot step when cooling starts
+            f = min(1.0, (CHAMBER_CAL_COOL_GATE - rate)
+                    / (CHAMBER_CAL_COOL_GATE - CHAMBER_CAL_COOL_FULL))
+            est += f * CHAMBER_CAL_COOL_COEF * (raw_c - CHAMBER_CAL_AMBIENT)
         return est
 
     def read_analog(self, name):

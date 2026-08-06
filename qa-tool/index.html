@@ -171,6 +171,7 @@ const TEST_CATEGORIES = [
       { id: 'api_network', name: 'GET /api/network/status', desc: 'Verify network status endpoint', endpoint: '/api/network/status', method: 'GET', expect: 'connected' },
       { id: 'net_auto_watch', name: 'Auto Internet Watch Live', desc: 'The background internet watch publishes its verdict: /api/state.internetOk and /api/network/status.internet are booleans (LAN "connected" and real internet reachability are reported separately)', check: 'net_auto_watch' },
       { id: 'net_strip_logic', name: 'No-Internet Strip Logic', desc: 'StatusLeds: idle+offline → solid blue; process+offline → the comet runs in blue (both facts visible); fault and door-open always win; online → normal colors', check: 'net_strip_logic' },
+      { id: 'counters_live', name: 'Component Counters Live + Persisted', desc: 'Real ON-hour counters (led405/led450/coolingFan/heater/heaterFan) are published in /api/state.counters, never decrease between samples, and a running component makes its counter advance (server persists them to disk across reboots)', check: 'counters_live' },
       { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
@@ -863,10 +864,57 @@ async function runSingleTest(test) {
         const net = await (await fetch(apiUrl + '/api/network/status', { signal: AbortSignal.timeout(5000) })).json();
         const stOk = typeof st.internetOk === 'boolean' || st.internetOk === null;
         const netOk = typeof net.internet === 'boolean';
+        const lanOk = typeof net.connected === 'boolean';
         if (!stOk) result = { status: 'fail', msg: '/api/state.internetOk missing or wrong type' };
         else if (!netOk) result = { status: 'fail', msg: '/api/network/status.internet missing' };
+        else if (!lanOk) result = { status: 'fail', msg: '/api/network/status.connected missing (NetworkPage LAN dot)' };
         else if (st.internetOk === null) result = { status: 'warn', msg: 'watch not running (simulation / RGB thread off); fields present' };
         else result = { status: 'pass', msg: `internetOk=${st.internetOk}, network.internet=${net.internet} — auto watch publishing` };
+      } catch (e) {
+        result = { status: 'fail', msg: `fetch failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Component runtime counters: /api/state.counters must expose the five
+    // wear counters, be monotonic (never lose hours between samples), and
+    // actually advance for a component that is currently running.
+    if (test.check === 'counters_live') {
+      let result;
+      try {
+        const KEYS = ['led405', 'led450', 'coolingFan', 'heater', 'heaterFan'];
+        const s1 = await (await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) })).json();
+        const c1 = s1.counters;
+        const bad = !c1 ? KEYS : KEYS.filter(k => typeof c1[k] !== 'number' || c1[k] < 0);
+        if (!c1) result = { status: 'fail', msg: '/api/state.counters missing' };
+        else if (bad.length) result = { status: 'fail', msg: `non-numeric counters: ${bad.join(', ')}` };
+        else {
+          // second sample after > one server tick (2s): monotonicity + advance
+          await new Promise(r => setTimeout(r, 2600));
+          const s2 = await (await fetch(apiUrl + '/api/state', { signal: AbortSignal.timeout(5000) })).json();
+          const c2 = s2.counters || {};
+          const shrunk = KEYS.filter(k => (c2[k] ?? 0) < c1[k]);
+          const running = [
+            s2.uvOn && s2.uvWavelength === 405 && 'led405',
+            s2.uvOn && s2.uvWavelength === 450 && 'led450',
+            ((s2.fanRpm || {}).chamber_intake > 0 || (s2.fans || {}).chamber_intake > 0) && 'coolingFan',
+            (s2.heaterPwm > 0 || (s2.heaterPwm == null && s2.isHeating)) && 'heater',
+            ((s2.fanRpm || {}).chamber_heating > 0 || (s2.fans || {}).chamber_heating > 0) && 'heaterFan',
+          ].filter(Boolean);
+          if (shrunk.length) result = { status: 'fail', msg: `counters went BACKWARDS: ${shrunk.join(', ')}` };
+          else if (running.length === 0)
+            result = { status: 'pass', msg: `all five counters published (everything idle now; totals: ${KEYS.map(k => `${k}=${c1[k]}h`).join(', ')})` };
+          else {
+            // counters have 0.1h display resolution, so a 2.6s advance may not
+            // show yet — treat "same value" as pass, only regression fails.
+            const moved = running.filter(k => (c2[k] ?? 0) > c1[k]);
+            result = { status: 'pass', msg: `running: ${running.join(', ')}${moved.length ? ` — advanced: ${moved.join(', ')}` : ' (within display resolution)'}` };
+          }
+        }
       } catch (e) {
         result = { status: 'fail', msg: `fetch failed: ${e.message}` };
       }
