@@ -12,7 +12,7 @@ import { useHardware } from '@/context/HardwareContext'
 import { useCureHistory } from '@/context/CureHistoryContext'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
-import type { CoolingMode } from '@/context/MaterialContext'
+import type { CoolingMode, UvStartMode } from '@/context/MaterialContext'
 import {
   heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450,
   coolToTargetTemperature, stopCureOutputs, doorOpen, setNitrogenValve,
@@ -95,10 +95,10 @@ export default function CureProcessPage() {
   const phases = useMemo(() => {
     if (steps.length === 0) {
       return [
-        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode },
-        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode },
-        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode },
-        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode },
+        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
+        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
+        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
+        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
       ]
     }
     // Skip Nitrogen steps if nitrogen is not enabled on the system
@@ -113,6 +113,7 @@ export default function CureProcessPage() {
         intensity: s.uvIntensity ?? s.intensity,
         time: s.time,
         coolingMode: (s.coolingMode ?? 'medium') as CoolingMode,
+        uvStartMode: (s.uvStartMode ?? 'at-target') as UvStartMode,
       }))
   }, [steps, hw.nitrogenMode])
 
@@ -124,7 +125,8 @@ export default function CureProcessPage() {
   const [phaseError, setPhaseError] = useState<string | null>(null)
   // deferUv: a cure/bleacher step that starts with a ramp heats FIRST and the
   // UV LEDs stay OFF until the measured chamber temp reaches the target
-  // (startPhaseUv below) — UV only ever runs at the cure temperature.
+  // (startPhaseUv below). Steps with UV Start = "On ramp start" (at-start)
+  // skip the deferral — cure_uv heats AND lights the LEDs from the ramp start.
   const commandPhase = useCallback(async (phase: (typeof phases)[number], deferUv = false) => {
     if (!hw.apiConnected) return
     const temp = phase.temp ?? hw.chamberTemp
@@ -155,6 +157,7 @@ export default function CureProcessPage() {
   const startPhaseUv = useCallback(async (phase: (typeof phases)[number] | undefined) => {
     if (!hw.apiConnected || !phase) return
     if (phase.type !== 'cure' && phase.type !== 'bleacher') return
+    if (phase.uvStartMode === 'at-start') return  // UV already on since ramp start
     const temp = phase.temp ?? hw.chamberTemp
     const res = phase.type === 'cure'
       ? await cureUv405(temp, phase.intensity ?? 30)
@@ -374,11 +377,12 @@ export default function CureProcessPage() {
 
     // Will this phase start with a heat-up ramp? (not cooling, not nitrogen,
     // not first phase which is handled on mount). Cure/bleacher steps that
-    // ramp keep the UV off until the target temperature is reached.
+    // ramp keep the UV off until the target temperature is reached — unless
+    // the step's UV Start is "On ramp start", which lights the UV immediately.
     const willRamp = activePhase > 0 && currentPhase.temp != null &&
       currentPhase.type !== 'cooling' && currentPhase.temp > hw.chamberTemp
 
-    commandPhase(currentPhase, willRamp)
+    commandPhase(currentPhase, willRamp && currentPhase.uvStartMode !== 'at-start')
 
     // Cooling: remember where the drop starts so the gauge can show real progress
     if (currentPhase.type === 'cooling') {
@@ -471,8 +475,9 @@ export default function CureProcessPage() {
       const currentPhase = phases[activePhase]
       const isCure = currentPhase?.type === 'cure'
       const isBleacher = currentPhase?.type === 'bleacher'
-      // UV is off while still ramping to the cure temperature
-      const uvOn = (isCure || isBleacher) && !isRamping
+      // UV is off while still ramping to the cure temperature, except for
+      // "On ramp start" steps where it runs through the whole ramp
+      const uvOn = (isCure || isBleacher) && (!isRamping || currentPhase?.uvStartMode === 'at-start')
       const uvType = isCure ? '405nm' as const : isBleacher ? '450nm' as const : null
       // Real per-module LED thermistors from the IO board when available;
       // simulated around chamber temp only off-Pi.
@@ -514,7 +519,7 @@ export default function CureProcessPage() {
         firstPhase.type !== 'cooling' && firstPhase.type !== 'nitrogen'
       if (firstPhase && firstPhase.type !== 'nitrogen') {
         commandedPhaseRef.current = 0
-        commandPhase(firstPhase, firstWillRamp)
+        commandPhase(firstPhase, firstWillRamp && firstPhase.uvStartMode !== 'at-start')
       }
       if (firstPhase?.type === 'cooling') {
         setCoolStartTemp(hw.apiConnected ? hw.chamberTemp : AMBIENT_TEMP)

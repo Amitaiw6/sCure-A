@@ -174,6 +174,7 @@ const TEST_CATEGORIES = [
       { id: 'counters_live', name: 'Component Counters Live + Persisted', desc: 'Real ON-hour counters (led405/led450/coolingFan/heater/heaterFan) are published in /api/state.counters, never decrease between samples, and a running component makes its counter advance (server persists them to disk across reboots)', check: 'counters_live' },
       { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
+      { id: 'history_durable', name: 'Histories Durable Without DB', desc: 'Print history AND cure history are served from a durable store (Postgres or the server/data files) — both GET endpoints return arrays, never 503, so recorded prints and cure sessions survive a power-off', check: 'history_durable' },
       { id: 'ui_served', name: 'UI Served At /', desc: 'GET / returns the built UI page — the fullscreen app (Pi kiosk / Windows desktop window) opens this URL', check: 'ui_served' },
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
       { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
@@ -190,7 +191,7 @@ const TEST_CATEGORIES = [
       { id: 'temp_stop', name: 'Stop Heating', desc: 'Stop heating and verify', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
       { id: 'temp_ramp_live', name: 'Chamber Temp Reaches Target', desc: 'Command heat to 40°C, then verify /api/state chamberTemp actually rises toward the target — the Cure screen displays and follows this measured value', check: 'temp_ramp_live' },
       { id: 'temp_ramp_logic', name: 'Ramp Ends At Measured Temp', desc: 'Cure screen logic: the ramp keeps going while the measured chamber temp is below target−0.5°C, and the hold timer starts only when it reaches the target', check: 'temp_ramp_logic' },
-      { id: 'uv_after_ramp', name: 'UV Waits For Target Temp', desc: 'Cure screen logic: a Cure/Bleacher step that ramps heats FIRST with the UV off; the LEDs turn on only when the measured chamber temp reaches the target', check: 'uv_after_ramp' },
+      { id: 'uv_after_ramp', name: 'UV Start Mode Gating', desc: 'Cure screen logic: with UV Start = "At temperature" a ramping Cure/Bleacher step heats FIRST with the UV off until the measured chamber temp reaches the target; with "On ramp start" the LEDs light from the very start of the ramp', check: 'uv_after_ramp' },
     ]
   },
   {
@@ -249,6 +250,7 @@ const TEST_CATEGORIES = [
     tests: [
       { id: 'sys_logs', name: 'Export Logs', desc: 'Test log export function', endpoint: '/api/system/export-logs', method: 'POST', expect: 'ok' },
       { id: 'sys_export_csv', name: 'Export CSV to USB', desc: 'CSV export endpoint writes to the connected USB (or reports no-USB)', endpoint: '/api/system/export-csv', method: 'POST', body: { filename: 'qa-test.csv', content: 'Step,Process,Temperature,UVIntensity,CoolingMode\n1,Heating,40,,' }, expect: 'message' },
+      { id: 'sys_version', name: 'Version Info', desc: '/api/system/version reports the VERSION-file app version (x.y.z) + live build/OS/boot info', check: 'sys_version' },
     ]
   },
   {
@@ -857,6 +859,28 @@ async function runSingleTest(test) {
 
     // Automatic internet watch: both endpoints must publish the background
     // check's verdict so the UI / QA can observe it (io_bridge._net_watch).
+    // Versioning: the app version must come from the repo-root VERSION file
+    // (semver) and the endpoint must publish live machine info alongside it.
+    if (test.check === 'sys_version') {
+      let result;
+      try {
+        const v = await (await fetch(apiUrl + '/api/system/version', { signal: AbortSignal.timeout(5000) })).json();
+        if (!/^\d+\.\d+\.\d+/.test(v.appVersion || '')) {
+          result = { status: 'fail', msg: `appVersion "${v.appVersion}" is not semver (VERSION file missing?)` };
+        } else {
+          const extras = ['gitCommit', 'lastBoot', 'os', 'kernel', 'python'].filter(k => v[k]);
+          result = { status: 'pass', msg: `v${v.appVersion} (${extras.length}/5 live fields: ${extras.join(', ')})` };
+        }
+      } catch (e) {
+        result = { status: 'fail', msg: `fetch failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
     if (test.check === 'net_auto_watch') {
       let result;
       try {
@@ -870,6 +894,37 @@ async function runSingleTest(test) {
         else if (!lanOk) result = { status: 'fail', msg: '/api/network/status.connected missing (NetworkPage LAN dot)' };
         else if (st.internetOk === null) result = { status: 'warn', msg: 'watch not running (simulation / RGB thread off); fields present' };
         else result = { status: 'pass', msg: `internetOk=${st.internetOk}, network.internet=${net.internet} — auto watch publishing` };
+      } catch (e) {
+        result = { status: 'fail', msg: `fetch failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Histories must come from a durable store: with Postgres configured the
+    // DB serves them; without it the server/data JSON files do. Either way
+    // the endpoints answer 200 with arrays — a 503 means recorded history
+    // lives only in browser memory and dies on power-off.
+    if (test.check === 'history_durable') {
+      let result;
+      try {
+        const rP = await fetch(apiUrl + '/api/print-history', { signal: AbortSignal.timeout(5000) });
+        const rC = await fetch(apiUrl + '/api/cure-history', { signal: AbortSignal.timeout(5000) });
+        if (rP.status === 503 || rC.status === 503)
+          result = { status: 'fail', msg: `503 from ${rP.status === 503 ? 'print' : 'cure'}-history — no durable fallback` };
+        else if (!rP.ok || !rC.ok)
+          result = { status: 'fail', msg: `HTTP ${rP.status}/${rC.status}` };
+        else {
+          const prints = await rP.json();
+          const cures = await rC.json();
+          if (!Array.isArray(prints) || !Array.isArray(cures))
+            result = { status: 'fail', msg: 'endpoints did not return arrays' };
+          else
+            result = { status: 'pass', msg: `durable store answering — ${prints.length} prints, ${cures.length} cure runs on record` };
+        }
       } catch (e) {
         result = { status: 'fail', msg: `fetch failed: ${e.message}` };
       }
@@ -1128,21 +1183,27 @@ async function runSingleTest(test) {
 
     // Mirrors CureProcessPage: during a cure/bleacher ramp only the heater
     // runs (deferUv); the UV command is sent when chamberTemp >= target-0.5.
+    // A step with uvStartMode 'at-start' ("On ramp start") never defers —
+    // cure_uv heats AND lights the LEDs from the start of the ramp.
     if (test.check === 'uv_after_ramp') {
       const uvAllowed = (chamberTemp, target, ramping) => !ramping || chamberTemp >= target - 0.5;
-      const deferUv = (stepTemp, chamberTemp) => stepTemp != null && stepTemp > chamberTemp;
+      const deferUv = (stepTemp, chamberTemp, uvStartMode) =>
+        stepTemp != null && stepTemp > chamberTemp && uvStartMode !== 'at-start';
       const cases = [
-        // [stepTemp, chamberTemp at start] -> UV deferred?
-        [45, 25, true],    // cold chamber: heat first, UV waits
-        [45, 44.8, false], // already at target: UV allowed immediately
-        [null, 30, false], // no temperature on the step: UV immediately
+        // [stepTemp, chamberTemp at start, uvStartMode] -> UV deferred?
+        [45, 25, 'at-target', true],    // cold chamber: heat first, UV waits
+        [45, 44.8, 'at-target', false], // already at target: UV allowed immediately
+        [null, 30, 'at-target', false], // no temperature on the step: UV immediately
+        [45, 25, 'at-start', false],    // On ramp start: UV lights with the ramp
+        [80, 30, 'at-start', false],    // On ramp start beats any temperature gap
+        [45, 25, undefined, true],      // legacy step without the field: defaults to at-target
       ];
-      const bad = cases.filter(([t, c, expect]) => deferUv(t, c) !== expect);
+      const bad = cases.filter(([t, c, m, expect]) => deferUv(t, c, m) !== expect);
       const gateOk = uvAllowed(44.5, 45, true) && !uvAllowed(44.4, 45, true) && uvAllowed(20, 45, false);
       const elapsed = Date.now() - t0;
       const result = bad.length === 0 && gateOk
-        ? { status: 'pass', msg: 'UV stays off during the ramp and turns on at the target temperature' }
-        : { status: 'fail', msg: `wrong UV gating for: ${bad.map(c => `step ${c[0]}°C @ ${c[1]}°C`).join(', ') || 'threshold check'}` };
+        ? { status: 'pass', msg: 'at-target defers UV until the target temp; at-start lights the UV from ramp start' }
+        : { status: 'fail', msg: `wrong UV gating for: ${bad.map(c => `step ${c[0]}°C @ ${c[1]}°C (${c[2]})`).join(', ') || 'threshold check'}` };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

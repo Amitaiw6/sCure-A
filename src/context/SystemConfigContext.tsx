@@ -68,6 +68,21 @@ export function SystemConfigProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch { /* use defaults */ }
+
+      // Live values from the machine override the static file: the real app
+      // version (VERSION file via /api/system/version) and the real boot time.
+      try {
+        const API_BASE = import.meta.env.VITE_HW_API_URL || 'http://localhost:3001/api'
+        const res = await fetch(`${API_BASE}/system/version`, { signal: AbortSignal.timeout(3000) })
+        if (res.ok) {
+          const v = await res.json()
+          setConfig(prev => ({
+            ...prev,
+            firmware: v.appVersion && v.appVersion !== 'unknown' ? v.appVersion : prev.firmware,
+            lastBoot: v.lastBoot ?? prev.lastBoot,
+          }))
+        }
+      } catch { /* off-Pi: keep the static values */ }
       setIsLoading(false)
     }
     load()

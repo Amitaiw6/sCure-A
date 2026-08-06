@@ -108,14 +108,6 @@ export default function NetworkPage() {
               </span>
               {hw.apiConnected && <span className="text-[9px] text-muted-foreground ml-2">API: OK</span>}
             </div>
-            <div className="flex items-center gap-2">
-              <div className={cn('w-2.5 h-2.5 rounded-full',
-                !net.statusKnown ? 'bg-orange-400' : net.internet ? 'bg-green-500' : 'bg-destructive')} />
-              <span className={cn('text-xs font-medium',
-                !net.statusKnown ? 'text-orange-400' : net.internet ? 'text-green-400' : 'text-destructive')}>
-                {!net.statusKnown ? 'Internet: unknown' : net.internet ? 'Internet: OK' : 'No Internet'}
-              </span>
-            </div>
           </Card>
 
           {/* Network Info */}

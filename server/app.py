@@ -478,9 +478,27 @@ def network_status():
         'interfaces': [],
     }
     try:
-        # Get IP
-        result = run("hostname -I | awk '{print $1}'")
-        info['ip'] = result or '0.0.0.0'
+        # LAN IP — eth0 ONLY. `hostname -I` must not be used here: it also
+        # lists the WireGuard/VPN address, which stays assigned when the
+        # cable is pulled and kept `connected` green forever.
+        eth_ip = run("ip -4 -j addr show eth0 2>/dev/null")
+        if eth_ip:
+            import json as _json
+            try:
+                for iface in _json.loads(eth_ip):
+                    for a in iface.get('addr_info', []):
+                        if a.get('family') == 'inet' and a.get('local'):
+                            info['ip'] = a['local']
+                            break
+            except Exception:            # noqa: BLE001 - unparsable ip output
+                pass
+        if info['ip'] == '0.0.0.0' and not run("ip link show eth0 2>/dev/null"):
+            # no eth0 on this device (e.g. dev laptop): old generic behavior
+            info['ip'] = run("hostname -I | awk '{print $1}'") or '0.0.0.0'
+
+        # Physical link state: /sys carrier is 1 only when a cable is
+        # actually plugged in and the link is up.
+        carrier = run("cat /sys/class/net/eth0/carrier 2>/dev/null")
 
         # Get MAC
         result = run("cat /sys/class/net/eth0/address 2>/dev/null || echo '00:00:00:00:00:00'")
@@ -502,7 +520,10 @@ def network_status():
                     'ip': addrs[0] if addrs else '',
                 })
 
-        info['connected'] = info['ip'] != '0.0.0.0'
+        # Connected = the wired link is physically up AND eth0 has an IPv4.
+        # (carrier '' = no eth0 on this device: fall back to IP presence only)
+        has_ip = info['ip'] != '0.0.0.0'
+        info['connected'] = has_ip and (carrier == '1' or carrier == '')
     except Exception as e:
         info['connected'] = False
         info['code'] = 9084               # NETWORK_STATUS_UNAVAILABLE
@@ -637,20 +658,160 @@ def save_all_user_materials():
     return jsonify({'ok': True})
 
 
+# --- Durable file store for histories (no-Postgres fallback) ---------------
+# Same contract as the user-program file above: everything the UI records -
+# received prints, cure runs (with telemetry) and generated cure reports -
+# is persisted under server/data/ so it SURVIVES A POWER-OFF. Written
+# atomically (temp + fsync + rename); a power cut mid-write cannot corrupt
+# an existing file. When Postgres IS configured it stays authoritative and
+# these files are not touched.
+_PRINT_HISTORY_FILE = os.path.join(_DATA_DIR, 'print_history.json')
+_CURE_HISTORY_FILE = os.path.join(_DATA_DIR, 'cure_history.json')
+_CURE_REPORTS_FILE = os.path.join(_DATA_DIR, 'cure_reports.json')
+_history_lock = threading.Lock()          # serializes read-modify-write cycles
+_TELEMETRY_FLUSH_EVERY = 15               # samples between telemetry flushes
+
+
+def _load_json_file(path, default):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, type(default)) else default
+    except FileNotFoundError:
+        return default
+    except Exception as e:  # noqa: BLE001 - corrupt file: start empty, don't crash
+        print(f"[DATA] read failed ({os.path.basename(path)}): {e}")
+        return default
+
+
+def _save_json_file(path, data):
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+class _CureFileStore:
+    """Cure runs + telemetry + reports in server/data/*.json.
+
+    Start/finish/report writes flush immediately; telemetry (one sample per
+    second during a run) flushes every _TELEMETRY_FLUSH_EVERY samples so the
+    SSD is not rewritten every second - a power cut loses at most the last
+    few seconds of the graph, never the run itself.
+    """
+
+    def __init__(self):
+        with _history_lock:
+            self.runs = _load_json_file(_CURE_HISTORY_FILE, [])
+            self.reports = _load_json_file(_CURE_REPORTS_FILE, {})
+            self._unflushed = 0
+            # a run left 'running' by a power cut can never finish - mark it
+            changed = False
+            for r in self.runs:
+                if r.get('status') == 'running':
+                    r['status'] = 'error'
+                    changed = True
+            if changed:
+                self._flush_runs()
+
+    def _flush_runs(self):
+        _save_json_file(_CURE_HISTORY_FILE, self.runs)
+
+    def list(self):
+        with _history_lock:
+            return list(self.runs)
+
+    def _find(self, ext_id):
+        for r in self.runs:
+            if r.get('id') == ext_id:
+                return r
+        return None
+
+    def start(self, ext_id, d):
+        with _history_lock:
+            if self._find(ext_id) is None:
+                self.runs.insert(0, {
+                    'id': ext_id,
+                    'materialName': d.get('materialName'),
+                    'steps': d.get('steps'),
+                    'stepsCompleted': 0,
+                    'startedAt': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                    'endedAt': None,
+                    'duration': None,
+                    'status': 'running',
+                    'phases': d.get('phases') or [],
+                    'targetTemp': d.get('targetTemp'),
+                    'serialNumber': d.get('serialNumber'),
+                    'telemetry': [],
+                })
+            self._flush_runs()
+
+    def telemetry(self, ext_id, sample):
+        with _history_lock:
+            r = self._find(ext_id)
+            if r is None:
+                return False
+            r.setdefault('telemetry', []).append(sample)
+            self._unflushed += 1
+            if self._unflushed >= _TELEMETRY_FLUSH_EVERY:
+                self._flush_runs()
+                self._unflushed = 0
+            return True
+
+    def finish(self, ext_id, status, steps_completed):
+        with _history_lock:
+            r = self._find(ext_id)
+            if r is None:
+                return False
+            r['status'] = status
+            r['endedAt'] = time.strftime('%Y-%m-%dT%H:%M:%S')
+            if steps_completed is not None:
+                r['stepsCompleted'] = steps_completed
+            try:
+                t0 = time.mktime(time.strptime(r['startedAt'], '%Y-%m-%dT%H:%M:%S'))
+                r['duration'] = int(time.time() - t0)
+            except Exception:  # noqa: BLE001 - unparsable start: leave duration
+                pass
+            self._flush_runs()
+            return True
+
+    def save_report(self, ext_id, d):
+        with _history_lock:
+            self.reports[ext_id] = {'content': d.get('content'),
+                                    'summary': d.get('summary'),
+                                    'format': d.get('format', 'html')}
+            _save_json_file(_CURE_REPORTS_FILE, self.reports)
+        return ext_id
+
+    def get_report(self, ext_id):
+        with _history_lock:
+            return self.reports.get(ext_id)
+
+
+_cure_files = _CureFileStore()
+
+
 @app.route('/api/print-history', methods=['GET'])
 def get_print_history():
-    """Print history, from Postgres."""
-    if not _db_on():
-        return _require_db()
-    return jsonify(db.get_print_history())
+    """Print history: Postgres when configured, else the durable file."""
+    if _db_on():
+        return jsonify(db.get_print_history())
+    with _history_lock:
+        return jsonify(_load_json_file(_PRINT_HISTORY_FILE, []))
 
 
 @app.route('/api/print-history', methods=['POST'])
 def save_print_history():
-    """Save print history (full replace)."""
-    if not _db_on():
-        return _require_db()
-    db.replace_print_history(request.json or [])
+    """Save print history (full replace), to Postgres or the durable file."""
+    logs = request.json or []
+    if _db_on():
+        db.replace_print_history(logs)
+    else:
+        with _history_lock:
+            _save_json_file(_PRINT_HISTORY_FILE, logs)
     return jsonify({'ok': True})
 
 
@@ -658,54 +819,57 @@ def save_print_history():
 
 @app.route('/api/cure-history', methods=['GET'])
 def cure_history_list():
-    """Cure History (§8) — from Postgres."""
-    if not _db_on():
-        return _require_db()
-    return jsonify(db.get_cure_history())
+    """Cure History (§8): Postgres when configured, else the durable file."""
+    if _db_on():
+        return jsonify(db.get_cure_history())
+    return jsonify(_cure_files.list())
 
 
 @app.route('/api/cure-runs/<ext_id>/start', methods=['POST'])
 def cure_run_start(ext_id):
-    if not _db_on():
-        return jsonify({'ok': False, 'message': 'Database not configured'}), 503
     d = request.get_json(silent=True) or {}
-    db.start_cure_run(ext_id, d.get('materialName'), d.get('steps'),
-                      d.get('phases'), d.get('targetTemp'), d.get('serialNumber'))
+    if _db_on():
+        db.start_cure_run(ext_id, d.get('materialName'), d.get('steps'),
+                          d.get('phases'), d.get('targetTemp'), d.get('serialNumber'))
+    else:
+        _cure_files.start(ext_id, d)
     return jsonify({'ok': True})
 
 
 @app.route('/api/cure-runs/<ext_id>/telemetry', methods=['POST'])
 def cure_run_telemetry(ext_id):
-    if not _db_on():
-        return jsonify({'ok': False, 'message': 'Database not configured'}), 503
-    ok = db.record_telemetry(ext_id, request.get_json(silent=True) or {})
+    sample = request.get_json(silent=True) or {}
+    if _db_on():
+        ok = db.record_telemetry(ext_id, sample)
+    else:
+        ok = _cure_files.telemetry(ext_id, sample)
     return jsonify({'ok': ok})
 
 
 @app.route('/api/cure-runs/<ext_id>/finish', methods=['POST'])
 def cure_run_finish(ext_id):
-    if not _db_on():
-        return jsonify({'ok': False, 'message': 'Database not configured'}), 503
     d = request.get_json(silent=True) or {}
-    ok = db.finish_cure_run(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'))
+    if _db_on():
+        ok = db.finish_cure_run(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'))
+    else:
+        ok = _cure_files.finish(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'))
     return jsonify({'ok': ok})
 
 
 @app.route('/api/cure-runs/<ext_id>/report', methods=['POST'])
 def cure_run_report_save(ext_id):
     """Persist a generated cure report for a run."""
-    if not _db_on():
-        return jsonify({'ok': False, 'message': 'Database not configured'}), 503
     d = request.get_json(silent=True) or {}
-    rid = db.save_report(ext_id, d.get('content'), d.get('summary'), d.get('format', 'html'))
+    if _db_on():
+        rid = db.save_report(ext_id, d.get('content'), d.get('summary'), d.get('format', 'html'))
+    else:
+        rid = _cure_files.save_report(ext_id, d)
     return jsonify({'ok': True, 'reportId': rid})
 
 
 @app.route('/api/cure-runs/<ext_id>/report', methods=['GET'])
 def cure_run_report_get(ext_id):
-    if not _db_on():
-        return jsonify({'ok': False, 'message': 'Database not configured'}), 503
-    rep = db.get_report(ext_id)
+    rep = db.get_report(ext_id) if _db_on() else _cure_files.get_report(ext_id)
     if not rep:
         return jsonify({'ok': False, 'message': 'No report'}), 404
     return jsonify({'ok': True, **rep})
@@ -962,6 +1126,30 @@ def export_csv_to_usb():
         return jsonify({'ok': True, 'message': f'Saved {filename} to USB', 'path': dest})
     except Exception as e:
         return jsonify({'ok': False, 'code': 9082, 'message': str(e)})
+
+
+@app.route('/api/system/version', methods=['GET'])
+def system_version():
+    """All live version/build info. The single source of truth for the app
+    version is the VERSION file at the repo root (bumped per release, with a
+    matching entry in public/config/versions.json); everything else is read
+    from the machine at call time - nothing here is hardcoded."""
+    repo = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..'))
+    try:
+        with open(os.path.join(repo, 'VERSION'), encoding='utf-8') as f:
+            app_version = f.read().strip()
+    except Exception:                     # noqa: BLE001 - file missing
+        app_version = 'unknown'
+    return jsonify({
+        'appVersion': app_version,
+        'gitCommit': run(f'git -C "{repo}" rev-parse --short HEAD') or None,
+        'gitDate': run(f'git -C "{repo}" log -1 --format=%cs') or None,
+        'lastBoot': run('uptime -s') or None,
+        'os': run('. /etc/os-release && echo $PRETTY_NAME') or None,
+        'kernel': run('uname -r') or None,
+        'python': sys.version.split()[0],
+    })
 
 
 @app.route('/api/system/datetime', methods=['POST'])

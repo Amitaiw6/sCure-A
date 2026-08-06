@@ -15,6 +15,7 @@ import {
 import { COMPLIANCE_CONTROLS } from '@/lib/compliance'
 import UpdateModal from '@/components/UpdateModal'
 import ComplianceModal from '@/components/ComplianceModal'
+import VersionsModal from '@/components/VersionsModal'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
 import { Pencil } from 'lucide-react'
 
@@ -51,6 +52,7 @@ export default function SettingsPage() {
   const [ledResults, setLedResults] = useState<{ label: string; ok: boolean }[] | null>(null)
   const [logsStatus, setLogsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [showUpdate, setShowUpdate] = useState(false)
+  const [showVersions, setShowVersions] = useState(false)
   const [showCompliance, setShowCompliance] = useState(false)
   const [showNameKeyboard, setShowNameKeyboard] = useState(false)
   const [editingName, setEditingName] = useState(hw.systemName)
@@ -393,7 +395,11 @@ export default function SettingsPage() {
                 }
               }}
             >
-              <InfoItem label="Firmware" value={config.firmware} />
+              {/* Tapping the version row opens the full Versions modal
+                  (stopPropagation: must not count toward the 10-tap factory reset) */}
+              <div onClick={e => { e.stopPropagation(); setShowVersions(true) }} className="cursor-pointer">
+                <InfoItem label="Software Version" value={config.firmware} />
+              </div>
               <InfoItem label="Last Boot" value={new Date(config.lastBoot).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} />
               <InfoItem label="Device" value={config.deviceName} />
             </div>
@@ -402,6 +408,7 @@ export default function SettingsPage() {
         </div>
       </div>
       <UpdateModal isOpen={showUpdate} onClose={() => setShowUpdate(false)} />
+      <VersionsModal isOpen={showVersions} onClose={() => setShowVersions(false)} />
       <ComplianceModal isOpen={showCompliance} onClose={() => setShowCompliance(false)} />
       <OnScreenKeyboard
         isOpen={showNameKeyboard}
