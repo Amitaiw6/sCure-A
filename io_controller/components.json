@@ -65,13 +65,16 @@
   "heating": {
     "target_temp": 60.0,
     "target_min": 30.0,
-    "sample_sec": 1.0,
-    "hysteresis_c": 1.0,
-    "on_pwm": 100,
+    "sample_sec": 0.05,
+    "kp": 0.08,
+    "ki": 0.00015,
+    "kd": 0.0,
+    "integ_max": 0.85,
+    "integ_min": 0.0,
     "at_temp_band": 1.5,
     "cooldown_sec": 600,
     "cooldown_fan_pwm": 30,
-    "_comment": "Heating mode (temperature_control.py, ON/OFF thermostat control). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode; then PWM_HEATER is switched ON/OFF like a thermostat: ON (at 'on_pwm' %%) when the chamber drops to target - 'hysteresis_c' C or below, OFF when it reaches the target; in between it keeps its last state (hysteresis prevents rapid relay chatter). |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
+    "_comment": "Heating mode (temperature_control.py, PI(D) + delta-sigma control). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode. Every 'sample_sec' (50 ms) the PI computes a 0..1 power command: control = kp*err + integ + kd*(err - prev_err), with integ += ki*err clamped to [integ_min, integ_max]; a first-order delta-sigma modulator streams that power to PWM_HEATER as per-cycle ON/OFF so the element's average ON-time equals the commanded power. |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
   },
 
   "servo": {

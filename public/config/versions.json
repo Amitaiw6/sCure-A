@@ -2,6 +2,19 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.3.0",
+      "date": "2026-08-06",
+      "notes": [
+        "Heating control changed to PI(D) + delta-sigma (replaces the ON/OFF 1°C thermostat)",
+        "50 ms control loop: kp=0.08, ki=0.00015/cycle, integrator clamp 0-0.85 (power 0..1)",
+        "Delta-sigma DAC streams the PI power to the heater element - average ON-time equals the commanded power",
+        "State exposes heaterPwm (commanded power %) + heaterOut (element ON right now)",
+        "Heater ON-hours counter now accumulates real element-energized time (heaterOut)",
+        "All PI gains tunable in components.json heating section; safety layer (pre-flight, health check, cooldown) unchanged",
+        "QA: Heater PI + Delta-Sigma test (power law + ON-ratio verified)"
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-08-06",
       "notes": [

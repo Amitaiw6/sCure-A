@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-temperature_control.py - ON/OFF chamber HEATING control for the CureBox.
+temperature_control.py - PI(D) + delta-sigma chamber HEATING for the CureBox.
 
 Separate logic module on top of io_controller (mirror of cooling_mode.py): it
 owns NO hardware of its own. The heater element and its fan are driven ONLY
@@ -14,13 +14,17 @@ Mode sequence (heating):
      closed, cooling mode off, heater fan (FAN_HEATER) started at the
      configured PWM and verified to actually spin (tachometer RPM), and the
      chamber thermistor reading valid. The heater is enabled only if ALL pass.
-  2. ON/OFF thermostat loop (no PI): the heater element (PWM_HEATER on the
-     PCA9685) is switched fully ON (at 'on_pwm' %) when TEMP_CHAMBER drops to
-     target - 'hysteresis_c' C or below, and fully OFF when it reaches the
-     target; inside the hysteresis band it keeps its last state, so the
-     element does not chatter around the setpoint. Works identically for a
-     true PWM channel and a digital (SSR) channel. The heater fan stays on
-     for the whole mode.
+  2. PI(D) loop + delta-sigma DAC: every 'sample_sec' (50 ms) the controller
+     computes a 0..1 power command from the temperature error
+         control = kp*err + integ + kd*(err - prev_err),
+         integ  += ki*err   (clamped to [integ_min, integ_max])
+     and a first-order delta-sigma modulator converts that power into a
+     per-cycle ON/OFF stream for the heater element (PWM_HEATER):
+         delta = v - 1 if last_out else v
+         sig   = accum + delta;  out = sig > 0.5
+     so the element's average ON-time equals the commanded power - true
+     proportional heating on an ON/OFF (SSR) output, with no chatter faster
+     than the sample rate. The heater fan stays on for the whole mode.
   3. Ongoing safety: the standard heater health check (fan RPM + thermistor)
      re-runs every health_check_sec, and the door interlock can force the
      heater off at any time - either ends the mode with a fault.
@@ -47,11 +51,14 @@ from io_controller import (LOG, PCA_CHANNELS, PCA_FANS,
 HEATING_DEFAULTS = {
     "target_temp": 60.0,
     "target_min": 30.0,  # lowest target temperature that can be entered (C)
-    "sample_sec": 1.0,
-    # ON/OFF thermostat: heater ON at/below target - hysteresis_c, OFF at the
-    # target, last state kept in between (prevents chatter at the setpoint).
-    "hysteresis_c": 1.0,        # width of the ON/OFF band below the target (C)
-    "on_pwm": 100,              # duty written while the heater is ON (%)
+    # PI(D) gains on a 0..1 power scale, applied once per sample (50 ms):
+    #   control = kp*err + integ + kd*(err - prev_err), integ += ki*err
+    "sample_sec": 0.05,
+    "kp": 0.08,                 # power per C of error
+    "ki": 0.00015,              # power per C of error, accumulated per cycle
+    "kd": 0.0,                  # power per C/cycle of error change
+    "integ_max": 0.85,          # integrator clamp (power)
+    "integ_min": 0.0,
     "at_temp_band": 1.5,        # |error| below this -> "at temperature"
     "cooldown_sec": 600.0,      # fan run-on after heating stops (10 min)
     "cooldown_fan_pwm": 30,     # heater-fan duty during the run-on (%)
@@ -110,7 +117,7 @@ class TemperatureController:
         if not ok:
             self.fault = why
             return False, why
-        try:                                      # thermostat owns the duty: start OFF
+        try:                                      # PI owns the duty: start OFF
             with self.sys.lock:
                 self.sys.io.pca.set_duty_verified(PCA_CHANNELS[hcfg["channel"]], 0)
         except VerificationError as e:
@@ -118,16 +125,16 @@ class TemperatureController:
             self.sys.disable_heater(self.fault)
             return False, self.fault
         self._state = {"target": target, "temp": None, "pwm": 0.0,
-                       "at_temp": False, "fan": hcfg["fan"],
-                       "fan_pwm": hcfg["fan_pwm"]}
+                       "heater_out": False, "at_temp": False,
+                       "fan": hcfg["fan"], "fan_pwm": hcfg["fan_pwm"]}
         self._stop.clear()
         self.active = True
         self._thread = threading.Thread(target=self._loop, args=(cfg, hcfg),
                                         daemon=True)
         self._thread.start()
-        LOG.info("HEATING ON (target=%.1f C, heater=%s ON/OFF thermostat "
-                 "hysteresis %.1f C, fan %s fixed %g%%)", target,
-                 hcfg["channel"], cfg["hysteresis_c"],
+        LOG.info("HEATING ON (target=%.1f C, heater=%s PI + delta-sigma "
+                 "kp=%g ki=%g, fan %s fixed %g%%)", target,
+                 hcfg["channel"], cfg["kp"], cfg["ki"],
                  hcfg["fan"], hcfg["fan_pwm"])
         return True, None
 
@@ -145,21 +152,31 @@ class TemperatureController:
         return self._state["target"]
 
     # ------------------------------------------------------------------
-    #  ON/OFF thermostat loop
+    #  PI(D) loop + delta-sigma heater DAC
     # ------------------------------------------------------------------
     def _loop(self, cfg, hcfg):
-        """ON/OFF thermostat: heater fully ON when TEMP_CHAMBER is at or below
-        target - hysteresis_c, fully OFF when it reaches the target, last
-        state kept inside the band. The heater fan is already on
+        """PI(D) control at 'sample_sec' (50 ms): the temperature error is
+        converted to a 0..1 power command, and a first-order delta-sigma
+        modulator streams that power to the ON/OFF heater element so the
+        average ON-time tracks the command. The heater fan is already on
         (enable_heater) and is re-verified by the periodic health check."""
-        last = time.monotonic()
+        kp = float(cfg["kp"])
+        ki = float(cfg["ki"])
+        kd = float(cfg["kd"])
+        integ_lo = float(cfg["integ_min"])
+        integ_hi = float(cfg["integ_max"])
+        sample = max(0.02, float(cfg["sample_sec"]))
+        integ = 0.0
+        prev_err = None
+        # delta-sigma DAC state (reference: run_heater_dac)
+        dac_accum = 0.0
+        dac_last = False
+        written = None                            # last duty actually written
         health_period = max(1.0, float(hcfg.get("health_check_sec", 10)))
-        next_health = last + health_period
+        next_health = time.monotonic() + health_period
+        next_log = 0.0
         heater_ch = PCA_CHANNELS[hcfg["channel"]]
-        hyst = max(0.0, float(cfg["hysteresis_c"]))
-        on_pwm = float(cfg["on_pwm"])
-        heater_is_on = False                      # element state (starts OFF)
-        while not self._stop.wait(cfg["sample_sec"]):
+        while not self._stop.wait(sample):
             if not self.sys.heater_on:            # door interlock / external off
                 self._finish(self.sys.heater_fault or "heater disabled externally")
                 return
@@ -175,18 +192,39 @@ class TemperatureController:
                 self._finish(why)
                 return
             err = self._state["target"] - t
-            if t <= self._state["target"] - hyst:
-                heater_is_on = True               # dropped below the band -> ON
-            elif t >= self._state["target"]:
-                heater_is_on = False              # reached the target -> OFF
-            out = on_pwm if heater_is_on else 0.0
-            self._state.update(temp=t, pwm=out,
+
+            # PI(D): gains act per cycle on a 0..1 power scale
+            integ = max(integ_lo, min(integ_hi, integ + ki * err))
+            deriv = kd * (err - prev_err) if prev_err is not None else 0.0
+            prev_err = err
+            control = kp * err + integ + deriv
+            power = max(0.0, min(1.0, control))
+
+            # Delta-sigma DAC: ON/OFF stream whose average equals `power`
+            delta = (power - 1.0) if dac_last else power
+            sig = dac_accum + delta
+            out = sig > 0.5
+            dac_last = out
+            dac_accum = sig
+
+            self._state.update(temp=t, pwm=round(power * 100.0, 1),
+                               heater_out=out,
                                at_temp=abs(err) <= cfg["at_temp_band"])
+            if now >= next_log:                   # 1 Hz status log, not per cycle
+                next_log = now + 1.0
+                LOG.debug("PI T=%.2fC target=%.1fC err=%.2f power=%.3f "
+                          "(P=%.3f I=%.3f D=%.3f) out=%s", t,
+                          self._state["target"], err, power,
+                          kp * err, integ, deriv, "ON" if out else "OFF")
+            duty = 100.0 if out else 0.0
+            if duty == written:                   # element already in this state
+                continue
             try:
                 with self.sys.lock:
-                    self.sys.io.pca.set_duty_verified(heater_ch, out)
+                    self.sys.io.pca.set_duty(heater_ch, duty)
+                written = duty
             except Exception as e:                # noqa: BLE001
-                self._finish(f"heater not confirmed: {e}")
+                self._finish(f"heater write failed: {e}")
                 return
 
     # ------------------------------------------------------------------
@@ -307,7 +345,8 @@ class TemperatureController:
                      "no cooldown", reason)
 
     def status(self):
-        """Live status dict: active, target, temp, pwm (heater duty %),
+        """Live status dict: active, target, temp, pwm (commanded average
+        power %), heater_out (element ON right now - delta-sigma output),
         at_temp, fan / fan_pwm, cooldown (fan run-on in progress), fault."""
         s = dict(self._state)
         s["active"] = self.active
@@ -384,10 +423,11 @@ def main(argv=None):
     import argparse
     p = argparse.ArgumentParser(
         prog="temperature_control.py",
-        description="CureBox ON/OFF heating: heater fan verified + fixed on, "
-                    "heater element switched ON/OFF like a thermostat "
-                    "(hysteresis below the target); on stop the fan runs on "
-                    "for the configured cooldown before turning off.")
+        description="CureBox PI heating: heater fan verified + fixed on, "
+                    "heater element driven by a PI(D) controller through a "
+                    "delta-sigma ON/OFF stream (average power = PI output); "
+                    "on stop the fan runs on for the configured cooldown "
+                    "before turning off.")
     p.add_argument("target", type=float, nargs="?", default=None,
                    help="target chamber temperature C, minimum 30 "
                         "(default from components.json)")

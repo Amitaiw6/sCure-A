@@ -516,7 +516,7 @@ const TEST_CATEGORIES = [
       { id: 'hwc_csv_uv_min', name: 'CSV: UV Below 10% Rejected', desc: 'CSV import rejects UV intensity under 10% (LEDs would stay dark)', check: 'hwc_csv_uv_min' },
       { id: 'hwc_csv_cool_drop', name: 'CSV: Cooling Must Drop ≥5°C', desc: 'A cooling target less than 5°C below the previous step is a hardware no-op and is rejected on import', check: 'hwc_csv_cool_drop' },
       { id: 'hwc_cool_done_band', name: 'Cooling Ends At Measured Temp', desc: 'Cure screen logic: a cooling phase completes when the measured chamber temp reaches target+0.5°C — never on the step timer', check: 'hwc_cool_done_band' },
-      { id: 'hwc_onoff_heat', name: 'Heater ON/OFF Hysteresis', desc: 'Heating is ON/OFF thermostat control (no PI): heater ON at/below target-1°C, OFF at the target, last state kept inside the band', check: 'hwc_onoff_heat' },
+      { id: "hwc_onoff_heat", name: "Heater PI + Delta-Sigma", desc: "Heating is PI(D) control (kp 0.08, ki 0.00015) streamed to the ON/OFF heater element by a delta-sigma DAC - power law and ON-ratio verified", check: "hwc_onoff_heat" },
     ]
   },
 ];
@@ -2255,25 +2255,35 @@ function runHwCompatCheck(check) {
         : { status: 'fail', msg: `${bad.length} wrong completion cases` };
     }
     case 'hwc_onoff_heat': {
-      // Mirror of temperature_control ON/OFF thermostat (hysteresis_c=1.0):
-      // ON at/below target-hyst, OFF at/above target, last state in between.
-      const HYST = 1.0;
-      const next = (t, target, wasOn) =>
-        t <= target - HYST ? true : (t >= target ? false : wasOn);
-      const cases = [
-        // [temp, target, wasOn, expected]
-        [25,   60, false, true ],   // cold start -> ON
-        [58.9, 60, true,  true ],   // below the band -> stays ON
-        [59.5, 60, true,  true ],   // inside the band, was ON -> stays ON
-        [60,   60, true,  false],   // reached target -> OFF
-        [60.5, 60, false, false],   // above target -> stays OFF
-        [59.5, 60, false, false],   // inside the band, was OFF -> stays OFF
-        [59.0, 60, false, true ],   // dropped to target-1 -> back ON
-      ];
-      const bad = cases.filter(([t, tg, w, exp]) => next(t, tg, w) !== exp);
-      return bad.length === 0
-        ? { status: 'pass', msg: `${cases.length} thermostat transitions follow the 1°C hysteresis band` }
-        : { status: 'fail', msg: `${bad.length} wrong transition(s): ${bad.map(c => `${c[0]}°C→${c[1]}°C`).join(', ')}` };
+      // Mirror of temperature_control PI(D) + delta-sigma heating
+      // (kp=0.08, ki=0.00015/cycle, integ clamp 0..0.85, DAC threshold 0.5):
+      // 1) the PI power command must follow the error and clamp to [0,1];
+      // 2) the delta-sigma ON-ratio must track the commanded power.
+      const KP = 0.08, KI = 0.00015, INTEG_MAX = 0.85;
+      const piPower = (err, integ) => {
+        const i2 = Math.max(0, Math.min(INTEG_MAX, integ + KI * err));
+        return { power: Math.max(0, Math.min(1, KP * err + i2)), integ: i2 };
+      };
+      const p1 = piPower(35, 0).power;      // cold start (25->60): full power
+      const p2 = piPower(2, 0.1).power;     // near target: partial power
+      const p3 = piPower(-3, 0).power;      // overshoot: heater off
+      const piOk = p1 === 1 && p2 > 0.2 && p2 < 0.4 && p3 === 0;
+      // Delta-sigma: run N cycles at a fixed power, ON-ratio must match
+      const dsRatio = (power, cycles) => {
+        let accum = 0, last = false, on = 0;
+        for (let c = 0; c < cycles; c++) {
+          const delta = last ? power - 1 : power;
+          const sig = accum + delta;
+          last = sig > 0.5;
+          accum = sig;
+          if (last) on++;
+        }
+        return on / cycles;
+      };
+      const dsBad = [0, 0.1, 0.25, 0.5, 0.75, 1].filter(p => Math.abs(dsRatio(p, 400) - p) > 0.01);
+      if (!piOk) return { status: 'fail', msg: `PI power wrong: cold=${p1} near=${p2.toFixed(2)} over=${p3}` };
+      if (dsBad.length > 0) return { status: 'fail', msg: `Delta-sigma ratio off at power: ${dsBad.join(', ')}` };
+      return { status: 'pass', msg: 'PI power law + delta-sigma ON-ratio track the reference controller' };
     }
   }
   return { status: 'fail', msg: 'Unknown check: ' + check };

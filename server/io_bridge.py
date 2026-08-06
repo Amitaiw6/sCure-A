@@ -7,7 +7,7 @@ IO-board drivers in ../io_controller (Raspberry Pi CM5).
 Architecture:
     React UI -> Flask API (app.py) -> IOBridge -> io_controller/
         SystemController        LED wavelength gating, heater safety, door interlock
-        TemperatureController   ON/OFF thermostat heating (PWM_HEATER)
+        TemperatureController   PI(D) + delta-sigma heating (PWM_HEATER)
         CoolingController       fixed-fan cooling (damper + fans)
 
 The bridge is safe to import off-Pi: if the drivers cannot start (no smbus2 /
@@ -412,7 +412,8 @@ class IOBridge:
             'n2LinePressure': None,       # no line-pressure sensor on this board
             'bofaOn': self._bofa_on,
             'atTemp': bool(heat.get('at_temp')),
-            'heaterPwm': heat.get('pwm'),
+            'heaterPwm': heat.get('pwm'),         # commanded average power %
+            'heaterOut': heat.get('heater_out'),  # element ON right now (delta-sigma)
             'coolingRate': cool.get('rate_meas'),
             'coolingFanPwm': cool.get('pwm') if cool.get('active') else None,
             'faults': {

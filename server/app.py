@@ -367,9 +367,10 @@ class ComponentCounters:
 
     Samples the authoritative hardware state every TICK seconds:
       led405 / led450 - UV on at that wavelength
-      heater          - heater element actually energized (heaterPwm > 0,
-                        not merely "heating mode": the ON/OFF thermostat
-                        cycles the element)
+      heater          - heater element actually energized (heaterOut: the
+                        instantaneous delta-sigma ON/OFF output, not merely
+                        "heating mode" - the PI controller streams the
+                        element ON and OFF; fallback: heaterPwm > 0)
       heaterFan       - measured tach RPM (fallback: commanded duty)
       coolingFan      - measured tach RPM (fallback: commanded duty)
 
@@ -420,10 +421,12 @@ class ComponentCounters:
         rpm = s.get('fanRpm') or {}
         duty = s.get('fans') or {}
         heater_pwm = s.get('heaterPwm')
+        heater_out = s.get('heaterOut')
         return {
             'led405': bool(s.get('uvOn')) and s.get('uvWavelength') == 405,
             'led450': bool(s.get('uvOn')) and s.get('uvWavelength') == 450,
-            'heater': (heater_pwm > 0) if heater_pwm is not None
+            'heater': bool(heater_out) if heater_out is not None
+                      else (heater_pwm > 0) if heater_pwm is not None
                       else bool(s.get('isHeating')),
             'heaterFan': rpm.get('chamber_heating', 0) > 0
                          or duty.get('chamber_heating', 0) > 0,
