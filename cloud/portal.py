@@ -282,7 +282,7 @@ function machineCard(m, i) {
         <span class="mut" style="font-weight:400;text-transform:none">last sync ${fmtAgo(m.lastSeen)}${m.pending?` · ${m.pending} pending`:''}</span>
       </h2>
       <div>
-        <span class="stat"><b>${st.chamberTemp ?? '–'}°C</b><span>chamber</span></span>
+        <span class="stat"><b>${st.chamberTemp != null ? (+st.chamberTemp).toFixed(1) : '–'}°C</b><span>chamber</span></span>
         <span class="stat"><b>${c.led405 ?? '–'}h</b><span>LED 405</span></span>
         <span class="stat"><b>${c.heater ?? '–'}h</b><span>heater</span></span>
       </div>
