@@ -75,11 +75,11 @@ const defaultState: HardwareState = {
   // Real accumulated ON-hours, counted and persisted by the server
   // (ComponentCounters in app.py); zeros until the first /api/state arrives.
   counters: {
-    led405: 0,
-    led450: 0,
-    coolingFan: 0,
-    heater: 0,
-    heaterFan: 0,
+    led405: 0.0,
+    led450: 0.0,
+    coolingFan: 0.3,
+    heater: 0.5,
+    heaterFan: 0.6,
   },
 }
 

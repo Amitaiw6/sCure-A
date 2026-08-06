@@ -1,0 +1,30 @@
+{
+  "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
+  "history": [
+    {
+      "version": "0.2.0",
+      "date": "2026-08-06",
+      "notes": [
+        "Fast cooling boost: the four LED-cooling fans (left/right/back/door) join the chamber fan in FAST mode",
+        "LED fans auto-release when cooling ends, on stop, on a mode change away from fast, and on door abort",
+        "Configurable via components.json cooling.fast_led_fan_pwm (default 100%, 0 disables)",
+        "Manual LED-fan control is blocked while the fast-cool boost owns the fans",
+        "QA: Fast Cool Engages LED Fans test (engage + release verified via /api/state)"
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-08-06",
+      "notes": [
+        "First versioned release (versioning reset - single source of truth in VERSION file)",
+        "ON/OFF thermostat heating control with 1°C hysteresis (PI removed)",
+        "Fixed-duty cooling modes: fast 100% / medium 60% / slow 30%",
+        "Heater fan cooldown: 30% for 10 minutes after every heating stop (except door abort)",
+        "Real LAN + internet detection (eth0 carrier, live TCP-443 watch)",
+        "Component runtime counters (ON-hours per wear part)",
+        "Door-open safety abort with 10s grace countdown (Err 6016)",
+        "Central error registry + QA tool coverage"
+      ]
+    }
+  ]
+}

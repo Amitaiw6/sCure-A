@@ -257,8 +257,8 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code } }))
       setCsvMsg({
         text: res.code === 9081
-          ? 'No USB connected — insert a USB drive and try again'
-          : (res.message || 'Could not save to USB'),
+          ? 'No Disk-on-Key connected — connect one and try again'
+          : (res.message || 'Could not save to the Disk-on-Key'),
         error: true,
       })
       return
