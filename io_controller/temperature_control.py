@@ -29,7 +29,7 @@ Mode sequence (heating):
      re-runs every health_check_sec, and the door interlock can force the
      heater off at any time - either ends the mode with a fault.
   4. Exit: heater element OFF immediately; the heater fan keeps running for
-     'cooldown_sec' (default 10 min) to carry residual heat off the element.
+     'cooldown_sec' (default 15 min) to carry residual heat off the element.
      At the END of the process (cooldown done or skipped) ALL fans are turned
      OFF and the damper is CLOSED (fans auto-driven by LEDs still on are left
      running). Restarting heating cancels a pending cooldown.
@@ -60,7 +60,7 @@ HEATING_DEFAULTS = {
     "integ_max": 0.85,          # integrator clamp (power)
     "integ_min": 0.0,
     "at_temp_band": 1.5,        # |error| below this -> "at temperature"
-    "cooldown_sec": 600.0,      # fan run-on after heating stops (10 min)
+    "cooldown_sec": 900.0,      # fan run-on after heating stops (15 min)
     "cooldown_fan_pwm": 30,     # heater-fan duty during the run-on (%)
 }
 

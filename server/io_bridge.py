@@ -641,7 +641,7 @@ class IOBridge:
 
         The heater ELEMENT turns off right away in both cases; after heating,
         the heater fan always keeps running its cooldown run-on
-        (cooldown_fan_pwm % for cooldown_sec, default 30% / 10 min) to carry
+        (cooldown_fan_pwm % for cooldown_sec, default 30% / 15 min) to carry
         residual heat off the element - including on a user abort. The only
         full-kill paths with NO run-on are door_abort() (safety) and
         shutdown() (process exit). `immediate` is kept for API compatibility;
