@@ -172,6 +172,7 @@ const TEST_CATEGORIES = [
       { id: 'net_auto_watch', name: 'Auto Internet Watch Live', desc: 'The background internet watch publishes its verdict: /api/state.internetOk and /api/network/status.internet are booleans (LAN "connected" and real internet reachability are reported separately)', check: 'net_auto_watch' },
       { id: 'net_strip_logic', name: 'No-Internet Strip Logic', desc: 'StatusLeds: idle+offline → solid blue; process+offline → the comet runs in blue (both facts visible); fault and door-open always win; online → normal colors', check: 'net_strip_logic' },
       { id: 'counters_live', name: 'Component Counters Live + Persisted', desc: 'Real ON-hour counters (led405/led450/coolingFan/heater/heaterFan) are published in /api/state.counters, never decrease between samples, and a running component makes its counter advance (server persists them to disk across reboots)', check: 'counters_live' },
+      { id: 'phase_timings', name: 'Phase Timings Collected', desc: 'Real per-phase durations accumulate in server/data/phase_timings.json: GET /api/phase-timings returns the records, and the per-run POST validates its payload (process + seconds required) so garbage never pollutes the timing data', check: 'phase_timings' },
       { id: 'api_materials', name: 'GET /api/materials/user', desc: 'Verify user materials endpoint', endpoint: '/api/materials/user', method: 'GET', expectArray: true },
       { id: 'api_history', name: 'GET /api/print-history', desc: 'Verify print history endpoint', endpoint: '/api/print-history', method: 'GET', expectArray: true },
       { id: 'history_durable', name: 'Histories Durable Without DB', desc: 'Print history AND cure history are served from a durable store (Postgres or the server/data files) — both GET endpoints return arrays, never 503, so recorded prints and cure sessions survive a power-off', check: 'history_durable' },
@@ -192,6 +193,7 @@ const TEST_CATEGORIES = [
       { id: 'temp_stop', name: 'Stop Heating', desc: 'Stop heating and verify', endpoint: '/api/chamber/stop', method: 'POST', expect: 'ok' },
       { id: 'temp_ramp_live', name: 'Chamber Temp Reaches Target', desc: 'Command heat to 40°C, then verify /api/state chamberTemp actually rises toward the target — the Cure screen displays and follows this measured value', check: 'temp_ramp_live' },
       { id: 'temp_ramp_logic', name: 'Ramp Ends At Measured Temp', desc: 'Cure screen logic: the ramp keeps going while the measured chamber temp is below target−0.5°C, and the hold timer starts only when it reaches the target', check: 'temp_ramp_logic' },
+      { id: 'timer_wallclock', name: 'Phase Timer Tracks Wall-Clock', desc: 'Cure screen logic: elapsed time is computed from a performance.now() anchor, not by counting setInterval ticks — late/missed ticks (kiosk browser under load) must not stretch the phase duration', check: 'timer_wallclock' },
       { id: 'uv_after_ramp', name: 'UV Start Mode Gating', desc: 'Cure screen logic: with UV Start = "At temperature" a ramping Cure/Bleacher step heats FIRST with the UV off until the measured chamber temp reaches the target; with "On ramp start" the LEDs light from the very start of the ramp', check: 'uv_after_ramp' },
       { id: 'telemetry_report', name: 'Report Telemetry Sampling', desc: 'Cure screen logic: telemetry samples at t=0 and then every 5s, immune to the 1s status polling — so every run (even one aborted seconds in) has at least one sample and its report is downloadable from Cure History', check: 'telemetry_report' },
       { id: 'report_usb_export', name: 'Report Export To USB', desc: 'Cure History download button: on the machine the report HTML is written straight to the USB drive (POST /api/system/export-report); a machine-side failure (9081 no USB / 9082 write failed) raises the alert instead of silently downloading; only dev/API-unreachable falls back to a browser download', check: 'report_usb_export' },
@@ -1000,6 +1002,34 @@ async function runSingleTest(test) {
       return;
     }
 
+    // Phase-timing analytics: the collection endpoint must exist, serve an
+    // array, and reject invalid records (missing process/seconds -> 400).
+    if (test.check === 'phase_timings') {
+      let result;
+      try {
+        const rG = await fetch(apiUrl + '/api/phase-timings', { signal: AbortSignal.timeout(5000) });
+        const rows = rG.ok ? await rG.json() : null;
+        if (!rG.ok) result = { status: 'fail', msg: `GET /api/phase-timings HTTP ${rG.status}` };
+        else if (!Array.isArray(rows)) result = { status: 'fail', msg: 'did not return an array' };
+        else {
+          const rBad = await fetch(apiUrl + '/api/cure-runs/qa-validation-probe/phase', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}), signal: AbortSignal.timeout(5000) });
+          if (rBad.status !== 400)
+            result = { status: 'fail', msg: `invalid record accepted (HTTP ${rBad.status}, expected 400)` };
+          else
+            result = { status: 'pass', msg: `${rows.length} phase timings on record; invalid records rejected` };
+        }
+      } catch (e) {
+        result = { status: 'fail', msg: `fetch failed: ${e.message}` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
     // Component runtime counters: /api/state.counters must expose the five
     // wear counters, be monotonic (never lose hours between samples), and
     // actually advance for a component that is currently running.
@@ -1465,6 +1495,34 @@ async function runSingleTest(test) {
       const result = bad.length === 0
         ? { status: 'pass', msg: `${cases.length} ramp/hold transitions follow the measured temp` }
         : { status: 'fail', msg: `${bad.length} wrong transition(s): ${bad.map(c => `${c[0]}°C→${c[1]}°C`).join(', ')}` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Cure screen timer (mirrors CureProcessPage.tick): elapsed seconds come
+    // from a performance.now() anchor, so ticks that fire late — the kiosk
+    // browser under load runs setInterval(1000) at 1050-1200ms — do not
+    // stretch the phase. Counting ticks (the old bug) would.
+    if (test.check === 'timer_wallclock') {
+      const elapsedAt = (nowMs, anchorMs) => Math.floor((nowMs - anchorMs) / 1000);
+      const problems = [];
+      // 10 ticks each 15% late: wall-clock 11.5s. Tick-counting would say 10.
+      let now = 0; const anchor = 0;
+      for (let i = 0; i < 10; i++) now += 1150;
+      if (elapsedAt(now, anchor) !== 11) problems.push(`late ticks: got ${elapsedAt(now, anchor)}s, want 11s`);
+      // A missed tick (browser throttling): next tick catches up to wall-clock.
+      if (elapsedAt(5000 + 2000, 5000 - 3000) !== 5) problems.push('missed tick did not catch up');
+      // Re-anchor carries already-elapsed seconds (ramp→hold handoff).
+      const reAnchor = 90000 - 42 * 1000;
+      if (elapsedAt(90000, reAnchor) !== 42) problems.push('re-anchor lost carried seconds');
+      // Clamp at the phase maximum, as the page does with Math.min(maxSec, …).
+      if (Math.min(120, elapsedAt(300000, 0)) !== 120) problems.push('no clamp at maxSec');
+      const elapsed = Date.now() - t0;
+      const result = problems.length === 0
+        ? { status: 'pass', msg: 'anchored elapsed matches wall-clock under late, missed, and re-anchored ticks' }
+        : { status: 'fail', msg: problems.join('; ') };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

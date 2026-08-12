@@ -1063,6 +1063,49 @@ def cure_run_report_get(ext_id):
     return jsonify({'ok': True, **rep})
 
 
+# ---- Real phase-timing analytics ------------------------------------------
+# Every phase the UI completes reports its TRUE wall-clock duration here -
+# including the ramp time the program's step list does not account for. The
+# records accumulate in server/data/phase_timings.json (same durable folder
+# as everything else) and are the raw data for estimating what each program
+# REALLY takes: heating rate to each target, drying/cure holds, cooling time.
+_PHASE_TIMINGS_FILE = os.path.join(_DATA_DIR, 'phase_timings.json')
+
+
+@app.route('/api/phase-timings', methods=['GET'])
+def phase_timings_list():
+    """All collected phase timings (newest last)."""
+    with _history_lock:
+        return jsonify(_load_json_file(_PHASE_TIMINGS_FILE, []))
+
+
+@app.route('/api/cure-runs/<ext_id>/phase', methods=['POST'])
+def cure_run_phase(ext_id):
+    """Record one finished phase's real timing (fire-and-forget from the UI)."""
+    d = request.get_json(silent=True) or {}
+    if not d.get('process') or d.get('seconds') is None:
+        return jsonify({'ok': False, 'message': 'process and seconds required'}), 400
+    rec = {
+        'run': ext_id,
+        'program': d.get('program'),
+        'step': d.get('step'),
+        'process': d.get('process'),
+        'targetTemp': d.get('targetTemp'),
+        'plannedMin': d.get('plannedMin'),      # what the program asked for
+        'startedAt': d.get('startedAt'),
+        'endedAt': d.get('endedAt'),
+        'seconds': d.get('seconds'),            # what it REALLY took
+        'rampSeconds': d.get('rampSeconds'),    # part of `seconds` spent ramping
+        'tempStart': d.get('tempStart'),
+        'tempEnd': d.get('tempEnd'),
+    }
+    with _history_lock:
+        rows = _load_json_file(_PHASE_TIMINGS_FILE, [])
+        rows.append(rec)
+        _save_json_file(_PHASE_TIMINGS_FILE, rows)
+    return jsonify({'ok': True, 'count': len(rows)})
+
+
 def _on_device():
     """True when running on the machine itself (Pi / any Linux host)."""
     return sys.platform.startswith('linux')

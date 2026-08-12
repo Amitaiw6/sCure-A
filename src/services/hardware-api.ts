@@ -40,6 +40,20 @@ async function apiCall(endpoint: string, method = 'POST'): Promise<{ ok: boolean
   }
 }
 
+/** Report a finished phase's REAL wall-clock timing — collected on the
+ *  machine in server/data/phase_timings.json for program-time estimation.
+ *  Fire-and-forget: analytics must never disturb a running process. */
+export async function reportPhaseTiming(runId: string, record: Record<string, unknown>) {
+  try {
+    await fetch(`${API_BASE}/cure-runs/${runId}/phase`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+      signal: AbortSignal.timeout(5000),
+    })
+  } catch { /* no server (dev/offline) — skip silently */ }
+}
+
 /** Reboot the Raspberry Pi CM5 */
 export async function systemReboot() {
   return apiCall('/system/reboot')

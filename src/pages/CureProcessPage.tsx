@@ -16,6 +16,7 @@ import type { CoolingMode, UvStartMode } from '@/context/MaterialContext'
 import {
   heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450,
   coolToTargetTemperature, stopCureOutputs, doorOpen, setNitrogenValve,
+  reportPhaseTiming,
 } from '@/services/hardware-api'
 
 const phaseColorMap: Record<string, string> = {
@@ -60,6 +61,13 @@ export default function CureProcessPage() {
   const [showAbort, setShowAbort] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
+  // Real wall-clock timing: when the program and the current phase ACTUALLY
+  // started. Feeds the phase-timing analytics (server/data/phase_timings.json)
+  // and the true "Total time" on the completion screen — the step timers alone
+  // exclude ramps, so they understate what a program really takes.
+  const processStartRef = useRef<number>(0)
+  const phaseWallRef = useRef<{ start: number; temp: number; ramp: number | null }>({ start: 0, temp: 0, ramp: null })
+  const [wallTotal, setWallTotal] = useState<number | null>(null)
 
   // Ramp state for heating phase
   const [isRamping, setIsRamping] = useState(false)
@@ -80,6 +88,12 @@ export default function CureProcessPage() {
   // Elapsed seconds per phase (only counts AFTER ramp)
   const [phaseElapsed, setPhaseElapsed] = useState<number[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Elapsed values are computed from performance.now() anchors, never by
+  // counting interval ticks: setInterval on the kiosk browser fires late
+  // under load and the lag accumulates into minutes over a long cure.
+  const rampAnchorRef = useRef(0)
+  const n2AnchorRef = useRef(0)
+  const holdAnchorRef = useRef<{ phase: number; start: number } | null>(null)
 
   const [pendingLogIds] = useState<string[]>(() => {
     try {
@@ -202,7 +216,7 @@ export default function CureProcessPage() {
       // Real hardware: the heater is already commanded; the ramp ends when
       // the measured chamber temperature reaches the target.
       if (hw.apiConnected) {
-        setRampElapsed(prev => prev + 1)
+        setRampElapsed(Math.floor((performance.now() - rampAnchorRef.current) / 1000))
         if (hw.chamberTemp >= targetTemp - 0.5) {
           setIsRamping(false)
           setHeating(false)
@@ -212,34 +226,30 @@ export default function CureProcessPage() {
         return
       }
       // Off-Pi simulation: time-based ramp that also fakes the temperature.
-      setRampElapsed(prev => {
-        const next = prev + 1
-        if (next >= rampDuration) {
-          setIsRamping(false)
-          setChamberTemp(targetTemp)
-          setHeating(false)
-          return rampDuration
-        }
-        const progress = next / rampDuration
-        const temp = Math.round(rampStartTemp + (targetTemp - rampStartTemp) * progress)
-        setChamberTemp(temp)
-        return next
-      })
+      const rampNext = Math.min(rampDuration,
+        Math.floor((performance.now() - rampAnchorRef.current) / 1000))
+      setRampElapsed(rampNext)
+      if (rampNext >= rampDuration) {
+        setIsRamping(false)
+        setChamberTemp(targetTemp)
+        setHeating(false)
+      } else {
+        const progress = rampNext / rampDuration
+        setChamberTemp(Math.round(rampStartTemp + (targetTemp - rampStartTemp) * progress))
+      }
       return
     }
 
     // N2 purge phase (after drying)
     if (n2Purging) {
-      setN2Elapsed(prev => {
-        const next = prev + 1
-        if (next >= hw.nitrogenDuration) {
-          setN2Purging(false)
-          setNitrogenActive(false)
-          if (hw.apiConnected) setNitrogenValve(false)   // close the real valve
-          return hw.nitrogenDuration
-        }
-        return next
-      })
+      const n2Next = Math.min(hw.nitrogenDuration,
+        Math.floor((performance.now() - n2AnchorRef.current) / 1000))
+      setN2Elapsed(n2Next)
+      if (n2Next >= hw.nitrogenDuration) {
+        setN2Purging(false)
+        setNitrogenActive(false)
+        if (hw.apiConnected) setNitrogenValve(false)   // close the real valve
+      }
       return
     }
 
@@ -254,15 +264,24 @@ export default function CureProcessPage() {
       }
     }
 
-    // Normal phase timer
+    // Normal phase timer. The anchor is (re)set lazily on the first tick a
+    // phase spends holding — that covers every entry path (run start, phase
+    // advance, ramp end) and carries over any seconds already on the clock.
     setPhaseElapsed(prev => {
       const next = [...prev]
       const phaseIdx = activePhase
       const maxSec = (phases[phaseIdx]?.time ?? 1) * 60
 
-      if (next[phaseIdx] < maxSec) {
-        next[phaseIdx] = next[phaseIdx] + 1
+      let anchor = holdAnchorRef.current
+      if (!anchor || anchor.phase !== phaseIdx) {
+        anchor = {
+          phase: phaseIdx,
+          start: performance.now() - (next[phaseIdx] ?? 0) * 1000,
+        }
+        holdAnchorRef.current = anchor
       }
+      next[phaseIdx] = Math.min(maxSec,
+        Math.floor((performance.now() - anchor.start) / 1000))
       return next
     })
   }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, hw.apiConnected, hw.chamberTemp, setChamberTemp, setHeating, setNitrogenActive, startPhaseUv])
@@ -363,6 +382,7 @@ export default function CureProcessPage() {
     if (currentPhase.type === 'nitrogen') {
       setN2Purging(true)
       setN2Elapsed(0)
+      n2AnchorRef.current = performance.now()
       setNitrogenActive(true)
       if (hw.apiConnected) {
         setNitrogenValve(true).then(res => {
@@ -392,11 +412,44 @@ export default function CureProcessPage() {
     if (willRamp && currentPhase.temp != null) {
       setIsRamping(true)
       setRampElapsed(0)
+      rampAnchorRef.current = performance.now()
       setRampStartTemp(hw.chamberTemp)
       setTargetTemp(currentPhase.temp)
       setHeating(true)
     }
   }, [activePhase, isRunning, isComplete, isRamping, n2Purging, phases, commandPhase, hw.chamberTemp, hw.apiConnected, setNitrogenActive, setTargetTemp, setHeating])
+
+  // A phase finished: report its REAL duration (wall-clock, incl. ramp) to the
+  // machine's timing log, then re-anchor the clock for the next phase.
+  const reportPhaseEnd = useCallback((idx: number) => {
+    const p = phases[idx]
+    const now = Date.now()
+    if (p && cureLogId && phaseWallRef.current.start > 0) {
+      reportPhaseTiming(cureLogId, {
+        program: selectedMaterial?.name ?? 'Unknown',
+        step: idx + 1,
+        process: p.name,
+        targetTemp: p.temp ?? null,
+        plannedMin: p.time ?? 0,
+        startedAt: new Date(phaseWallRef.current.start).toISOString(),
+        endedAt: new Date(now).toISOString(),
+        seconds: Math.round((now - phaseWallRef.current.start) / 1000),
+        rampSeconds: phaseWallRef.current.ramp,
+        tempStart: phaseWallRef.current.temp,
+        tempEnd: hw.chamberTemp,
+      })
+    }
+    phaseWallRef.current = { start: now, temp: hw.chamberTemp, ramp: null }
+  }, [phases, cureLogId, selectedMaterial, hw.chamberTemp])
+
+  // Capture how much of the current phase was spent ramping to temperature
+  const wasRampingRef = useRef(false)
+  useEffect(() => {
+    if (wasRampingRef.current && !isRamping && phaseWallRef.current.start > 0) {
+      phaseWallRef.current.ramp = Math.round((Date.now() - phaseWallRef.current.start) / 1000)
+    }
+    wasRampingRef.current = isRamping
+  }, [isRamping])
 
   // Check if current phase is done → advance.
   // Time-holds end on the timer; COOLING ends when the measured chamber
@@ -415,12 +468,14 @@ export default function CureProcessPage() {
       : currentPhaseElapsed >= maxSec
 
     if (phaseDone) {
+      reportPhaseEnd(activePhase)
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
       } else {
         stopCureOutputs()
         setIsRunning(false)
         setIsComplete(true)
+        setWallTotal(Math.round((Date.now() - processStartRef.current) / 1000))
         setNitrogenActive(false)
         if (cureLogId) completeCure(cureLogId)
 
@@ -430,18 +485,20 @@ export default function CureProcessPage() {
         }
       }
     }
-  }, [currentPhaseElapsed, activePhase, totalSteps, phases, isRunning, isComplete, isRamping, n2Purging, hw.nitrogenMode, hw.chamberTemp, pendingLogIds, removeLogs, setNitrogenActive])
+  }, [currentPhaseElapsed, activePhase, totalSteps, phases, isRunning, isComplete, isRamping, n2Purging, hw.nitrogenMode, hw.chamberTemp, pendingLogIds, removeLogs, setNitrogenActive, reportPhaseEnd, cureLogId, completeCure])
 
   // After N2 purge finishes → advance to next phase or complete
   useEffect(() => {
     if (!n2Purging && n2Elapsed > 0 && n2Elapsed >= hw.nitrogenDuration) {
       setN2Elapsed(0)
+      reportPhaseEnd(activePhase)
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
       } else {
         stopCureOutputs()
         setIsRunning(false)
         setIsComplete(true)
+        setWallTotal(Math.round((Date.now() - processStartRef.current) / 1000))
         setNitrogenActive(false)
         if (cureLogId) completeCure(cureLogId)
         if (pendingLogIds.length > 0) {
@@ -450,7 +507,7 @@ export default function CureProcessPage() {
         }
       }
     }
-  }, [n2Purging, n2Elapsed, hw.nitrogenDuration, activePhase, totalSteps, cureLogId, completeCure, pendingLogIds, removeLogs, setNitrogenActive])
+  }, [n2Purging, n2Elapsed, hw.nitrogenDuration, activePhase, totalSteps, cureLogId, completeCure, pendingLogIds, removeLogs, setNitrogenActive, reportPhaseEnd])
 
   // Start/stop timer
   useEffect(() => {
@@ -512,6 +569,9 @@ export default function CureProcessPage() {
   useEffect(() => {
     if (!isRunning && !isComplete && phases.length > 0 && phaseElapsed.length > 0 && !cureLogId) {
       setIsRunning(true)
+      // Anchor the real wall clocks: whole program + first phase
+      processStartRef.current = Date.now()
+      phaseWallRef.current = { start: Date.now(), temp: hw.chamberTemp, ramp: null }
       // Log cure start
       const id = startCure(
         selectedMaterial?.name ?? 'Unknown',
@@ -536,6 +596,7 @@ export default function CureProcessPage() {
       if (firstWillRamp) {
         setIsRamping(true)
         setRampElapsed(0)
+        rampAnchorRef.current = performance.now()
         // Real hardware: ramp starts from the measured chamber temperature
         const startTemp = hw.apiConnected ? hw.chamberTemp : AMBIENT_TEMP
         setRampStartTemp(startTemp)
@@ -811,7 +872,9 @@ export default function CureProcessPage() {
             The curing process for <span className="text-foreground font-semibold">{selectedMaterial?.name ?? 'material'}</span> has been completed successfully.
           </p>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <span>Total time: <span className="text-foreground font-semibold">{formatTime(totalElapsed)}</span></span>
+            {/* True wall-clock duration since the program started — the step
+                timers alone exclude ramp/cool time and understate reality */}
+            <span>Total time: <span className="text-foreground font-semibold">{formatTime(wallTotal ?? totalElapsed)}</span></span>
             <span>·</span>
             <span>{totalSteps} steps</span>
           </div>

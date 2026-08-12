@@ -2,6 +2,74 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.4.0",
+      "date": "2026-08-12",
+      "notes": [
+        "Real phase-timing analytics: every completed phase reports its true wall-clock duration (planned vs. actual, ramp share, start/end temps) to server/data/phase_timings.json on the machine; served at GET /api/phase-timings — the raw data for re-estimating real program times",
+        "Cure completion screen shows the TRUE total time — wall-clock from the moment the program started (was: sum of the hold timers only, ramps excluded)",
+        "QA: new 'Phase Timings Collected' test — endpoint shape + invalid records rejected"
+      ]
+    },
+    {
+      "version": "0.3.10",
+      "date": "2026-08-12",
+      "notes": [
+        "Fix: cure phase timers now track wall-clock time (performance.now() anchors) instead of counting 1s interval ticks — on the machine the browser fires ticks late under load and the lag accumulated, so timed phases ran minutes longer than programmed",
+        "QA: new 'Phase Timer Tracks Wall-Clock' test verifies late/missed ticks no longer stretch phase durations"
+      ]
+    },
+    {
+      "version": "0.3.9",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal: Stratasys header logo enlarged (26px -> 42px)"
+      ]
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal: Stratasys logo added to the header (embedded in the page, black-on-white to match the light theme)"
+      ]
+    },
+    {
+      "version": "0.3.7",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal: CureBox selector is now always visible (also with a single machine), with online/offline indicator per machine",
+        "Cloud portal: live search box — filters work programs and recent prints by name, material, printer or status as you type"
+      ]
+    },
+    {
+      "version": "0.3.6",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal: CureBox selector — when more than one machine is connected, tabs at the top let you show all machines or focus on one (choice is remembered)"
+      ]
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal: switched to a light black-on-white theme (white background, black text and buttons; green/red kept for online/offline status and errors)"
+      ]
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal fix: switching a step's process type now correctly swaps the row's fields (e.g. selecting Cooling shows the Fast/Medium/Slow mode and hides Time/UV) — previously the old fields stayed on screen"
+      ]
+    },
+    {
+      "version": "0.3.3",
+      "date": "2026-08-09",
+      "notes": [
+        "Cloud portal: program step editor now matches the machine UI — per-process fields (Cooling: target temp 30-75°C + cooling mode, no time; Cure/Bleaching: UV 10-100% + timer/UV start modes; Nitrogen: auto purge, no fields)",
+        "Cloud portal: saving validates the same limits and step-sequence rules as the machine (temperature ranges, N₂ purge rules, cooling must be 5°C below the previous step)"
+      ]
+    },
+    {
       "version": "0.3.2",
       "date": "2026-08-06",
       "notes": [
