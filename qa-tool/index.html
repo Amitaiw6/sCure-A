@@ -518,6 +518,7 @@ const TEST_CATEGORIES = [
       { id: 'hwc_csv_uv_min', name: 'CSV: UV Below 10% Rejected', desc: 'CSV import rejects UV intensity under 10% (LEDs would stay dark)', check: 'hwc_csv_uv_min' },
       { id: 'hwc_csv_cool_drop', name: 'CSV: Cooling Must Drop ≥5°C', desc: 'A cooling target less than 5°C below the previous step is a hardware no-op and is rejected on import', check: 'hwc_csv_cool_drop' },
       { id: 'hwc_cool_done_band', name: 'Cooling Ends At Measured Temp', desc: 'Cure screen logic: a cooling phase completes when the measured chamber temp reaches target+0.5°C — never on the step timer', check: 'hwc_cool_done_band' },
+      { id: 'hwc_timer_start', name: 'Timer Start Mode Honored', desc: "A step's Timer Start setting is honored by the cure screen: 'On ramp start' counts the step time through the ramp (and may finish mid-ramp); 'On target' (default) parks the timer until the chamber reaches the target", check: 'hwc_timer_start' },
       { id: "hwc_onoff_heat", name: "Heater PI + Delta-Sigma", desc: "Heating is PI(D) control (kp 0.08, ki 0.00015) streamed to the ON/OFF heater element by a delta-sigma DAC - power law and ON-ratio verified", check: "hwc_onoff_heat" },
     ]
   },
@@ -832,7 +833,7 @@ async function runSingleTest(test) {
     }
 
     // Local UX↔hardware compatibility logic mirrors (no API needed)
-    if (test.check && test.check.startsWith('hwc_csv_') || test.check === 'hwc_cool_done_band' || test.check === 'hwc_onoff_heat') {
+    if (test.check && test.check.startsWith('hwc_csv_') || test.check === 'hwc_cool_done_band' || test.check === 'hwc_onoff_heat' || test.check === 'hwc_timer_start') {
       const result = runHwCompatCheck(test.check);
       const elapsed = Date.now() - t0;
       setTestStatus(test.id, result.status, result.msg, elapsed);
@@ -2311,6 +2312,26 @@ function runHwCompatCheck(check) {
       return bad.length === 0
         ? { status: 'pass', msg: 'Cooling completion follows the measured temp (±0.5°C band)' }
         : { status: 'fail', msg: `${bad.length} wrong completion cases` };
+    }
+    case 'hwc_timer_start': {
+      // Mirror of CureProcessPage's Timer Start handling:
+      //   tick():   the phase timer advances during a ramp ONLY for 'on-ramp'
+      //   advance:  a phase may complete during a ramp ONLY for 'on-ramp'
+      const timerCounts = (ramping, mode) => !ramping || mode === 'on-ramp';
+      const mayFinish = (ramping, mode) => !ramping || mode === 'on-ramp';
+      const cases = [
+        // [ramping, timerMode, countsExpected, mayFinishExpected]
+        [true,  'on-ramp',   true,  true ],   // counts through the ramp
+        [true,  'on-target', false, false],   // parked until target
+        [true,  undefined,   false, false],   // missing mode defaults to on-target
+        [false, 'on-ramp',   true,  true ],   // holding: always counts
+        [false, 'on-target', true,  true ],
+      ];
+      const bad = cases.filter(([r, m, expC, expF]) =>
+        timerCounts(r, m) !== expC || mayFinish(r, m) !== expF);
+      return bad.length === 0
+        ? { status: 'pass', msg: "Timer Start honored: 'on-ramp' counts through the ramp, 'on-target' waits for the target" }
+        : { status: 'fail', msg: `${bad.length} wrong timer-mode cases` };
     }
     case 'hwc_onoff_heat': {
       // Mirror of temperature_control PI(D) + delta-sigma heating

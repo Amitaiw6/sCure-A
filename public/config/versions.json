@@ -2,6 +2,14 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.4.1",
+      "date": "2026-08-12",
+      "notes": [
+        "Fix: the step's 'Timer Start' setting is now honored by the cure screen — 'On ramp start' counts the step time through the temperature ramp (and may finish mid-ramp), 'On target' keeps waiting for the target as before. The setting was saved by the program builder but the cure screen ignored it",
+        "QA: new 'Timer Start Mode Honored' logic-mirror test"
+      ]
+    },
+    {
       "version": "0.4.0",
       "date": "2026-08-12",
       "notes": [

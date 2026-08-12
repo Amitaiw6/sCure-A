@@ -12,7 +12,7 @@ import { useHardware } from '@/context/HardwareContext'
 import { useCureHistory } from '@/context/CureHistoryContext'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
-import type { CoolingMode, UvStartMode } from '@/context/MaterialContext'
+import type { CoolingMode, TimerMode, UvStartMode } from '@/context/MaterialContext'
 import {
   heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450,
   coolToTargetTemperature, stopCureOutputs, doorOpen, setNitrogenValve,
@@ -109,10 +109,10 @@ export default function CureProcessPage() {
   const phases = useMemo(() => {
     if (steps.length === 0) {
       return [
-        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
-        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
-        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
-        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode },
+        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
+        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
+        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
+        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
       ]
     }
     // Skip Nitrogen steps if nitrogen is not enabled on the system
@@ -128,6 +128,9 @@ export default function CureProcessPage() {
         time: s.time,
         coolingMode: (s.coolingMode ?? 'medium') as CoolingMode,
         uvStartMode: (s.uvStartMode ?? 'at-target') as UvStartMode,
+        // Timer Start: 'on-ramp' = the step timer runs through the ramp;
+        // 'on-target' (default) = it starts only at the target temperature.
+        timerMode: (s.timerMode ?? 'on-target') as TimerMode,
       }))
   }, [steps, hw.nitrogenMode])
 
@@ -223,21 +226,24 @@ export default function CureProcessPage() {
           // At target: cure/bleacher steps switch the UV LEDs on only now
           startPhaseUv(phases[activePhase])
         }
-        return
-      }
-      // Off-Pi simulation: time-based ramp that also fakes the temperature.
-      const rampNext = Math.min(rampDuration,
-        Math.floor((performance.now() - rampAnchorRef.current) / 1000))
-      setRampElapsed(rampNext)
-      if (rampNext >= rampDuration) {
-        setIsRamping(false)
-        setChamberTemp(targetTemp)
-        setHeating(false)
       } else {
-        const progress = rampNext / rampDuration
-        setChamberTemp(Math.round(rampStartTemp + (targetTemp - rampStartTemp) * progress))
+        // Off-Pi simulation: time-based ramp that also fakes the temperature.
+        const rampNext = Math.min(rampDuration,
+          Math.floor((performance.now() - rampAnchorRef.current) / 1000))
+        setRampElapsed(rampNext)
+        if (rampNext >= rampDuration) {
+          setIsRamping(false)
+          setChamberTemp(targetTemp)
+          setHeating(false)
+        } else {
+          const progress = rampNext / rampDuration
+          setChamberTemp(Math.round(rampStartTemp + (targetTemp - rampStartTemp) * progress))
+        }
       }
-      return
+      // Timer Start = "On ramp start": the step timer runs THROUGH the ramp,
+      // so fall through to the phase-timer update below. "On target" steps
+      // (the default) keep the timer parked until the ramp ends.
+      if (phases[activePhase]?.timerMode !== 'on-ramp') return
     }
 
     // N2 purge phase (after drying)
@@ -456,11 +462,14 @@ export default function CureProcessPage() {
   // temperature actually reaches the target (the hardware cooling loop owns
   // the process — a zero/short step time must not cut it short).
   useEffect(() => {
-    if (!isRunning || isComplete || isRamping || n2Purging) return
+    if (!isRunning || isComplete || n2Purging) return
 
     const currentPhase = phases[activePhase]
     // Nitrogen phases are handled by N2 purge logic, skip here
     if (currentPhase?.type === 'nitrogen') return
+    // "On target" timers cannot finish during the ramp; an "On ramp start"
+    // timer counts through it and may expire before the target is reached.
+    if (isRamping && currentPhase?.timerMode !== 'on-ramp') return
 
     const maxSec = (currentPhase?.time ?? 1) * 60
     const phaseDone = currentPhase?.type === 'cooling'
@@ -468,6 +477,10 @@ export default function CureProcessPage() {
       : currentPhaseElapsed >= maxSec
 
     if (phaseDone) {
+      if (isRamping) {          // on-ramp timer expired mid-climb: end the ramp cleanly
+        setIsRamping(false)
+        setHeating(false)
+      }
       reportPhaseEnd(activePhase)
       if (activePhase < totalSteps - 1) {
         setActivePhase(prev => prev + 1)
@@ -767,7 +780,9 @@ export default function CureProcessPage() {
             <>
               <Badge className="bg-orange-500 text-white text-[10px]">{phases[activePhase]?.name ?? 'Heating'}</Badge>
               <span className="text-foreground font-bold text-sm">{hw.chamberTemp}°C → {targetTemp}°C</span>
-              <span className="text-muted-foreground text-xs">Timer starts at target</span>
+              <span className="text-muted-foreground text-xs">
+                {phases[activePhase]?.timerMode === 'on-ramp' ? 'Timer running — started with the ramp' : 'Timer starts at target'}
+              </span>
             </>
           ) : isRunning ? (
             <>
