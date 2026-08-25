@@ -71,6 +71,7 @@ export interface HdtStepResult {
   minTemp: number | null
   maxTemp: number | null
   timeToStabilitySec: number | null
+  rateCPerMin?: number | null
   durationSec: number | null
   startedAt: string | null
   endedAt: string | null
@@ -83,6 +84,7 @@ export interface HdtConfig {
   movingAverageWindowSec: number
   stabilityBandC: number
   stabilityTimeMin: number
+  stabilityMaxRateCPerMin: number
   maxStabilizationTimeMin: number
   hdtSafetyMarginC: number
   nextStepMaxTempDeltaC: number
@@ -102,6 +104,7 @@ export interface HdtStatus {
   totalSteps: number
   rawTemp: number | null
   avgTemp: number | null
+  rateCPerMin?: number | null
   stepElapsedSec: number
   totalElapsedSec: number
   startedAt: string | null
@@ -199,6 +202,9 @@ export async function getPicologStatus(): Promise<PicologStatus> {
 export async function hdtStart(params: {
   hdtC: number
   safetyMarginC?: number
+  stabilityBandC?: number
+  stabilityTimeMin?: number
+  stabilityMaxRateCPerMin?: number
   showOutputs?: boolean
 }): Promise<{ ok: boolean; message?: string } | null> {
   return postJson('/dev/hdt/start', params)

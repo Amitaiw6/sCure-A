@@ -64,6 +64,10 @@ const FINAL_STATUS_STYLE: Record<string, { label: string; cls: string; icon: typ
 export default function HdtCalibrationPage() {
   const [hdtC, setHdtC] = useState<number | null>(65)
   const [marginC, setMarginC] = useState<number | null>(2)
+  // Stability criteria (all editable before a run; defaults = server constants)
+  const [bandC, setBandC] = useState<number | null>(2)
+  const [stabMin, setStabMin] = useState<number | null>(5)
+  const [maxRate, setMaxRate] = useState<number | null>(0.5)   // degC/min, 0 = off
   const [pico, setPico] = useState<PicologStatus | null>(null)
   const [status, setStatus] = useState<HdtStatus | null>(null)
   const [samples, setSamples] = useState<HdtSample[]>([])
@@ -119,8 +123,12 @@ export default function HdtCalibrationPage() {
   const handleStart = async () => {
     setStartError(null)
     setExportState('idle')
-    devLog('Material HDT entered', { hdtC, marginC })
-    const res = await hdtStart({ hdtC: hdtC!, safetyMarginC: marginC ?? 2 })
+    devLog('Material HDT entered', { hdtC, marginC, bandC, stabMin, maxRate })
+    const res = await hdtStart({
+      hdtC: hdtC!, safetyMarginC: marginC ?? 2,
+      stabilityBandC: bandC ?? 2, stabilityTimeMin: stabMin ?? 5,
+      stabilityMaxRateCPerMin: maxRate ?? 0,
+    })
     if (!res?.ok) {
       setStartError(res?.message ?? 'Failed to start calibration (API unreachable)')
       return
@@ -191,12 +199,18 @@ export default function HdtCalibrationPage() {
         <div className="bg-card rounded-lg p-2.5 flex-1">
           <div className="flex items-center gap-3">
             <Thermometer size={16} className="text-amber-400 shrink-0" />
-            <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-1 items-center">
+            <div className="flex-1 grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-1 items-center">
               <span className="text-muted-foreground text-[11px]">Material HDT</span>
               {inSetup ? (
                 <TouchNumber value={hdtC} onChange={setHdtC} min={30} max={150} step={1} suffix="°C" className="w-[120px]" />
               ) : (
                 <span className="text-foreground text-sm font-bold">{effHdt}°C</span>
+              )}
+              <span className="text-muted-foreground text-[11px]">Stability Band</span>
+              {inSetup ? (
+                <TouchNumber value={bandC} onChange={setBandC} min={0.5} max={10} step={0.5} suffix="°C" className="w-[110px]" />
+              ) : (
+                <span className="text-foreground text-sm font-bold">{status?.config?.stabilityBandC ?? bandC}°C / {status?.config?.stabilityTimeMin ?? stabMin} min</span>
               )}
               <span className="text-muted-foreground text-[11px]">Safety Margin</span>
               {inSetup ? (
@@ -204,10 +218,28 @@ export default function HdtCalibrationPage() {
               ) : (
                 <span className="text-foreground text-sm font-bold">{effMargin}°C</span>
               )}
+              <span className="text-muted-foreground text-[11px]">Stability Time</span>
+              {inSetup ? (
+                <TouchNumber value={stabMin} onChange={setStabMin} min={1} max={30} step={1} suffix="min" className="w-[110px]" />
+              ) : (
+                <span className="text-muted-foreground text-[11px]">
+                  Rate now: <span className={`font-bold ${status?.rateCPerMin != null && (status.config?.stabilityMaxRateCPerMin ?? 0) > 0 && Math.abs(status.rateCPerMin) > (status.config?.stabilityMaxRateCPerMin ?? 0) ? 'text-amber-400' : 'text-foreground'}`}>
+                    {status?.rateCPerMin != null ? `${status.rateCPerMin >= 0 ? '+' : ''}${status.rateCPerMin.toFixed(2)}°C/min` : '--'}
+                  </span>
+                </span>
+              )}
               <span className="text-muted-foreground text-[11px]">Recommended Max Temp</span>
               <span className="text-orange-400 text-sm font-bold">
                 {effHdt != null && effMargin != null ? `${(effHdt - effMargin).toFixed(1)}°C` : '--'}
               </span>
+              <span className="text-muted-foreground text-[11px]">Max Rate</span>
+              {inSetup ? (
+                <TouchNumber value={maxRate} onChange={setMaxRate} min={0} max={5} step={0.1} suffix="°C/min" className="w-[110px]" />
+              ) : (
+                <span className="text-foreground text-sm font-bold">
+                  {(status?.config?.stabilityMaxRateCPerMin ?? maxRate ?? 0) > 0 ? `≤ ${(status?.config?.stabilityMaxRateCPerMin ?? maxRate)}°C/min` : 'off'}
+                </span>
+              )}
             </div>
           </div>
         </div>

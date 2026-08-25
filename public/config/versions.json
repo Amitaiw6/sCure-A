@@ -2,6 +2,14 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.5",
+      "date": "2026-08-25",
+      "notes": [
+        "HDT calibration: new stability criterion 'Max Rate' (°C/min) — the averaged temperature's slope over the stability window must also be ≤ X °C/min (default 0.5, 0 = off); Stability Band, Stability Time and Max Rate are now editable on the HDT screen before a run, and the live rate is shown while running",
+        "QA: 'HDT Rate-Of-Change Criterion' test"
+      ]
+    },
+    {
       "version": "0.6.4",
       "date": "2026-08-25",
       "notes": [

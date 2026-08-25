@@ -43,6 +43,10 @@ SAMPLING_INTERVAL_SEC = 1.0
 MOVING_AVERAGE_WINDOW_SEC = 10.0
 STABILITY_BAND_C = 2.0
 STABILITY_TIME_MIN = 5.0
+# Second stability criterion: the averaged temperature's rate of change
+# (linear-regression slope over the stability window) must not exceed this
+# many degC per minute. 0 = disabled (band + time only).
+STABILITY_MAX_RATE_C_PER_MIN = 0.5
 MAX_STABILIZATION_TIME_MIN = 30.0
 HDT_SAFETY_MARGIN_C = 2.0
 # Thermal condition between levels: LEDs off, wait until the averaged
@@ -67,10 +71,27 @@ _OVERRIDE_KEYS = {
     'movingAverageWindowSec': 'moving_average_window_sec',
     'stabilityBandC': 'stability_band_c',
     'stabilityTimeMin': 'stability_time_min',
+    'stabilityMaxRateCPerMin': 'stability_max_rate_c_per_min',
     'maxStabilizationTimeMin': 'max_stabilization_time_min',
     'nextStepMaxTempDeltaC': 'next_step_max_temp_delta_c',
     'cooldownMaxWaitMin': 'cooldown_max_wait_min',
 }
+
+
+def _slope_c_per_min(window):
+    """Least-squares slope (degC/min) of (monotonic_sec, avg) samples."""
+    n = len(window)
+    if n < 2:
+        return None
+    t0 = window[0][0]
+    xs = [(t - t0) / 60.0 for t, _ in window]
+    ys = [v for _, v in window]
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    den = sum((x - mx) ** 2 for x in xs)
+    if den <= 0:
+        return None
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den
 
 
 class _Abort(Exception): pass
@@ -167,6 +188,7 @@ class HdtCalibrationController:
                 'stepIndex': self.step_index,
                 'totalSteps': len(POWER_LEVELS),
                 'rawTemp': self._last_raw,
+                'rateCPerMin': self._last_rate,
                 'avgTemp': self._last_avg,
                 'stepElapsedSec': round(step_elapsed, 1),
                 'totalElapsedSec': round(total_elapsed, 1),
@@ -184,6 +206,7 @@ class HdtCalibrationController:
                     'movingAverageWindowSec': self.moving_average_window_sec,
                     'stabilityBandC': self.stability_band_c,
                     'stabilityTimeMin': self.stability_time_min,
+                    'stabilityMaxRateCPerMin': self.stability_max_rate_c_per_min,
                     'maxStabilizationTimeMin': self.max_stabilization_time_min,
                     'hdtSafetyMarginC': self.safety_margin_c,
                     'nextStepMaxTempDeltaC': self.next_step_max_temp_delta_c,
@@ -206,6 +229,7 @@ class HdtCalibrationController:
         self.message = 'Idle'
         self.running = False
         self.heater_fan_pwm = 0
+        self._last_rate = None
         self._fan_asserted_at = 0.0
         self.final_status = None
         self.hdt_c = None
@@ -214,6 +238,7 @@ class HdtCalibrationController:
         self.moving_average_window_sec = MOVING_AVERAGE_WINDOW_SEC
         self.stability_band_c = STABILITY_BAND_C
         self.stability_time_min = STABILITY_TIME_MIN
+        self.stability_max_rate_c_per_min = STABILITY_MAX_RATE_C_PER_MIN
         self.max_stabilization_time_min = MAX_STABILIZATION_TIME_MIN
         self.next_step_max_temp_delta_c = NEXT_STEP_MAX_TEMP_DELTA_C
         self.cooldown_max_wait_min = COOLDOWN_MAX_WAIT_MIN
@@ -332,6 +357,7 @@ class HdtCalibrationController:
                     'startTemp': None, 'stableTemp': None,
                     'minTemp': None, 'maxTemp': None,
                     'timeToStabilitySec': None, 'durationSec': None,
+                    'rateCPerMin': None,
                     'startedAt': None, 'endedAt': None,
                     'outputs': led_calibration.scaled_outputs(p, self.factors),
                 } for p in POWER_LEVELS]
@@ -406,6 +432,7 @@ class HdtCalibrationController:
             self._set_power(power)
             with self._lock:
                 self.state = 'WAITING_FOR_STABILITY'
+                self._last_rate = None
                 self.message = 'Waiting for thermal stabilization'
             window = deque()          # (mono_time, avg) inside the stability window
             need_sec = self.stability_time_min * 60
@@ -423,9 +450,15 @@ class HdtCalibrationController:
                 if max_t is None or avg > max_t: max_t = avg
                 covered = window and (now - window[0][0]) >= need_sec \
                     and (now - step_start_mono) >= need_sec
+                rate = _slope_c_per_min(window)
+                with self._lock:
+                    self._last_rate = rate
                 if covered:
                     vals = [v for _, v in window]
-                    if max(vals) - min(vals) <= self.stability_band_c:
+                    rate_ok = (self.stability_max_rate_c_per_min <= 0
+                               or (rate is not None
+                                   and abs(rate) <= self.stability_max_rate_c_per_min))
+                    if max(vals) - min(vals) <= self.stability_band_c and rate_ok:
                         stable = sum(vals) / len(vals)
                         with self._lock:
                             r = self.results[i]
@@ -434,6 +467,7 @@ class HdtCalibrationController:
                             r['minTemp'] = round(min(vals), 2)
                             r['maxTemp'] = round(max(vals), 2)
                             r['timeToStabilitySec'] = round(now - step_start_mono, 1)
+                            r['rateCPerMin'] = round(rate, 3) if rate is not None else None
                             r['durationSec'] = round(now - step_start_mono, 1)
                             r['endedAt'] = datetime.now().isoformat(timespec='seconds')
                             self.state = 'STABLE'

@@ -533,6 +533,7 @@ const TEST_CATEGORIES = [
       { id: 'dev_picolog_status', name: 'PicoLog TC-08 Status', desc: 'GET /api/dev/picolog/status publishes connected, ch1Available, temperature (a finite number only when CH1 is valid, else null + an error reason) — the fields the HDT setup screen gates Start Calibration on', check: 'dev_picolog_status' },
       { id: 'dev_hdt_gate', name: 'HDT Start Gate', desc: 'POST /api/dev/hdt/start refuses an invalid material HDT and (when CH1 has no valid temperature) refuses to start at all; /api/dev/hdt/status stays IDLE/not running with the 10-90% level list and the configurable stability/timeout/margin constants', check: 'dev_hdt_gate' },
       { id: 'dev_hdt_heater_fan', name: 'HDT Heater Fan 100%', desc: 'During an HDT calibration run the chamber heater fan (FAN_HEATER) is driven at 100% — /api/dev/hdt/status.heaterFanPwm = 100 and /api/state.fans.chamber_heating = 100 while running — and released to 0% when the run ends (abort). Skipped (pass with note) when CH1 is not available', check: 'dev_hdt_heater_fan' },
+      { id: 'dev_hdt_rate_criterion', name: 'HDT Rate-Of-Change Criterion', desc: 'Stability needs BOTH the 2°C/5 min band and |slope| <= stabilityMaxRateCPerMin (default 0.5 °C/min, 0 = off): /api/dev/hdt/status.config publishes the value and the live rateCPerMin; logic check: a 5-min window rising 1.96°C (0.4°C/min) passes at 0.5 but fails at 0.3, a flat window passes, rate 0 disables the check', check: 'dev_hdt_rate_criterion' },
       { id: 'dev_hdt_recommend', name: 'HDT Recommendation Logic', desc: 'Recommended power = highest PASS level whose stable temp <= HDT − safety margin (spec example: HDT 65, margin 2, 60% → 61°C passes, 70% hits the limit → 60%); levels after an HDT LIMIT stay NOT TESTED; an all-NOT_CONVERGED run yields no recommendation', check: 'dev_hdt_recommend' },
     ]
   },
@@ -1703,6 +1704,33 @@ async function runSingleTest(test) {
       const elapsed = Date.now() - t0;
       const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
         : { status: 'pass', msg: 'heater fan 100% while running, 0% after abort' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_hdt_rate_criterion') {
+      const problems = [];
+      const st = await fetch(apiUrl + '/api/dev/hdt/status', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      if (!st) problems.push('status endpoint unreachable');
+      else {
+        if (!st.config || st.config.stabilityMaxRateCPerMin !== 0.5) problems.push('default stabilityMaxRateCPerMin = ' + (st.config && st.config.stabilityMaxRateCPerMin));
+        if (!('rateCPerMin' in st)) problems.push('status has no rateCPerMin');
+      }
+      // Mirror of hdt_calibration._slope_c_per_min + the combined criterion
+      const slope = (w) => { const n = w.length, t0 = w[0][0]; const xs = w.map(p => (p[0] - t0) / 60), ys = w.map(p => p[1]); const mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n; const den = xs.reduce((a, x) => a + (x - mx) ** 2, 0); return xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / den; };
+      const stable = (w, band, maxRate) => { const v = w.map(p => p[1]); const r = slope(w); return Math.max(...v) - Math.min(...v) <= band && (maxRate <= 0 || Math.abs(r) <= maxRate); };
+      const rising = Array.from({ length: 301 }, (_, i) => [i, 30 + 1.96 * i / 300]);   // +1.96°C over 5 min = 0.39°C/min
+      const flat = Array.from({ length: 301 }, (_, i) => [i, 31 + 0.1 * Math.sin(i / 7)]);
+      if (Math.abs(slope(rising) - 0.392) > 0.01) problems.push('slope of the rising window = ' + slope(rising).toFixed(3));
+      if (!stable(rising, 2, 0.5)) problems.push('0.39°C/min rejected at max 0.5');
+      if (stable(rising, 2, 0.3)) problems.push('0.39°C/min accepted at max 0.3');
+      if (!stable(flat, 2, 0.1)) problems.push('flat window rejected');
+      if (!stable(rising, 2, 0)) problems.push('rate 0 did not disable the check');
+      if (stable(rising, 1, 0)) problems.push('band still enforced? 1.96°C passed a 1°C band');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: 'default 0.5°C/min published; slope + band criterion behaves (0.39°C/min: pass@0.5, fail@0.3; 0 = off)' };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       return;
