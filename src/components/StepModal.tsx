@@ -46,9 +46,14 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
   const [uvStartMode, setUvStartMode] = useState<UvStartMode>('at-target')
   const [, setUvRampPercent] = useState<number>(50)
   const [coolingMode, setCoolingMode] = useState<CoolingMode>('medium')
+  // Cure/Bleacher: chamber heating on/off; when off, optional fresh-air
+  // ventilation (damper + intake fan, like cooling's airflow)
+  const [heatOn, setHeatOn] = useState(true)
+  const [ventilation, setVentilation] = useState(false)
 
   useEffect(() => {
     if (editStep) {
+      const isCB = editStep.processType === 'Cure' || editStep.processType === 'Bleacher'
       setProcessType(editStep.processType)
       setTempValue(editStep.temperature ?? null)
       setIntensityValue(editStep.intensity ?? null)
@@ -58,6 +63,8 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setUvStartMode(editStep.uvStartMode ?? 'at-target')
       setUvRampPercent(editStep.uvRampPercent ?? 50)
       setCoolingMode(editStep.coolingMode ?? 'medium')
+      setHeatOn(isCB ? editStep.temperature != null : true)
+      setVentilation(editStep.ventilation ?? false)
     } else {
       setProcessType('Cooling')
       setTempValue(25)
@@ -68,6 +75,8 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       setUvStartMode('at-target')
       setUvRampPercent(50)
       setCoolingMode('medium')
+      setHeatOn(true)
+      setVentilation(false)
     }
   }, [editStep, isOpen])
 
@@ -101,6 +110,8 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
 
   const isCureOrBleacher = processType === 'Cure' || processType === 'Bleacher'
   const showIntensity = processType === 'Cure' || processType === 'Bleacher'
+  // UV-only step: Cure/Bleacher with chamber heating switched off
+  const noHeat = isCureOrBleacher && !heatOn
 
   const handleSave = () => {
     const data: Omit<StepData, 'id'> = {
@@ -108,13 +119,14 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
       processType,
       time,
     }
-    if (tempValue !== null) data.temperature = tempValue
+    if (tempValue !== null && !noHeat) data.temperature = tempValue
     if (processType === 'Cooling') data.coolingMode = coolingMode
     if (showIntensity && intensityValue !== null) data.intensity = intensityValue
     if (isCureOrBleacher) {
       data.timerMode = timerMode
       data.uvIntensity = uvIntensity ?? 30
       data.uvStartMode = uvStartMode
+      if (noHeat) data.ventilation = ventilation
     }
     onSave(data)
   }
@@ -145,8 +157,40 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             </Select>
           </div>
 
-          {/* Temperature (hidden for Nitrogen) */}
-          {processType !== 'Nitrogen' && (
+          {/* Cure/Bleacher: chamber heating on/off (off = UV only) */}
+          {isCureOrBleacher && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Chamber Heating</label>
+              <Select value={heatOn ? 'on' : 'off'} onValueChange={v => setHeatOn(v === 'on')}>
+                <SelectTrigger className="w-[160px] h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="on">On</SelectItem>
+                  <SelectItem value="off">Off (UV only)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* No-heat UV step: fresh-air ventilation (damper + intake fan) */}
+          {noHeat && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">Ventilation</label>
+              <Select value={ventilation ? 'on' : 'off'} onValueChange={v => setVentilation(v === 'on')}>
+                <SelectTrigger className="w-[160px] h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off</SelectItem>
+                  <SelectItem value="on">On (fresh air)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Temperature (hidden for Nitrogen and no-heat UV steps) */}
+          {processType !== 'Nitrogen' && !noHeat && (
             <div className="flex items-center justify-between gap-4">
               <label className="text-foreground text-sm whitespace-nowrap">
                 {processType === 'Cooling' ? 'Target Temp' : 'Temperature'}
@@ -219,8 +263,25 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
             </div>
           )}
 
-          {/* Heating-only options */}
+          {/* UV intensity — always shown for Cure/Bleacher */}
           {isCureOrBleacher && (
+            <div className="flex items-center justify-between gap-4">
+              <label className="text-foreground text-sm whitespace-nowrap">UV Intensity</label>
+              <TouchNumber
+                value={uvIntensity ?? 30}
+                onChange={v => setUvIntensity(v)}
+                min={UV_MIN_INTENSITY}
+                max={100}
+                step={5}
+                suffix="%"
+                className="w-[160px]"
+              />
+            </div>
+          )}
+
+          {/* Ramp-related options — meaningless without heating (no ramp:
+              the timer and the UV both start immediately) */}
+          {isCureOrBleacher && !noHeat && (
             <>
               {/* Timer Mode */}
               <div className="flex items-center justify-between gap-4">
@@ -234,20 +295,6 @@ export default function StepModal({ isOpen, onClose, onSave, onDelete, editStep,
                     <SelectItem value="on-target">At temperature</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              {/* UV intensity + start mode */}
-              <div className="flex items-center justify-between gap-4">
-                <label className="text-foreground text-sm whitespace-nowrap">UV Intensity</label>
-                <TouchNumber
-                  value={uvIntensity ?? 30}
-                  onChange={v => setUvIntensity(v)}
-                  min={UV_MIN_INTENSITY}
-                  max={100}
-                  step={5}
-                  suffix="%"
-                  className="w-[160px]"
-                />
               </div>
 
               <div className="flex items-center justify-between gap-4">

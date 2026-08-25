@@ -12,6 +12,7 @@ export interface StepData {
   id: string
   stepNumber: number
   processType: ProcessType
+  /** absent on a Cure/Bleacher step = UV only, no chamber heating */
   temperature?: number
   intensity?: number
   time: number
@@ -20,6 +21,8 @@ export interface StepData {
   uvStartMode?: UvStartMode
   uvRampPercent?: number
   coolingMode?: CoolingMode
+  /** No-heat Cure/Bleacher only: fresh-air ventilation during the UV exposure */
+  ventilation?: boolean
 }
 
 interface StepCardProps {
@@ -65,6 +68,9 @@ export default function StepCard({ step, onEdit }: StepCardProps) {
       <div className="text-[11px] text-muted-foreground space-y-0.5">
         {step.temperature != null && (
           <p>{step.processType === 'Cooling' ? 'Target' : 'Temp'}: <span className="text-foreground font-semibold">{step.temperature}°C</span></p>
+        )}
+        {(step.processType === 'Cure' || step.processType === 'Bleacher') && step.temperature == null && (
+          <p>Heat: <span className="text-foreground font-semibold">Off</span> · Vent: <span className={cn('font-semibold', step.ventilation ? 'text-teal-400' : 'text-foreground')}>{step.ventilation ? 'On' : 'Off'}</span></p>
         )}
         {step.processType === 'Cooling' && step.coolingMode && (
           <p>Mode: <span className="text-foreground font-semibold capitalize">{step.coolingMode}</span></p>

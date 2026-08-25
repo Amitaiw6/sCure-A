@@ -14,7 +14,7 @@ import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
 import type { CoolingMode, TimerMode, UvStartMode } from '@/context/MaterialContext'
 import {
-  heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450,
+  heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450, cureUvOnly,
   coolToTargetTemperature, stopCureOutputs, doorOpen, setNitrogenValve,
   reportPhaseTiming,
 } from '@/services/hardware-api'
@@ -109,10 +109,10 @@ export default function CureProcessPage() {
   const phases = useMemo(() => {
     if (steps.length === 0) {
       return [
-        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
-        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
-        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
-        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode },
+        { name: 'Heating', type: 'heating' as PhaseType, temp: 80, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode, vent: false },
+        { name: 'Drying', type: 'drying' as PhaseType, temp: 80, intensity: 30, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode, vent: false },
+        { name: 'Cure', type: 'cure' as PhaseType, temp: null, intensity: 50, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode, vent: false },
+        { name: 'Cooling', type: 'cooling' as PhaseType, temp: 25, intensity: null, time: 1, coolingMode: 'medium' as CoolingMode, uvStartMode: 'at-target' as UvStartMode, timerMode: 'on-target' as TimerMode, vent: false },
       ]
     }
     // Skip Nitrogen steps if nitrogen is not enabled on the system
@@ -121,6 +121,7 @@ export default function CureProcessPage() {
       .map(s => ({
         name: s.process,
         type: s.process.toLowerCase() as PhaseType,
+        // null on a Cure/Bleacher step = UV only, no chamber heating
         temp: s.temperature,
         // StepModal stores the user's UV value in uvIntensity; legacy rows may
         // still carry it in intensity. The hardware expects 5-100%.
@@ -131,6 +132,8 @@ export default function CureProcessPage() {
         // Timer Start: 'on-ramp' = the step timer runs through the ramp;
         // 'on-target' (default) = it starts only at the target temperature.
         timerMode: (s.timerMode ?? 'on-target') as TimerMode,
+        // No-heat UV steps: fresh-air ventilation (damper + intake fan)
+        vent: !!s.ventilation,
       }))
   }, [steps, hw.nitrogenMode])
 
@@ -151,12 +154,15 @@ export default function CureProcessPage() {
     switch (phase.type) {
       case 'heating': res = await heatToTargetTemperature(temp); break
       case 'drying': res = await dryToTargetTemperature(temp); break
+      // temp == null on cure/bleacher: UV only — no heater, optional fresh-air vent
       case 'cure':
-        res = deferUv ? await heatToTargetTemperature(temp)
+        res = phase.temp == null ? await cureUvOnly(405, phase.intensity ?? 30, phase.vent)
+            : deferUv ? await heatToTargetTemperature(temp)
                       : await cureUv405(temp, phase.intensity ?? 30)
         break
       case 'bleacher':
-        res = deferUv ? await heatToTargetTemperature(temp)
+        res = phase.temp == null ? await cureUvOnly(450, phase.intensity ?? 30, phase.vent)
+            : deferUv ? await heatToTargetTemperature(temp)
                       : await cureUv450(temp, phase.intensity ?? 30)
         break
       case 'cooling': res = await coolToTargetTemperature(phase.temp ?? AMBIENT_TEMP, phase.coolingMode); break
@@ -675,13 +681,14 @@ export default function CureProcessPage() {
       }
     }
     if (phase.type === 'cure') {
+      const ventNote = phase.temp == null ? (phase.vent ? ' (no heat, vented)' : ' (no heat)') : ''
       return {
         gaugeValue: '',
         gaugeLabel: '',
         gaugeProgress: status === 'completed' ? 100 : progress,
         rangeStart: '0%',
         rangeEnd: `${phase.intensity ?? 100}%`,
-        statusText: status === 'active' ? `UV curing at ${phase.intensity}%...` : status === 'completed' ? 'Done' : 'Waiting...',
+        statusText: status === 'active' ? `UV curing at ${phase.intensity}%${ventNote}...` : status === 'completed' ? 'Done' : 'Waiting...',
       }
     }
     if (phase.type === 'nitrogen') {
@@ -838,6 +845,8 @@ export default function CureProcessPage() {
               secElapsed={String(secE).padStart(2, '0')}
               percentComplete={`${Math.round(phaseProgress)}%`}
               onAbort={getPhaseStatus(i) === 'active' ? () => setShowAbort(true) : undefined}
+              centerLabel={(phase.type === 'cure' || phase.type === 'bleacher') && phase.temp == null
+                ? (phase.vent ? 'UV + VENT' : 'UV ONLY') : undefined}
             />
           )
         })}

@@ -8,6 +8,7 @@ export type CoolingMode = 'fast' | 'medium' | 'slow'
 export interface CureStep {
   step: number
   process: 'Heating' | 'Drying' | 'Cure' | 'Cooling' | 'Bleacher' | 'Nitrogen'
+  /** null on a Cure/Bleacher step = UV only, no chamber heating */
   temperature: number | null
   intensity: number | null
   time: number
@@ -16,6 +17,8 @@ export interface CureStep {
   uvStartMode?: UvStartMode
   uvRampPercent?: number
   coolingMode?: CoolingMode
+  /** No-heat Cure/Bleacher only: fresh-air ventilation (damper + intake fan) during the UV exposure */
+  ventilation?: boolean
 }
 
 export interface Material {
@@ -46,19 +49,22 @@ const API_BASE = 'http://localhost:3001'
 
 // CSV generation — only used for user export/download
 export function stepsToCsv(steps: CureStep[]): string {
-  const header = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode'
+  const header = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode,Ventilation'
   const rows = steps.map(s => {
     const isCureOrBleacher = s.process === 'Cure' || s.process === 'Bleacher'
+    // Temperature "off" on a Cure/Bleacher row = UV only, no chamber heating
+    const noHeat = isCureOrBleacher && s.temperature == null
     return [
       s.step,
       s.process,
-      s.process === 'Nitrogen' ? '' : (s.temperature ?? ''),
+      s.process === 'Nitrogen' ? '' : noHeat ? 'off' : (s.temperature ?? ''),
       s.process === 'Cooling' || s.process === 'Nitrogen' ? '' : s.time,
       isCureOrBleacher ? (s.timerMode ?? 'on-target') : '',
       isCureOrBleacher ? (s.uvIntensity ?? 30) : '',
       isCureOrBleacher ? (s.uvStartMode ?? 'at-target') : '',
       '',
       s.process === 'Cooling' ? (s.coolingMode ?? 'medium') : '',
+      noHeat ? (s.ventilation ? 'on' : 'off') : '',
     ].join(',')
   })
   return [header, ...rows].join('\n')
@@ -129,10 +135,14 @@ export function parseCsv(csvContent: string): CsvParseResult {
       continue
     }
 
+    // Temperature "off" on a Cure/Bleacher row = UV only, no chamber heating.
+    const noHeat = (proc === 'Cure' || proc === 'Bleacher')
+      && cols[2].toLowerCase() === 'off'
+
     // Temperature validation — hardware limits: the heater refuses targets
     // below 30°C (heating.target_min); the chamber cannot cool below ambient
     // (~30°C) either, so cooling targets are 30-75°C.
-    const temp = cols[2] ? Number(cols[2]) : null
+    const temp = !noHeat && cols[2] ? Number(cols[2]) : null
     if (temp !== null) {
       const [tMin, tMax] = proc === 'Cooling' ? [30, 75] : [30, 80]
       if (isNaN(temp) || temp < tMin || temp > tMax) {
@@ -140,7 +150,7 @@ export function parseCsv(csvContent: string): CsvParseResult {
         continue
       }
     }
-    step.temperature = temp ?? (proc === 'Cooling' ? 25 : 40)
+    step.temperature = noHeat ? null : (temp ?? (proc === 'Cooling' ? 25 : 40))
 
     if (proc === 'Cooling') {
       const cm = cols[8] || ''
@@ -178,6 +188,11 @@ export function parseCsv(csvContent: string): CsvParseResult {
       const rp = cols[7] ? Number(cols[7]) : null
       if (rp !== null && !isNaN(rp) && rp >= 10 && rp <= 100) {
         step.uvRampPercent = rp
+      }
+
+      // Fresh-air ventilation (only meaningful on a no-heat UV step)
+      if (noHeat) {
+        step.ventilation = (cols[9] || '').toLowerCase() === 'on'
       }
     }
 

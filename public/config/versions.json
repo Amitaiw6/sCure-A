@@ -2,6 +2,17 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.0",
+      "date": "2026-08-25",
+      "notes": [
+        "Cure/Bleaching steps can now run WITHOUT chamber heating: 'Chamber Heating: Off (UV only)' in the step editor and the program builder — the heater stays off, UV and the step timer start immediately",
+        "No-heat UV steps get a 'Ventilation' option: On opens the damper and runs the chamber intake fan (fresh outside air, the same airflow path as cooling) for the whole UV exposure; released automatically at step end / stop / abort / next step",
+        "Ventilation fan duty configurable via components.json ventilation.fan_pwm (default 60%)",
+        "CSV format: Temperature 'off' on a Cure/Bleaching row = no heating; new 'Ventilation' column (on/off)",
+        "New API: POST /api/cure/uv-only?wavelength=405|450&intensity=..&vent=0|1; /api/state exposes ventOn"
+      ]
+    },
+    {
       "version": "0.5.0",
       "date": "2026-08-25",
       "notes": [

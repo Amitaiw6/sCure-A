@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
-import { useMaterials } from '@/context/MaterialContext'
+import { useMaterials, stepsToCsv } from '@/context/MaterialContext'
 import { exportCsvToUsb } from '@/services/hardware-api'
 import type { CureStep, Material } from '@/context/MaterialContext'
 
@@ -94,7 +94,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     setSteps(prev => prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, step: i + 1 })))
   }
 
-  const updateStep = (index: number, field: keyof CureStep, value: string | number | null) => {
+  const updateStep = (index: number, field: keyof CureStep, value: string | number | boolean | null) => {
     setSteps(prev => prev.map((s, i) => {
       if (i !== index) return s
       if (field === 'process') {
@@ -212,24 +212,9 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     return true
   }
 
-  const generateCsv = () => {
-    const header = 'Step,Process,Temperature,Time,TimerMode,UVIntensity,UVStart,UVRampPercent,CoolingMode'
-    const rows = steps.map(s => {
-      const isCureOrBleacher = s.process === 'Cure' || s.process === 'Bleacher'
-      return [
-        s.step,
-        s.process,
-        s.process === 'Nitrogen' ? '' : (s.temperature ?? ''),
-        s.process === 'Cooling' || s.process === 'Nitrogen' ? '' : s.time,
-        isCureOrBleacher ? (s.timerMode ?? 'on-target') : '',
-        isCureOrBleacher ? (s.uvIntensity ?? 30) : '',
-        isCureOrBleacher ? (s.uvStartMode ?? 'at-target') : '',
-        '',
-        s.process === 'Cooling' ? (s.coolingMode ?? 'medium') : '',
-      ].join(',')
-    })
-    return [header, ...rows].join('\n')
-  }
+  // Single CSV serializer for the whole app (handles the no-heat/Ventilation
+  // columns too) — see MaterialContext.stepsToCsv.
+  const generateCsv = () => stepsToCsv(steps)
 
   const browserDownloadCsv = (csv: string, filename: string) => {
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -421,15 +406,55 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                       </div>
                     </>
                   ) : (
-                    <div className="flex items-center justify-between gap-3">
-                      <label className="text-foreground text-sm">Temperature</label>
-                      <TouchNumber
-                        value={step.temperature}
-                        onChange={v => updateStepTemp(i, v ?? getMinTemp(i))}
-                        min={getMinTemp(i)} max={80} step={5} suffix="°C"
-                        className="w-[140px]"
-                      />
-                    </div>
+                    <>
+                      {/* Cure/Bleacher: chamber heating on/off (off = UV only) */}
+                      {(step.process === 'Cure' || step.process === 'Bleacher') && (
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-foreground text-sm">Chamber Heating</label>
+                          <Select
+                            value={step.temperature == null ? 'off' : 'on'}
+                            onValueChange={v => updateStep(i, 'temperature',
+                              v === 'off' ? null : Math.max(40, getMinTemp(i)))}
+                          >
+                            <SelectTrigger className="w-[140px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" side="bottom" sideOffset={4}>
+                              <SelectItem value="on">On</SelectItem>
+                              <SelectItem value="off">Off (UV only)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {(step.process === 'Cure' || step.process === 'Bleacher') && step.temperature == null ? (
+                        /* No-heat UV step: fresh-air ventilation instead of a target temp */
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-foreground text-sm">Ventilation</label>
+                          <Select
+                            value={step.ventilation ? 'on' : 'off'}
+                            onValueChange={v => updateStep(i, 'ventilation', v === 'on')}
+                          >
+                            <SelectTrigger className="w-[140px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" side="bottom" sideOffset={4}>
+                              <SelectItem value="off">Off</SelectItem>
+                              <SelectItem value="on">On (fresh air)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-foreground text-sm">Temperature</label>
+                          <TouchNumber
+                            value={step.temperature}
+                            onChange={v => updateStepTemp(i, v ?? getMinTemp(i))}
+                            min={getMinTemp(i)} max={80} step={5} suffix="°C"
+                            className="w-[140px]"
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {false && (step.process === 'Cure' || step.process === 'Bleacher') && (
@@ -456,21 +481,24 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                     </div>
                   )}
 
-                  {/* Cure/Bleacher options */}
+                  {/* Cure/Bleacher options — the ramp-related selects are
+                      meaningless on a no-heat step (timer + UV start immediately) */}
                   {(step.process === 'Cure' || step.process === 'Bleacher') && (
                     <>
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-foreground text-sm">Timer Start</label>
-                        <Select value={step.timerMode ?? 'on-target'} onValueChange={v => updateStep(i, 'timerMode', v)}>
-                          <SelectTrigger className="w-[140px] h-9">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent position="popper" side="bottom" sideOffset={4}>
-                            <SelectItem value="on-ramp">On ramp start</SelectItem>
-                            <SelectItem value="on-target">At temperature</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {step.temperature != null && (
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-foreground text-sm">Timer Start</label>
+                          <Select value={step.timerMode ?? 'on-target'} onValueChange={v => updateStep(i, 'timerMode', v)}>
+                            <SelectTrigger className="w-[140px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" side="bottom" sideOffset={4}>
+                              <SelectItem value="on-ramp">On ramp start</SelectItem>
+                              <SelectItem value="on-target">At temperature</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between gap-3">
                         <label className="text-foreground text-sm">UV Intensity</label>
@@ -482,18 +510,20 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
                         />
                       </div>
 
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-foreground text-sm">UV Start</label>
-                        <Select value={step.uvStartMode ?? 'at-target'} onValueChange={v => updateStep(i, 'uvStartMode', v)}>
-                          <SelectTrigger className="w-[140px] h-9">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent position="popper" side="bottom" sideOffset={4}>
-                            <SelectItem value="at-start">On ramp start</SelectItem>
-                            <SelectItem value="at-target">At temperature</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {step.temperature != null && (
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-foreground text-sm">UV Start</label>
+                          <Select value={step.uvStartMode ?? 'at-target'} onValueChange={v => updateStep(i, 'uvStartMode', v)}>
+                            <SelectTrigger className="w-[140px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" side="bottom" sideOffset={4}>
+                              <SelectItem value="at-start">On ramp start</SelectItem>
+                              <SelectItem value="at-target">At temperature</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

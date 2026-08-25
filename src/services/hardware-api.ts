@@ -159,6 +159,13 @@ export async function cureUv450(targetC: number, intensityPct: number) {
   return apiCall(`/cure/cure-450?target=${targetC}&intensity=${intensityPct}`)
 }
 
+/** 3b. UV-only step (no chamber heating). `vent` opens the damper and runs
+ *  the chamber intake fan — fresh outside air like cooling's airflow — for
+ *  the duration of the UV exposure. */
+export async function cureUvOnly(wavelength: 405 | 450, intensityPct: number, vent: boolean) {
+  return apiCall(`/cure/uv-only?wavelength=${wavelength}&intensity=${intensityPct}&vent=${vent ? 1 : 0}`)
+}
+
 /** 4. Cool the chamber to a target temperature (°C) in a mode. Ends when reached. */
 export async function coolToTargetTemperature(targetC: number, mode: 'fast' | 'medium' | 'slow') {
   return apiCall(`/cure/cool?target=${targetC}&mode=${mode}`)

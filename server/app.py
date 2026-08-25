@@ -106,6 +106,7 @@ class HardwareController:
         self.damper_open = False
         self.nitrogen_on = False
         self.bofa_on = False
+        self.vent_on = False            # no-heat UV fresh-air ventilation
         self._door_reclose_at = None      # sim: door re-reads closed after release
         self.fans = {
             'led_cooling': 0,
@@ -158,6 +159,7 @@ class HardwareController:
             'uvIntensity': self.uv_intensity,          # logical system power %
             'uvWavelength': self.uv_wavelength,
             'uvOutputs': self.uv_outputs,              # per-zone physical %
+            'ventOn': self.vent_on,                    # no-heat UV fresh-air vent
             'damperOpen': self.damper_open,
             'fans': self.fans,
             'fanRpm': {k: (2850 if v > 0 else 0) for k, v in self.fans.items()},
@@ -319,6 +321,22 @@ class HardwareController:
         self.set_uv(True, intensity_pct, 450)
         return True, None
 
+    def cure_uv_only(self, intensity_pct, wavelength, vent=False):
+        """UV step with NO chamber heating; `vent` = fresh-air ventilation
+        (damper open + chamber intake fan) for the whole exposure."""
+        self.target_temp = None
+        if self.bridge:
+            ok, why = self.bridge.cure_uv_only(intensity_pct, wavelength, vent)
+            self.vent_on = ok and bool(vent)
+            return ok, why
+        self.set_heating(False)
+        self.set_cooling(False)
+        self.set_uv(True, intensity_pct, wavelength)
+        self.vent_on = bool(vent)
+        self.damper_open = bool(vent)
+        self.fans['chamber_intake'] = 60 if vent else 0
+        return True, None
+
     def cool_to_target_temperature(self, target_c, mode):
         """Cool the chamber to target_c in mode (fast/medium/slow). Ends when reached."""
         self.target_temp = target_c
@@ -334,14 +352,16 @@ class HardwareController:
         return True, None
 
     def stop_all(self, immediate=False):
-        """Stop every cure output (heater, UV, cooling, N2).
+        """Stop every cure output (heater, UV, cooling, N2, ventilation).
         immediate=True (abort): no heater-fan run-on."""
         self.nitrogen_on = False
+        self.vent_on = False
         if self.bridge:
             return self.bridge.stop_all(immediate)
         self.set_uv(False)
         self.set_heating(False)
         self.set_cooling(False)
+        self.damper_open = False
         self.fans['led_cooling'] = 0
         self.fans['chamber_intake'] = 0
         return True, None
@@ -1281,6 +1301,25 @@ def cure_450():
                         'message': f'Invalid intensity {intensity} ({UV_INTENSITY_MIN}-100%)'})
     ok, why = hw.cure_uv_450(target, intensity)
     return _hw_result(ok, why, f'Bleaching UV 450nm @ {intensity}%, {target}°C')
+
+@app.route('/api/cure/uv-only', methods=['POST'])
+def cure_uv_only():
+    """Cure/Bleaching with NO chamber heating:
+    ?wavelength=405|450&intensity=10-100&vent=0|1.
+    vent=1 opens the damper and runs the chamber intake fan (fresh outside
+    air, like cooling's airflow) for the duration of the UV exposure."""
+    intensity = int(request.args.get('intensity', 30))
+    wavelength = int(request.args.get('wavelength', 405))
+    vent = request.args.get('vent', '0') not in ('0', 'false', '')
+    if not _valid_intensity(intensity):
+        return jsonify({'ok': False, 'code': ERR_INVALID_UV_INTENSITY,
+                        'message': f'Invalid intensity {intensity} ({UV_INTENSITY_MIN}-100%)'})
+    if wavelength not in (405, 450):
+        return jsonify({'ok': False, 'message': f'Invalid wavelength {wavelength} (405|450)'})
+    ok, why = hw.cure_uv_only(intensity, wavelength, vent)
+    return _hw_result(ok, why, f'UV {wavelength}nm @ {intensity}% — no heating'
+                      + (', fresh-air vent' if vent else ''))
+
 
 @app.route('/api/cure/cool', methods=['POST'])
 def cure_cool():

@@ -45,6 +45,12 @@ FAST_COOL_LED_FAN_PWM = 100
 # moment any other step (heat / cure / cool / stop) takes over.
 DRY_INTAKE_FAN_PWM = 30
 
+# UV-only ventilation (cure/bleaching with NO chamber heating): damper OPEN +
+# chamber intake fan pulling fresh outside air - the same airflow path cooling
+# uses, but with no cooling loop/target; it runs for the whole UV exposure.
+# components.json "ventilation.fan_pwm" overrides; 0 disables.
+VENT_FAN_PWM = 60
+
 # UI fan names -> PCA9685 fan channels (io_controller PCA_CHANNELS)
 FAN_GROUPS = {
     'led_cooling':     ['FAN_LEFT', 'FAN_RIGHT', 'FAN_BACK', 'FAN_DOOR'],
@@ -299,6 +305,7 @@ class IOBridge:
         self._cooling_mode = None         # UI mode name while cooling is active
         self._cool_led_fans = False       # LED fans boosting a FAST cool
         self._uv = {'on': False, 'intensity': 0, 'wavelength': None}
+        self._vent_on = False             # fresh-air vent during a no-heat UV step
         self._fan_duty = {name: 0 for name in FAN_GROUPS}   # last commanded %
         self._n2_on = False               # nitrogen valve state (GPIO13)
         self._bofa_on = False             # BOFA extraction (PCA ch 10)
@@ -405,6 +412,7 @@ class IOBridge:
             'uvIntensity': self._uv['intensity'],          # logical system power %
             'uvWavelength': self._uv['wavelength'],
             'uvOutputs': self._uv.get('outputs'),          # per-zone physical %
+            'ventOn': self._vent_on,                       # no-heat UV fresh-air vent
 
             'damperOpen': self._damper_open,
             'fans': dict(self._fan_duty),
@@ -471,6 +479,41 @@ class IOBridge:
             return True, None
 
     # ------------------------------------------------------------------
+    #  UV-only ventilation (no-heat cure): damper + intake fan together
+    # ------------------------------------------------------------------
+    def set_ventilation(self, on):
+        """Fresh-air ventilation for a UV-only (no chamber heating) step:
+        damper OPEN + chamber intake fan at VENT_FAN_PWM, pulling outside air
+        like cooling's airflow. Refused while the cooling loop owns the fan."""
+        want = bool(on)
+        if want == self._vent_on:
+            return True, None
+        if want and self.sys.cooling_status().get('active'):
+            return False, 'cooling owns the airflow while it is active'
+        pwm = self.sys.config.get('ventilation', {}).get('fan_pwm', VENT_FAN_PWM)
+        try:
+            pwm = max(0, min(100, float(pwm)))
+        except (TypeError, ValueError):
+            pwm = VENT_FAN_PWM
+        if want:
+            if pwm <= 0:
+                return False, 'ventilation disabled (ventilation.fan_pwm = 0)'
+            ok, why = self.set_damper(True)
+            if not ok:
+                return False, why
+            ok, why = self.set_fan_speed('chamber_intake', pwm)
+            if not ok:
+                self.set_damper(False)
+                return False, why
+        else:
+            self.set_fan_speed('chamber_intake', 0)
+            self.set_damper(False)
+        self._vent_on = want
+        state = f'ON (damper open, intake {pwm:.0f}%)' if want else 'OFF'
+        print(f'[API] UV ventilation -> {state}', flush=True)
+        return True, None
+
+    # ------------------------------------------------------------------
     #  Heating / drying (closed loop, heater safety pre-flight inside)
     # ------------------------------------------------------------------
     def _start_dry_fan(self):
@@ -495,6 +538,7 @@ class IOBridge:
             self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             self.sys.stop_cooling('user')
+            self.set_ventilation(False)   # release a UV-only vent (fan + damper)
             self.set_damper(False)        # vent stays closed while heating
             return self.temp.start(target_c)
 
@@ -511,6 +555,7 @@ class IOBridge:
             self._door_abort_ts = None    # new process: clear the door abort
             self.set_uv(False)
             self.sys.stop_cooling('user')
+            self.set_ventilation(False)   # release a UV-only vent (fan + damper)
             self.set_damper(False)        # closed until the target is reached
             ok, why = self.temp.start(target_c)
             self._drying = bool(ok)       # arm the at-temperature damper + fan
@@ -564,6 +609,7 @@ class IOBridge:
             self._manual_heat = False     # program heating, not the manual slider
             self._door_abort_ts = None    # new process: clear the door abort
             self.sys.stop_cooling('user')
+            self.set_ventilation(False)   # release a UV-only vent (fan + damper)
             self.set_damper(False)        # vent stays closed while curing
             ok_h, why_h = self.temp.start(target_c)
             ok_u, why_u = self.set_uv(True, intensity, wavelength)
@@ -571,6 +617,28 @@ class IOBridge:
                 return True, None
             problems = [p for p in (why_h, why_u) if p]
             return False, '; '.join(problems) or 'cure blocked'
+
+    def cure_uv_only(self, intensity, wavelength, vent=False):
+        """UV exposure with NO chamber heating. The heater is stopped; only
+        the LEDs run (through the calibration layer in set_uv), plus, when
+        `vent` is requested, the fresh-air ventilation: damper open + chamber
+        intake fan — outside air flowing through the chamber like cooling's
+        airflow, without a cooling loop. A ventilation failure never blocks
+        the UV step itself (it is airflow comfort, not a safety interlock)."""
+        with self._op:
+            self._drying = False
+            self._stop_dry_fan()          # not drying anymore
+            self._manual_heat = False
+            self._door_abort_ts = None    # new process: clear the door abort
+            self.sys.stop_cooling('user')
+            self.temp.stop('user')        # heater off; fan cooldown run-on continues
+            ok, why = self.set_uv(True, intensity, wavelength)
+            if not ok:
+                return False, why
+            ok_v, why_v = self.set_ventilation(bool(vent))
+            if vent and not ok_v:
+                print(f'[API] UV-only ventilation unavailable: {why_v}', flush=True)
+            return True, None
 
     # ------------------------------------------------------------------
     #  Cooling (fixed chamber-fan duty per mode; damper + fans owned by it)
@@ -610,6 +678,7 @@ class IOBridge:
             self._dry_fan_on = False      # cooling takes over FAN_COOLING itself
             self._manual_heat = False
             self._door_abort_ts = None    # new process: clear the door abort
+            self.set_ventilation(False)   # cooling takes over damper + intake fan
             pwms = dict(COOLING_MODE_PWMS)
             pwms.update(self.sys.config.get('cooling', {}).get('mode_pwms', {}))
             pwm = pwms.get(mode, pwms['medium'])
@@ -677,6 +746,7 @@ class IOBridge:
             self.set_nitrogen(False)
             self.sys.stop_cooling('user')
             self._set_cool_led_fans(False)  # release the FAST-cool LED-fan boost
+            self.set_ventilation(False)   # release a UV-only vent (fan + damper)
             self.temp.stop('user')        # heater off now; fan run-on continues
             self.set_damper(False)        # idle state: vent closed
             self._damper_open = False

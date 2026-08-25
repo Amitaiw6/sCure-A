@@ -16,6 +16,9 @@ interface PhaseCardProps {
   secElapsed: string
   percentComplete: string
   onAbort?: () => void
+  /** Overrides the cure gauge's center caption (default "UV + HEAT") —
+   *  e.g. "UV ONLY" / "UV + VENT" for a no-heat cure step */
+  centerLabel?: string
 }
 
 const phaseConfig = {
@@ -31,7 +34,7 @@ const GAUGE_SIZE = 130
 
 export default function PhaseCard({
   type, status, gaugeValue, gaugeLabel, gaugeProgress,
-  minElapsed, secElapsed, percentComplete, onAbort,
+  minElapsed, secElapsed, percentComplete, onAbort, centerLabel,
 }: PhaseCardProps) {
   const config = phaseConfig[type]
   const isActive = status === 'active'
@@ -67,7 +70,7 @@ export default function PhaseCard({
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <div className="w-10 h-0.5 bg-muted-foreground mb-0.5" />
-              <span className="text-[9px] text-muted-foreground uppercase">{type === 'cure' ? 'UV + HEAT' : 'COOL'}</span>
+              <span className="text-[9px] text-muted-foreground uppercase">{centerLabel ?? (type === 'cure' ? 'UV + HEAT' : 'COOL')}</span>
             </div>
           </div>
         ) : (
