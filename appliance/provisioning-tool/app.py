@@ -190,9 +190,9 @@ class KeyValue(QGridLayout):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, cfg: provision.Config, fake: bool):
+    def __init__(self, cfg: provision.Config, fake: bool, real_usb: bool = False):
         super().__init__()
-        self.cfg, self.fake = cfg, fake
+        self.cfg, self.fake, self.real_usb = cfg, fake, real_usb
         self.worker: RunWorker | None = None
         self.catalog: dict = {}
         self.usb_module = None
@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 820)
         self._build()
         self.refresh_catalog()
-        self.usb = UsbWatcher(self.fake)
+        self.usb = UsbWatcher(self.fake and not self.real_usb)
         self.usb.changed.connect(self.on_usb)
         self.usb.start()
 
@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
     def _update_buttons(self):
         has_op = bool(self.operator.text().strip())
         cat_ok = bool(self.catalog.get("ok"))
-        usb_ok = self.fake or self.usb_module is not None
+        usb_ok = (self.fake and not self.real_usb) or self.usb_module is not None
         ready = not self._running() and has_op and cat_ok and usb_ok
         self.btn_start.setEnabled(ready)
         self.btn_start.setToolTip("" if ready else ("Enter the operator name first" if not has_op else
@@ -497,6 +497,7 @@ def main(argv=None):
     ap.add_argument("--offline-token")
     ap.add_argument("--station-key")
     ap.add_argument("--fake", action="store_true", help="simulated module (no rpiboot)")
+    ap.add_argument("--real-usb", action="store_true", help="with --fake: still detect a real CM5 on the USB bus")
     a = ap.parse_args(argv)
     cfg = provision.Config(a.station, "", a.server, Path(a.workdir), Path(a.trust), channel=a.channel, role=a.role,
                            signed_eeprom_dir=Path(a.signed_eeprom) if a.signed_eeprom else None,
@@ -505,7 +506,7 @@ def main(argv=None):
     qapp = QApplication(sys.argv[:1])
     qapp.setStyleSheet(STYLE)
     pal = qapp.palette(); pal.setColor(QPalette.Window, QColor("#0f1418")); qapp.setPalette(pal)
-    win = MainWindow(cfg, a.fake)
+    win = MainWindow(cfg, a.fake, real_usb=a.real_usb)
     win.show()
     return qapp.exec()
 

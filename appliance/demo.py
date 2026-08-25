@@ -69,7 +69,8 @@ def main():
             # manufacturing UI: keeps the service running, opens the browser, Ctrl+C to stop
             print("== opening the Factory Provisioning Tool (desktop app; close the window to stop)")
             subprocess.run([PY, str(HERE / "provisioning-tool" / "app.py"), "--station", "ST-01", "--server", B,
-                            "--workdir", str(DEMO / "work"), "--trust", str(DEMO / "trust"), "--fake"], check=False)
+                            "--workdir", str(DEMO / "work"), "--trust", str(DEMO / "trust"), "--fake"]
+                           + (["--real-usb"] if "--real-usb" in sys.argv else []), check=False)
             return
         base = [PY, str(HERE / "provisioning-tool" / "provision.py"), "run", "--station", "ST-01", "--operator", "demo",
                 "--server", B, "--workdir", str(DEMO / "work"), "--trust", str(DEMO / "trust"), "--fake"]

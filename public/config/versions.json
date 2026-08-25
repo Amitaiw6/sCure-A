@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.7.4",
+      "date": "2026-08-25",
+      "notes": [
+        "Provisioning desktop app: --real-usb (with --fake) keeps the module simulated but detects a real CM5 on the USB bus; demo.py --ui --real-usb"
+      ]
+    },
+    {
       "version": "0.7.3",
       "date": "2026-08-25",
       "notes": [
