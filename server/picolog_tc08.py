@@ -22,6 +22,7 @@ for compensation). Thermocouple type: K.
 
 import math
 import os
+import sys
 import threading
 import time
 
@@ -41,16 +42,57 @@ SIM_GAIN_C_PER_PCT = 0.55
 SIM_TAU_SEC = 40.0
 
 
+# Where to look for the Pico usbtc08 driver library when it is not on the
+# system loader path (Linux: the libusbtc08 .deb extracted into a user dir
+# with `dpkg -x` when apt/sudo is not available; override with
+# SCURE_TC08_LIB_DIR).
+_LINUX_LIB_DIRS = [
+    os.environ.get('SCURE_TC08_LIB_DIR', ''),
+    '/opt/picoscope/lib',
+    os.path.expanduser('~/pico/root/opt/picoscope/lib'),
+    '/home/testingpi/pico/root/opt/picoscope/lib',
+    '/usr/local/lib',
+]
+_WINDOWS_LIB_DIRS = [r'C:\Program Files\Pico Technology\PicoLog',
+                     r'C:\Program Files\Pico Technology\SDK\lib']
+_patched = False
+
+
+def _find_local_lib(name):
+    """Full path of lib<name>.so* in one of _LINUX_LIB_DIRS, or None."""
+    import glob
+    for d in _LINUX_LIB_DIRS:
+        if d and os.path.isdir(d):
+            hits = sorted(glob.glob(os.path.join(d, f'lib{name}.so*')))
+            if hits:
+                return hits[0]
+    return None
+
+
 def _add_pico_dll_dirs():
-    """Help picosdk find usbtc08.dll on Windows (same as scripts/picolog_report.py)."""
-    for d in (r'C:\Program Files\Pico Technology\PicoLog',
-              r'C:\Program Files\Pico Technology\SDK\lib'):
+    """Help picosdk find the usbtc08 driver: Windows DLL dirs, and on Linux
+    a find_library fallback into the local driver dirs above (picosdk only
+    consults the system loader cache)."""
+    global _patched
+    for d in _WINDOWS_LIB_DIRS:
         if os.path.isdir(d):
             try:
                 os.add_dll_directory(d)
             except Exception:  # noqa: BLE001 - non-Windows
                 pass
             os.environ['PATH'] = d + os.pathsep + os.environ.get('PATH', '')
+    if _patched or sys.platform == 'win32':
+        return
+    try:
+        import picosdk.library as _pl
+        _orig = _pl.find_library
+
+        def _find(name):
+            return _orig(name) or _find_local_lib(name)
+        _pl.find_library = _find
+        _patched = True
+    except Exception as e:  # noqa: BLE001 - picosdk missing: reported by _open
+        print(f'[TC08] picosdk not importable: {e}', flush=True)
 
 
 class Tc08Manager:

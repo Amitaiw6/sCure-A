@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.3",
+      "date": "2026-08-25",
+      "notes": [
+        "PicoLog TC-08: the usbtc08 driver is also looked up in local driver dirs (/opt/picoscope/lib, ~/pico/root/opt/picoscope/lib, SCURE_TC08_LIB_DIR) — picosdk only consults the system loader cache, so a libusbtc08 .deb extracted with dpkg -x (no sudo) now works; test machine: TC-08 S/N AO114/209 connected"
+      ]
+    },
+    {
       "version": "0.6.2",
       "date": "2026-08-25",
       "notes": [
