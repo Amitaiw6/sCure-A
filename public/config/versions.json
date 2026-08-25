@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.7.5",
+      "date": "2026-08-25",
+      "notes": [
+        "appliance image: all screen settings baked into the image — display profiles (DSI Touch Display 2 landscape / HDMI 1280x720) injected into the signed config.txt + cmdline (video=…,rotate=90), Plymouth 'stratasys' splash theme in the initramfs (logo, Starting system…, progress, service messages), Chromium loading page with the same look and seamless Plymouth hand-over, no cursor / no blanking / touch flags, backlight udev rule for the hardware service, kiosk user seat groups"
+      ]
+    },
+    {
       "version": "0.7.4",
       "date": "2026-08-25",
       "notes": [

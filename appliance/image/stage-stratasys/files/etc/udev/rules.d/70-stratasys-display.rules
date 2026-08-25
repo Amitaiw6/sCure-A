@@ -1,0 +1,6 @@
+# Panel backlight is owned by the hardware service (brightness / screensaver
+# dimming from the application), not by root.
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp hardware /sys/class/backlight/%k/brightness /sys/class/backlight/%k/bl_power", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness /sys/class/backlight/%k/bl_power"
+# DRM / input for the kiosk user (cage runs without a display manager)
+SUBSYSTEM=="drm", KERNEL=="card*", GROUP="video", MODE="0660"
+SUBSYSTEM=="input", GROUP="input", MODE="0660"

@@ -18,6 +18,9 @@ if ls "${STAGE_DIR}/keys/"*.key >/dev/null 2>&1; then echo "REFUSING: private ke
 
 # ---- files: units, policies, boot config, initramfs hooks ----
 cp -a "${STAGE_DIR}/files/." "${ROOTFS_DIR}/"
+# splash + loading-page artwork (official logo.png replaces the placeholder in assets/)
+install -v -m 0644 "${STAGE_DIR}/assets/logo.png" "${ROOTFS_DIR}/usr/share/plymouth/themes/stratasys/logo.png"
+install -v -m 0644 "${STAGE_DIR}/assets/logo.png" "${ROOTFS_DIR}/usr/share/stratasys/logo.png"
 
 on_chroot << 'EOF'
 set -e
@@ -60,8 +63,17 @@ systemctl enable stratasys-security.service stratasys-hardware.service stratasys
 systemctl disable bluetooth.service triggerhappy.service 2>/dev/null || true
 systemctl set-default multi-user.target
 
+# ---- display / kiosk seat ----
+usermod -aG video,input,render kiosk
+# plymouth inside the initramfs (splash from the first kernel frame, before root is opened)
+mkdir -p /etc/initramfs-tools/conf.d
+printf 'FRAMEBUFFER=y\n' > /etc/initramfs-tools/conf.d/stratasys-splash
+# no console blanking / no VT cursor even if a getty ever appeared
+printf 'BLANK_TIME=0\nPOWERDOWN_TIME=0\n' > /etc/kbd/config 2>/dev/null || true
+
 # ---- plymouth: Stratasys theme, no distro branding ----
 plymouth-set-default-theme stratasys || true
+update-initramfs -u -k all
 rm -f /etc/motd /etc/issue /etc/issue.net
 printf 'Stratasys sCure\n' > /etc/issue
 

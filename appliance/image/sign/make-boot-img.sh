@@ -11,8 +11,19 @@ BOOTFILES="$1"; ROOTHASH="$2"; SLOT="$3"; KEY="$4"; OUT="$5"
 mkdir -p "$OUT"
 WORK=$(mktemp -d)
 cp -a "$BOOTFILES/." "$WORK/"
-sed -e "s/@ROOTHASH@/$ROOTHASH/" -e "s/@SLOT@/$SLOT/" "$BOOTFILES/cmdline.txt" > "$WORK/cmdline.txt"
-grep -q "@ROOTHASH@" "$WORK/cmdline.txt" && { echo "cmdline placeholder not replaced"; exit 1; }
+
+# ---- display profile (image/display-profiles/<name>.conf), default: DSI Touch Display 2
+PROFILE="${DISPLAY_PROFILE:-dsi-touch-display-2}"
+PROFILE_FILE="$(dirname "$0")/../display-profiles/$PROFILE.conf"
+[ -f "$PROFILE_FILE" ] || { echo "unknown DISPLAY_PROFILE $PROFILE"; exit 2; }
+# shellcheck disable=SC1090
+. "$PROFILE_FILE"
+echo "display profile: $DISPLAY_NAME"
+awk -v cfg="$CONFIG_TXT" '{ if ($0 == "@DISPLAY_CONFIG@") print cfg; else print }' "$BOOTFILES/config.txt" > "$WORK/config.txt"
+sed -e "s/@ROOTHASH@/$ROOTHASH/" -e "s/@SLOT@/$SLOT/" -e "s|@VIDEO@|$VIDEO|" "$BOOTFILES/cmdline.txt" > "$WORK/cmdline.txt"
+if grep -Eq "@[A-Z_]+@" "$WORK/cmdline.txt" "$WORK/config.txt"; then
+    echo "placeholder not replaced:"; grep -En "@[A-Z_]+@" "$WORK/cmdline.txt" "$WORK/config.txt"; exit 1
+fi
 
 SIZE_KB=$(( $(du -sk "$WORK" | cut -f1) + 8192 ))
 IMG="$OUT/boot.img"

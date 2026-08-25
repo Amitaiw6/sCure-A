@@ -197,6 +197,24 @@ sequenceDiagram
 
 No getty on any VT; `kernel.sysrq=0`; `ctrl-alt-del.target` masked; serial console disabled in both kernel cmdline and `config.txt`.
 
+### 3.2b Display — everything is inside the image
+
+| Setting | Where it lives | Value (sCure) |
+|---|---|---|
+| Panel | signed `config.txt` via `image/display-profiles/<profile>.conf` (`DISPLAY_PROFILE` at `make-boot-img.sh` time) | `dsi-touch-display-2`: `dtoverlay=vc4-kms-dsi-ili9881-7-0` + touch axis swap/invert; `hdmi-1280x720` for the bench |
+| Mode + rotation | signed `cmdline.txt` `video=DSI-1:720x1280@60,rotate=90` | landscape from the first Plymouth frame; cage/wlroots reads the same rotation for touch mapping |
+| Firmware output | `disable_splash=1`, `avoid_warnings=2`, `disable_overscan=1`, `display_auto_detect=1` | black until Plymouth |
+| Splash | Plymouth theme `stratasys` in the **initramfs** (`FRAMEBUFFER=y`): logo, "Starting system…", progress bar; also renders "Service required (E-…)" messages | `files/usr/share/plymouth/themes/stratasys/` |
+| Hand-over | `stratasys-kiosk.service`: `plymouth deactivate` → cage → Chromium opens `loading.html` (same look, polls `/api/state`) → `plymouth quit` → app | no black frame, no distro screen anywhere |
+| Cursor | `vt.global_cursor_default=0`, `WLR_NO_HARDWARE_CURSORS=1`, `XCURSOR_SIZE=1`, app CSS `cursor:none` | touch panel, never a pointer |
+| Blanking | `consoleblank=0`, no DPMS in cage; the app's own 2-min screensaver / WakeScreen handles idle | screen never blanks on its own |
+| Touch | Chromium `--touch-events=enabled`, `--disable-pinch`, `--overscroll-history-navigation=0` | no zoom / swipe-back |
+| Backlight | udev `70-stratasys-display.rules` gives `hardware` write access to `/sys/class/backlight/*` | app can dim/wake the panel |
+| Scaling | app `fitToScreen()` stretches the 800×480 design canvas to the panel (1280×720) | unchanged |
+| Chromium policy | `URLAllowlist` = app + `file:///usr/share/stratasys/loading.html` only | nothing else can be shown |
+
+Changing the panel for another product = a new `display-profiles/*.conf`; no image rebuild logic changes.
+
 ### 3.3 Kiosk
 
 - `stratasys-kiosk.service` (`After=stratasys-hardware.service`, `Restart=always`, `RestartSec=2`, `StartLimitIntervalSec=0`) runs `cage -- chromium --kiosk --noerrdialogs --no-first-run --disable-pinch --overscroll-history-navigation=0 --disable-features=TranslateUI --app=http://127.0.0.1:3001` as user `kiosk`.

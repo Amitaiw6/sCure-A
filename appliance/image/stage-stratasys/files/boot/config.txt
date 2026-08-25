@@ -3,16 +3,27 @@
 arm_64bit=1
 kernel=kernel_2712.img
 initramfs initramfs_2712 followkernel
+
+# ---- boot experience: nothing from the firmware, no console --------------
 disable_splash=1
 boot_delay=0
 enable_uart=0
 uart_2ndstage=0
+avoid_warnings=2
+
+# ---- display -------------------------------------------------------------
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+display_auto_detect=1
+disable_overscan=1
+# panel-specific lines are inserted here from image/display-profiles/<profile>.conf
+# by sign/make-boot-img.sh (DSI overlay + touch orientation, or HDMI forcing)
+@DISPLAY_CONFIG@
+
+# ---- carrier peripherals -------------------------------------------------
 dtparam=i2c_arm=on
 dtparam=spi=on
-dtoverlay=vc4-kms-v3d
 dtoverlay=dwc2,dr_mode=peripheral
-hdmi_force_hotplug=1
-disable_overscan=1
-# no rainbow, no firmware text, no camera/audio we do not use
+dtoverlay=pwm,pin=18,func=2
 camera_auto_detect=0
 dtparam=audio=off

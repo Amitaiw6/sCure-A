@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Stratasys
+Description=Stratasys sCure boot splash — logo, "Starting system…", thin progress bar; no distro branding
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/stratasys
+ScriptFile=/usr/share/plymouth/themes/stratasys/stratasys.script

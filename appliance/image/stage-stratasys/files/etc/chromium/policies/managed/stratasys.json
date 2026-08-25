@@ -1,7 +1,7 @@
 {
   "DeveloperToolsAvailability": 2,
   "URLBlocklist": ["*"],
-  "URLAllowlist": ["http://127.0.0.1:3001", "http://127.0.0.1:3001/*"],
+  "URLAllowlist": ["http://127.0.0.1:3001", "http://127.0.0.1:3001/*", "file:///usr/share/stratasys/loading.html", "file:///usr/share/stratasys/logo.png"],
   "IncognitoModeAvailability": 1,
   "BrowserSignin": 0,
   "PrintingEnabled": false,
