@@ -102,6 +102,7 @@ class HardwareController:
         self.uv_on = False
         self.uv_intensity = 0
         self.uv_wavelength = None       # 405 (Cure) | 450 (Bleaching)
+        self.uv_outputs = None          # per-zone physical % (calibration layer)
         self.damper_open = False
         self.nitrogen_on = False
         self.bofa_on = False
@@ -154,8 +155,9 @@ class HardwareController:
             'coolingFanPwm': (COOLING_MODE_PWMS.get(self.cooling_mode)
                               if self.cooling else None),
             'uvOn': self.uv_on,
-            'uvIntensity': self.uv_intensity,
+            'uvIntensity': self.uv_intensity,          # logical system power %
             'uvWavelength': self.uv_wavelength,
+            'uvOutputs': self.uv_outputs,              # per-zone physical %
             'damperOpen': self.damper_open,
             'fans': self.fans,
             'fanRpm': {k: (2850 if v > 0 else 0) for k, v in self.fans.items()},
@@ -235,13 +237,23 @@ class HardwareController:
         if HW_AVAILABLE and hasattr(hw_driver, 'set_cooling'):
             hw_driver.set_cooling(bool(on), mode)
 
-    def set_uv(self, on, intensity=0, wavelength=None):
+    def set_uv(self, on, intensity=0, wavelength=None, factors=None):
+        """`intensity` is the calibrated SYSTEM LED power; the per-zone
+        factors are applied inside io_bridge.set_uv (real hardware) or
+        mirrored here for the simulation state. `factors` overrides the
+        saved calibration (Developer Mode live preview only)."""
         self.uv_on = bool(on)
         self.uv_intensity = int(intensity) if on else 0
         self.uv_wavelength = wavelength if on else None
+        try:
+            import led_calibration
+            self.uv_outputs = (led_calibration.scaled_outputs(intensity, factors)
+                               if on else None)
+        except Exception:  # noqa: BLE001 - calibration must never block UV
+            self.uv_outputs = None
         if self.bridge:
             return self.bridge.set_uv(bool(on), int(intensity) if on else 0,
-                                      wavelength)
+                                      wavelength, factors)
         if HW_AVAILABLE and hasattr(hw_driver, 'set_uv'):
             hw_driver.set_uv(bool(on), int(intensity) if on else 0, wavelength)
         return True, None
@@ -357,6 +369,21 @@ class HardwareController:
 
 
 hw = HardwareController(io_bridge)
+
+# ============================================================
+# Developer Mode subsystems: LED calibration layer, PicoLog TC-08
+# acquisition and the Material HDT calibration state machine.
+# ============================================================
+import led_calibration
+import dev_log
+from picolog_tc08 import Tc08Manager
+from hdt_calibration import HdtCalibrationController
+
+tc08 = Tc08Manager()
+# Simulated TC-08 (SCURE_SIM_TC08=1): the model temperature follows the
+# commanded system LED power, so the HDT flow can be tested off-hardware.
+tc08.power_supplier = lambda: hw.uv_intensity if hw.uv_on else 0
+hdt = HdtCalibrationController(hw, tc08)
 
 
 # ============================================================
@@ -1321,6 +1348,119 @@ def fan_test():
 def led_test():
     result = hw.run_led_test()
     return jsonify({'ok': True, **result})
+
+
+# ============================================================
+# Developer Mode API (/api/dev/*)
+#   - timestamped event log
+#   - 4-zone LED calibration factors (persisted, server/data/)
+#   - calibrated system LED power test drive
+#   - PicoLog TC-08 status + Material HDT calibration state machine
+# ============================================================
+
+@app.route('/api/dev/log', methods=['POST'])
+def dev_log_event():
+    """Timestamped Developer Mode UI events (auth, navigation, edits)."""
+    d = request.get_json(silent=True) or {}
+    event = str(d.get('event', ''))[:200]
+    if event:
+        dev_log.log_event(event, d.get('detail') or {})
+    return jsonify({'ok': True})
+
+
+@app.route('/api/dev/led-calibration', methods=['GET', 'POST'])
+def dev_led_calibration():
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'factors': led_calibration.get_factors()})
+    d = request.get_json(silent=True) or {}
+    f = d.get('factors') or {}
+    try:
+        stored = led_calibration.save_factors(
+            {z: f[z] for z in led_calibration.ZONES})
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({'ok': False, 'message': f'Invalid factors: {e}'}), 400
+    dev_log.log_event('LED calibration saved', stored)
+    return jsonify({'ok': True, 'factors': stored})
+
+
+@app.route('/api/dev/led-calibration/reset', methods=['POST'])
+def dev_led_calibration_reset():
+    stored = led_calibration.reset_factors()
+    dev_log.log_event('LED calibration reset')
+    return jsonify({'ok': True, 'factors': stored})
+
+
+@app.route('/api/dev/led-power', methods=['POST'])
+def dev_led_power():
+    """Drive the LEDs at one calibrated system power (LED calibration screen
+    test drive). Optional unsaved preview factors ride along; power 0 = the
+    safe OFF state. Refused while an HDT calibration owns the LEDs."""
+    d = request.get_json(silent=True) or {}
+    try:
+        power = float(d.get('power', 0))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'message': 'Invalid power'}), 400
+    if not (0 <= power <= 100):
+        return jsonify({'ok': False, 'message': f'Invalid power {power} (0-100%)'}), 400
+    if hdt.status()['running']:
+        return jsonify({'ok': False,
+                        'message': 'HDT calibration is running - abort it first'})
+    preview = None
+    if isinstance(d.get('factors'), dict):
+        try:
+            preview = {z: min(led_calibration.FACTOR_MAX,
+                              max(led_calibration.FACTOR_MIN,
+                                  float(d['factors'][z])))
+                       for z in led_calibration.ZONES}
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'ok': False, 'message': 'Invalid preview factors'}), 400
+    if power <= 0:
+        ok, why = hw.set_uv(False)
+    else:
+        ok, why = hw.set_uv(True, power, 405, preview)
+    outputs = led_calibration.scaled_outputs(power, preview)
+    dev_log.log_event('Physical LED outputs updated',
+                      {'power': power, 'outputs': outputs,
+                       'preview': preview is not None})
+    return jsonify({'ok': bool(ok), 'message': why, 'outputs': outputs})
+
+
+@app.route('/api/dev/picolog/status', methods=['GET'])
+def dev_picolog_status():
+    return jsonify(tc08.status())
+
+
+@app.route('/api/dev/hdt/start', methods=['POST'])
+def dev_hdt_start():
+    d = request.get_json(silent=True) or {}
+    ok, why = hdt.start(d.get('hdtC'), d.get('safetyMarginC'), overrides=d)
+    return jsonify({'ok': ok, 'message': why})
+
+
+@app.route('/api/dev/hdt/abort', methods=['POST'])
+def dev_hdt_abort():
+    hdt.abort()
+    return jsonify({'ok': True, 'message': 'Abort requested - LEDs off'})
+
+
+@app.route('/api/dev/hdt/reset', methods=['POST'])
+def dev_hdt_reset():
+    ok = hdt.reset()
+    return jsonify({'ok': ok, 'message': None if ok else 'Calibration is running'})
+
+
+@app.route('/api/dev/hdt/status', methods=['GET'])
+def dev_hdt_status():
+    samples_from = request.args.get('samplesFrom', type=int)
+    return jsonify(hdt.status(samples_from=samples_from))
+
+
+@app.route('/api/dev/hdt/report.csv', methods=['GET'])
+def dev_hdt_report_csv():
+    csv_text = hdt.csv_report()
+    dev_log.log_event('Report exported', {'rows': csv_text.count('\n')})
+    return app.response_class(csv_text, mimetype='text/csv', headers={
+        'Content-Disposition': 'attachment; filename=hdt-calibration.csv'})
 
 
 @app.route('/api/system/export-logs', methods=['POST'])

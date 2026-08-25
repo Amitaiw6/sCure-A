@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useHardware } from '@/context/HardwareContext'
 import { useAlerts } from '@/context/AlertsContext'
+import { useDevMode } from '@/context/DevModeContext'
 import SCureLogo from '@/components/SCureLogo'
 import { doorOpen } from '@/services/hardware-api'
 
@@ -23,6 +24,7 @@ export default function TopBar() {
   const isCuring = location.pathname === '/cure-process'
   const { state: hw, setDoorClosed } = useHardware()
   const { alertCount, criticalAlerts } = useAlerts()
+  const { devMode, registerSettingsPress } = useDevMode()
   const [heatingLong, setHeatingLong] = useState(false)
 
   // Track if heating has been on for more than 10 seconds
@@ -93,6 +95,14 @@ export default function TopBar() {
 
       {/* Right side - Icons (min 44x44 touch targets) */}
       <div className="flex items-center gap-1.5">
+        {devMode && !location.pathname.startsWith('/dev') && (
+          <button
+            onClick={() => { if (!isCuring) navigate('/dev') }}
+            className="px-2 h-7 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[10px] font-bold tracking-widest touch-manipulation"
+          >
+            DEV
+          </button>
+        )}
         {hw.nitrogenMode && (
           <button className="w-12 h-12 rounded-xl flex items-center justify-center touch-manipulation relative">
             <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -119,7 +129,13 @@ export default function TopBar() {
             )}
           </div>
         </TouchIcon>
-        <TouchIcon active={location.pathname === '/settings'} onClick={() => { if (!isCuring && location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' }) }}><Settings size={24} className={isCuring ? 'opacity-30' : undefined} /></TouchIcon>
+        <TouchIcon active={location.pathname === '/settings'} onClick={() => {
+          if (isCuring) return
+          // Hidden Developer Mode gate: every Settings press counts; the
+          // 10th opens the password screen (see DevModeContext)
+          registerSettingsPress()
+          if (location.pathname !== '/settings') navigate('/settings', { replace: location.pathname !== '/' })
+        }}><Settings size={24} className={isCuring ? 'opacity-30' : undefined} /></TouchIcon>
         <TouchIcon active={location.pathname === '/network'} onClick={() => { if (!isCuring && location.pathname !== '/network') navigate('/network', { replace: location.pathname !== '/' }) }}>
           <Globe size={24} className={
             isCuring ? 'opacity-30'

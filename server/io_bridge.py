@@ -402,8 +402,10 @@ class IOBridge:
             'isCooling': bool(cool.get('active')),
             'coolingMode': self._cooling_mode,
             'uvOn': self._uv['on'],
-            'uvIntensity': self._uv['intensity'],
+            'uvIntensity': self._uv['intensity'],          # logical system power %
             'uvWavelength': self._uv['wavelength'],
+            'uvOutputs': self._uv.get('outputs'),          # per-zone physical %
+
             'damperOpen': self._damper_open,
             'fans': dict(self._fan_duty),
             'fanRpm': fan_rpm,
@@ -427,24 +429,45 @@ class IOBridge:
     # ------------------------------------------------------------------
     #  UV LEDs (405nm cure / 450nm bleaching, via the wavelength gating)
     # ------------------------------------------------------------------
-    def set_uv(self, on, intensity=0, wavelength=None):
+    def set_uv(self, on, intensity=0, wavelength=None, factors=None):
+        """`intensity` is the CALIBRATED SYSTEM LED POWER (0-100%). This is
+        the single calibration choke point: each zone is driven at
+        clamp(intensity x its Developer-Mode factor) — led_calibration.py —
+        so 100% system power means 100% of the calibrated system, not raw
+        PWM. Zones keep reporting the logical system power upstream.
+        `factors` overrides the saved factors (Developer Mode preview only)."""
         with self._op:
             if not on:
                 self.sys.all_leds_off()
-                self._uv = {'on': False, 'intensity': 0, 'wavelength': None}
+                self._uv = {'on': False, 'intensity': 0, 'wavelength': None,
+                            'outputs': None}
                 return True, None
             mode = '450nm' if wavelength == 450 else '405nm'
             ok, why = self.sys.select_mode(mode)   # all LEDs off, GPIO17 set + verified
             if not ok:
                 return False, why
-            lit = []
+            try:
+                import led_calibration
+                factors = factors or led_calibration.get_factors()
+                zone_for = led_calibration.zone_for_led
+            except Exception as e:        # noqa: BLE001 - never block UV on this
+                print(f'[HW] LED calibration unavailable ({e}) - factors 1.0',
+                      flush=True)
+                factors, zone_for = factors or {}, lambda _led: None
+            lit, outputs = [], {}
             for led in self.sys.allowed_leds(mode):
-                if self.sys.set_led_brightness(led, intensity):
+                zone = zone_for(led)
+                factor = factors.get(zone, 1.0) if zone else 1.0
+                out = min(100.0, max(0.0, float(intensity) * factor))
+                if self.sys.set_led_brightness(led, out):
                     lit.append(led)
+                    if zone:
+                        outputs[zone] = round(out, 2)
             if not lit:
                 return False, self.sys.led_fault or 'no LED could be enabled'
             self._uv = {'on': True, 'intensity': int(intensity),
-                        'wavelength': 450 if mode == '450nm' else 405}
+                        'wavelength': 450 if mode == '450nm' else 405,
+                        'outputs': outputs}
             return True, None
 
     # ------------------------------------------------------------------

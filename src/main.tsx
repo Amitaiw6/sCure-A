@@ -5,6 +5,7 @@ import { MaterialProvider } from '@/context/MaterialContext'
 import { PrintHistoryProvider } from '@/context/PrintHistoryContext'
 import { HardwareProvider } from '@/context/HardwareContext'
 import { SystemConfigProvider } from '@/context/SystemConfigContext'
+import { DevModeProvider } from '@/context/DevModeContext'
 import { AlertsProvider } from '@/context/AlertsContext'
 import { CureHistoryProvider } from '@/context/CureHistoryContext'
 import './index.css'
@@ -33,6 +34,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Router>
       <SystemConfigProvider>
+        <DevModeProvider>
         <HardwareProvider>
           <AlertsProvider>
             <CureHistoryProvider>
@@ -44,6 +46,7 @@ createRoot(document.getElementById('root')!).render(
             </CureHistoryProvider>
           </AlertsProvider>
         </HardwareProvider>
+        </DevModeProvider>
       </SystemConfigProvider>
     </Router>
   </StrictMode>,

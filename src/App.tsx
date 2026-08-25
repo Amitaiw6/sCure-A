@@ -11,12 +11,19 @@ import CureHistoryPage from '@/pages/CureHistoryPage'
 import WakeScreen from '@/components/WakeScreen'
 import BootScreen from '@/components/BootScreen'
 import SetupPage from '@/pages/SetupPage'
+import DevLayout from '@/pages/dev/DevLayout'
+import DevMenuPage from '@/pages/dev/DevMenuPage'
+import LedCalibrationPage from '@/pages/dev/LedCalibrationPage'
+import HdtCalibrationPage from '@/pages/dev/HdtCalibrationPage'
+import DevAuthModal from '@/components/DevAuthModal'
 import { useSystemConfig } from '@/context/SystemConfigContext'
+import { useDevMode } from '@/context/DevModeContext'
 
 const SCREENSAVER_TIMEOUT = 2 * 60 * 1000 // 2 minutes
 
 function App() {
   const { config, isLoading } = useSystemConfig()
+  const { devMode } = useDevMode()
   const location = useLocation()
   const [asleep, setAsleep] = useState(() => {
     return sessionStorage.getItem('scure-shutdown') === 'true'
@@ -33,8 +40,9 @@ function App() {
     idleTimer.current = setTimeout(() => setScreenSaver(true), SCREENSAVER_TIMEOUT)
   }, [])
 
-  // Don't run screensaver during cure process
-  const isCuring = location.pathname === '/cure-process'
+  // Don't run screensaver during cure process, or in Developer Mode
+  // (an HDT calibration can run for hours and must stay visible)
+  const isCuring = location.pathname === '/cure-process' || devMode
 
   useEffect(() => {
     if (asleep || booting || !config.setupComplete || isCuring) return
@@ -91,8 +99,14 @@ function App() {
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/cure-history" element={<CureHistoryPage />} />
+          <Route path="/dev" element={<DevLayout />}>
+            <Route index element={<DevMenuPage />} />
+            <Route path="led-calibration" element={<LedCalibrationPage />} />
+            <Route path="hdt-calibration" element={<HdtCalibrationPage />} />
+          </Route>
         </Routes>
       </div>
+      <DevAuthModal />
     </div>
   )
 }

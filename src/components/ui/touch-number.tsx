@@ -11,6 +11,8 @@ interface TouchNumberProps {
   placeholder?: string
   suffix?: string
   className?: string
+  /** Fixed number of decimals in the display (e.g. 2 → "1.00") */
+  decimals?: number
 }
 
 export function TouchNumber({
@@ -23,8 +25,11 @@ export function TouchNumber({
   placeholder = '—',
   suffix = '',
   className,
+  decimals,
 }: TouchNumberProps) {
-  const displayValue = value !== null ? `${value}${suffix}` : placeholder
+  const displayValue = value !== null
+    ? `${decimals != null ? value.toFixed(decimals) : value}${suffix}`
+    : placeholder
 
   const increment = () => {
     if (disabled) return
