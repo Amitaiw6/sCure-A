@@ -53,6 +53,10 @@ NEXT_STEP_MAX_TEMP_DELTA_C = 8.0
 COOLDOWN_MAX_WAIT_MIN = 15.0
 POWER_LEVELS = [10, 20, 30, 40, 50, 60, 70, 80, 90]
 HDT_WAVELENGTH = 405           # calibration runs on the 405 nm cure LEDs
+# The chamber heater fan (FAN_HEATER) runs at this duty for the whole HDT
+# run so the air around the model is mixed the same way as during a real
+# cure; released back to 0% by _finish on every exit path.
+HDT_HEATER_FAN_PWM = 100
 
 _OVERRIDE_KEYS = {
     'samplingIntervalSec': 'sampling_interval_sec',
@@ -170,6 +174,7 @@ class HdtCalibrationController:
                 'results': [dict(r) for r in self.results],
                 'recommendedPower': self.recommended_power,
                 'maxMeasuredTemp': self.max_measured_temp,
+                'heaterFanPwm': self.heater_fan_pwm,
                 'config': {
                     'samplingIntervalSec': self.sampling_interval_sec,
                     'movingAverageWindowSec': self.moving_average_window_sec,
@@ -196,6 +201,7 @@ class HdtCalibrationController:
         self.state = 'IDLE'
         self.message = 'Idle'
         self.running = False
+        self.heater_fan_pwm = 0
         self.final_status = None
         self.hdt_c = None
         self.safety_margin_c = HDT_SAFETY_MARGIN_C
@@ -231,6 +237,18 @@ class HdtCalibrationController:
             print(f'[HDT] LED OFF command failed: {e}', flush=True)
         with self._lock:
             self.current_power = 0
+
+    def _heater_fan(self, pwm):
+        """Chamber heater fan (FAN_HEATER) duty for the HDT run."""
+        try:
+            ok, why = self.hw.set_fan_speed('chamber_heating', pwm)
+        except Exception as e:  # noqa: BLE001 - the fan must never stop a run/stop
+            ok, why = False, str(e)
+        with self._lock:
+            self.heater_fan_pwm = pwm if ok else 0
+        log_event('HDT heater fan', {'pwm': pwm, 'ok': bool(ok), 'why': why})
+        if not ok:
+            print(f'[HDT] heater fan {pwm}% refused: {why}', flush=True)
 
     def _set_power(self, power):
         """One logical calibrated system power → four physical zones, via the
@@ -287,6 +305,8 @@ class HdtCalibrationController:
             self._avg_window = deque(maxlen=n_avg)
             with self._lock:
                 self.running = True
+            self._heater_fan(HDT_HEATER_FAN_PWM)
+            with self._lock:
                 self.results = [{
                     'power': p, 'status': 'NOT_TESTED',
                     'startTemp': None, 'stableTemp': None,
@@ -437,6 +457,7 @@ class HdtCalibrationController:
 
     def _finish(self, state, final_status, message=None):
         self._leds_off()
+        self._heater_fan(0)
         with self._lock:
             limit = (self.hdt_c - self.safety_margin_c) if self.hdt_c else None
             rec = None

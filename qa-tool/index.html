@@ -532,6 +532,7 @@ const TEST_CATEGORIES = [
       { id: 'dev_led_scaling', name: 'Calibrated System Power', desc: 'POST /api/dev/led-power at 50% with factors 1.00/0.92/0.97/0.95 returns physical outputs 50.0/46.0/48.5/47.5 — one logical system power through the calibration layer — and 100% x 1.5 is clamped to 100%; LEDs are returned to the OFF state', check: 'dev_led_scaling' },
       { id: 'dev_picolog_status', name: 'PicoLog TC-08 Status', desc: 'GET /api/dev/picolog/status publishes connected, ch1Available, temperature (a finite number only when CH1 is valid, else null + an error reason) — the fields the HDT setup screen gates Start Calibration on', check: 'dev_picolog_status' },
       { id: 'dev_hdt_gate', name: 'HDT Start Gate', desc: 'POST /api/dev/hdt/start refuses an invalid material HDT and (when CH1 has no valid temperature) refuses to start at all; /api/dev/hdt/status stays IDLE/not running with the 10-90% level list and the configurable stability/timeout/margin constants', check: 'dev_hdt_gate' },
+      { id: 'dev_hdt_heater_fan', name: 'HDT Heater Fan 100%', desc: 'During an HDT calibration run the chamber heater fan (FAN_HEATER) is driven at 100% — /api/dev/hdt/status.heaterFanPwm = 100 and /api/state.fans.chamber_heating = 100 while running — and released to 0% when the run ends (abort). Skipped (pass with note) when CH1 is not available', check: 'dev_hdt_heater_fan' },
       { id: 'dev_hdt_recommend', name: 'HDT Recommendation Logic', desc: 'Recommended power = highest PASS level whose stable temp <= HDT − safety margin (spec example: HDT 65, margin 2, 60% → 61°C passes, 70% hits the limit → 60%); levels after an HDT LIMIT stay NOT TESTED; an all-NOT_CONVERGED run yields no recommendation', check: 'dev_hdt_recommend' },
     ]
   },
@@ -1665,6 +1666,43 @@ async function runSingleTest(test) {
       const elapsed = Date.now() - t0;
       const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
         : { status: 'pass', msg: 'IDLE, 9 levels 10-90%, defaults 2°C/5min/30min/2°C, invalid HDT + no-sensor starts refused' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_hdt_heater_fan') {
+      const j = (path, body) => fetch(apiUrl + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) } : { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      const problems = [];
+      const pl = await j('/api/dev/picolog/status');
+      const st0 = await j('/api/dev/hdt/status');
+      if (!pl || !st0) problems.push('dev endpoints unreachable');
+      else if (st0.running) problems.push('an HDT calibration is already running');
+      else if (!pl.ch1Available) {
+        const elapsed = Date.now() - t0;
+        setTestStatus(test.id, 'pass', 'skipped: PicoLog CH1 not available, cannot start a run (IDLE heaterFanPwm=' + st0.heaterFanPwm + ')', elapsed);
+        log('pass', `${test.name}: skipped, no CH1`);
+        return;
+      } else {
+        await j('/api/dev/hdt/reset', {});
+        const start = await j('/api/dev/hdt/start', { hdtC: 150 });
+        if (!start || !start.ok) problems.push('could not start a run: ' + (start && start.message));
+        else {
+          await new Promise(r => setTimeout(r, 1500));
+          const run = await j('/api/dev/hdt/status');
+          const state = await j('/api/state');
+          if (!run || run.heaterFanPwm !== 100) problems.push('heaterFanPwm while running = ' + (run && run.heaterFanPwm));
+          if (!state || !state.fans || state.fans.chamber_heating !== 100) problems.push('/api/state.fans.chamber_heating = ' + (state && state.fans && state.fans.chamber_heating));
+          await j('/api/dev/hdt/abort', {});
+          await new Promise(r => setTimeout(r, 2500));
+          const done = await j('/api/dev/hdt/status');
+          if (!done || done.running) problems.push('run did not stop after abort');
+          if (!done || done.heaterFanPwm !== 0) problems.push('heater fan not released after abort (' + (done && done.heaterFanPwm) + ')');
+        }
+      }
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: 'heater fan 100% while running, 0% after abort' };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       return;

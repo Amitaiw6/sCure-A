@@ -2,6 +2,14 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.2",
+      "date": "2026-08-25",
+      "notes": [
+        "HDT calibration: the chamber heater fan runs at 100% for the whole run (HDT_HEATER_FAN_PWM) and is released to 0% on every exit path (complete / abort / HDT limit / sensor error); status publishes heaterFanPwm",
+        "QA: 'HDT Heater Fan 100%' test"
+      ]
+    },
+    {
       "version": "0.6.1",
       "date": "2026-08-25",
       "notes": [
