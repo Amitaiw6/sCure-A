@@ -40,7 +40,24 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-## Try the flow (no hardware)
+## Manufacturing UI (the way the factory operator runs it)
+
+```sh
+python demo.py --ui                      # demo: service + approved image + UI with a simulated module
+# real station:
+python provisioning-tool/ui.py --station ST-01 --server https://mfg.stratasys.example \
+       --trust trust/ --signed-eeprom eeprom-signed/          # opens http://127.0.0.1:8450
+```
+
+One screen: step list with progress, approved-image panel (Latest Production
+/ Local / Signature / Status, OFFLINE MODE banner), module detection, unit
+panel (serial, previous serial, device ID, versions, secure boot, encryption,
+license, final test), **Start Provisioning**, **Generate New Serial Number**
+(Factory/Service only, never a typed serial), and the *Provisioning
+Successful — READY FOR PRODUCTION* summary. The UI only observes a
+`ProvisioningRun` running in a background thread.
+
+## Try the flow (no hardware, command line)
 
 ```sh
 # 1. serial / image server

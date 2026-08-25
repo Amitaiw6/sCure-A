@@ -545,6 +545,7 @@ const TEST_CATEGORIES = [
     tests: [
       { id: 'appl_serial_rules', name: 'Serial Number Rules', desc: 'appliance/common serials: SC + 6 digits, ascending, next(SC000125) = SC000126, never below 1, invalid formats rejected — the same rules the Serial Service counter enforces atomically', check: 'appl_serial_rules' },
       { id: 'appl_image_policy', name: 'Approved Image Policy', desc: 'Factory tool policy mirror: only channel=production AND productionApproved=true is installable; a 1.5.0-beta.12 development build is refused even though it is newer; withdrawn builds refused; release 1.4.7 sorts above 1.4.7-rc2', check: 'appl_image_policy' },
+      { id: 'appl_ui_reassign_gate', name: 'Provisioning UI Reassign Gate', desc: 'Factory Provisioning UI (provisioning-tool/ui.py) mirror: Generate New Serial Number needs an operator, a valid current serial (SC000000 format — never a typed new number) and role factory/service; production role is refused', check: 'appl_ui_reassign_gate' },
       { id: 'appl_audit_chain', name: 'Audit Log Hash Chain', desc: 'hash = sha256(prevHash + canonical(entry)); modifying, removing or reordering a line breaks the chain at that point (WebCrypto SHA-256 in the browser)', check: 'appl_audit_chain' },
     ]
   },
@@ -1826,6 +1827,17 @@ async function runSingleTest(test) {
       if (!(cmp('1.4.7', '1.4.7-rc2') > 0 && cmp('1.4.7-rc2', '1.4.6') > 0)) problems.push('version ordering');
       const elapsed = Date.now() - t0;
       const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'installs 1.4.7 (approved), refuses 1.4.8-rc2 / 1.5.0-beta.12 / unapproved / withdrawn' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'appl_ui_reassign_gate') {
+      const gate = (d) => { if (!(d.operator || '').trim()) return 'operator name required'; if (!/^SC\d{6}$/.test((d.previousSerial || '').trim().toUpperCase()) || +(d.previousSerial || '').slice(2) < 1) return 'invalid serial'; if (!['factory', 'service'].includes(d.role)) return 'role'; return null; };
+      const problems = [];
+      if (gate({ operator: '', previousSerial: 'SC000001', role: 'factory' }) !== 'operator name required') problems.push('missing operator accepted');
+      if (gate({ operator: 'a', previousSerial: 'SC9', role: 'factory' }) !== 'invalid serial') problems.push('garbage serial accepted');
+      if (gate({ operator: 'a', previousSerial: 'SC000001', role: 'production' }) !== 'role') problems.push('production role allowed to reassign');
+      if (gate({ operator: 'a', previousSerial: 'SC000001', role: 'service' }) !== null) problems.push('service role refused');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'operator + valid current serial + factory/service required; production refused' };
       setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
     }
     if (test.check === 'appl_audit_chain') {

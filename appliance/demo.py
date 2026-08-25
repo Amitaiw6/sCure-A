@@ -65,6 +65,12 @@ def main():
         call("/images/SCURE-2026-08-25-147/approve", {"approvedBy": "qa-lead"}, role="release")
         print("== catalogue after approval: ", call("/images/latest?product=SCURE-A&channel=production")["versions"])
         print()
+        if "--ui" in sys.argv:
+            # manufacturing UI: keeps the service running, opens the browser, Ctrl+C to stop
+            print("== opening the Factory Provisioning Tool UI (Ctrl+C to stop)")
+            subprocess.run([PY, str(HERE / "provisioning-tool" / "ui.py"), "--station", "ST-01", "--server", B,
+                            "--workdir", str(DEMO / "work"), "--trust", str(DEMO / "trust"), "--fake"], check=False)
+            return
         base = [PY, str(HERE / "provisioning-tool" / "provision.py"), "run", "--station", "ST-01", "--operator", "demo",
                 "--server", B, "--workdir", str(DEMO / "work"), "--trust", str(DEMO / "trust"), "--fake"]
         print("== provisioning module #1")
