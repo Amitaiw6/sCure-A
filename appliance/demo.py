@@ -67,8 +67,8 @@ def main():
         print()
         if "--ui" in sys.argv:
             # manufacturing UI: keeps the service running, opens the browser, Ctrl+C to stop
-            print("== opening the Factory Provisioning Tool UI (Ctrl+C to stop)")
-            subprocess.run([PY, str(HERE / "provisioning-tool" / "ui.py"), "--station", "ST-01", "--server", B,
+            print("== opening the Factory Provisioning Tool (desktop app; close the window to stop)")
+            subprocess.run([PY, str(HERE / "provisioning-tool" / "app.py"), "--station", "ST-01", "--server", B,
                             "--workdir", str(DEMO / "work"), "--trust", str(DEMO / "trust"), "--fake"], check=False)
             return
         base = [PY, str(HERE / "provisioning-tool" / "provision.py"), "run", "--station", "ST-01", "--operator", "demo",

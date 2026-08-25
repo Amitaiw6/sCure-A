@@ -40,14 +40,19 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-## Manufacturing UI (the way the factory operator runs it)
+## Factory Provisioning Tool — desktop application (the way the operator runs it)
 
 ```sh
-python demo.py --ui                      # demo: service + approved image + UI with a simulated module
+python demo.py --ui                      # demo: service + approved image + the desktop app with a simulated module
 # real station:
-python provisioning-tool/ui.py --station ST-01 --server https://mfg.stratasys.example \
-       --trust trust/ --signed-eeprom eeprom-signed/          # opens http://127.0.0.1:8450
+python provisioning-tool/app.py --station ST-01 --server https://mfg.stratasys.example \
+       --trust trust/ --signed-eeprom eeprom-signed/
+# package as a Windows program (no Python needed on the station):
+pip install pyinstaller && pyinstaller stratasys-provisioning.spec   # -> dist/StratasysProvisioning/StratasysProvisioning.exe
 ```
+
+`provisioning-tool/app.py` is a native Qt (PySide6) window; `provisioning-tool/ui.py`
+is the same screen as a local web page for stations that prefer a browser.
 
 One screen: step list with progress, approved-image panel (Latest Production
 / Local / Signature / Status, OFFLINE MODE banner), module detection, unit

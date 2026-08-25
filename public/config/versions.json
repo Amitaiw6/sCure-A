@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.7.2",
+      "date": "2026-08-25",
+      "notes": [
+        "appliance: Factory Provisioning Tool as a native desktop application (provisioning-tool/app.py, Qt/PySide6) — same panels as the web UI, run in a QThread, Provisioning Successful summary, Generate New Serial Number with confirmation; PyInstaller spec (stratasys-provisioning.spec) to ship a Windows .exe; demo.py --ui opens the desktop app"
+      ]
+    },
+    {
       "version": "0.7.1",
       "date": "2026-08-25",
       "notes": [
