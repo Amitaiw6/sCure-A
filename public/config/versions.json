@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.7.1",
+      "date": "2026-08-25",
+      "notes": [
+        "Provisioning UI: operator name pre-filled from the station login, Start disabled until an operator and an approved image exist, errors shown inline on the page instead of a browser alert"
+      ]
+    },
+    {
       "version": "0.7.0",
       "date": "2026-08-25",
       "notes": [

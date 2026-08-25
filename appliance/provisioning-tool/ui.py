@@ -17,6 +17,7 @@ a background thread and polls its journal. One run at a time per station.
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import sys
 import threading
@@ -64,6 +65,7 @@ def _snapshot():
         out = {"ok": True, "station": CFG.station_id, "fake": FAKE, "running": running,
                "catalog": STATE["catalog"], "events": STATE["events"][-60:], "progress": STATE["progress"],
                "lastSerial": STATE["lastSerial"], "history": STATE["history"][-10:],
+               "defaultOperator": getpass.getuser(),
                "steps": [s.value for s in provision.ORDER]}
         if st:
             out["run"] = {"runId": st.run_id, "step": st.step.value, "completed": st.completed, "result": st.result,
@@ -185,6 +187,7 @@ button{background:var(--acc);color:#04191a;border:0;border-radius:7px;padding:12
 input{background:#0f1418;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:10px 12px;font-size:15px;width:100%}
 .row{display:flex;gap:10px;align-items:center;margin-top:10px}
 .log{font-family:Consolas,monospace;font-size:12px;max-height:230px;overflow:auto;background:#0f1418;border:1px solid var(--line);border-radius:6px;padding:8px 10px}.log div{white-space:nowrap}.log .e{color:var(--mute)}
+.hint{font-size:12px;color:var(--mute);margin-top:6px}
 .success{grid-column:1/-1;display:none;background:#0f2a1f;border:1px solid #1f5a3d;border-radius:8px;padding:18px 22px}.success.on{display:block}.success h3{margin:0 0 8px;color:var(--ok);font-size:22px}
 .success .big{font-family:Consolas,monospace;font-size:26px;font-weight:700}
 .failed{grid-column:1/-1;display:none;background:#2e1512;border:1px solid #6b2a24;border-radius:8px;padding:16px 22px}.failed.on{display:block}
@@ -197,8 +200,9 @@ input{background:#0f1418;border:1px solid var(--line);color:var(--ink);border-ra
 <section class="card"><h2>Provisioning</h2>
  <ul class="steps" id="steps"></ul>
  <div id="progWrap" style="display:none"><div style="font-size:12px;color:var(--mute)" id="progLabel"></div><div class="bar"><i id="prog"></i></div></div>
- <div class="row"><input id="operator" placeholder="Operator name" autocomplete="off"></div>
+ <div class="row"><input id="operator" placeholder="Operator name (required)" autocomplete="off"></div>
  <div class="row"><button id="start">Start Provisioning</button><button class="sec" id="refresh">Check for newer image</button></div>
+ <div id="err" style="display:none;margin-top:10px;padding:10px 12px;border-radius:6px;background:#4a1f1b;color:#ffb4ad;font-weight:600"></div>
 </section>
 <section class="card"><h2>Approved Image</h2>
  <div class="kv">
@@ -264,11 +268,16 @@ function render(s){
  $('success').classList.toggle('on',!!(r&&r.result==='READY_FOR_PRODUCTION'));if(r&&r.result==='READY_FOR_PRODUCTION'){$('sSerial').textContent=r.serial;$('sImage').textContent=`${r.image.version} (build ${r.image.buildId})`;$('sOnline').textContent=r.online?'Online':'OFFLINE — record queued for upload';}
  $('failed').classList.toggle('on',!!(r&&r.result==='FAILED'));if(r&&r.result==='FAILED')$('failText').textContent=`${r.step}: ${r.error}`;
  $('log').innerHTML=s.events.map(e=>`<div><span class="e">${(e.ts||'').slice(11,19)} ${e.step||''}</span> ${e.event}${e.status?' — '+e.status:''}${e.serial?' '+e.serial:''}</div>`).join('');$('log').scrollTop=1e9;
- $('start').disabled=running;$('newSerial').disabled=running;$('refresh').disabled=running;
+ const hasOp=!!$('operator').value.trim();
+ $('start').disabled=running||!hasOp||!(c.ok);$('newSerial').disabled=running||!hasOp;$('refresh').disabled=running;
+ $('start').title=!hasOp?'Enter the operator name first':(!c.ok?'No approved image available':'');
+ if(s.defaultOperator&&!$('operator').dataset.touched&&!$('operator').value){$('operator').value=s.defaultOperator;}
  if(s.lastSerial&&!$('prevSerial').value)$('prevSerial').placeholder=`Current serial of the unit (last: ${s.lastSerial})`;
 }
 async function poll(){try{render(await (await fetch('/api/state')).json());}catch(e){}setTimeout(poll,800);}
-async function post(u,b){const r=await (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json();if(!r.ok&&r.error)alert(r.error);return r;}
+function showErr(t){const e=$('err');e.textContent=t||'';e.style.display=t?'block':'none';}
+async function post(u,b){showErr('');try{const r=await (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json();if(!r.ok&&r.error)showErr(r.error);return r;}catch(e){showErr('UI server not reachable: '+e);return {ok:false};}}
+$('operator').addEventListener('input',()=>{$('operator').dataset.touched='1';});
 $('start').onclick=()=>post('/api/start',{operator:$('operator').value});
 $('refresh').onclick=()=>post('/api/catalog/refresh');
 $('newSerial').onclick=()=>{if(confirm(`Assign the NEXT serial number to the unit currently ${$('prevSerial').value||'(enter its serial)'}? This is recorded in the audit log.`))post('/api/new-serial',{operator:$('operator').value,previousSerial:$('prevSerial').value,role:'factory'});};
