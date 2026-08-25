@@ -123,6 +123,7 @@ export async function generateHdtReport(status: HdtStatus, samples: HdtSample[])
   <div class="card"><div class="label">Max Model Temp</div><div class="value">${hdt - margin}<span class="unit">°C</span></div></div>
   <div class="card"><div class="label">Max Measured</div><div class="value">${status.maxMeasuredTemp ?? '—'}<span class="unit">°C</span></div></div>
   <div class="card"><div class="label">Recommended Power</div><div class="value ${rec != null ? 'ok' : 'muted'}">${rec != null ? `${rec}%` : 'None'}</div></div>
+  <div class="card"><div class="label">Boost ${status.boost?.power ?? 90}%: ${status.boost?.startTempC ?? 35}°C → ${status.boost?.targetTempC != null ? `${status.boost.targetTempC.toFixed(1)}°C` : '—'}</div><div class="value ${status.boost?.timeSec != null ? 'ok' : 'muted'}">${status.boost?.timeSec != null ? fmtDur(status.boost.timeSec) : 'N/A'}${status.boost?.method ? `<span class="unit"> (${status.boost.method})</span>` : ''}</div>${status.boost?.note ? `<div class="label">${status.boost.note}</div>` : ''}</div>
   <div class="card"><div class="label">Levels Tested</div><div class="value">${status.results.filter(r => r.status !== 'NOT_TESTED').length}<span class="unit"> / ${status.results.length}</span></div></div>
 </div>
 

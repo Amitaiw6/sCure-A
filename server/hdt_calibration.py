@@ -59,6 +59,13 @@ HDT_SAFETY_MARGIN_C = 2.0
 NEXT_STEP_MAX_TEMP_DELTA_C = 0.0
 COOLDOWN_MAX_WAIT_MIN = 15.0
 POWER_LEVELS = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+# End-of-run "boost" figure shown next to the recommendation: how long the
+# model takes at BOOST_POWER (calibrated system power) to go from
+# BOOST_START_TEMP_C up to the lower HDT limit (HDT - safety margin).
+# Measured from the BOOST_POWER step when it was tested, otherwise
+# estimated from a first-order thermal model fitted to the tested levels.
+BOOST_POWER = 90
+BOOST_START_TEMP_C = 35.0
 HDT_WAVELENGTH = 405           # calibration runs on the 405 nm cure LEDs
 # The chamber heater fan (FAN_HEATER) runs at this duty for the whole HDT
 # run so the air around the model is mixed the same way as during a real
@@ -78,6 +85,8 @@ _OVERRIDE_KEYS = {
     'maxStabilizationTimeMin': 'max_stabilization_time_min',
     'nextStepMaxTempDeltaC': 'next_step_max_temp_delta_c',
     'cooldownMaxWaitMin': 'cooldown_max_wait_min',
+    'boostPower': 'boost_power',
+    'boostStartTempC': 'boost_start_temp_c',
 }
 
 
@@ -202,6 +211,7 @@ class HdtCalibrationController:
                 'outputs': led_calibration.scaled_outputs(self.current_power or 0),
                 'results': [dict(r) for r in self.results],
                 'recommendedPower': self.recommended_power,
+                'boost': self.boost,
                 'maxMeasuredTemp': self.max_measured_temp,
                 'heaterFanPwm': self.heater_fan_pwm,
                 'config': {
@@ -233,6 +243,9 @@ class HdtCalibrationController:
         self.running = False
         self.heater_fan_pwm = 0
         self._last_rate = None
+        self.boost_power = BOOST_POWER
+        self.boost_start_temp_c = BOOST_START_TEMP_C
+        self.boost = None               # computed by _finish
         self._fan_asserted_at = 0.0
         self.final_status = None
         self.hdt_c = None
@@ -524,6 +537,12 @@ class HdtCalibrationController:
                         and r['stableTemp'] <= limit):
                     rec = r['power']
             self.recommended_power = rec
+            try:
+                self.boost = self._boost_estimate(limit)
+            except Exception as e:  # noqa: BLE001 - a summary figure must never break the finish
+                self.boost = {'power': self.boost_power, 'startTempC': self.boost_start_temp_c,
+                              'targetTempC': limit, 'timeSec': None, 'method': None,
+                              'note': f'not available: {e}'}
             if final_status is None:
                 tested = [r for r in self.results if r['status'] != 'NOT_TESTED']
                 final_status = ('NOT_CONVERGED'
@@ -540,6 +559,88 @@ class HdtCalibrationController:
         log_event('HDT calibration completed',
                   {'status': final_status, 'recommendedPower': rec,
                    'maxMeasuredTemp': self.max_measured_temp})
+
+    def _boost_estimate(self, limit):
+        """Time at boost_power from boost_start_temp_c to `limit` (HDT-margin).
+        Caller holds self._lock. Returns a dict for status()/reports."""
+        P, T0, TL = self.boost_power, self.boost_start_temp_c, limit
+        out = {'power': P, 'startTempC': T0, 'targetTempC': TL,
+               'timeSec': None, 'method': None, 'note': None}
+        if TL is None:
+            out['note'] = 'no HDT limit'
+            return out
+        if TL <= T0:
+            out['note'] = f'lower HDT limit {TL:.1f}degC is not above {T0:.0f}degC'
+            return out
+        # --- measured: the boost-power step's own temperature trace ------
+        idx = next((i for i, r in enumerate(self.results)
+                    if r['power'] == P and r['status'] != 'NOT_TESTED'), None)
+        if idx is not None:
+            trace = [(x['t'], x['avg']) for x in self.samples
+                     if x['step'] == idx and x['power'] == P]
+            # a true measurement needs the step to have actually climbed
+            # through T0 -> TL; a step that started warmer than T0 (no
+            # cooling between levels) falls through to the model estimate
+            if len(trace) >= 2 and trace[0][1] <= T0 + 0.5:
+                t_start = next((t for t, v in trace if v >= T0), None)
+                t_hit = next((t for t, v in trace if v >= TL), None)
+                if t_start is not None and t_hit is not None and t_hit >= t_start:
+                    out['timeSec'] = round(t_hit - t_start, 1)
+                    out['method'] = 'measured'
+                    return out
+            if len(trace) >= 2:
+                r = self.results[idx]
+                if r['stableTemp'] is not None and r['stableTemp'] < TL:
+                    out['method'] = 'measured'
+                    out['note'] = (f'{P}% stabilizes at {r["stableTemp"]:.1f}degC - '
+                                   f'below the lower HDT limit, never reaches it')
+                    return out
+        # --- estimated: first-order model from the tested levels ---------
+        passed = [r for r in self.results
+                  if r['status'] == 'PASS' and r['stableTemp'] is not None
+                  and r['startTemp'] is not None and r['timeToStabilitySec']]
+        if len(passed) < 2:
+            out['note'] = f'{P}% not tested and too few stabilized levels to estimate'
+            return out
+        # equilibrium temperature vs power: least-squares line
+        xs = [r['power'] for r in passed]; ys = [r['stableTemp'] for r in passed]
+        n = len(xs); mx = sum(xs) / n; my = sum(ys) / n
+        den = sum((x - mx) ** 2 for x in xs)
+        slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den if den else 0
+        t_eq = my + slope * (P - mx)
+        # time constant: per level, time to cover 63.2% of (T_eq - T0)
+        taus = []
+        for i, r in enumerate(self.results):
+            if r not in passed:
+                continue
+            target = r['startTemp'] + 0.632 * (r['stableTemp'] - r['startTemp'])
+            if r['stableTemp'] - r['startTemp'] < 1.0:
+                continue
+            tr = [(x['t'], x['avg']) for x in self.samples
+                  if x['step'] == i and x['power'] == r['power']]
+            if not tr:
+                continue
+            t_hit = next((t for t, v in tr if v >= target), None)
+            if t_hit is not None:
+                taus.append(t_hit - tr[0][0])
+        if not taus:
+            out['note'] = 'could not fit a thermal time constant'
+            return out
+        tau = sum(taus) / len(taus)
+        out['method'] = 'estimated'
+        out['modelEqTempC'] = round(t_eq, 1)
+        out['modelTauSec'] = round(tau, 1)
+        if t_eq <= TL:
+            out['note'] = (f'model: {P}% would stabilize at ~{t_eq:.1f}degC, '
+                           f'below the lower HDT limit - never reaches it')
+            return out
+        out['timeSec'] = round(tau * math.log((t_eq - T0) / (t_eq - TL)), 1)
+        tested = idx is not None
+        out['note'] = (f'estimated from a first-order model (tau {tau:.0f}s, '
+                       f'{P}% equilibrium ~{t_eq:.1f}degC)'
+                       + (f' - the {P}% step started above {T0:.0f}degC'
+                          if tested else f' - {P}% was not tested'))
+        return out
 
     # ------------------------------------------------------------------
     #  CSV report (full or partial - all raw measurements)

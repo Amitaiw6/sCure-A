@@ -2,6 +2,14 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.7",
+      "date": "2026-08-25",
+      "notes": [
+        "HDT calibration end-of-run summary: next to the recommended system LED power, the software now reports the 'boost' time — how long the model needs at 90% calibrated power to go from 35°C to the lower HDT limit (HDT − safety margin); measured from the 90% step when possible, otherwise estimated from a first-order thermal model fitted to the tested levels (marked 'estimated'); included in the HTML report",
+        "QA: 'HDT Boost Time Figure' test"
+      ]
+    },
+    {
       "version": "0.6.6",
       "date": "2026-08-25",
       "notes": [

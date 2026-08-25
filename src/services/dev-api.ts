@@ -114,6 +114,17 @@ export interface HdtStatus {
   outputs: LedZoneValues
   results: HdtStepResult[]
   recommendedPower: number | null
+  /** End-of-run boost figure: time at `power` from startTempC to targetTempC (HDT − margin) */
+  boost?: {
+    power: number
+    startTempC: number
+    targetTempC: number | null
+    timeSec: number | null
+    method: 'measured' | 'estimated' | null
+    note: string | null
+    modelEqTempC?: number
+    modelTauSec?: number
+  } | null
   maxMeasuredTemp: number | null
   config: HdtConfig
   /** Total samples recorded so far (for incremental sample fetch). */

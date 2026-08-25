@@ -534,6 +534,7 @@ const TEST_CATEGORIES = [
       { id: 'dev_hdt_gate', name: 'HDT Start Gate', desc: 'POST /api/dev/hdt/start refuses an invalid material HDT and (when CH1 has no valid temperature) refuses to start at all; /api/dev/hdt/status stays IDLE/not running with the 10-90% level list and the configurable stability/timeout/margin constants', check: 'dev_hdt_gate' },
       { id: 'dev_hdt_heater_fan', name: 'HDT Heater Fan 100%', desc: 'During an HDT calibration run the chamber heater fan (FAN_HEATER) is driven at 100% — /api/dev/hdt/status.heaterFanPwm = 100 and /api/state.fans.chamber_heating = 100 while running — and released to 0% when the run ends (abort). Skipped (pass with note) when CH1 is not available', check: 'dev_hdt_heater_fan' },
       { id: 'dev_hdt_rate_criterion', name: 'HDT Rate-Of-Change Criterion', desc: 'Stability needs BOTH the 2°C/5 min band and |slope| <= stabilityMaxRateCPerMin (default 0.5 °C/min, 0 = off): /api/dev/hdt/status.config publishes the value and the live rateCPerMin; logic check: a 5-min window rising 1.96°C (0.4°C/min) passes at 0.5 but fails at 0.3, a flat window passes, rate 0 disables the check', check: 'dev_hdt_rate_criterion' },
+      { id: 'dev_hdt_boost', name: 'HDT Boost Time Figure', desc: 'End-of-run summary also reports how long the model needs at BOOST_POWER (90%) to go from 35°C to HDT − margin: measured from the 90% step when it climbed through both temperatures, otherwise a first-order model estimate (tau from the tested levels, equilibrium extrapolated vs power); logic check: T_eq 70, tau 300 s, 35→50°C → 300·ln(35/20) = 168 s; unreachable when T_eq ≤ target; status publishes boost.{power,startTempC,targetTempC,timeSec,method}', check: 'dev_hdt_boost' },
       { id: 'dev_hdt_recommend', name: 'HDT Recommendation Logic', desc: 'Recommended power = highest PASS level whose stable temp <= HDT − safety margin (spec example: HDT 65, margin 2, 60% → 61°C passes, 70% hits the limit → 60%); levels after an HDT LIMIT stay NOT TESTED; an all-NOT_CONVERGED run yields no recommendation', check: 'dev_hdt_recommend' },
     ]
   },
@@ -1731,6 +1732,26 @@ async function runSingleTest(test) {
       const elapsed = Date.now() - t0;
       const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
         : { status: 'pass', msg: 'default 0.5°C/min published; slope + band criterion behaves (0.39°C/min: pass@0.5, fail@0.3; 0 = off)' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_hdt_boost') {
+      const problems = [];
+      const st = await fetch(apiUrl + '/api/dev/hdt/status', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      if (!st) problems.push('status endpoint unreachable');
+      else if (!('boost' in st)) problems.push('status has no boost field');
+      else if (st.boost && !['power', 'startTempC', 'targetTempC', 'timeSec', 'method'].every(k => k in st.boost)) problems.push('boost object incomplete');
+      // Mirror of _boost_estimate's model branch: t = tau * ln((Teq - T0) / (Teq - TL))
+      const est = (teq, tau, t0, tl) => teq <= tl ? null : tau * Math.log((teq - t0) / (teq - tl));
+      const t = est(70, 300, 35, 50);
+      if (t == null || Math.abs(t - 167.9) > 1) problems.push('model time = ' + t);
+      if (est(48, 300, 35, 50) !== null) problems.push('unreachable target produced a time');
+      if (!(est(70, 300, 35, 60) > t)) problems.push('a higher target did not take longer');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: 'boost published in status; model 35→50°C @ Teq 70/tau 300 s = 168 s; unreachable → N/A' };
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       return;

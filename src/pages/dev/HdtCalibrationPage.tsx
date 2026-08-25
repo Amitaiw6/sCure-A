@@ -371,6 +371,22 @@ export default function HdtCalibrationPage() {
                     ).join(' · ')}
                   </div>
                 )}
+                {status.boost && (
+                  <div className="mt-1.5 pt-1.5 border-t border-border/50">
+                    <div className="text-muted-foreground text-[10px]">
+                      Boost {status.boost.power}%: {status.boost.startTempC.toFixed(0)}°C → {status.boost.targetTempC != null ? `${status.boost.targetTempC.toFixed(1)}°C` : '--'} (HDT − margin)
+                    </div>
+                    <div className={cn('text-lg font-bold leading-tight', status.boost.timeSec != null ? 'text-amber-300' : 'text-muted-foreground')}>
+                      {status.boost.timeSec != null ? fmtDuration(status.boost.timeSec) : 'N/A'}
+                      {status.boost.method && (
+                        <span className="text-[9px] font-normal text-muted-foreground ml-1">({status.boost.method})</span>
+                      )}
+                    </div>
+                    {status.boost.note && (
+                      <div className="text-[9px] text-muted-foreground leading-snug">{status.boost.note}</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <table className="w-full text-[10px]">
