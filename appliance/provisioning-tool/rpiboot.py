@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -26,6 +27,61 @@ from pathlib import Path
 
 class RpibootError(Exception):
     pass
+
+
+# Broadcom USB ids used by Raspberry Pi devices in nRPIBOOT (boot ROM) mode
+# and by the rpiboot mass-storage / ethernet gadgets.
+RPI_USB_VID = "0a5c"
+RPI_BOOTROM_PIDS = {"2711": "BCM2711 (CM4)", "2712": "BCM2712 (CM5 / Pi 5)", "2764": "BCM2712 recovery"}
+
+
+@dataclass
+class UsbModule:
+    vid: str
+    pid: str
+    description: str
+    mode: str            # "rpiboot" (boot ROM waiting for rpiboot) | "gadget" (mass-storage/ethernet loaded)
+
+
+def detect_usb_module() -> "UsbModule | None":
+    """Is a Raspberry Pi module connected over USB right now? Host-side
+    only, no rpiboot invocation; safe to poll every couple of seconds."""
+    found = []
+    if platform.system() == "Linux":
+        for dev in Path("/sys/bus/usb/devices").glob("*"):
+            try:
+                vid = (dev / "idVendor").read_text().strip().lower()
+                pid = (dev / "idProduct").read_text().strip().lower()
+            except OSError:
+                continue
+            if vid == RPI_USB_VID:
+                prod = ""
+                try:
+                    prod = (dev / "product").read_text().strip()
+                except OSError:
+                    pass
+                found.append((vid, pid, prod))
+    elif platform.system() == "Windows":
+        ps = ("Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\\VID_0A5C*' } "
+              "| ForEach-Object { $_.InstanceId + '|' + $_.FriendlyName }")
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                                 capture_output=True, text=True, timeout=15).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        for line in out.splitlines():
+            inst, _, name = line.strip().partition("|")
+            m = re.search(r"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})", inst)
+            if m:
+                found.append((m.group(1).lower(), m.group(2).lower(), name))
+    if not found:
+        return None
+    # prefer the boot-ROM device (that is what rpiboot talks to)
+    for vid, pid, name in found:
+        if pid in RPI_BOOTROM_PIDS:
+            return UsbModule(vid, pid, RPI_BOOTROM_PIDS[pid], "rpiboot")
+    vid, pid, name = found[0]
+    return UsbModule(vid, pid, name or "Raspberry Pi USB gadget", "gadget")
 
 
 @dataclass

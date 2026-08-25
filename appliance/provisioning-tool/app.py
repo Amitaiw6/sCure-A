@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from stratasys_appliance import crypto, serials  # noqa: E402
 import provision  # noqa: E402
 from image_catalog import ImageCatalog, CatalogError  # noqa: E402
-from rpiboot import Rpiboot, FakeRpiboot  # noqa: E402
+from rpiboot import Rpiboot, FakeRpiboot, detect_usb_module  # noqa: E402
 
 STEP_LABELS = {
     "FETCH_APPROVED_IMAGE": "Fetch approved image", "DETECT_HARDWARE": "Detect module (rpiboot)",
@@ -96,6 +96,32 @@ class RunWorker(QThread):
         r.state.previous_serial = self.previous_serial
         self.run_obj = r
         self.finished_run.emit(r.run())
+
+
+class UsbWatcher(QThread):
+    """Polls the USB bus for a Raspberry Pi module (boot ROM / gadget)."""
+    changed = Signal(object)          # UsbModule | None
+
+    def __init__(self, fake: bool, interval_s: float = 2.0):
+        super().__init__()
+        self.fake, self.interval_s, self._stop = fake, interval_s, False
+
+    def run(self):
+        last = "?"
+        while not self._stop:
+            if self.fake:
+                from rpiboot import UsbModule
+                cur = UsbModule("0a5c", "2712", "BCM2712 (CM5 / Pi 5) — simulated", "rpiboot")
+            else:
+                cur = detect_usb_module()
+            key = (cur.vid, cur.pid, cur.mode) if cur else None
+            if key != last:
+                self.changed.emit(cur)
+                last = key
+            self.msleep(int(self.interval_s * 1000))
+
+    def stop(self):
+        self._stop = True
 
 
 class CatalogWorker(QThread):
@@ -169,12 +195,16 @@ class MainWindow(QMainWindow):
         self.cfg, self.fake = cfg, fake
         self.worker: RunWorker | None = None
         self.catalog: dict = {}
+        self.usb_module = None
         self.last_serial: str | None = None
         self.completed: set[str] = set()
         self.setWindowTitle("Stratasys Factory Provisioning Tool")
         self.resize(1280, 820)
         self._build()
         self.refresh_catalog()
+        self.usb = UsbWatcher(self.fake)
+        self.usb.changed.connect(self.on_usb)
+        self.usb.start()
 
     # ---------------- layout ----------------
     def _build(self):
@@ -184,6 +214,8 @@ class MainWindow(QMainWindow):
         head = QHBoxLayout()
         t = QLabel("Stratasys Factory Provisioning Tool"); f = QFont("Segoe UI", 15, QFont.DemiBold); t.setFont(f)
         head.addWidget(t); head.addStretch()
+        self.p_usb = pill("CM5: checking USB…", C_MUTE)
+        head.addWidget(self.p_usb); head.addSpacing(16)
         self.lbl_station = QLabel(f"Station {self.cfg.station_id} · {'SIMULATED MODULE' if self.fake else 'CM5 over USB'}")
         self.lbl_station.setStyleSheet(f"color: {C_MUTE}; font-family: Consolas;")
         head.addWidget(self.lbl_station)
@@ -285,10 +317,33 @@ class MainWindow(QMainWindow):
     def _update_buttons(self):
         has_op = bool(self.operator.text().strip())
         cat_ok = bool(self.catalog.get("ok"))
-        self.btn_start.setEnabled(not self._running() and has_op and cat_ok)
-        self.btn_start.setToolTip("" if has_op and cat_ok else ("Enter the operator name first" if not has_op else "No approved image available"))
-        self.btn_new.setEnabled(not self._running() and has_op and serials.is_valid(self.prev_serial.text().strip().upper()))
+        usb_ok = self.fake or self.usb_module is not None
+        ready = not self._running() and has_op and cat_ok and usb_ok
+        self.btn_start.setEnabled(ready)
+        self.btn_start.setToolTip("" if ready else ("Enter the operator name first" if not has_op else
+                                  "No approved image available" if not cat_ok else
+                                  "Connect the CM5 over USB (nRPIBOOT mode) first"))
+        self.btn_new.setEnabled(not self._running() and has_op and usb_ok and serials.is_valid(self.prev_serial.text().strip().upper()))
         self.btn_refresh.setEnabled(not self._running())
+
+    def on_usb(self, mod):
+        self.usb_module = mod
+        if mod is None:
+            set_pill(self.p_usb, "CM5: NOT CONNECTED — connect over USB in nRPIBOOT mode", C_BAD)
+            self.v_hw.setText("—")
+        elif mod.mode == "rpiboot":
+            set_pill(self.p_usb, f"CM5: CONNECTED · {mod.description} ({mod.vid}:{mod.pid}) · ready for rpiboot", C_OK)
+            if not self._running():
+                self.v_hw.setText(mod.description)
+        else:
+            set_pill(self.p_usb, f"CM5: CONNECTED · {mod.description} (gadget loaded)", C_OK)
+        self.log.appendPlainText("         USB                    " + ("module connected" if mod else "module disconnected"))
+        self._update_buttons()
+
+    def closeEvent(self, ev):
+        if hasattr(self, "usb"):
+            self.usb.stop(); self.usb.wait(3000)
+        super().closeEvent(ev)
 
     def show_error(self, text: str | None):
         self.err.setText(text or ""); self.err.setVisible(bool(text))

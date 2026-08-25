@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.7.3",
+      "date": "2026-08-25",
+      "notes": [
+        "Provisioning tool: live detection of the Raspberry Pi CM5 on USB (Broadcom 0a5c:2712 boot-ROM / rpiboot gadget; Windows via PnP, Linux via sysfs) — 'CM5: CONNECTED / NOT CONNECTED' indicator in the desktop app and web UI, Start disabled until a module is connected (real mode)"
+      ]
+    },
+    {
       "version": "0.7.2",
       "date": "2026-08-25",
       "notes": [

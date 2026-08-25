@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from stratasys_appliance import crypto, serials  # noqa: E402
 import provision  # noqa: E402
 from image_catalog import ImageCatalog, CatalogError  # noqa: E402
-from rpiboot import Rpiboot, FakeRpiboot  # noqa: E402
+from rpiboot import Rpiboot, FakeRpiboot, detect_usb_module  # noqa: E402
 
 app = Flask(__name__)
 CFG: provision.Config | None = None
@@ -66,6 +66,8 @@ def _snapshot():
                "catalog": STATE["catalog"], "events": STATE["events"][-60:], "progress": STATE["progress"],
                "lastSerial": STATE["lastSerial"], "history": STATE["history"][-10:],
                "defaultOperator": getpass.getuser(),
+               "usbModule": ({"vid": "0a5c", "pid": "2712", "description": "BCM2712 (CM5 / Pi 5) — simulated", "mode": "rpiboot"}
+                             if FAKE else (m.__dict__ if (m := detect_usb_module()) else None)),
                "steps": [s.value for s in provision.ORDER]}
         if st:
             out["run"] = {"runId": st.run_id, "step": st.step.value, "completed": st.completed, "result": st.result,
@@ -194,7 +196,7 @@ input{background:#0f1418;border:1px solid var(--line);color:var(--ink);border-ra
 .wide{grid-column:1/-1}
 @media(max-width:1000px){main{grid-template-columns:1fr}}
 </style></head><body>
-<header><h1>Stratasys Factory Provisioning Tool</h1><div class="st">Station <span id="station">—</span> · <span id="mode"></span></div></header>
+<header><h1>Stratasys Factory Provisioning Tool</h1><div class="st"><span id="usb" class="pill mute">CM5: checking USB…</span> &nbsp; Station <span id="station">—</span> · <span id="mode"></span></div></header>
 <div class="banner" id="offline">OFFLINE MODE — Unable to verify whether a newer Production Image is available. <span id="offlineImg"></span></div>
 <main>
 <section class="card"><h2>Provisioning</h2>
@@ -268,7 +270,8 @@ function render(s){
  $('success').classList.toggle('on',!!(r&&r.result==='READY_FOR_PRODUCTION'));if(r&&r.result==='READY_FOR_PRODUCTION'){$('sSerial').textContent=r.serial;$('sImage').textContent=`${r.image.version} (build ${r.image.buildId})`;$('sOnline').textContent=r.online?'Online':'OFFLINE — record queued for upload';}
  $('failed').classList.toggle('on',!!(r&&r.result==='FAILED'));if(r&&r.result==='FAILED')$('failText').textContent=`${r.step}: ${r.error}`;
  $('log').innerHTML=s.events.map(e=>`<div><span class="e">${(e.ts||'').slice(11,19)} ${e.step||''}</span> ${e.event}${e.status?' — '+e.status:''}${e.serial?' '+e.serial:''}</div>`).join('');$('log').scrollTop=1e9;
- const hasOp=!!$('operator').value.trim();
+ const um=s.usbModule;$('usb').className='pill '+(um?'ok':'bad');$('usb').textContent=um?`CM5: CONNECTED · ${um.description} (${um.vid}:${um.pid})`:'CM5: NOT CONNECTED — connect over USB in nRPIBOOT mode';
+ const hasOp=!!$('operator').value.trim()&&(s.fake||!!um);
  $('start').disabled=running||!hasOp||!(c.ok);$('newSerial').disabled=running||!hasOp;$('refresh').disabled=running;
  $('start').title=!hasOp?'Enter the operator name first':(!c.ok?'No approved image available':'');
  if(s.defaultOperator&&!$('operator').dataset.touched&&!$('operator').value){$('operator').value=s.defaultOperator;}
