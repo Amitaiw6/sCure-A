@@ -1,0 +1,58 @@
+#!/bin/sh
+# initramfs local-top: runs inside the SIGNED boot.img before the root
+# filesystem is mounted. Responsibilities (ARCHITECTURE.md §3.1, §5, §7):
+#   1. open the dm-verity root of the active slot (roothash from the signed cmdline)
+#   2. read the CM5 OTP device-specific private key, derive the LUKS key and
+#      the identity secret, then LOCK the OTP key read-out for this boot
+#   3. open the LUKS2 data partition with the derived key (no passphrase)
+#   4. hand the identity secret to stratasys-security via a 0400 tmpfs file
+PREREQ="plymouth"
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0;; esac
+. /scripts/functions
+
+for x in $(cat /proc/cmdline); do
+    case "$x" in
+        roothash=*) ROOTHASH="${x#roothash=}";;
+        stratasys.slot=*) SLOT="${x#stratasys.slot=}";;
+    esac
+done
+SLOT="${SLOT:-a}"
+
+# 1. verity root ------------------------------------------------------------
+if [ -n "$ROOTHASH" ]; then
+    veritysetup open "/dev/disk/by-partlabel/root-$SLOT" root-verity \
+        "/dev/disk/by-partlabel/verity-$SLOT" "$ROOTHASH" \
+        || { plymouth message --text="Service required (E-VERITY)"; panic "verity open failed"; }
+fi
+
+# 2. OTP key -> derived secrets --------------------------------------------
+OTP=$(rpi-otp-private-key -b 2>/dev/null || true)
+if [ -z "$OTP" ] || [ "$OTP" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+    log_warning_msg "OTP device key not programmed - lab module, software identity"
+    LUKS_KEY=""
+else
+    # HKDF-SHA256 (RFC 5869) with info strings matching stratasys_appliance.identity
+    LUKS_KEY=$(printf '%s' "$OTP" | xxd -r -p | openssl kdf -keylen 32 -kdfopt digest:SHA256 \
+                -kdfopt hexkey:"$OTP" -kdfopt info:"stratasys-luks-v1" -binary HKDF 2>/dev/null | xxd -p -c 64)
+    mkdir -p /run/stratasys && chmod 0700 /run/stratasys
+    printf '%s' "$OTP" | xxd -r -p > /run/stratasys/identity.key
+    chmod 0400 /run/stratasys/identity.key
+    # lock: hide the OTP private key from the OS for the rest of this boot
+    vcmailbox 0x00030086 4 4 1 >/dev/null 2>&1 || log_warning_msg "OTP lock mailbox not supported"
+fi
+unset OTP
+
+# 3. data partition ---------------------------------------------------------
+DATA=/dev/disk/by-partlabel/data
+if cryptsetup isLuks "$DATA" 2>/dev/null; then
+    if [ -n "$LUKS_KEY" ] && printf '%s' "$LUKS_KEY" | xxd -r -p | cryptsetup open --key-file=- "$DATA" data; then
+        :
+    else
+        plymouth message --text="Service required (E-DATA)"
+        log_failure_msg "data partition could not be opened with the device key"
+        # keep booting: stratasys-security will report LICENSE_MISSING and show the service screen
+    fi
+fi
+unset LUKS_KEY
+exit 0

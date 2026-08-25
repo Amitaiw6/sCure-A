@@ -1,0 +1,1 @@
+root=/dev/mapper/root-verity ro rootfstype=erofs roothash=@ROOTHASH@ stratasys.slot=@SLOT@ quiet splash loglevel=0 rd.udev.log_level=0 vt.global_cursor_default=0 systemd.show_status=false console= plymouth.ignore-serial-consoles fsck.mode=skip

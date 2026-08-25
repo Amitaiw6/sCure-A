@@ -2,6 +2,14 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.8",
+      "date": "2026-08-25",
+      "notes": [
+        "New appliance/ project: architecture + threat model for the Stratasys secure Linux appliance on Raspberry Pi CM5 (secure boot via OTP, dm-verity A/B root, LUKS data with OTP-derived key, silicon-bound device identity, Ed25519 licenses, RAUC/tryboot updates, kiosk, service roles), Serial Number + Image + License service, Factory Provisioning Tool (rpiboot flow, approved-image catalog with cache/offline mode, Generate New Serial Number), device security service, pi-gen image stage — 26 pytest tests",
+        "QA: 'Secure Appliance' category (serial rules, approved-image policy, audit hash chain)"
+      ]
+    },
+    {
       "version": "0.6.7",
       "date": "2026-08-25",
       "notes": [

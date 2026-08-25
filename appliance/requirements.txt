@@ -1,0 +1,4 @@
+cryptography>=42
+flask>=3
+pyyaml>=6
+pytest>=8

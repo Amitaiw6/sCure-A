@@ -538,6 +538,16 @@ const TEST_CATEGORIES = [
       { id: 'dev_hdt_recommend', name: 'HDT Recommendation Logic', desc: 'Recommended power = highest PASS level whose stable temp <= HDT − safety margin (spec example: HDT 65, margin 2, 60% → 61°C passes, 70% hits the limit → 60%); levels after an HDT LIMIT stay NOT TESTED; an all-NOT_CONVERGED run yields no recommendation', check: 'dev_hdt_recommend' },
     ]
   },
+  {
+    id: 'appliance',
+    name: 'Secure Appliance',
+    icon: '🔐',
+    tests: [
+      { id: 'appl_serial_rules', name: 'Serial Number Rules', desc: 'appliance/common serials: SC + 6 digits, ascending, next(SC000125) = SC000126, never below 1, invalid formats rejected — the same rules the Serial Service counter enforces atomically', check: 'appl_serial_rules' },
+      { id: 'appl_image_policy', name: 'Approved Image Policy', desc: 'Factory tool policy mirror: only channel=production AND productionApproved=true is installable; a 1.5.0-beta.12 development build is refused even though it is newer; withdrawn builds refused; release 1.4.7 sorts above 1.4.7-rc2', check: 'appl_image_policy' },
+      { id: 'appl_audit_chain', name: 'Audit Log Hash Chain', desc: 'hash = sha256(prevHash + canonical(entry)); modifying, removing or reordering a line breaks the chain at that point (WebCrypto SHA-256 in the browser)', check: 'appl_audit_chain' },
+    ]
+  },
 ];
 
 // ============================================================
@@ -1784,6 +1794,56 @@ async function runSingleTest(test) {
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       return;
+    }
+
+    // ---------------- Secure Appliance (appliance/) ----------------
+    if (test.check === 'appl_serial_rules') {
+      const fmt = n => 'SC' + String(n).padStart(6, '0');
+      const parse = sn => { const m = /^SC(\d{6})$/.exec(sn || ''); if (!m || +m[1] < 1) throw new Error('bad'); return +m[1]; };
+      const next = last => fmt(last ? parse(last) + 1 : 1);
+      const problems = [];
+      if (fmt(1) !== 'SC000001') problems.push('format');
+      if (next(null) !== 'SC000001' || next('SC000125') !== 'SC000126') problems.push('sequence');
+      for (const bad of ['SC0001', 'sc000001', 'SC000000', 'XX000001', '']) { try { parse(bad); problems.push('accepted ' + JSON.stringify(bad)); } catch {} }
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'SC000001 format, next(SC000125)=SC000126, invalid formats rejected' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'appl_image_policy') {
+      const vkey = v => { const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.\-]+))?$/.exec(v); return [+m[1], +m[2], +m[3], m[4] ? 0 : 1, m[4] || '']; };
+      const cmp = (a, b) => { const x = vkey(a), y = vkey(b); for (let i = 0; i < 5; i++) { if (x[i] < y[i]) return -1; if (x[i] > y[i]) return 1; } return 0; };
+      const installable = (p, withdrawn = []) => p.channel === 'production' && p.productionApproved === true && !withdrawn.includes(p.buildId);
+      const prod = { imageVersion: '1.4.7', buildId: 'B147', channel: 'production', productionApproved: true };
+      const qa = { imageVersion: '1.4.8-rc2', buildId: 'B148', channel: 'qa', productionApproved: false };
+      const dev = { imageVersion: '1.5.0-beta.12', buildId: 'B150', channel: 'development', productionApproved: false };
+      const problems = [];
+      if (!installable(prod)) problems.push('approved production build refused');
+      if (installable(qa) || installable(dev)) problems.push('non-production build accepted');
+      if (installable({ ...prod, productionApproved: false })) problems.push('unapproved production-channel build accepted');
+      if (installable(prod, ['B147'])) problems.push('withdrawn build accepted');
+      const newest = [prod, qa, dev].filter(p => installable(p)).sort((a, b) => cmp(b.imageVersion, a.imageVersion))[0];
+      if (!newest || newest.imageVersion !== '1.4.7') problems.push('newest installable != 1.4.7');
+      if (!(cmp('1.4.7', '1.4.7-rc2') > 0 && cmp('1.4.7-rc2', '1.4.6') > 0)) problems.push('version ordering');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'installs 1.4.7 (approved), refuses 1.4.8-rc2 / 1.5.0-beta.12 / unapproved / withdrawn' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'appl_audit_chain') {
+      const enc = new TextEncoder();
+      const sha = async s => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(s)))).map(b => b.toString(16).padStart(2, '0')).join('');
+      const canon = o => JSON.stringify(Object.keys(o).sort().reduce((a, k) => (a[k] = o[k], a), {}));
+      const G = '0'.repeat(64);
+      const mk = async (prev, event) => { const e = { ts: '2026-08-25T00:00:00Z', serial: 'SC000001', deviceId: 'DEV-X', actor: 'system', event, detail: {}, prevHash: prev }; e.hash = await sha(prev + canon(e)); return e; };
+      const verify = async (entries) => { let prev = G; for (let i = 0; i < entries.length; i++) { const { hash, ...body } = entries[i]; if (body.prevHash !== prev || await sha(prev + canon(body)) !== hash) return i; prev = hash; } return -1; };
+      const a = await mk(G, 'Developer Mode entered'); const b = await mk(a.hash, 'License activation'); const c = await mk(b.hash, 'Software update');
+      const problems = [];
+      if (await verify([a, b, c]) !== -1) problems.push('intact chain reported broken');
+      if (await verify([{ ...a, event: 'nothing happened' }, b, c]) !== 0) problems.push('modified line not detected');
+      if (await verify([a, c]) !== 1) problems.push('removed line not detected');
+      if (await verify([b, a, c]) !== 0) problems.push('reordered lines not detected');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'chain verifies; modify / remove / reorder each break it at the right line' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
     }
 
     // Durable-store round-trip: save a program, read it back, confirm it

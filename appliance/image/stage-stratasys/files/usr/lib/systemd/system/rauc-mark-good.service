@@ -1,0 +1,12 @@
+[Unit]
+Description=Mark the booted RAUC slot good once the appliance is healthy
+After=stratasys-kiosk.service rauc.service
+Requires=rauc.service
+
+[Service]
+Type=oneshot
+# healthy = security service says production mode (license + integrity + secure boot) for 60 s
+ExecStart=/bin/sh -c 'sleep 60; curl -sf http://127.0.0.1:8442/security/status | grep -q "\"productionMode\": *true" && rauc status mark-good'
+
+[Install]
+WantedBy=multi-user.target

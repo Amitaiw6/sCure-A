@@ -1,0 +1,36 @@
+[Unit]
+Description=Stratasys hardware / machine control service (sCure app.py)
+After=stratasys-security.service network.target
+Requires=stratasys-security.service
+
+[Service]
+Type=simple
+User=hardware
+Group=hardware
+SupplementaryGroups=i2c gpio spi dialout video
+WorkingDirectory=/opt/stratasys/server
+ExecStart=/usr/bin/python3 /opt/stratasys/server/app.py
+Restart=always
+RestartSec=2
+WatchdogSec=30
+Environment=STRATASYS_SECURITY_URL=http://127.0.0.1:8442 SCURE_DATA_DIR=/data/app
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/data/app /data/config /media/update
+DeviceAllow=/dev/i2c-1 rw
+DeviceAllow=/dev/gpiochip0 rw
+DeviceAllow=/dev/gpiochip4 rw
+DeviceAllow=/dev/spidev0.0 rw
+DeviceAllow=/dev/ttyAMA0 rw
+DeviceAllow=/dev/bus/usb rw
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

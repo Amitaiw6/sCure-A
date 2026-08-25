@@ -1,0 +1,14 @@
+# pi-gen configuration — Stratasys sCure appliance image
+IMG_NAME="SCURE-IMAGE"
+RELEASE="trixie"
+ARCH="arm64"
+DEPLOY_COMPRESSION="zstd"
+STAGE_LIST="stage0 stage1 stage2 stage-stratasys"
+# no default user, no ssh, no wifi credentials in the image
+DISABLE_FIRST_BOOT_USER_RENAME=1
+FIRST_USER_NAME="kiosk"
+FIRST_USER_PASS=""
+ENABLE_SSH=0
+LOCALE_DEFAULT="en_US.UTF-8"
+KEYBOARD_KEYMAP="us"
+TIMEZONE_DEFAULT="UTC"

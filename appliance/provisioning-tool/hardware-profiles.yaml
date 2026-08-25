@@ -1,0 +1,15 @@
+# Supported hardware for the Stratasys sCure appliance (CM5).
+# The provisioning tool refuses anything not listed unless a supervisor
+# override is recorded in the audit log.
+modules:
+  name: "CM5 on Stratasys sCure carrier"
+  # Raspberry Pi board revision codes for CM5 variants (4 GB / 8 GB, eMMC / Lite)
+  supported_revisions: ["d04170", "d04171", "e04170", "e04171"]
+  min_memory_mb: 4096
+  min_storage_bytes: 30000000000      # 32 GB eMMC or NVMe
+  min_eeprom_version: "2025-05-08"
+  carrier_revision: 3                 # minimum carrier board revision (read from the carrier EEPROM)
+  required_peripherals:
+    - i2c: "PCA9685 PWM (fans)"
+    - i2c: "ADS1115 ADC (thermistors)"
+    - usb: "PicoLog TC-08 (optional, service only)"

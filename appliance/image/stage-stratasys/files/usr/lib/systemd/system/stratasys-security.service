@@ -1,0 +1,39 @@
+[Unit]
+Description=Stratasys security service (identity, license, integrity, audit)
+DefaultDependencies=no
+After=local-fs.target data.mount
+Requires=data.mount
+Before=stratasys-hardware.service stratasys-kiosk.service
+
+[Service]
+Type=simple
+User=security
+Group=security
+ExecStart=/usr/bin/python3 /opt/stratasys/security_service.py
+Restart=always
+RestartSec=2
+WatchdogSec=60
+Environment=STRATASYS_DATA=/data STRATASYS_KEYS=/usr/share/stratasys/keys STRATASYS_RUN=/run/stratasys
+RuntimeDirectory=stratasys
+RuntimeDirectoryPreserve=yes
+# hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ReadWritePaths=/data/audit /data/identity /data/license.json /data/license.json.tmp /data/provisioning.flag /run/stratasys
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

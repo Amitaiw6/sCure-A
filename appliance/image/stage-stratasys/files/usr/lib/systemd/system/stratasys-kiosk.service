@@ -1,0 +1,38 @@
+[Unit]
+Description=Stratasys kiosk (cage + Chromium, single full-screen client)
+After=stratasys-hardware.service systemd-logind.service plymouth-quit-wait.service
+Requires=stratasys-hardware.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=kiosk
+Group=kiosk
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland WLR_LIBINPUT_NO_DEVICES=1
+Environment=CHROMIUM_FLAGS=
+ExecStartPre=/bin/sh -c 'until curl -sf http://127.0.0.1:3001/api/state >/dev/null; do sleep 1; done'
+ExecStart=/usr/bin/cage -- /usr/bin/chromium \
+    --kiosk --noerrdialogs --no-first-run --disable-infobars --disable-translate \
+    --disable-pinch --overscroll-history-navigation=0 --disable-features=TranslateUI \
+    --password-store=basic --check-for-update-interval=31536000 --disable-component-update \
+    --autoplay-policy=no-user-gesture-required --ozone-platform=wayland \
+    --app=http://127.0.0.1:3001
+Restart=always
+RestartSec=2
+StartLimitIntervalSec=0
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/home/kiosk/.config /home/kiosk/.cache /run/user/1000
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
