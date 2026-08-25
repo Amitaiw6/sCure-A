@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.6",
+      "date": "2026-08-25",
+      "notes": [
+        "HDT calibration: no cooling step between power levels any more — the next level is applied directly with the LEDs staying on (NEXT_STEP_MAX_TEMP_DELTA_C default 0 = off; a value > 0 restores the cooling gate)"
+      ]
+    },
+    {
       "version": "0.6.5",
       "date": "2026-08-25",
       "notes": [

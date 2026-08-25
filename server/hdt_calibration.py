@@ -49,11 +49,14 @@ STABILITY_TIME_MIN = 5.0
 STABILITY_MAX_RATE_C_PER_MIN = 0.5
 MAX_STABILIZATION_TIME_MIN = 30.0
 HDT_SAFETY_MARGIN_C = 2.0
-# Thermal condition between levels: LEDs off, wait until the averaged
-# temperature falls back to within this delta above the run baseline —
-# or give up after COOLDOWN_MAX_WAIT_MIN and start the level anyway
-# (its actual starting temperature is recorded either way).
-NEXT_STEP_MAX_TEMP_DELTA_C = 8.0
+# Thermal condition between levels. 0 (default) = NO cooling step: the
+# next power level is applied directly (the LEDs never go off between
+# levels; each level's actual starting temperature is still recorded —
+# the stabilized temperature is an equilibrium and does not depend on it).
+# A value > 0 restores the cooling gate: LEDs off until the averaged
+# temperature falls back to within this delta above the run baseline, or
+# COOLDOWN_MAX_WAIT_MIN elapses.
+NEXT_STEP_MAX_TEMP_DELTA_C = 0.0
 COOLDOWN_MAX_WAIT_MIN = 15.0
 POWER_LEVELS = [10, 20, 30, 40, 50, 60, 70, 80, 90]
 HDT_WAVELENGTH = 405           # calibration runs on the 405 nm cure LEDs
@@ -396,8 +399,8 @@ class HdtCalibrationController:
     def _prepare_level(self, i, power):
         """Thermal condition between levels: LEDs off until the model has
         cooled back near the baseline (or the cooldown wait times out)."""
-        if i == 0:
-            return
+        if i == 0 or self.next_step_max_temp_delta_c <= 0:
+            return                      # direct transition, LEDs stay on
         self._leds_off()
         limit = self._baseline + self.next_step_max_temp_delta_c
         deadline = time.monotonic() + self.cooldown_max_wait_min * 60
