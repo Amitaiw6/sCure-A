@@ -189,6 +189,11 @@ class HardwareController:
             return self.bridge.stop_heating()
         return True, None
 
+    def cancel_heater_fan_cooldown(self):
+        if self.bridge:
+            return self.bridge.cancel_heater_fan_cooldown()
+        return True, None
+
     def set_fan_speed(self, fan, speed):
         self.fans[fan] = speed
         if self.bridge:

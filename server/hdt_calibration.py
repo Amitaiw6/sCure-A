@@ -57,6 +57,10 @@ HDT_WAVELENGTH = 405           # calibration runs on the 405 nm cure LEDs
 # run so the air around the model is mixed the same way as during a real
 # cure; released back to 0% by _finish on every exit path.
 HDT_HEATER_FAN_PWM = 100
+# The heater-fan run-on that follows a heater OFF (temperature_control:
+# 30% for cooldown_sec, then ALL fans OFF) must not override the HDT fan:
+# the run-on is cancelled at start and the duty is re-commanded this often.
+HEATER_FAN_REASSERT_SEC = 5.0
 
 _OVERRIDE_KEYS = {
     'samplingIntervalSec': 'sampling_interval_sec',
@@ -202,6 +206,7 @@ class HdtCalibrationController:
         self.message = 'Idle'
         self.running = False
         self.heater_fan_pwm = 0
+        self._fan_asserted_at = 0.0
         self.final_status = None
         self.hdt_c = None
         self.safety_margin_c = HDT_SAFETY_MARGIN_C
@@ -238,17 +243,31 @@ class HdtCalibrationController:
         with self._lock:
             self.current_power = 0
 
-    def _heater_fan(self, pwm):
-        """Chamber heater fan (FAN_HEATER) duty for the HDT run."""
+    def _heater_fan(self, pwm, quiet=False):
+        """Chamber heater fan (FAN_HEATER) duty for the HDT run. A non-zero
+        duty first cancels any pending heater-fan run-on (whose end would
+        switch every fan off under us) and is then (re)commanded."""
         try:
+            if pwm > 0:
+                cancel = getattr(self.hw, 'cancel_heater_fan_cooldown', None)
+                if cancel:
+                    cancel()                      # ends with all-fans-off: re-command below
             ok, why = self.hw.set_fan_speed('chamber_heating', pwm)
         except Exception as e:  # noqa: BLE001 - the fan must never stop a run/stop
             ok, why = False, str(e)
         with self._lock:
             self.heater_fan_pwm = pwm if ok else 0
-        log_event('HDT heater fan', {'pwm': pwm, 'ok': bool(ok), 'why': why})
+            self._fan_asserted_at = time.monotonic()
+        if not quiet or not ok:
+            log_event('HDT heater fan', {'pwm': pwm, 'ok': bool(ok), 'why': why})
         if not ok:
             print(f'[HDT] heater fan {pwm}% refused: {why}', flush=True)
+
+    def _reassert_heater_fan(self):
+        """Keep FAN_HEATER at HDT_HEATER_FAN_PWM for the whole run even if
+        something else (heater-off run-on, its all-fans-off) wrote the PCA."""
+        if time.monotonic() - self._fan_asserted_at >= HEATER_FAN_REASSERT_SEC:
+            self._heater_fan(HDT_HEATER_FAN_PWM, quiet=True)
 
     def _set_power(self, power):
         """One logical calibrated system power → four physical zones, via the
@@ -270,6 +289,7 @@ class HdtCalibrationController:
         record the sample, and enforce abort / sensor validity / HDT limit."""
         if self._abort_evt.wait(self.sampling_interval_sec):
             raise _Abort()
+        self._reassert_heater_fan()
         st = self.tc08.status()
         raw = st['temperature']
         if raw is None or not math.isfinite(raw):

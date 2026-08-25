@@ -776,6 +776,19 @@ class IOBridge:
     # ------------------------------------------------------------------
     #  Fans / damper / door
     # ------------------------------------------------------------------
+    def cancel_heater_fan_cooldown(self):
+        """Abort the heater-fan run-on that temperature_control starts when
+        the heater goes off (30% then ALL fans OFF after cooldown_sec). The
+        cancel itself ends with the all-fans-off write, so the caller must
+        re-command its own fan duty afterwards. Refused while heating."""
+        if self.temp.active or self.sys.is_heater_on():
+            return False, 'heating is active'
+        try:
+            self.temp._cancel_cooldown()
+        except Exception as e:            # noqa: BLE001
+            return False, f'cancel failed: {e}'
+        return True, None
+
     def set_fan_speed(self, fan, percent):
         names = FAN_GROUPS.get(fan)
         if names is None and fan.upper() in self.PCA_FANS:
