@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.1",
+      "date": "2026-08-25",
+      "notes": [
+        "QA tool: new 'Developer Mode' test category — dev-mode entry logic (10 presses / PIN 8176 / OFF after restart), LED factor persistence round-trip, calibrated system-power scaling (50% → 50.0/46.0/48.5/47.5, clamp at 100%), PicoLog TC-08 status fields, HDT start gate + default constants, and HDT recommendation logic (highest PASS ≤ HDT − margin)"
+      ]
+    },
+    {
       "version": "0.6.0",
       "date": "2026-08-25",
       "notes": [

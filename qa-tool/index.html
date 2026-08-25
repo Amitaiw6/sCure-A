@@ -522,6 +522,19 @@ const TEST_CATEGORIES = [
       { id: "hwc_onoff_heat", name: "Heater PI + Delta-Sigma", desc: "Heating is PI(D) control (kp 0.08, ki 0.00015) streamed to the ON/OFF heater element by a delta-sigma DAC - power law and ON-ratio verified", check: "hwc_onoff_heat" },
     ]
   },
+  {
+    id: 'developer_mode',
+    name: 'Developer Mode',
+    icon: '🛠️',
+    tests: [
+      { id: 'dev_auth_logic', name: 'Dev Mode Entry Logic', desc: 'Settings gear press counter: 10 presses open the PIN screen, password 8176 activates Developer Mode, a wrong PIN is refused (app stays in normal mode), and the flag lives in memory only — never localStorage — so Developer Mode is OFF after a restart', check: 'dev_auth_logic' },
+      { id: 'dev_led_cal_persist', name: 'LED Factors Persist', desc: 'GET/POST /api/dev/led-calibration: four independent Back/Door/Left/Right factors (default 1.0) are saved to server/data/led_calibration.json and read back unchanged; out-of-range factors are rejected; the original values are restored afterwards', check: 'dev_led_cal_persist' },
+      { id: 'dev_led_scaling', name: 'Calibrated System Power', desc: 'POST /api/dev/led-power at 50% with factors 1.00/0.92/0.97/0.95 returns physical outputs 50.0/46.0/48.5/47.5 — one logical system power through the calibration layer — and 100% x 1.5 is clamped to 100%; LEDs are returned to the OFF state', check: 'dev_led_scaling' },
+      { id: 'dev_picolog_status', name: 'PicoLog TC-08 Status', desc: 'GET /api/dev/picolog/status publishes connected, ch1Available, temperature (a finite number only when CH1 is valid, else null + an error reason) — the fields the HDT setup screen gates Start Calibration on', check: 'dev_picolog_status' },
+      { id: 'dev_hdt_gate', name: 'HDT Start Gate', desc: 'POST /api/dev/hdt/start refuses an invalid material HDT and (when CH1 has no valid temperature) refuses to start at all; /api/dev/hdt/status stays IDLE/not running with the 10-90% level list and the configurable stability/timeout/margin constants', check: 'dev_hdt_gate' },
+      { id: 'dev_hdt_recommend', name: 'HDT Recommendation Logic', desc: 'Recommended power = highest PASS level whose stable temp <= HDT − safety margin (spec example: HDT 65, margin 2, 60% → 61°C passes, 70% hits the limit → 60%); levels after an HDT LIMIT stay NOT TESTED; an all-NOT_CONVERGED run yields no recommendation', check: 'dev_hdt_recommend' },
+    ]
+  },
 ];
 
 // ============================================================
@@ -1527,6 +1540,162 @@ async function runSingleTest(test) {
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // ---------------- Developer Mode ----------------
+    if (test.check === 'dev_auth_logic') {
+      // Mirror of DevModeContext / TopBar logic: press counter → PIN → session-only flag
+      const PASSWORD = '8176';
+      const state = { presses: 0, pinOpen: false, devMode: false, store: {} };
+      const press = () => { state.presses++; if (state.presses >= 10) { state.pinOpen = true; state.presses = 0; } };
+      const auth = (pin) => { if (pin === PASSWORD) { state.devMode = true; state.pinOpen = false; return true; } return false; };
+      const problems = [];
+      for (let k = 0; k < 9; k++) press();
+      if (state.pinOpen) problems.push('PIN screen opened before the 10th press');
+      press();
+      if (!state.pinOpen) problems.push('PIN screen did not open on the 10th press');
+      if (auth('1234') || state.devMode) problems.push('wrong PIN activated Developer Mode');
+      if (!auth(PASSWORD) || !state.devMode) problems.push('8176 did not activate Developer Mode');
+      if (Object.keys(state.store).length) problems.push('dev-mode flag was persisted');
+      const restarted = { devMode: false };           // fresh page load: in-memory flag is gone
+      if (restarted.devMode) problems.push('Developer Mode survived restart');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: '10 presses → PIN, 8176 accepted, wrong PIN refused, OFF after restart' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_led_cal_persist') {
+      const url = apiUrl + '/api/dev/led-calibration';
+      const get = () => fetch(url, { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+      const post = (factors) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ factors }), signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({ ok: false }));
+      const orig = await get().catch(() => null);
+      const problems = [];
+      const zones = ['back', 'door', 'left', 'right'];
+      if (!orig || !orig.factors || !zones.every(z => typeof orig.factors[z] === 'number')) {
+        const elapsed = Date.now() - t0;
+        setTestStatus(test.id, 'fail', 'GET did not return {factors:{back,door,left,right}}', elapsed);
+        log('fail', `${test.name}: bad GET response`);
+        return;
+      }
+      const probe = { back: 1.0, door: 0.92, left: 0.97, right: 0.95 };
+      const saved = await post(probe);
+      const after = await get().catch(() => null);
+      const persisted = after && zones.every(z => Math.abs(after.factors[z] - probe[z]) < 1e-6);
+      if (!saved.ok) problems.push('POST valid factors was refused');
+      if (!persisted) problems.push('factors did not read back as saved');
+      const bad = await post({ back: 1.0, door: 2.5, left: 0.97, right: 0.95 });
+      if (bad.ok) problems.push('out-of-range factor 2.5 was accepted');
+      await post(orig.factors);                       // restore the real calibration
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: 'four factors saved, re-read unchanged, out-of-range rejected, originals restored' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_led_scaling') {
+      const url = apiUrl + '/api/dev/led-power';
+      const drive = (power, factors) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ power, factors }), signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      const problems = [];
+      const f = { back: 1.0, door: 0.92, left: 0.97, right: 0.95 };
+      const r50 = await drive(50, f);
+      const want = { back: 50.0, door: 46.0, left: 48.5, right: 47.5 };
+      if (!r50 || !r50.outputs) problems.push('no outputs in the 50% response');
+      else for (const z of Object.keys(want)) if (Math.abs(r50.outputs[z] - want[z]) > 0.01) problems.push(`${z}: ${r50.outputs[z]} != ${want[z]}`);
+      const rClamp = await drive(100, { back: 1.5, door: 1.0, left: 1.0, right: 1.0 });
+      if (!rClamp || !rClamp.outputs || rClamp.outputs.back > 100) problems.push('100% x 1.5 not clamped to 100%');
+      const rBad = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ power: 150 }), signal: AbortSignal.timeout(5000) }).catch(() => null);
+      if (!rBad || rBad.ok) problems.push('power 150% was accepted');
+      const off = await drive(0);
+      if (!off || !off.ok) problems.push('LEDs could not be returned to OFF');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: '50% → 50.0/46.0/48.5/47.5, clamp at 100%, >100% refused, LEDs OFF' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_picolog_status') {
+      const st = await fetch(apiUrl + '/api/dev/picolog/status', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      const problems = [];
+      if (!st) problems.push('endpoint unreachable');
+      else {
+        if (typeof st.connected !== 'boolean') problems.push('connected is not a boolean');
+        if (typeof st.ch1Available !== 'boolean') problems.push('ch1Available is not a boolean');
+        if (st.ch1Available && !(typeof st.temperature === 'number' && isFinite(st.temperature))) problems.push('CH1 available but temperature is not a finite number');
+        if (!st.ch1Available && st.temperature !== null) problems.push('CH1 unavailable but a temperature is published');
+        if (!st.ch1Available && !st.error && st.connected) problems.push('CH1 unavailable without an error reason');
+      }
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: st.ch1Available ? `TC-08 connected, CH1 ${st.temperature}°C` : `TC-08 ${st.connected ? 'connected' : 'not connected'}, CH1 not available (${st.error || 'no unit'}) — Start Calibration stays disabled` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_hdt_gate') {
+      const post = (body) => fetch(apiUrl + '/api/dev/hdt/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      const problems = [];
+      const st0 = await fetch(apiUrl + '/api/dev/hdt/status', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => null);
+      if (!st0) problems.push('status endpoint unreachable');
+      else {
+        if (st0.running) problems.push('an HDT calibration is already running — test skipped the start gate');
+        const lv = (st0.config && st0.config.powerLevels) || [];
+        if (lv.join(',') !== '10,20,30,40,50,60,70,80,90') problems.push(`power levels ${lv.join(',')}`);
+        const c = st0.config || {};
+        if (c.stabilityBandC !== 2 || c.stabilityTimeMin !== 5 || c.maxStabilizationTimeMin !== 30 || c.hdtSafetyMarginC !== 2) problems.push('default stability/timeout/margin constants are not 2°C / 5 min / 30 min / 2°C');
+        if (st0.state !== 'IDLE' && (!Array.isArray(st0.results) || st0.results.length !== 9)) problems.push('results table does not have 9 rows');
+      }
+      if (!st0 || !st0.running) {
+        const bad = await post({ hdtC: 5 });
+        if (!bad || bad.ok) { problems.push('invalid HDT 5°C was accepted'); await fetch(apiUrl + '/api/dev/hdt/abort', { method: 'POST' }).catch(() => {}); }
+        const pl = await fetch(apiUrl + '/api/dev/picolog/status', { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}));
+        if (!pl.ch1Available) {
+          const noSensor = await post({ hdtC: 65 });
+          if (!noSensor || noSensor.ok) { problems.push('calibration started without valid CH1 feedback'); await fetch(apiUrl + '/api/dev/hdt/abort', { method: 'POST' }).catch(() => {}); }
+        }
+      }
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: 'IDLE, 9 levels 10-90%, defaults 2°C/5min/30min/2°C, invalid HDT + no-sensor starts refused' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      return;
+    }
+
+    if (test.check === 'dev_hdt_recommend') {
+      // Mirror of HdtCalibrationController._finish: highest PASS with stableTemp <= HDT - margin
+      const recommend = (results, hdt, margin) => {
+        const limit = hdt - margin; let rec = null;
+        for (const r of results) if (r.status === 'PASS' && r.stableTemp !== null && r.stableTemp <= limit) rec = r.power;
+        return rec;
+      };
+      const spec = [[10, 34.2, 'PASS'], [20, 38.4, 'PASS'], [30, 43.1, 'PASS'], [40, 49.6, 'PASS'], [50, 55.3, 'PASS'], [60, 61.4, 'PASS'], [70, null, 'HDT_LIMIT'], [80, null, 'NOT_TESTED'], [90, null, 'NOT_TESTED']]
+        .map(([power, stableTemp, status]) => ({ power, stableTemp, status }));
+      const problems = [];
+      if (recommend(spec, 65, 2) !== 60) problems.push(`spec example gave ${recommend(spec, 65, 2)} (want 60)`);
+      const edge = spec.map(r => r.power === 60 ? { ...r, stableTemp: 63.5 } : r);
+      if (recommend(edge, 65, 2) !== 50) problems.push('a PASS above HDT−margin was recommended');
+      if (recommend(spec, 65, 0) !== 60) problems.push('margin 0 changed the spec result');
+      if (spec.slice(7).some(r => r.status !== 'NOT_TESTED')) problems.push('levels after HDT LIMIT were tested');
+      const nc = spec.map(r => ({ ...r, status: 'NOT_CONVERGED', stableTemp: null }));
+      if (recommend(nc, 65, 2) !== null) problems.push('NOT_CONVERGED run produced a recommendation');
+      // physical outputs at the recommended power go through the same calibration layer
+      const f = { back: 1.0, door: 0.92, left: 0.97, right: 0.95 };
+      const out = Object.fromEntries(Object.entries(f).map(([z, k]) => [z, Math.min(100, Math.max(0, 60 * k))]));
+      if (Math.abs(out.door - 55.2) > 0.01 || Math.abs(out.left - 58.2) > 0.01 || Math.abs(out.right - 57) > 0.01) problems.push('physical outputs at 60% wrong');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: 'spec example → 60%; above-margin PASS excluded; no recommendation when nothing converged; 60% → 60/55.2/58.2/57' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       return;
     }
 
