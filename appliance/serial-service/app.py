@@ -471,6 +471,16 @@ def latest_image():
                     "signerPublicKeyPem": crypto.public_pem(signing_key().public_key())})
 
 
+@app.get("/images/file/<build_id>")
+def image_file(build_id):
+    """Serve the image file for a build from IMAGES_DIR (dev/demo; in
+    production the manifest URL points at an HTTPS/CDN origin)."""
+    from flask import send_from_directory
+    d = os.path.abspath(os.environ.get("IMAGES_DIR", "images"))
+    safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in build_id)
+    return send_from_directory(d, f"{safe}.img.zst", as_attachment=True)
+
+
 @app.get("/images/withdrawn")
 def withdrawn_images():
     rows = db().execute("SELECT build_id FROM images WHERE withdrawn=1").fetchall()

@@ -473,7 +473,9 @@ def main(argv=None):
                  station_key=Path(a.station_key) if a.station_key else None)
     if a.fake:
         from tests_support import FakeDeviceAgent   # noqa: F401 - dev only
-        run = ProvisioningRun(cfg, FakeRpiboot(), FakeDeviceAgent(), on_event=lambda e, d: print(f"[{d.get('step')}] {e}"))
+        # the simulated module trusts the same license keys as a real image would ship
+        run = ProvisioningRun(cfg, FakeRpiboot(), FakeDeviceAgent(crypto.TrustStore.from_dir(cfg.trust_dir)),
+                              on_event=lambda e, d: print(f"[{d.get('step')}] {e}"))
     else:
         run = ProvisioningRun(cfg, Rpiboot(), DeviceAgent(), on_event=lambda e, d: print(f"[{d.get('step')}] {e}"))
     run.state.previous_serial = a.previous_serial

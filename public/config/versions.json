@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.6.9",
+      "date": "2026-08-25",
+      "notes": [
+        "appliance: one-command demo (appliance/demo.py) — starts the Serial/Image service, publishes + approves a build, provisions two simulated CM5 modules incl. Generate New Serial Number; /images/file/<buildId> download route; --fake mode trusts the station's license keys"
+      ]
+    },
+    {
       "version": "0.6.8",
       "date": "2026-08-25",
       "notes": [

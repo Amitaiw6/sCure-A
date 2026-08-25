@@ -8,3 +8,4 @@ __pycache__/
 .pytest_cache/
 image-cache/
 pending-uploads/
+demo/
