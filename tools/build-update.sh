@@ -68,18 +68,22 @@ PACKAGE_NAME="scure-update-${VERSION}"
 
 mkdir -p "$STAGING/$PACKAGE_NAME/frontend"
 mkdir -p "$STAGING/$PACKAGE_NAME/server"
-mkdir -p "$STAGING/$PACKAGE_NAME/materials/presets"
+mkdir -p "$STAGING/$PACKAGE_NAME/materials"
 
 # Frontend build
 cp -r dist/* "$STAGING/$PACKAGE_NAME/frontend/"
 
-# Server files
-cp server/app.py "$STAGING/$PACKAGE_NAME/server/"
+# Server files — ALL python modules (app.py alone is not enough: io_bridge,
+# led_calibration, hdt_calibration, picolog_tc08, dev_log, db, updater...)
+cp server/*.py "$STAGING/$PACKAGE_NAME/server/"
 cp server/requirements.txt "$STAGING/$PACKAGE_NAME/server/"
 [ -d server/hardware ] && cp -r server/hardware "$STAGING/$PACKAGE_NAME/server/"
 
-# Preset materials
-cp -r public/materials/presets/* "$STAGING/$PACKAGE_NAME/materials/presets/"
+# IO-board drivers (io_bridge imports them on the Pi)
+cp -r io_controller "$STAGING/$PACKAGE_NAME/io_controller"
+
+# Bundled materials (public/materials — presets subdir no longer exists)
+[ -d public/materials ] && cp -r public/materials/* "$STAGING/$PACKAGE_NAME/materials/" || true
 
 # Step 3: Create manifest
 echo -e "${YELLOW}[3/5] Creating manifest...${NC}"
@@ -93,7 +97,8 @@ cat > "$STAGING/$PACKAGE_NAME/manifest.json" << EOF
   "files": {
     "frontend": "frontend/",
     "server": "server/",
-    "presets": "materials/presets/"
+    "io_controller": "io_controller/",
+    "materials": "materials/"
   },
   "install": {
     "pre_install": "install.sh --pre",
@@ -121,21 +126,47 @@ case "$1" in
   --post)
     echo "[UPDATE] Installing new version..."
 
-    # Stop services
+    # The machine may run either layout: /opt/scure (legacy .scu install) or
+    # a git clone started by scure.service (scripts/pi-setup.sh). Detect it.
+    if [ ! -d "$INSTALL_DIR/server" ]; then
+      GIT_DIR="$(systemctl cat scure.service 2>/dev/null \
+                 | sed -n 's/^WorkingDirectory=//p' | head -1)"
+      [ -z "$GIT_DIR" ] && for d in /home/*/sCure-A "$HOME/sCure-A"; do
+        [ -d "$d/server" ] && GIT_DIR="$d" && break
+      done
+      [ -n "$GIT_DIR" ] && INSTALL_DIR="$GIT_DIR"
+    fi
+    echo "[UPDATE] Install target: $INSTALL_DIR"
+
+    # Stop services (whichever exist)
+    systemctl stop scure.service 2>/dev/null || true
     systemctl stop scure-ui 2>/dev/null || true
     systemctl stop scure-api 2>/dev/null || true
 
-    # Update frontend
-    rm -rf "$INSTALL_DIR/frontend"
-    cp -r "$SCRIPT_DIR/frontend" "$INSTALL_DIR/frontend"
+    # Update frontend (git layout serves dist/, legacy serves frontend/)
+    if [ -d "$INSTALL_DIR/dist" ] || [ -f "$INSTALL_DIR/package.json" ]; then
+      rm -rf "$INSTALL_DIR/dist"
+      cp -r "$SCRIPT_DIR/frontend" "$INSTALL_DIR/dist"
+    else
+      rm -rf "$INSTALL_DIR/frontend"
+      cp -r "$SCRIPT_DIR/frontend" "$INSTALL_DIR/frontend"
+    fi
 
-    # Update server
-    cp "$SCRIPT_DIR/server/app.py" "$INSTALL_DIR/server/app.py"
+    # Update server — every python module, not only app.py
+    cp "$SCRIPT_DIR/server/"*.py "$INSTALL_DIR/server/"
     cp "$SCRIPT_DIR/server/requirements.txt" "$INSTALL_DIR/server/requirements.txt"
-    pip3 install -r "$INSTALL_DIR/server/requirements.txt" --quiet
+    PIP="$INSTALL_DIR/.venv/bin/pip"; [ -x "$PIP" ] || PIP=pip3
+    "$PIP" install -r "$INSTALL_DIR/server/requirements.txt" --quiet || true
 
-    # Update presets (don't touch user materials)
-    cp -r "$SCRIPT_DIR/materials/presets/"* "$INSTALL_DIR/materials/presets/"
+    # Update IO-board drivers
+    if [ -d "$SCRIPT_DIR/io_controller" ]; then
+      mkdir -p "$INSTALL_DIR/io_controller"
+      cp -r "$SCRIPT_DIR/io_controller/"* "$INSTALL_DIR/io_controller/"
+    fi
+
+    # Bundled materials (don't touch user materials)
+    [ -d "$SCRIPT_DIR/materials" ] && mkdir -p "$INSTALL_DIR/materials" \
+      && cp -r "$SCRIPT_DIR/materials/"* "$INSTALL_DIR/materials/" || true
 
     # Rebuild C++ driver if source updated
     if [ -d "$SCRIPT_DIR/server/hardware" ]; then
@@ -144,9 +175,10 @@ case "$1" in
       [ -f build.sh ] && chmod +x build.sh && ./build.sh && cp hw_driver*.so ../
     fi
 
-    # Restart services
-    systemctl start scure-api
-    systemctl start scure-ui
+    # Restart services (whichever exist)
+    systemctl start scure.service 2>/dev/null || true
+    systemctl start scure-api 2>/dev/null || true
+    systemctl start scure-ui 2>/dev/null || true
 
     echo "[UPDATE] Complete! Version: $(cat "$SCRIPT_DIR/manifest.json" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")"
     ;;

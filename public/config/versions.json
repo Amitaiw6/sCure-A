@@ -2,6 +2,18 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.5.0",
+      "date": "2026-08-25",
+      "notes": [
+        "Hidden Developer Mode: 10 presses on the Settings gear open a password screen (session-only — always OFF after restart); DEVELOPER MODE banner + Exit on every dev screen",
+        "LED intensity calibration: independent Back/Door/Left/Right factors (persisted on the machine); one logical 'calibrated system LED power' drives all four zones through the factors everywhere — cure, diagnostics, HDT",
+        "Material HDT calibration: automatic 10–90% system-power sweep against the entered material HDT, measured on a PicoLog TC-08 (CH1) — moving average, 2°C/5min stability detection, 30 min timeout, hard HDT stop, recommended power = highest stabilized level at or below HDT minus safety margin",
+        "Live HDT screen: PicoLog/CH1 status gate, live temperature graph with HDT lines and power transitions, abort at any time; CSV + HTML report export (USB first), partial runs preserved",
+        "Safety: PicoLog disconnect, invalid/stale CH1 data, abort or any internal error force all four LED zones to the existing safe OFF state",
+        "Timestamped Developer Mode event log (server journal + server/data/dev_events.jsonl)"
+      ]
+    },
+    {
       "version": "0.4.1",
       "date": "2026-08-12",
       "notes": [

@@ -15,7 +15,13 @@ import glob
 import shutil
 from pathlib import Path
 
-PUBLIC_KEY = "/opt/scure/keys/scure-update.pub"
+# Signature public key: the fixed /opt/scure path (legacy layout), with a
+# fallback to the repo's own keys/ dir (git-clone layout via pi-setup.sh).
+_REPO_KEY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         '..', 'keys', 'scure-update.pub')
+PUBLIC_KEY = ("/opt/scure/keys/scure-update.pub"
+              if os.path.exists("/opt/scure/keys/scure-update.pub")
+              else os.path.normpath(_REPO_KEY))
 INSTALL_DIR = "/opt/scure"
 USB_MOUNT_POINTS = ["/media/usb", "/media/pi", "/mnt/usb"]
 USB_DEVICES = ["/dev/sda1", "/dev/sdb1"]
