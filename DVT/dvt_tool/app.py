@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPush
                                QHBoxLayout, QGridLayout, QGroupBox, QListWidget, QListWidgetItem, QPlainTextEdit,
                                QMessageBox, QCheckBox, QComboBox, QDoubleSpinBox, QSpinBox, QScrollArea, QFrame,
                                QInputDialog, QFileDialog, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
-                               QDialog, QDialogButtonBox, QTextEdit, QFormLayout)
+                               QDialog, QDialogButtonBox, QTextEdit, QFormLayout, QStackedWidget)
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -33,6 +33,7 @@ from dvt_tool.store import Store  # noqa: E402
 from dvt_tool.engine import Engine  # noqa: E402
 from dvt_tool.export import Exporter  # noqa: E402
 from dvt_tool.drive import SyncConfig, Syncer, SyncStatus  # noqa: E402
+from dvt_tool.dashboard import DashboardPage, SUBSYSTEM_COLORS, SUBSYSTEM_ICONS  # noqa: E402
 
 C_OK, C_WARN, C_BAD, C_MUTE, C_ACC = "#5cbf86", "#d9a93a", "#e06a60", "#93a4b3", "#3fb8ba"
 STYLE = """
@@ -129,7 +130,36 @@ class MainWindow(QMainWindow):
         b = QPushButton("Drive settings"); b.setProperty("secondary", True); b.clicked.connect(self.drive_settings); head.addWidget(b)
         v.addLayout(head)
 
-        split = QSplitter(Qt.Horizontal); v.addWidget(split, 1)
+        body = QHBoxLayout(); body.setSpacing(12); v.addLayout(body, 1)
+        # ---- navigation rail
+        nav = QFrame(); nav.setFixedWidth(200); nav.setStyleSheet("QFrame { background: #121920; border: 1px solid #2a353f; border-radius: 8px; }")
+        nl = QVBoxLayout(nav); nl.setContentsMargins(8, 10, 8, 10); nl.setSpacing(4)
+        self.nav_buttons = {}
+        def nav_btn(key, text):
+            b = QPushButton(text); b.setProperty("secondary", True); b.setCheckable(True)
+            b.setStyleSheet("QPushButton { text-align: left; padding: 9px 12px; background: transparent; color: #e6ebf0; border-radius: 6px; }"
+                            "QPushButton:checked { background: #1e2a33; color: #3fb8ba; }")
+            b.clicked.connect(lambda: self.show_page(key)); nl.addWidget(b); self.nav_buttons[key] = b; return b
+        nav_btn("dashboard", "🏠  Dashboard"); nav_btn("console", "📋  Test Console"); nav_btn("reports", "📊  Reports (Drive folder)")
+        sec = QLabel("TEST SUBSYSTEMS"); sec.setStyleSheet("color: #93a4b3; font-size: 10px; letter-spacing: 1px; margin-top: 10px;"); nl.addWidget(sec)
+        self.nav_sub = {}
+        for name in ("Thermal", "Electrical", "Safety", "Environmental"):
+            row = QHBoxLayout(); lb = QLabel(f"{SUBSYSTEM_ICONS.get(name, '')}  {name}"); lb.setStyleSheet(f"color: #c5d0da; padding-left: 6px;")
+            cnt = QLabel("0"); cnt.setAlignment(Qt.AlignCenter); cnt.setFixedSize(26, 18)
+            cnt.setStyleSheet(f"background: #1e2a33; color: {SUBSYSTEM_COLORS.get(name, '#93a4b3')}; border-radius: 9px; font-size: 11px; font-weight: 700;")
+            row.addWidget(lb); row.addStretch(); row.addWidget(cnt); w = QWidget(); w.setLayout(row); nl.addWidget(w); self.nav_sub[name] = cnt
+            w.mousePressEvent = lambda ev, n=name: (self.show_page("dashboard"), self.dashboard.set_filter(n))
+        nl.addStretch()
+        self.health = QLabel("● System Health\nAll systems nominal"); self.health.setStyleSheet("color: #5cbf86; font-size: 11px; padding: 6px;"); nl.addWidget(self.health)
+        body.addWidget(nav)
+        self.pages = QStackedWidget(); body.addWidget(self.pages, 1)
+        # page 0: dashboard
+        self.dashboard = DashboardPage(self.engine, self.store.get_meta("machine_url", "http://testingcm5.local:3001"))
+        self.dashboard.openTest.connect(self.open_test_from_dashboard)
+        self.dashboard.machine.editingFinished.connect(lambda: self.store.set_meta("machine_url", self.dashboard.machine.text().strip()))
+        self.pages.addWidget(self.dashboard)
+        # page 1: test console (the wizard)
+        split = QSplitter(Qt.Horizontal); self.pages.addWidget(split)
 
         # ---- left: units
         left = QWidget(); ll = QVBoxLayout(left)
@@ -173,6 +203,36 @@ class MainWindow(QMainWindow):
         self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumBlockCount(400); gl.addWidget(self.log); rl.addWidget(g, 1)
         split.addWidget(right)
         split.setSizes([260, 760, 420])
+        self.show_page("dashboard")
+
+    # ------------------------------------------------------------------ pages
+    def show_page(self, key):
+        for k, b in self.nav_buttons.items():
+            b.setChecked(k == key)
+        if key == "reports":
+            import subprocess, os as _os
+            target = self.cfg.folder_path if (self.cfg.mode == "folder" and self.cfg.folder_path) else (self.data / "export")
+            try:
+                _os.startfile(str(target))       # Windows Explorer
+            except Exception:  # noqa: BLE001
+                subprocess.Popen(["xdg-open", str(target)])
+            self.nav_buttons["reports"].setChecked(False); return
+        self.pages.setCurrentIndex(0 if key == "dashboard" else 1)
+        if key == "dashboard":
+            self.dashboard.refresh()
+
+    def open_test_from_dashboard(self, test_id):
+        """Double-click on a matrix row: jump to the console on the first unit
+        that still owes a run of this test (or the first applicable unit)."""
+        units = self.cat.applicable_units(test_id)
+        pending = [r["unit_id"] for r in self.store.runs(test_id) if r["status"] in ("NOT_STARTED", "IN_PROGRESS")]
+        target = pending[0] if pending else (units[0] if units else None)
+        self.show_page("console")
+        if target:
+            for i in range(self.units.count()):
+                if self.units.item(i).data(Qt.UserRole) == target:
+                    self.units.setCurrentRow(i); break
+        self._fill_runs(test_id)
 
     # ------------------------------------------------------------------ refresh
     def refresh_all(self):
@@ -192,6 +252,18 @@ class MainWindow(QMainWindow):
         for n in self.store.ncrs(open_only=True):
             it = QListWidgetItem(f"{n['ncr_id']}  {n['run_id']}  {n['description'][:60]}"); it.setData(Qt.UserRole, n["ncr_id"]); self.ncr_list.addItem(it)
         self._show_sync(self.syncer.status if not self._sync_err else SyncStatus(self.cfg.mode, False, None, self._sync_err))
+        summ = self.engine.subsystem_summary()
+        for name, cnt in self.nav_sub.items():
+            cnt.setText(str(summ.get(name, {}).get("tests", 0)))
+        failed = sum(s["failed"] for s in summ.values()); blocked = sum(s["blocked"] for s in summ.values())
+        if failed:
+            self.health.setText(f"● System Health\n{failed} test(s) FAILED · {prog['openNcrs']} NCR open"); self.health.setStyleSheet("color: #e06a60; font-size: 11px; padding: 6px;")
+        elif blocked:
+            self.health.setText(f"● System Health\n{blocked} test(s) BLOCKED (missing data / threshold)"); self.health.setStyleSheet("color: #d9a93a; font-size: 11px; padding: 6px;")
+        else:
+            self.health.setText(f"● System Health\nAll systems nominal\nSRS-DVT-SW Rev B · catalog v{self.cat.version}"); self.health.setStyleSheet("color: #5cbf86; font-size: 11px; padding: 6px;")
+        if self.pages.currentIndex() == 0:
+            self.dashboard.refresh()
         self.refresh_unit()
 
     def unit_id(self) -> str | None:
@@ -525,6 +597,13 @@ class MainWindow(QMainWindow):
 
     def _log(self, text):
         self.log.appendPlainText(text)
+
+
+    def closeEvent(self, ev):
+        try:
+            self.dashboard.shutdown()
+        finally:
+            super().closeEvent(ev)
 
 
 def main(argv=None):

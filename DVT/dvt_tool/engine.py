@@ -157,6 +157,47 @@ class Engine:
             self.store.open_ncr(run_id, f"{run_id}: pass criteria not met", by)
         return verdict, detail
 
+    # ---------------- dashboard summaries ----------------
+    def test_status(self, test_id: str) -> dict:
+        """One row of the test matrix: status ∈ Complete | Running | Failed |
+        Pending | Blocked, rolled-up result, run counts."""
+        runs = [r for r in self.store.runs(test_id) if r["status"] != "REJECTED"]
+        done = sum(1 for r in runs if r["status"] == "DONE")
+        running = any(r["status"] == "IN_PROGRESS" for r in runs)
+        verdicts = [r["verdict"] for r in runs if r["verdict"]]
+        rollup = self.test_verdict(test_id)
+        if any(v == "FAIL" for v in verdicts):
+            status = "Failed"
+        elif running:
+            status = "Running"
+        elif runs and done == len(runs):
+            status = "Complete"
+        elif any(v == "BLOCKED" for v in verdicts):
+            status = "Blocked"
+        else:
+            status = "Pending"
+        t = self.cat.tests[test_id]
+        return {"testId": test_id, "title": t["title"], "subsystem": t["subsystem"], "method": t["method"],
+                "applicability": t["applicability"]["rule"] if t["applicability"]["rule"] == "ALL" else (t["applicability"].get("unit") or "TBD"),
+                "reps": int(t.get("repetitions") or 1) * len(self.cat.variants(test_id)),
+                "durationMin": t.get("duration_est_min"), "phase": self.cat.phase_of(test_id)["id"],
+                "status": status, "result": rollup, "runsDone": done, "runsTotal": len(runs),
+                "pass": sum(1 for v in verdicts if v == "PASS"), "fail": sum(1 for v in verdicts if v == "FAIL"),
+                "blocked": sum(1 for v in verdicts if v == "BLOCKED"), "waived": sum(1 for v in verdicts if v == "WAIVED")}
+
+    def subsystem_summary(self) -> dict:
+        """{subsystem: {tests, reps, durationMin, complete, running, failed, pending, blocked, pass, rows:[test_status…]}}"""
+        out: dict[str, dict] = {}
+        for tid in self.cat.ordered_test_ids():
+            row = self.test_status(tid)
+            s = out.setdefault(row["subsystem"], {"tests": 0, "reps": 0, "durationMin": 0, "complete": 0, "running": 0,
+                                                  "failed": 0, "pending": 0, "blocked": 0, "pass": 0, "rows": []})
+            s["tests"] += 1; s["reps"] += row["reps"]; s["durationMin"] += (row["durationMin"] or 0) * row["reps"]
+            s[row["status"].lower()] += 1
+            if row["result"] == "PASS": s["pass"] += 1
+            s["rows"].append(row)
+        return out
+
     # ---------------- progress ----------------
     def progress(self) -> dict:
         runs = self.store.runs()
