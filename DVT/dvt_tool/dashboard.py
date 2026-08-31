@@ -58,7 +58,9 @@ class TelemetryWorker(QThread):
                 })
             except Exception as e:  # noqa: BLE001
                 self.offline.emit(str(e)[:80])
-            self.msleep(int(self.interval_s * 1000))
+            for _ in range(int(self.interval_s * 10)):
+                if self._stop: break
+                self.msleep(100)
 
     def stop(self):
         self._stop = True
@@ -161,14 +163,15 @@ class TelemetryTile(QWidget):
 class DashboardPage(QWidget):
     openTest = Signal(str)          # test_id double-clicked in the matrix
 
-    def __init__(self, engine, machine_url: str = "http://testingcm5.local:3001"):
+    def __init__(self, engine, machine_url: str = "http://testingcm5.local:3001", standalone: bool = False):
         super().__init__()
         self.engine = engine
         self.filter = ""
         self.summary: dict = {}
         self._build(machine_url)
         self.tw = None
-        self.set_machine(machine_url)
+        if standalone:                      # the app feeds on_dut() from its single DutMonitor instead
+            self.set_machine(machine_url)
 
     # ---------------- layout ----------------
     def _build(self, machine_url):
@@ -305,6 +308,16 @@ class DashboardPage(QWidget):
         mark("uv", None if s.get("uvOn") is None else not s["uvOn"], "✓ OK", "● UV ON")
         mark("heater", None if s.get("isHeating") is None else not s["isHeating"], "✓ OK", "● HEATING")
         mark("fault", None if s.get("fault") is None else not s["fault"], "✓ OK", f"✗ {str(s.get('fault'))[:24]}")
+
+    def on_dut(self, st):
+        """Feed from the application's DutMonitor (DutState) — one poller for the whole app."""
+        if not st.online:
+            self._on_offline(st.error or "offline"); return
+        m = st.metrics
+        self._on_sample({"chamberTemp": m.get("chamberTemp"), "ledTempMax": m.get("ledTempMax"),
+                         "heaterFanRpm": m.get("heaterFanRpm"), "ledFanRpm": m.get("ledFanRpm"),
+                         "doorOpen": st.flags.get("doorOpen"), "uvOn": st.flags.get("uvOn"),
+                         "isHeating": st.flags.get("isHeating"), "fault": st.flags.get("fault"), "version": st.version})
 
     def _on_offline(self, err: str):
         self.tele_status.setText(f"○ machine offline ({err})"); self.tele_status.setStyleSheet("color: #93a4b3; font-size: 11px;")

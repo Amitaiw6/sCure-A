@@ -149,6 +149,14 @@ class Exporter:
             lines += ["", "## Waivers", "", "| Run | Approver | Rationale |", "|---|---|---|"]
             for r in w:
                 lines.append(f"| {r['run_id']} | {r['approver']} | {r['rationale']} |")
+        # as-run procedure: every redline, per run (SRS-DVT-086 / NASA item 8)
+        redlined = [(r, self.store.redlines(r["run_id"])) for r in self.store.runs(include_supplementary=True)]
+        redlined = [(r, rl) for r, rl in redlined if rl]
+        if redlined:
+            lines += ["", "## As-run deviations (redlines)", "", "| Run | Step | Performed as | Reason | By | At |", "|---|---|---|---|---|---|"]
+            for r, rls in redlined:
+                for x in rls:
+                    lines.append(f"| {r['run_id']} | {x['step_index'] + 1} | {x['as_run']} | {x['reason']} | {x['by_whom']} | {x['at']} |")
         unverified = [tid for tid in self.cat.ordered_test_ids() if eng.test_verdict(tid) not in ("PASS", "WAIVED")]
         lines += ["", "## Not yet verified (SRS-DVT-053)", ""] + [f"- {t}" for t in unverified] if unverified else ["", "All tests verified."]
         p = self.out / f"{self.campaign}.report.md"

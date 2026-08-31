@@ -29,24 +29,44 @@ cd C:\Users\User\Documents\GitHub\sCure-A\DVT
 
 Data lives in `%USERPROFILE%\.scure-dvt\` (`campaign.db`, `export\`, `sync.json`).
 
-### How a session goes (SRS §4.2)
+### The screens
 
-1. Pick the unit on the left. The centre panel says what to do next — or why
-   nothing can start yet (configuration not frozen, phase TRR not signed,
-   ELE-001 not passed, a dependency missing, an instrument without a valid
-   calibration record). Nothing has to be worked out by the operator.
-2. **Start this run** → safety plan (if any) → equipment/calibration status →
-   preconditions checklist (steps unlock only when all are ticked) →
-   step-by-step procedure with the data fields bound to each step.
-3. **Save values** as you go (survives restart), **Evaluate** to see the
-   verdict, **Finish run** to commit it. FAIL opens an NCR automatically.
-   **Waive…** needs an approver + rationale and is counted separately from
-   PASS. **Redline this step** records how a step was actually performed.
-   **Reject run…** (ambient drift, warm start) also rescinds co-executed
-   children.
-4. Every commit is exported and pushed to Drive in the background; the pill
-   at the top shows the last sync and how many items are queued if Drive is
-   unreachable. Nothing is ever lost — it is committed locally first.
+- **Header** — DUT address (the machine you test against; type an IP or pick
+  a known one, Enter = connect), operator, campaign, test plan, live
+  SYSTEM STATUS (OFFLINE / IDLE / HEATING / CURING / FAULT), UTC clock,
+  Drive sync pill.
+- **Dashboard** — KPIs, test distribution by subsystem (click to filter),
+  test matrix grouped by subsystem with status / result / runs per test,
+  live telemetry + interlocks of the connected machine.
+- **Test Plans** — the catalog by phase; click a test to read its full
+  definition.
+- **Test Console** — pick a unit; the *Next action* card says what to run
+  and why anything is blocked; **Start guided run →** opens the wizard.
+- **DUT Control** — connect / discover the machine, live gauges, safe
+  controls (heat, cool, UV on/off, door, STOP, LED/fan tests). Every
+  action is confirmed and logged.
+- **Instruments** — calibration records per instrument (SRS-DVT-085).
+- **Reports** — export + sync now, open the Drive folder, campaign events.
+- **Settings** — Drive mode (folder / api / off), reduced motion.
+
+### The wizard (SRS §4.2) — one screen per stage
+
+Overview → Safety plan (if any) → Equipment & calibration → Preconditions
+(data stays locked until every box is ticked) → **Step 1 … N** (the
+instruction in large type + only that step's fields, with **⇩ from DUT**
+next to any field the connected machine can supply, a per-step timer,
+*Redline this step*, *Attach file…*) → **Verdict** (all values, the pass
+criteria, Evaluate / Finish / Waive / Reject, optional witness) → Done
+(result + what to do next). Back/Next with animated transitions; every
+Next saves, so closing the app and reopening resumes at the same stage.
+FAIL opens an NCR automatically; BLOCKED (missing value or a threshold that
+is still `null` in the catalog) is never reported as PASS.
+
+Every commit is exported and pushed to Drive in the background; the pill
+in the header shows the last sync and how many items are queued if Drive is
+unreachable. Nothing is ever lost — it is committed locally first.
+
+Compliance against the SRS: [docs/SRS-compliance.md](docs/SRS-compliance.md).
 
 ### Adding a system test
 
