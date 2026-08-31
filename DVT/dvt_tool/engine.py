@@ -177,8 +177,11 @@ class Engine:
         else:
             status = "Pending"
         t = self.cat.tests[test_id]
+        app = t["applicability"]
+        appl = ("ALL" if app["rule"] == "ALL" else
+                f"{len(app.get('units') or [])} units" if app["rule"] == "SUBSET" else (app.get("unit") or "TBD"))
         return {"testId": test_id, "title": t["title"], "subsystem": t["subsystem"], "method": t["method"],
-                "applicability": t["applicability"]["rule"] if t["applicability"]["rule"] == "ALL" else (t["applicability"].get("unit") or "TBD"),
+                "applicability": appl, "units": self.cat.applicable_units(test_id),
                 "reps": int(t.get("repetitions") or 1) * len(self.cat.variants(test_id)),
                 "durationMin": t.get("duration_est_min"), "phase": self.cat.phase_of(test_id)["id"],
                 "status": status, "result": rollup, "runsDone": done, "runsTotal": len(runs),
@@ -191,12 +194,47 @@ class Engine:
         for tid in self.cat.ordered_test_ids():
             row = self.test_status(tid)
             s = out.setdefault(row["subsystem"], {"tests": 0, "reps": 0, "durationMin": 0, "complete": 0, "running": 0,
-                                                  "failed": 0, "pending": 0, "blocked": 0, "pass": 0, "rows": []})
+                                                  "failed": 0, "pending": 0, "blocked": 0, "pass": 0, "runsDone": 0, "runsTotal": 0, "rows": []})
             s["tests"] += 1; s["reps"] += row["reps"]; s["durationMin"] += (row["durationMin"] or 0) * row["reps"]
             s[row["status"].lower()] += 1
+            s["runsDone"] += row["runsDone"]; s["runsTotal"] += row["runsTotal"]
             if row["result"] == "PASS": s["pass"] += 1
             s["rows"].append(row)
+        for s in out.values():
+            s["percent"] = round(100 * s["runsDone"] / s["runsTotal"]) if s["runsTotal"] else 0
         return out
+
+    def remaining(self) -> list[dict]:
+        """What is still owed, per test: pending runs per unit — the 'what is left' list."""
+        out = []
+        for tid in self.cat.ordered_test_ids():
+            per_unit = {}
+            for r in self.store.runs(tid):
+                if r["status"] in ("NOT_STARTED", "IN_PROGRESS"):
+                    per_unit[r["unit_id"]] = per_unit.get(r["unit_id"], 0) + 1
+            if per_unit:
+                t = self.cat.tests[tid]
+                out.append({"testId": tid, "title": t["title"], "subsystem": t["subsystem"], "phase": self.cat.phase_of(tid)["id"],
+                            "pendingRuns": sum(per_unit.values()), "perUnit": per_unit,
+                            "estMin": (t.get("duration_est_min") or 0) * sum(per_unit.values())})
+        return out
+
+    def unit_matrix(self) -> dict:
+        """tests × units verdict matrix for the cross-unit comparison."""
+        units = self.cat.unit_ids(); rows = []
+        for tid in self.cat.ordered_test_ids():
+            appl = set(self.cat.applicable_units(tid))
+            cells = {}
+            for u in units:
+                if u not in appl:
+                    cells[u] = "N/A"
+                else:
+                    runs = [r for r in self.store.runs(tid, u) if r["status"] != "REJECTED"]
+                    v = self.test_verdict(tid, u)
+                    done = sum(1 for r in runs if r["status"] == "DONE")
+                    cells[u] = v or (f"{done}/{len(runs)}" if runs else "—")
+            rows.append({"testId": tid, "title": self.cat.tests[tid]["title"], "subsystem": self.cat.tests[tid]["subsystem"], "cells": cells})
+        return {"units": units, "rows": rows}
 
     # ---------------- progress ----------------
     def progress(self) -> dict:

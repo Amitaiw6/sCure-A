@@ -29,6 +29,19 @@ cd C:\Users\User\Documents\GitHub\sCure-A\DVT
 
 Data lives in `%USERPROFILE%\.scure-dvt\` (`campaign.db`, `export\`, `sync.json`).
 
+### Simulation mode (test the console without a machine)
+
+Click **◉ Simulation mode** at the bottom of the rail (or type `sim` as the
+DUT address, or start with `run.bat --machine sim`). A simulated sCure with
+coarse physics answers instead of a real unit: heat/cool/UV/door/fan
+controls work, and **DUT Control → Simulator — fault injection** lets you
+open the door, open/short the heater sensor, open an LED thermistor,
+disconnect or block an LED fan, lose the circulation or chamber fan, drop
+mains, trip the thermal cutout and switch mains to 110/230/240 V — each
+producing the alarm code and protective action the SAF tests look for. A
+purple banner and the `SIM ·` prefix make it unmistakable, and every run
+made in simulation is flagged in the campaign events.
+
 ### The screens
 
 - **Header** — DUT address (the machine you test against; type an IP or pick
@@ -67,6 +80,20 @@ in the header shows the last sync and how many items are queued if Drive is
 unreachable. Nothing is ever lost — it is committed locally first.
 
 Compliance against the SRS: [docs/SRS-compliance.md](docs/SRS-compliance.md).
+Requirements of this tool itself (progress, 5-machine comparison, applicability rules ALL / SINGLE / SUBSET, NASA discipline, simulation): [docs/SRS-DVT-Tool.md](docs/SRS-DVT-Tool.md).
+
+### Applicability of a test (which machines)
+
+```yaml
+applicability: {rule: ALL}                              # every UUT
+applicability: {rule: SINGLE, unit: UUT-05}             # one named UUT (+ sample_rationale)
+applicability: {rule: SUBSET, units: [UUT-01, UUT-03, UUT-05]}   # a defined subset (+ sample_rationale = the criterion)
+```
+
+The **Statistics** page shows the tests × 5 machines verdict matrix (N/A
+where a test does not apply) and, per test and numeric field, one curve per
+unit; the **Dashboard** shows the campaign %, a progress bar per subsystem
+and the list of what is still owed with estimated bench time.
 
 ### Adding a system test
 

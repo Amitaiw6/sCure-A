@@ -72,10 +72,20 @@ class Catalog:
             if not t.get("pass_criteria"):
                 problems.append(f"{tid}: pass_criteria missing")
             app = t.get("applicability") or {}
-            if app.get("rule") not in ("ALL", "SINGLE"):
-                problems.append(f"{tid}: applicability.rule must be ALL or SINGLE")
-            if app.get("rule") == "SINGLE" and not t.get("sample_rationale"):
-                problems.append(f"{tid}: SINGLE applicability requires sample_rationale")
+            if app.get("rule") not in ("ALL", "SINGLE", "SUBSET"):
+                problems.append(f"{tid}: applicability.rule must be ALL, SINGLE or SUBSET")
+            if app.get("rule") in ("SINGLE", "SUBSET") and not t.get("sample_rationale"):
+                problems.append(f"{tid}: {app.get('rule')} applicability requires sample_rationale (NASA sample-size rationale)")
+            if app.get("rule") == "SUBSET":
+                units = app.get("units") or []
+                known = {u["id"] for u in self.units}
+                if not units or not (1 <= len(units) <= len(known)):
+                    problems.append(f"{tid}: SUBSET needs a non-empty `units:` list")
+                for u in units:
+                    if u not in known:
+                        problems.append(f"{tid}: SUBSET unit {u} is not in the units list")
+            if app.get("rule") == "SINGLE" and app.get("unit") and app["unit"] not in {u["id"] for u in self.units}:
+                problems.append(f"{tid}: SINGLE unit {app['unit']} is not in the units list")
             for d in t.get("dependencies") or []:
                 if d not in ids:
                     problems.append(f"{tid}: unknown dependency {d}")
@@ -128,6 +138,8 @@ class Catalog:
         app = self.tests[test_id]["applicability"]
         if app["rule"] == "ALL":
             return self.unit_ids()
+        if app["rule"] == "SUBSET":                           # e.g. 3 of the 5 machines, chosen by a stated criterion
+            return [u for u in self.unit_ids() if u in (app.get("units") or [])]
         return [app["unit"]] if app.get("unit") else []      # None = CONFIRM pending
 
     def runs(self, test_id: str | None = None) -> list[RunSpec]:

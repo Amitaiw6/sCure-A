@@ -40,10 +40,11 @@ from dvt_tool.drive import SyncConfig, Syncer, SyncStatus  # noqa: E402
 from dvt_tool.dashboard import DashboardPage  # noqa: E402
 from dvt_tool.ui import theme as T  # noqa: E402
 from dvt_tool.ui.widgets import Card, Pill, StatTile, PulseDot, Toast, FadeStack, label  # noqa: E402
-from dvt_tool.ui.dut import DutMonitor, DutPanel, DutState, DutClient  # noqa: E402
+from dvt_tool.ui.dut import DutMonitor, DutPanel, DutState, DutClient, SIM_URL  # noqa: E402
 from dvt_tool.ui.wizard import RunWizard  # noqa: E402
+from dvt_tool.ui.stats import StatisticsPage  # noqa: E402
 
-DEFAULT_MACHINES = ["http://192.168.2.155:3001", "http://testingcm5.local:3001", "http://127.0.0.1:3001"]
+DEFAULT_MACHINES = ["http://192.168.2.155:3001", "http://testingcm5.local:3001", "http://127.0.0.1:3001", SIM_URL]
 
 
 class SyncWorker(QThread):
@@ -68,7 +69,8 @@ class SyncWorker(QThread):
 
 class MainWindow(QMainWindow):
     NAV = [("dashboard", "🏠", "Dashboard"), ("plans", "📋", "Test Plans"), ("console", "🧭", "Test Console"),
-           ("dut", "🔌", "DUT Control"), ("instruments", "🔧", "Instruments"), ("reports", "📊", "Reports"), ("settings", "⚙", "Settings")]
+           ("dut", "🔌", "DUT Control"), ("instruments", "🔧", "Instruments"), ("stats", "📈", "Statistics"),
+           ("reports", "📊", "Reports"), ("settings", "⚙", "Settings")]
 
     def __init__(self, catalog: Catalog, data_dir: Path, machine: str | None = None):
         super().__init__()
@@ -90,7 +92,10 @@ class MainWindow(QMainWindow):
         self.resize(1500, 920)
         self._build(); self.toast_w = Toast(self)
         self.set_machine(self.machine_url); self.refresh_all(); self.show_page("dashboard")
+        last = self.store.get_meta("last_unit")
+        if last: self.select_unit(last)
         self._clock = QTimer(self); self._clock.timeout.connect(self._tick_clock); self._clock.start(1000)
+        QTimer.singleShot(1500, self.kick_sync)          # first export/sync of the session in the background
 
     # ------------------------------------------------------------------ shell
     def _build(self):
@@ -107,6 +112,10 @@ class MainWindow(QMainWindow):
         self.cb_machine.setCurrentText(self.machine_url); self.cb_machine.lineEdit().returnPressed.connect(lambda: self.set_machine(self.cb_machine.currentText().strip()))
         self.cb_machine.activated.connect(lambda _: self.set_machine(self.cb_machine.currentText().strip()))
         block("DUT", self.cb_machine)
+        self.cb_unit = QComboBox(); self.cb_unit.setMinimumWidth(110)
+        for u in self.cat.units: self.cb_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role')}" if u.get("role") else ""), u["id"])
+        self.cb_unit.currentIndexChanged.connect(self._unit_from_header)
+        block("UNIT UNDER TEST", self.cb_unit)
         self.ed_operator = QLineEdit(self.operator); self.ed_operator.setFixedWidth(130); self.ed_operator.textChanged.connect(lambda s: setattr(self, "operator", s.strip()))
         block("OPERATOR", self.ed_operator)
         block("CAMPAIGN", label(self.cfg.campaign, bold=True)); block("TEST PLAN", label(f"SRS-DVT-SW Rev B · cat v{self.cat.version}", bold=True))
@@ -115,32 +124,36 @@ class MainWindow(QMainWindow):
         self.lbl_clock = label("", "mono", bold=True); block("DATE / TIME (UTC)", self.lbl_clock)
         self.p_sync = Pill("Drive: —", T.MUTED); hl.addWidget(self.p_sync)
         v.addWidget(hdr)
+        self.sim_banner = QLabel("◉  SIMULATION MODE — you are connected to the built-in simulated machine. Nothing here touches real hardware. Inject faults from DUT Control.")
+        self.sim_banner.setStyleSheet(f"background: #efe9fb; color: #3d2a7a; border-bottom: 1px solid #cdbdf0; padding: 8px 18px; font-weight: 600;"); self.sim_banner.hide()
+        v.addWidget(self.sim_banner)
         # ---- body
         body = QHBoxLayout(); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0); v.addLayout(body, 1)
         side = QFrame(); side.setProperty("card", "sidebar"); side.setFixedWidth(230); sl = QVBoxLayout(side); sl.setContentsMargins(10, 14, 10, 14); sl.setSpacing(4)
         self.nav_buttons = {}
         for key, icon, text in self.NAV:
             b = QPushButton(f"{icon}   {text}"); b.setProperty("kind", "nav"); b.setCheckable(True); b.clicked.connect(lambda _, k=key: self.show_page(k)); sl.addWidget(b); self.nav_buttons[key] = b
-        sl.addSpacing(10); sl.addWidget(label("TEST SUBSYSTEMS", "eyebrow"))
+        sl.addSpacing(10); sl.addWidget(label("TEST SUBSYSTEMS", "eyebrow-rail"))
         self.nav_sub = {}
         for name in ("Thermal", "Electrical", "Safety", "Environmental"):
             b = QPushButton(f"{T.SUBSYSTEM_ICON[name]}   {name}"); b.setProperty("kind", "nav"); b.clicked.connect(lambda _, n=name: (self.show_page("dashboard"), self.dashboard.set_filter(n)))
             row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.addWidget(b, 1)
-            cnt = label("0", bold=True, color=T.SUBSYSTEM[name]); cnt.setStyleSheet(f"background: {T.CARD}; color: {T.SUBSYSTEM[name]}; border-radius: 10px; padding: 1px 8px; font-weight: 700; font-size: 11px;")
-            row.addWidget(cnt); w = QWidget(); w.setLayout(row); sl.addWidget(w); self.nav_sub[name] = cnt
-        sl.addSpacing(10); sl.addWidget(label("REPORTING", "eyebrow"))
-        b = QPushButton("📈   Statistics"); b.setProperty("kind", "nav"); b.clicked.connect(lambda: self.show_page("dashboard")); sl.addWidget(b)
+            cnt = QLabel("0"); cnt.setStyleSheet(f"background: {T.RAIL_2}; color: {T.SUBSYSTEM[name]}; border-radius: 10px; padding: 2px 9px; font-weight: 700; font-size: 11px;")
+            row.addWidget(cnt); w = QWidget(); w.setLayout(row); w.setStyleSheet("background: transparent;"); sl.addWidget(w); self.nav_sub[name] = cnt
         sl.addStretch()
-        self.health = Card(kind="true"); self.health_dot = PulseDot(T.OK); hr = QHBoxLayout(); hr.addWidget(self.health_dot); hr.addWidget(label("System Health", bold=True)); hr.addStretch(); self.health.body.addLayout(hr)
-        self.health_text = label("All systems nominal", "muted", wrap=True); self.health.body.addWidget(self.health_text); sl.addWidget(self.health)
+        self.sim_toggle = QPushButton("◉   Simulation mode: OFF"); self.sim_toggle.setProperty("kind", "nav"); self.sim_toggle.setCheckable(True)
+        self.sim_toggle.clicked.connect(self.toggle_sim); sl.addWidget(self.sim_toggle)
+        self.health = QFrame(); self.health.setStyleSheet(f"QFrame {{ background: {T.RAIL_2}; border-radius: 10px; }}"); hb = QVBoxLayout(self.health); hb.setContentsMargins(12, 10, 12, 10)
+        self.health_dot = PulseDot(T.OK); hr = QHBoxLayout(); hr.addWidget(self.health_dot); hr.addWidget(label("System Health", bold=True, color="#ffffff")); hr.addStretch(); hb.addLayout(hr)
+        self.health_text = label("All systems nominal", "rail", wrap=True); hb.addWidget(self.health_text); sl.addWidget(self.health)
         body.addWidget(side)
         self.pages = FadeStack(); body.addWidget(self.pages, 1)
         self.page_index = {}
         self.dashboard = DashboardPage(self.engine, self.machine_url); self.dashboard.openTest.connect(self.open_test)
-        self.dashboard.machine.hide(); self.dashboard.machine.parentWidget()  # header owns the machine address now
+        self.stats = StatisticsPage(self.engine)
         for key, page in (("dashboard", self._wrap(self.dashboard)), ("plans", self._plans_page()), ("console", self._console_page()),
-                          ("dut", self._wrap(DutPanel(self))), ("instruments", self._instruments_page()), ("reports", self._reports_page()),
-                          ("settings", self._settings_page())):
+                          ("dut", self._wrap(DutPanel(self))), ("instruments", self._instruments_page()), ("stats", self._wrap(self.stats)),
+                          ("reports", self._reports_page()), ("settings", self._settings_page())):
             self.page_index[key] = self.pages.count(); self.pages.addWidget(page)
         self.dut_panel = self.pages.widget(self.page_index["dut"]).findChild(DutPanel)
 
@@ -154,6 +167,7 @@ class MainWindow(QMainWindow):
         if key == "plans": self._fill_plans()
         if key == "console": self.refresh_console()
         if key == "instruments": self._fill_instruments()
+        if key == "stats": self.stats.refresh()
 
     def toast(self, text, color=None): self.toast_w.show_message(text, color)
 
@@ -166,10 +180,14 @@ class MainWindow(QMainWindow):
         saved = (self.store.get_meta("machines", "") or "").split("|")
         return [m for m in dict.fromkeys([*saved, *DEFAULT_MACHINES]) if m]
 
+    def is_sim(self) -> bool:
+        return self.machine_url.startswith("sim://")
+
     def set_machine(self, url: str):
         if not url: return
-        if not url.startswith("http"): url = f"http://{url}"
-        if ":" not in url.split("//", 1)[1]: url += ":3001"
+        if url.lower() in ("sim", "simulator", "simulation"): url = SIM_URL
+        if not url.startswith(("http://", "https://", "sim://")): url = f"http://{url}"
+        if url.startswith("http") and ":" not in url.split("//", 1)[1]: url += ":3001"
         self.machine_url = url; self.store.set_meta("machine_url", url)
         self.store.set_meta("machines", "|".join(dict.fromkeys([url, *self.known_machines()])))
         if self.cb_machine.findText(url) < 0: self.cb_machine.insertItem(0, url)
@@ -178,10 +196,19 @@ class MainWindow(QMainWindow):
         self.dut_monitor = DutMonitor(url); self.dut_monitor.state.connect(self._on_dut); self.dut_monitor.start()
         self.store.log("DUT selected", self.operator, None, {"url": url})
 
+    def toggle_sim(self):
+        if self.machine_url.startswith("sim://"):
+            prev = self.store.get_meta("machine_url_real", DEFAULT_MACHINES[0]); self.set_machine(prev)
+        else:
+            self.store.set_meta("machine_url_real", self.machine_url); self.set_machine(SIM_URL)
+
     def _on_dut(self, st: DutState):
         self.dut_state = st
-        col = {"OFFLINE": T.MUTED, "FAULT": T.BAD, "CURING": T.WARN, "HEATING": T.WARN, "COOLING": T.INFO, "IDLE": T.OK}[st.mode]
-        self.dot_sys.set_color(col); self.lbl_sys.setText("RUNNING" if st.mode in ("CURING", "HEATING", "COOLING") else st.mode); self.lbl_sys.setStyleSheet(f"font-weight: 700; font-size: 15px; color: {col};")
+        sim = bool(st.online and st.flags.get("simulated"))
+        self.sim_banner.setVisible(sim); self.sim_toggle.setChecked(sim); self.sim_toggle.setText(f"◉   Simulation mode: {'ON' if sim else 'OFF'}")
+        col = T.MODE.get(st.mode, T.MUTED)
+        txt = "RUNNING" if st.mode in ("CURING", "HEATING", "COOLING") else st.mode
+        self.dot_sys.set_color(col if not sim or st.mode != "IDLE" else T.PURPLE); self.lbl_sys.setText(("SIM · " if sim else "") + txt); self.lbl_sys.setStyleSheet(f"font-weight: 700; font-size: 15px; color: {col};")
         if self.dut_panel: self.dut_panel.on_state(st)
         self.dashboard.on_dut(st)
 
@@ -226,6 +253,11 @@ class MainWindow(QMainWindow):
         self.next_card = Card("Next action", kind="raised")
         self.lbl_next = label("", "instruction", wrap=True); self.next_card.body.addWidget(self.lbl_next)
         self.lbl_block = label("", "banner-bad", wrap=True); self.lbl_block.hide(); self.next_card.body.addWidget(self.lbl_block)
+        fix = QHBoxLayout(); self.fix_buttons = {}
+        for key, text, slot in (("CONFIG", "Freeze configuration now", self.freeze_config), ("TRR", "Sign phase readiness now", self.sign_phase),
+                                ("CAL", "Record calibrations…", lambda: self.show_page("instruments")), ("EARTH", "Go to ELE-001 (earth first)", lambda: self.open_test("DVT-ELE-001"))):
+            b = QPushButton(text); b.setProperty("kind", "ghost"); b.clicked.connect(slot); b.hide(); fix.addWidget(b); self.fix_buttons[key] = b
+        fix.addStretch(); self.next_card.body.addLayout(fix)
         row = QHBoxLayout()
         self.btn_start = QPushButton("Start guided run →"); self.btn_start.setProperty("kind", "big"); self.btn_start.clicked.connect(self.start_run); row.addWidget(self.btn_start)
         self.btn_override = QPushButton("Start anyway (supervisor)"); self.btn_override.setProperty("kind", "danger"); self.btn_override.clicked.connect(lambda: self.start_run(override=True)); row.addWidget(self.btn_override)
@@ -240,13 +272,28 @@ class MainWindow(QMainWindow):
     def unit_id(self):
         it = self.units.currentItem(); return it.data(Qt.UserRole) if it else None
 
+    def _unit_from_header(self, _idx):
+        """Header 'UNIT UNDER TEST' drives the console unit list (and vice versa)."""
+        u = self.cb_unit.currentData()
+        for i in range(self.units.count()):
+            if self.units.item(i).data(Qt.UserRole) == u and self.units.currentRow() != i:
+                self.units.setCurrentRow(i); break
+        self.store.set_meta("last_unit", u or "")
+
+    def select_unit(self, u: str):
+        i = self.cb_unit.findData(u)
+        if i >= 0 and self.cb_unit.currentIndex() != i: self.cb_unit.setCurrentIndex(i)
+
     def refresh_console(self):
         if self.wizard: return
         u = self.unit_id()
         if not u: return
+        self.select_unit(u)
         na = self.engine.next_action(u)
         self.lbl_next.setText(na.message)
         self.lbl_block.setVisible(bool(na.blockers)); self.lbl_block.setText("Blocked:\n• " + "\n• ".join(b.text for b in na.blockers))
+        codes = {b.code for b in na.blockers}
+        for k, b in self.fix_buttons.items(): b.setVisible(k in codes)
         startable = na.run is not None and na.run["status"] in ("NOT_STARTED", "IN_PROGRESS")
         self.btn_start.setEnabled(startable and not na.blockers); self.btn_override.setEnabled(startable and bool(na.blockers))
         self.btn_start.setText("Resume guided run →" if na.run and na.run["status"] == "IN_PROGRESS" else "Start guided run →")
@@ -451,6 +498,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, ev):
         try:
             if self.dut_monitor: self.dut_monitor.stop(); self.dut_monitor.wait(2000)
+            sw = getattr(self, "_sw", None)
+            if sw and sw.isRunning(): sw.wait(8000)          # let the last export/sync finish
             self.dashboard.shutdown()
         finally:
             super().closeEvent(ev)

@@ -96,7 +96,10 @@ class RunWizard(QWidget):
         return ", ".join(f"{k}={v}" for k, v in self.run["variant"].items()) or "single"
 
     def _scroll(self, inner: QWidget) -> QScrollArea:
-        sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.NoFrame); sa.setWidget(inner); return sa
+        # reading column: keep the instruction and fields at a comfortable width, centred on wide screens
+        inner.setMaximumWidth(1040)
+        host = QWidget(); hl = QHBoxLayout(host); hl.setContentsMargins(0, 0, 0, 0); hl.addStretch(1); hl.addWidget(inner, 8); hl.addStretch(1)
+        sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.NoFrame); sa.setWidget(host); return sa
 
     def _page(self, key: str) -> QWidget:
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(4, 0, 4, 0); l.setSpacing(12); l.setAlignment(Qt.AlignTop)

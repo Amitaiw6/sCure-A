@@ -110,11 +110,22 @@ class DutClient:
         except Exception: return {}  # noqa: BLE001
 
 
+def make_client(url: str, timeout: float = 4.0):
+    """DutClient for http(s) addresses, the in-process simulator for sim://."""
+    if url and url.startswith("sim://"):
+        from .sim import SimClient
+        return SimClient(url)
+    return DutClient(url, timeout)
+
+
+SIM_URL = "sim://scure"
+
+
 class DutMonitor(QThread):
     state = Signal(object)          # DutState
 
     def __init__(self, url: str, interval_s: float = 2.0):
-        super().__init__(); self.client = DutClient(url); self.interval_s = interval_s; self._stop = False
+        super().__init__(); self.client = make_client(url); self.interval_s = interval_s if not url.startswith("sim://") else 1.0; self._stop = False
 
     def run(self):
         while not self._stop:
@@ -215,6 +226,20 @@ class DutPanel(QWidget):
         b = QPushButton("UV off"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("uv off", lambda c: c.uv(False))); g.addWidget(b, 3, 2)
         b = QPushButton("Open door"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("door open", lambda c: c.door_open())); g.addWidget(b, 4, 2)
         b = QPushButton("STOP — all off"); b.setProperty("kind", "danger"); b.clicked.connect(lambda: self._act("stop", lambda c: c.stop(), confirm=False)); g.addWidget(b, 5, 0, 1, 3)
+        # ---- simulator controls (visible only when the DUT is the built-in simulator)
+        self.sim_card = Card("Simulator — fault injection", kind="sim", hint="exercise the SAF tests without hardware"); right.addWidget(self.sim_card)
+        from .sim import FAULTS
+        self.sim_boxes = {}
+        sg = QGridLayout(); sg.setHorizontalSpacing(12); self.sim_card.body.addLayout(sg)
+        from PySide6.QtWidgets import QCheckBox
+        for i, (key, text) in enumerate(FAULTS.items()):
+            cb = QCheckBox(text); cb.toggled.connect(lambda on, k=key: self._sim("inject " + k, lambda c: c.inject(k, on)))
+            sg.addWidget(cb, i // 2, i % 2); self.sim_boxes[key] = cb
+        srow = QHBoxLayout(); srow.addWidget(label("Mains voltage", "muted")); self.cb_mains = QComboBox(); self.cb_mains.addItems(["110", "230", "240"]); self.cb_mains.setCurrentText("230")
+        self.cb_mains.currentTextChanged.connect(lambda v: self._sim("mains " + v, lambda c: c.set_mains(float(v)))); srow.addWidget(self.cb_mains)
+        b = QPushButton("Close door"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._sim("door close", lambda c: c.door_close())); srow.addWidget(b)
+        b = QPushButton("Acknowledge alarms"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._sim("ack", lambda c: c.ack())); srow.addWidget(b)
+        srow.addStretch(); self.sim_card.body.addLayout(srow); self.sim_card.hide()
         c = Card("Diagnostics"); right.addWidget(c)
         row = QHBoxLayout()
         b = QPushButton("LED test"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("led-test", lambda c: c.led_test())); row.addWidget(b)
@@ -225,9 +250,9 @@ class DutPanel(QWidget):
 
     def discover(self):
         """Try the known hostnames / the last IPs and pick the first that answers."""
-        cands = self.app.known_machines() + ["http://testingcm5.local:3001", "http://127.0.0.1:3001"]
+        cands = [u for u in self.app.known_machines() if not u.startswith("sim://")] + ["http://testingcm5.local:3001", "http://127.0.0.1:3001"]
         for u in dict.fromkeys(cands):
-            if DutClient(u, 1.5).state().online:
+            if make_client(u, 1.5).state().online:
                 self.url.setCurrentText(u); self.app.set_machine(u); return
         QMessageBox.information(self, "Discover", "No sCure machine answered. Enter its address (http://<ip>:3001) and press Connect.")
 
@@ -237,16 +262,27 @@ class DutPanel(QWidget):
         if confirm and QMessageBox.question(self, "DUT control", f"Send '{name}' to {self.state.url}?") != QMessageBox.Yes:
             return
         try:
-            res = fn(DutClient(self.state.url)); self.out.setText(f"{name}: {json.dumps(res)[:300]}")
+            res = fn(make_client(self.state.url)); self.out.setText(f"{name}: {json.dumps(res)[:300]}")
             self.app.store.log(f"DUT control: {name}", self.app.operator, self.app.current_run_id(), {"url": self.state.url, "result": res})
         except Exception as e:  # noqa: BLE001
             self.out.setText(f"{name}: ERROR {e}")
 
+    def _sim(self, name, fn):
+        """Simulator-only actions: no confirmation dialog, still logged."""
+        if not (self.state.online and self.state.flags.get("simulated")): return
+        try:
+            res = fn(make_client(self.state.url)); self.out.setText(f"sim {name}: {json.dumps(res)[:200]}")
+            self.app.store.log(f"Simulator: {name}", self.app.operator, self.app.current_run_id(), {"result": res})
+        except Exception as e:  # noqa: BLE001
+            self.out.setText(f"sim {name}: ERROR {e}")
+
     def on_state(self, st: DutState):
         self.state = st
-        col = {"OFFLINE": T.MUTED, "FAULT": T.BAD, "CURING": T.WARN, "HEATING": T.WARN, "COOLING": T.INFO, "IDLE": T.OK}[st.mode]
-        self.dot.set_color(col); self.p_mode.set(st.mode, col)
-        self.lbl_ver.setText(f"sCure {st.version or ''} · {st.url}" if st.online else st.url)
+        sim = bool(st.online and st.flags.get("simulated"))
+        self.sim_card.setVisible(sim)
+        col = T.MODE.get(st.mode, T.MUTED) if not sim or st.mode != "IDLE" else T.PURPLE
+        self.dot.set_color(col); self.p_mode.set(("SIM · " if sim else "") + st.mode, col)
+        self.lbl_ver.setText((f"sCure {st.version or ''} · {st.url}" if st.online else st.url) + (f" · faults: {', '.join(st.metrics.get('faultsInjected') or []) or 'none'}" if sim else ""))
         self.lbl_err.setText("" if st.online else (st.error or ""))
         for k, t in self.tiles.items():
             t.push(st.metrics.get(k) if st.online else None)
