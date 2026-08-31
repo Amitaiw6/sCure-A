@@ -59,8 +59,14 @@ phase. `pytest` in this folder runs the same validation.
 
 ## Google Drive
 
-Google Drive for Desktop is **not** installed on this PC, so the default mode
-is the **Drive API with your own Google account**:
+**Current setup (this PC):** Google Drive for Desktop is installed and the
+app is configured in `folder` mode — every export is written to
+`G:\My Drive\sCure DVT\` and Drive uploads it within seconds
+(`sCure-DVT.xlsx`, `sCure-DVT.report.md`, `sCure-DVT.campaign.json`,
+`csv\<test>.csv`, `attachments\…`). Start the app with `run.bat`.
+
+Alternative — a station **without** Drive for Desktop — use the **Drive API
+with your own Google account** (Drive settings → `api`):
 
 1. Google Cloud Console → create a project → enable **Google Drive API** →
    *Credentials* → *OAuth client ID* → application type **Desktop app** →
