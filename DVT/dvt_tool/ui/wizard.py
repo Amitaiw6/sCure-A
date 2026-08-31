@@ -8,7 +8,7 @@ Stages for a run (SRS-DVT-083/084/085/086/088):
 
 State is written to the store on every Next (values, current_step), so a
 restart resumes at the same stage. Steps can be redlined in place. Fields
-that map to a live DUT metric get a "⇩ from DUT" button.
+that map to a live DUT metric get a tr("⇩ from DUT") button.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridL
 from . import theme as T
 from .widgets import Card, Pill, Stepper, FadeStack, PulseDot, label
 from .dut import FIELD_MAP
+from .i18n import tr
 
 
 class WaiverDialog(QDialog):
@@ -50,12 +51,12 @@ class RunWizard(QWidget):
 
     # ------------------------------------------------------------------ stages
     def _stages(self) -> list[tuple[str, str]]:
-        t = self.test; st = [("overview", "Overview")]
-        if t.get("safety_plan") or t.get("safety_critical"): st.append(("safety", "Safety plan"))
-        if t.get("equipment"): st.append(("equipment", "Equipment"))
-        st.append(("pre", "Preconditions"))
-        for i, _ in enumerate(t.get("procedure_steps") or []): st.append((f"step:{i}", f"Step {i + 1}"))
-        st += [("review", "Verdict"), ("done", "Done")]
+        t = self.test; st = [("overview", tr("Overview"))]
+        if t.get("safety_plan") or t.get("safety_critical"): st.append(("safety", tr("Safety plan")))
+        if t.get("equipment"): st.append(("equipment", tr("Equipment")))
+        st.append(("pre", tr("Preconditions")))
+        for i, _ in enumerate(t.get("procedure_steps") or []): st.append((f"step:{i}", f"{tr('Step')} {i + 1}"))
+        st += [("review", tr("Verdict")), ("done", tr("Done"))]
         return st
 
     def _resume_index(self) -> int:
@@ -82,13 +83,13 @@ class RunWizard(QWidget):
         for key, _ in self.stages:
             self.stack.addWidget(self._page(key))
         foot = QHBoxLayout()
-        self.btn_leave = QPushButton("Leave wizard (keeps progress)"); self.btn_leave.setProperty("kind", "ghost"); self.btn_leave.clicked.connect(self.left.emit); foot.addWidget(self.btn_leave)
-        self.btn_redline = QPushButton("Redline this step"); self.btn_redline.setProperty("kind", "ghost"); self.btn_redline.clicked.connect(self.redline); foot.addWidget(self.btn_redline)
-        self.btn_attach = QPushButton("Attach file…"); self.btn_attach.setProperty("kind", "ghost"); self.btn_attach.clicked.connect(self.attach); foot.addWidget(self.btn_attach)
+        self.btn_leave = QPushButton(tr("Leave wizard (keeps progress)")); self.btn_leave.setProperty("kind", "ghost"); self.btn_leave.clicked.connect(self.left.emit); foot.addWidget(self.btn_leave)
+        self.btn_redline = QPushButton(tr("Redline this step")); self.btn_redline.setProperty("kind", "ghost"); self.btn_redline.clicked.connect(self.redline); foot.addWidget(self.btn_redline)
+        self.btn_attach = QPushButton(tr("Attach file…")); self.btn_attach.setProperty("kind", "ghost"); self.btn_attach.clicked.connect(self.attach); foot.addWidget(self.btn_attach)
         foot.addStretch()
         self.lbl_err = label("", color=T.BAD, bold=True); foot.addWidget(self.lbl_err)
-        self.btn_back = QPushButton("← Back"); self.btn_back.setProperty("kind", "ghost"); self.btn_back.clicked.connect(lambda: self.go(self.index - 1, forward=False)); foot.addWidget(self.btn_back)
-        self.btn_next = QPushButton("Next →"); self.btn_next.setProperty("kind", "big"); self.btn_next.clicked.connect(self.next); foot.addWidget(self.btn_next)
+        self.btn_back = QPushButton(tr("← Back")); self.btn_back.setProperty("kind", "ghost"); self.btn_back.clicked.connect(lambda: self.go(self.index - 1, forward=False)); foot.addWidget(self.btn_back)
+        self.btn_next = QPushButton(tr("Next →")); self.btn_next.setProperty("kind", "big"); self.btn_next.clicked.connect(self.next); foot.addWidget(self.btn_next)
         root.addLayout(foot)
         self._t = QTimer(self); self._t.timeout.connect(self._tick); self._t.start(1000)
 
@@ -105,78 +106,78 @@ class RunWizard(QWidget):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(4, 0, 4, 0); l.setSpacing(12); l.setAlignment(Qt.AlignTop)
         t = self.test
         if key == "overview":
-            l.addWidget(label("What this run verifies", "h1"))
+            l.addWidget(label(tr("What this run verifies"), "h1"))
             l.addWidget(label(t.get("purpose", "").strip(), "instruction", wrap=True))
-            c = Card("Run"); g = QGridLayout(); c.body.addLayout(g)
-            rows = [("Method", t["method"]), ("Phase", str(self.cat.phase_of(self.run["test_id"])["id"])),
-                    ("Applicability", t["applicability"]["rule"] + (f" ({t['applicability'].get('unit')})" if t["applicability"]["rule"] == "SINGLE" else "")),
-                    ("Variant", self._variant()), ("Repetition", str(self.run["repetition"])), ("Estimated", f"{t.get('duration_est_min')} min"),
-                    ("Requirements", ", ".join(f"REQ-{r}" for r in t.get("requirement_ids") or []) or "— (VCRM pending)"),
-                    ("Dependencies", ", ".join(t.get("dependencies") or []) or "none")]
+            c = Card(tr("Run")); g = QGridLayout(); c.body.addLayout(g)
+            rows = [(tr("Method"), t["method"]), (tr("Phase"), str(self.cat.phase_of(self.run["test_id"])["id"])),
+                    (tr("Applicability"), t["applicability"]["rule"] + (f" ({t['applicability'].get('unit')})" if t["applicability"]["rule"] == "SINGLE" else "")),
+                    (tr("Variant"), self._variant()), (tr("Repetition"), str(self.run["repetition"])), (tr("Estimated"), f"{t.get('duration_est_min')} min"),
+                    (tr("Requirements"), ", ".join(f"REQ-{r}" for r in t.get("requirement_ids") or []) or "— (VCRM pending)"),
+                    (tr("Dependencies"), ", ".join(t.get("dependencies") or []) or tr("none"))]
             for i, (k, v) in enumerate(rows):
                 g.addWidget(label(k, "muted"), i, 0); g.addWidget(label(v, wrap=True), i, 1)
             l.addWidget(c)
             if t.get("sample_rationale"):
                 l.addWidget(label("Why this sample: " + t["sample_rationale"].strip(), "muted", wrap=True))
-            l.addWidget(label("Press Next to begin. The wizard will tell you what to do at every stage; nothing is submitted until the verdict page.", "banner-info", wrap=True))
+            l.addWidget(label(tr("Press Next to begin. The wizard will tell you what to do at every stage; nothing is submitted until the verdict page."), "banner-info", wrap=True))
         elif key == "safety":
-            l.addWidget(label("Safety plan — read before touching the unit", "h1"))
+            l.addWidget(label(tr("Safety plan — read before touching the unit"), "h1"))
             for s in t.get("safety_plan") or ["Safety-critical test"]:
                 l.addWidget(label("⚠  " + str(s), "banner-warn", wrap=True))
-            self.cb_safety = QCheckBox("I have read the safety plan; the area, PPE and remote controls are prepared"); self.cb_safety.setChecked(bool(self.run["safety_confirmed"]))
+            self.cb_safety = QCheckBox(tr("I have read the safety plan; the area, PPE and remote controls are prepared")); self.cb_safety.setChecked(bool(self.run["safety_confirmed"]))
             l.addWidget(self.cb_safety)
         elif key == "equipment":
-            l.addWidget(label("Equipment and calibration", "h1"))
-            l.addWidget(label("Put these instruments on the bench. A missing or expired calibration record blocks the run (SRS-DVT-085).", "muted", wrap=True))
+            l.addWidget(label(tr("Equipment and calibration"), "h1"))
+            l.addWidget(label(tr("Put these instruments on the bench. A missing or expired calibration record blocks the run (SRS-DVT-085)."), "muted", wrap=True))
             c = Card(); g = QGridLayout(); c.body.addLayout(g); self.eq_ok = True
             for i, e in enumerate(t["equipment"]):
                 cal = self.store.calibration(e["name"]); ok = bool(cal and cal["valid_until"])
                 self.eq_ok &= ok
                 g.addWidget(label(e["name"], wrap=True), i, 0)
-                g.addWidget(Pill(f"cal {cal['calibration_id']} → {cal['valid_until']}" if ok else "NO CALIBRATION RECORD", T.OK if ok else T.WARN), i, 1)
-                b = QPushButton("Record calibration…"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda _, n=e["name"]: self._calibrate(n)); g.addWidget(b, i, 2)
+                g.addWidget(Pill(f"cal {cal['calibration_id']} → {cal['valid_until']}" if ok else tr("NO CALIBRATION RECORD"), T.OK if ok else T.WARN), i, 1)
+                b = QPushButton(tr("Record calibration…")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda _, n=e["name"]: self._calibrate(n)); g.addWidget(b, i, 2)
             l.addWidget(c)
         elif key == "pre":
-            l.addWidget(label("Preconditions — confirm each one", "h1"))
-            l.addWidget(label("The data fields stay locked until every precondition is ticked (SRS-DVT-083). Use DUT Control to bring the machine to the required state.", "muted", wrap=True))
+            l.addWidget(label(tr("Preconditions — confirm each one"), "h1"))
+            l.addWidget(label(tr("The data fields stay locked until every precondition is ticked (SRS-DVT-083). Use DUT Control to bring the machine to the required state."), "muted", wrap=True))
             self.pre_boxes = []
             c = Card();
-            for p in t.get("preconditions") or ["none"]:
+            for p in t.get("preconditions") or [tr("none")]:
                 cb = QCheckBox(str(p)); cb.setChecked(bool(self.run["preconditions_confirmed"])); c.body.addWidget(cb); self.pre_boxes.append(cb)
             l.addWidget(c)
             self.dut_hint = label("", "banner-info", wrap=True); l.addWidget(self.dut_hint)
         elif key.startswith("step:"):
             i = int(key.split(":")[1]); s = t["procedure_steps"][i]
-            l.addWidget(label(f"Step {i + 1} of {len(t['procedure_steps'])}", "eyebrow"))
+            l.addWidget(label(f"{tr('Step')} {i + 1} / {len(t['procedure_steps'])}", "eyebrow"))
             l.addWidget(label(str(s["step"]), "instruction", wrap=True))
             caps = s.get("capture") or []
             if caps:
-                c = Card("Record now"); g = QGridLayout(); g.setHorizontalSpacing(12); g.setVerticalSpacing(8); c.body.addLayout(g)
+                c = Card(tr("Record now")); g = QGridLayout(); g.setHorizontalSpacing(12); g.setVerticalSpacing(8); c.body.addLayout(g)
                 for r, name in enumerate(caps):
                     f = self.fields[name]
                     g.addWidget(label(f"{name}" + (f"  [{f['unit']}]" if f.get("unit") else ""), "mono"), r, 0)
                     w_ = self._field_widget(f, name); g.addWidget(w_, r, 1); self.field_widgets[name] = w_
                     if f.get("note"): g.addWidget(label(f["note"], "muted", wrap=True), r, 3)
                     if name in FIELD_MAP and name not in self.run["variant"]:
-                        b = QPushButton("⇩ from DUT"); b.setProperty("kind", "ghost"); b.setToolTip(f"insert live {FIELD_MAP[name]} from the connected machine")
+                        b = QPushButton(tr("⇩ from DUT")); b.setProperty("kind", "ghost"); b.setToolTip(f"insert live {FIELD_MAP[name]} from the connected machine")
                         b.clicked.connect(lambda _, n=name: self._from_dut(n)); g.addWidget(b, r, 2)
                 l.addWidget(c)
             else:
-                l.addWidget(label("No data to record for this step — perform it, then press Next.", "muted"))
+                l.addWidget(label(tr("No data to record for this step — perform it, then press Next."), "muted"))
             self._redline_box(l, i)
         elif key == "review":
-            l.addWidget(label("Review and verdict", "h1"))
-            self.review_grid = QGridLayout(); c = Card("Recorded values"); c.body.addLayout(self.review_grid); l.addWidget(c)
+            l.addWidget(label(tr("Review and verdict"), "h1"))
+            self.review_grid = QGridLayout(); c = Card(tr("Recorded values")); c.body.addLayout(self.review_grid); l.addWidget(c)
             self.lbl_criteria = label(t["pass_criteria"].strip(), "mono", wrap=True); self.lbl_criteria.setStyleSheet(f"font-family: Consolas; color: {T.MUTED};")
-            c = Card("Pass criteria"); c.body.addWidget(self.lbl_criteria); l.addWidget(c)
-            row = QHBoxLayout(); self.p_verdict = Pill("not evaluated", T.MUTED); row.addWidget(self.p_verdict); self.lbl_vdetail = label("", "muted"); row.addWidget(self.lbl_vdetail); row.addStretch(); l.addLayout(row)
+            c = Card(tr("Pass criteria")); c.body.addWidget(self.lbl_criteria); l.addWidget(c)
+            row = QHBoxLayout(); self.p_verdict = Pill(tr("not evaluated"), T.MUTED); row.addWidget(self.p_verdict); self.lbl_vdetail = label("", "muted"); row.addWidget(self.lbl_vdetail); row.addStretch(); l.addLayout(row)
             row = QHBoxLayout()
-            b = QPushButton("Evaluate"); b.setProperty("kind", "ghost"); b.clicked.connect(self.evaluate); row.addWidget(b)
-            self.btn_finish = QPushButton("Finish run — commit verdict"); self.btn_finish.setProperty("kind", "big"); self.btn_finish.clicked.connect(self.finish); row.addWidget(self.btn_finish)
-            b = QPushButton("Waive…"); b.setProperty("kind", "ghost"); b.clicked.connect(self.waive); row.addWidget(b)
-            b = QPushButton("Reject run…"); b.setProperty("kind", "danger"); b.clicked.connect(self.reject); row.addWidget(b)
+            b = QPushButton(tr("Evaluate")); b.setProperty("kind", "ghost"); b.clicked.connect(self.evaluate); row.addWidget(b)
+            self.btn_finish = QPushButton(tr("Finish run — commit verdict")); self.btn_finish.setProperty("kind", "big"); self.btn_finish.clicked.connect(self.finish); row.addWidget(self.btn_finish)
+            b = QPushButton(tr("Waive…")); b.setProperty("kind", "ghost"); b.clicked.connect(self.waive); row.addWidget(b)
+            b = QPushButton(tr("Reject run…")); b.setProperty("kind", "danger"); b.clicked.connect(self.reject); row.addWidget(b)
             row.addStretch(); l.addLayout(row)
-            self.lbl_witness = QLineEdit(); self.lbl_witness.setPlaceholderText("Witness (optional — name, role)"); l.addWidget(self.lbl_witness)
+            self.lbl_witness = QLineEdit(); self.lbl_witness.setPlaceholderText(tr("Witness (optional — name, role)")); l.addWidget(self.lbl_witness)
         elif key == "done":
             self.done_title = label("", "h1"); l.addWidget(self.done_title)
             self.done_body = label("", "instruction", wrap=True); l.addWidget(self.done_body)
@@ -224,14 +225,14 @@ class RunWizard(QWidget):
     def next(self):
         k = self.key()
         if k == "safety":
-            if not self.cb_safety.isChecked(): self.lbl_err.setText("Acknowledge the safety plan to continue."); return
+            if not self.cb_safety.isChecked(): self.lbl_err.setText(tr("Acknowledge the safety plan to continue.")); return
             self.store.confirm_safety(self.run["run_id"], self.app.operator)
         elif k == "equipment":
             if not self.eq_ok and QMessageBox.question(self, "Calibration", "An instrument has no valid calibration record (SRS-DVT-085).\nRecord it now, or continue with a supervisor override (logged)?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
                 return
             if not self.eq_ok: self.store.log("Blocker override", self.app.operator, self.run["run_id"], {"blockers": ["calibration"], "reason": "operator override in wizard"})
         elif k == "pre":
-            if not all(cb.isChecked() for cb in self.pre_boxes): self.lbl_err.setText("Tick every precondition first."); return
+            if not all(cb.isChecked() for cb in self.pre_boxes): self.lbl_err.setText(tr("Tick every precondition first.")); return
             self.store.confirm_preconditions(self.run["run_id"], self.app.operator)
         elif k.startswith("step:"):
             try:
@@ -271,7 +272,7 @@ class RunWizard(QWidget):
     def _from_dut(self, name):
         st = self.app.dut_state
         if not st.online:
-            self.lbl_err.setText("No machine connected — set the DUT address in the header."); return
+            self.lbl_err.setText(tr("No machine connected — set the DUT address in the header.")); return
         v = st.metrics.get(FIELD_MAP[name])
         if v is None:
             self.lbl_err.setText(f"The machine does not report {FIELD_MAP[name]} right now."); return
@@ -313,7 +314,7 @@ class RunWizard(QWidget):
 
     def finish(self):
         if hasattr(self, "cb_safety") and not self.cb_safety.isChecked():
-            self.lbl_err.setText("Acknowledge the safety plan first."); return
+            self.lbl_err.setText(tr("Acknowledge the safety plan first.")); return
         try:
             vals = self._collect()
         except ValueError as e:
@@ -340,13 +341,13 @@ class RunWizard(QWidget):
 
     def _done(self, verdict, detail):
         col = T.VERDICT.get(verdict, T.WARN)
-        self.done_title.setText(f"Run finished — {verdict}"); self.done_title.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {col};")
-        self.done_body.setText({"PASS": "All pass criteria met. The result is committed and exported.",
-                                "FAIL": "Pass criteria not met. An NCR was opened automatically — describe the anomaly in the NCR list.",
+        self.done_title.setText(tr(f"Run finished — {verdict}")); self.done_title.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {col};")
+        self.done_body.setText({"PASS": tr("All pass criteria met. The result is committed and exported."),
+                                "FAIL": tr("Pass criteria not met. An NCR was opened automatically — describe the anomaly in the NCR list."),
                                 "BLOCKED": f"The criterion could not be evaluated: {detail}. The run is recorded as BLOCKED, not as a pass.",
                                 "WAIVED": f"Waived ({detail}). Counted separately from PASS in every view."}.get(verdict, detail))
         na = self.engine.next_action(self.run["unit_id"])
-        self.done_next.setText("Next for this unit: " + na.message)
+        self.done_next.setText(tr("Next for this unit: ") + na.message)
         self.dot.set_color(col); self._t.stop()
         self.go(len(self.stages) - 1); self.app.kick_sync(); self.finished.emit(self.run["run_id"], verdict)
 

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridL
 
 from . import theme as T
 from .widgets import Card, Pill, PulseDot, label
+from .i18n import tr
 
 # data-field name (or suffix) -> live metric key.  The wizard offers an
 # "⇩ from DUT" button next to any field that maps.
@@ -190,44 +191,44 @@ class DutPanel(QWidget):
         super().__init__(); self.app = app; self.state = DutState()
         root = QHBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(14)
         left = QVBoxLayout(); left.setSpacing(14); root.addLayout(left, 3)
-        c = Card("Device under test"); left.addWidget(c)
-        row = QHBoxLayout(); row.addWidget(label("Machine address", "muted"))
+        c = Card(tr("Device under test")); left.addWidget(c)
+        row = QHBoxLayout(); row.addWidget(label(tr("Machine address"), "muted"))
         self.url = QComboBox(); self.url.setEditable(True); self.url.setMinimumWidth(320)
         for u in app.known_machines(): self.url.addItem(u)
         self.url.setCurrentText(app.machine_url); row.addWidget(self.url, 1)
-        b = QPushButton("Connect"); b.clicked.connect(lambda: app.set_machine(self.url.currentText().strip())); row.addWidget(b)
-        b = QPushButton("Discover"); b.setProperty("kind", "ghost"); b.clicked.connect(self.discover); row.addWidget(b)
+        b = QPushButton(tr("Connect")); b.clicked.connect(lambda: app.set_machine(self.url.currentText().strip())); row.addWidget(b)
+        b = QPushButton(tr("Discover")); b.setProperty("kind", "ghost"); b.clicked.connect(self.discover); row.addWidget(b)
         c.body.addLayout(row)
         st = QHBoxLayout(); self.dot = PulseDot(T.MUTED); st.addWidget(self.dot); self.p_mode = Pill("OFFLINE", T.MUTED); st.addWidget(self.p_mode)
         self.lbl_ver = label("", "muted"); st.addWidget(self.lbl_ver); st.addStretch(); c.body.addLayout(st)
         self.lbl_err = label("", "muted"); self.lbl_err.setWordWrap(True); c.body.addWidget(self.lbl_err)
 
-        c = Card("Live state"); grid = QGridLayout(); grid.setHorizontalSpacing(14); c.body.addLayout(grid); left.addWidget(c)
+        c = Card(tr("Live state")); grid = QGridLayout(); grid.setHorizontalSpacing(14); c.body.addLayout(grid); left.addWidget(c)
         self.tiles = {}
         for i, (key, cap, unit, col, rng) in enumerate(TILES):
             t = MetricTile(cap, unit, col, rng); grid.addWidget(t, i // 2, i % 2); self.tiles[key] = t
         self.inter = {}
-        c2 = Card("Safety & interlocks"); g2 = QGridLayout(); c2.body.addLayout(g2); left.addWidget(c2)
-        for i, (k, txt) in enumerate((("door", "Door closed"), ("uv", "UV off"), ("heater", "Heater off"), ("fault", "No active fault"))):
+        c2 = Card(tr("Safety & interlocks")); g2 = QGridLayout(); c2.body.addLayout(g2); left.addWidget(c2)
+        for i, (k, txt) in enumerate((("door", tr("Door closed")), ("uv", tr("UV off")), ("heater", tr("Heater off")), ("fault", tr("No active fault")))):
             g2.addWidget(label(txt), i, 0); pl = Pill("—", T.MUTED); g2.addWidget(pl, i, 1, alignment=Qt.AlignRight); self.inter[k] = pl
         left.addStretch()
 
         right = QVBoxLayout(); right.setSpacing(14); root.addLayout(right, 2)
-        c = Card("Controls", hint="every action is confirmed and logged"); right.addWidget(c)
-        c.body.addWidget(label("Used between wizard steps to bring the machine to the state a step needs (e.g. 'chamber in HEAT mode at 80 °C, steady').", "muted", wrap=True))
+        c = Card(tr("Controls"), hint=tr("every action is confirmed and logged")); right.addWidget(c)
+        c.body.addWidget(label(tr("Used between wizard steps to bring the machine to the state a step needs (e.g. 'chamber in HEAT mode at 80 °C, steady')."), "muted", wrap=True))
         g = QGridLayout(); g.setSpacing(8); c.body.addLayout(g)
         self.ed_target = QLineEdit("80"); self.ed_target.setFixedWidth(70)
-        g.addWidget(label("Target °C"), 0, 0); g.addWidget(self.ed_target, 0, 1)
-        b = QPushButton("Heat to target"); b.clicked.connect(lambda: self._act("heat", lambda c: c.heat(float(self.ed_target.text())))); g.addWidget(b, 0, 2)
+        g.addWidget(label(tr("Target °C")), 0, 0); g.addWidget(self.ed_target, 0, 1)
+        b = QPushButton(tr("Heat to target")); b.clicked.connect(lambda: self._act("heat", lambda c: c.heat(float(self.ed_target.text())))); g.addWidget(b, 0, 2)
         self.cb_mode = QComboBox(); self.cb_mode.addItems(["fast", "normal", "slow"]); g.addWidget(self.cb_mode, 1, 1)
-        b = QPushButton("Cool to target"); b.clicked.connect(lambda: self._act("cool", lambda c: c.cool(float(self.ed_target.text()), self.cb_mode.currentText()))); g.addWidget(b, 1, 2)
-        self.ed_uv = QLineEdit("50"); self.ed_uv.setFixedWidth(70); g.addWidget(label("UV %"), 2, 0); g.addWidget(self.ed_uv, 2, 1)
-        b = QPushButton("UV on (405 nm)"); b.clicked.connect(lambda: self._act("uv on", lambda c: c.uv(True, int(self.ed_uv.text())))); g.addWidget(b, 2, 2)
-        b = QPushButton("UV off"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("uv off", lambda c: c.uv(False))); g.addWidget(b, 3, 2)
-        b = QPushButton("Open door"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("door open", lambda c: c.door_open())); g.addWidget(b, 4, 2)
-        b = QPushButton("STOP — all off"); b.setProperty("kind", "danger"); b.clicked.connect(lambda: self._act("stop", lambda c: c.stop(), confirm=False)); g.addWidget(b, 5, 0, 1, 3)
+        b = QPushButton(tr("Cool to target")); b.clicked.connect(lambda: self._act("cool", lambda c: c.cool(float(self.ed_target.text()), self.cb_mode.currentText()))); g.addWidget(b, 1, 2)
+        self.ed_uv = QLineEdit("50"); self.ed_uv.setFixedWidth(70); g.addWidget(label(tr("UV %")), 2, 0); g.addWidget(self.ed_uv, 2, 1)
+        b = QPushButton(tr("UV on (405 nm)")); b.clicked.connect(lambda: self._act("uv on", lambda c: c.uv(True, int(self.ed_uv.text())))); g.addWidget(b, 2, 2)
+        b = QPushButton(tr("UV off")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("uv off", lambda c: c.uv(False))); g.addWidget(b, 3, 2)
+        b = QPushButton(tr("Open door")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("door open", lambda c: c.door_open())); g.addWidget(b, 4, 2)
+        b = QPushButton(tr("STOP — all off")); b.setProperty("kind", "danger"); b.clicked.connect(lambda: self._act("stop", lambda c: c.stop(), confirm=False)); g.addWidget(b, 5, 0, 1, 3)
         # ---- simulator controls (visible only when the DUT is the built-in simulator)
-        self.sim_card = Card("Simulator — fault injection", kind="sim", hint="exercise the SAF tests without hardware"); right.addWidget(self.sim_card)
+        self.sim_card = Card(tr("Simulator — fault injection"), kind="sim", hint=tr("exercise the SAF tests without hardware")); right.addWidget(self.sim_card)
         from .sim import FAULTS
         self.sim_boxes = {}
         sg = QGridLayout(); sg.setHorizontalSpacing(12); self.sim_card.body.addLayout(sg)
@@ -235,15 +236,15 @@ class DutPanel(QWidget):
         for i, (key, text) in enumerate(FAULTS.items()):
             cb = QCheckBox(text); cb.toggled.connect(lambda on, k=key: self._sim("inject " + k, lambda c: c.inject(k, on)))
             sg.addWidget(cb, i // 2, i % 2); self.sim_boxes[key] = cb
-        srow = QHBoxLayout(); srow.addWidget(label("Mains voltage", "muted")); self.cb_mains = QComboBox(); self.cb_mains.addItems(["110", "230", "240"]); self.cb_mains.setCurrentText("230")
+        srow = QHBoxLayout(); srow.addWidget(label(tr("Mains voltage"), "muted")); self.cb_mains = QComboBox(); self.cb_mains.addItems(["110", "230", "240"]); self.cb_mains.setCurrentText("230")
         self.cb_mains.currentTextChanged.connect(lambda v: self._sim("mains " + v, lambda c: c.set_mains(float(v)))); srow.addWidget(self.cb_mains)
-        b = QPushButton("Close door"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._sim("door close", lambda c: c.door_close())); srow.addWidget(b)
-        b = QPushButton("Acknowledge alarms"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._sim("ack", lambda c: c.ack())); srow.addWidget(b)
+        b = QPushButton(tr("Close door")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._sim("door close", lambda c: c.door_close())); srow.addWidget(b)
+        b = QPushButton(tr("Acknowledge alarms")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._sim("ack", lambda c: c.ack())); srow.addWidget(b)
         srow.addStretch(); self.sim_card.body.addLayout(srow); self.sim_card.hide()
-        c = Card("Diagnostics"); right.addWidget(c)
+        c = Card(tr("Diagnostics")); right.addWidget(c)
         row = QHBoxLayout()
-        b = QPushButton("LED test"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("led-test", lambda c: c.led_test())); row.addWidget(b)
-        b = QPushButton("Fan test"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("fan-test", lambda c: c.fan_test())); row.addWidget(b)
+        b = QPushButton(tr("LED test")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("led-test", lambda c: c.led_test())); row.addWidget(b)
+        b = QPushButton(tr("Fan test")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._act("fan-test", lambda c: c.fan_test())); row.addWidget(b)
         c.body.addLayout(row)
         self.out = label("", "mono"); self.out.setWordWrap(True); self.out.setStyleSheet(f"color: {T.MUTED}; font-family: Consolas; font-size: 11px;"); c.body.addWidget(self.out)
         right.addStretch()
@@ -254,11 +255,11 @@ class DutPanel(QWidget):
         for u in dict.fromkeys(cands):
             if make_client(u, 1.5).state().online:
                 self.url.setCurrentText(u); self.app.set_machine(u); return
-        QMessageBox.information(self, "Discover", "No sCure machine answered. Enter its address (http://<ip>:3001) and press Connect.")
+        QMessageBox.information(self, tr("Discover"), "No sCure machine answered. Enter its address (http://<ip>:3001) and press Connect.")
 
     def _act(self, name, fn, confirm=True):
         if not self.state.online:
-            QMessageBox.warning(self, "DUT", "Not connected to a machine."); return
+            QMessageBox.warning(self, "DUT", tr("Not connected to a machine.")); return
         if confirm and QMessageBox.question(self, "DUT control", f"Send '{name}' to {self.state.url}?") != QMessageBox.Yes:
             return
         try:

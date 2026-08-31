@@ -43,6 +43,7 @@ from dvt_tool.ui.widgets import Card, Pill, StatTile, PulseDot, Toast, FadeStack
 from dvt_tool.ui.dut import DutMonitor, DutPanel, DutState, DutClient, SIM_URL  # noqa: E402
 from dvt_tool.ui.wizard import RunWizard  # noqa: E402
 from dvt_tool.ui.stats import StatisticsPage  # noqa: E402
+from dvt_tool.ui.i18n import tr, set_language, is_rtl, LANGUAGES  # noqa: E402
 
 DEFAULT_MACHINES = ["http://192.168.2.155:3001", "http://testingcm5.local:3001", "http://127.0.0.1:3001", SIM_URL]
 
@@ -88,7 +89,7 @@ class MainWindow(QMainWindow):
         self.machine_url = machine or self.store.get_meta("machine_url", DEFAULT_MACHINES[0])
         self.dut_state = DutState(url=self.machine_url); self.dut_monitor = None
         self.wizard: RunWizard | None = None
-        self.setWindowTitle("sCure / CureBox — DVT Qualification & Acceptance Test Console")
+        self.setWindowTitle(tr("sCure / CureBox — DVT Qualification & Acceptance Test Console"))
         self.resize(1500, 920)
         self._build(); self.toast_w = Toast(self)
         self.set_machine(self.machine_url); self.refresh_all(); self.show_page("dashboard")
@@ -103,7 +104,7 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(root); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         # ---- header
         hdr = QFrame(); hdr.setProperty("card", "header"); hl = QHBoxLayout(hdr); hl.setContentsMargins(18, 10, 18, 10); hl.setSpacing(24)
-        hl.addWidget(label("sCure / CureBox — DVT Qualification & Acceptance Test Console", size=16, bold=True))
+        hl.addWidget(label(tr("sCure / CureBox — DVT Qualification & Acceptance Test Console"), size=16, bold=True))
         hl.addStretch()
         def block(eyebrow, w):
             b = QVBoxLayout(); b.setSpacing(0); b.addWidget(label(eyebrow, "eyebrow")); b.addWidget(w); hl.addLayout(b)
@@ -111,20 +112,20 @@ class MainWindow(QMainWindow):
         for u in self.known_machines(): self.cb_machine.addItem(u)
         self.cb_machine.setCurrentText(self.machine_url); self.cb_machine.lineEdit().returnPressed.connect(lambda: self.set_machine(self.cb_machine.currentText().strip()))
         self.cb_machine.activated.connect(lambda _: self.set_machine(self.cb_machine.currentText().strip()))
-        block("DUT", self.cb_machine)
+        block(tr("DUT"), self.cb_machine)
         self.cb_unit = QComboBox(); self.cb_unit.setMinimumWidth(110)
         for u in self.cat.units: self.cb_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role')}" if u.get("role") else ""), u["id"])
         self.cb_unit.currentIndexChanged.connect(self._unit_from_header)
-        block("UNIT UNDER TEST", self.cb_unit)
+        block(tr("UNIT UNDER TEST"), self.cb_unit)
         self.ed_operator = QLineEdit(self.operator); self.ed_operator.setFixedWidth(130); self.ed_operator.textChanged.connect(lambda s: setattr(self, "operator", s.strip()))
-        block("OPERATOR", self.ed_operator)
-        block("CAMPAIGN", label(self.cfg.campaign, bold=True)); block("TEST PLAN", label(f"SRS-DVT-SW Rev B · cat v{self.cat.version}", bold=True))
-        sysbox = QHBoxLayout(); self.dot_sys = PulseDot(T.MUTED); sysbox.addWidget(self.dot_sys); self.lbl_sys = label("OFFLINE", bold=True, size=15, color=T.MUTED); sysbox.addWidget(self.lbl_sys)
-        w = QWidget(); w.setLayout(sysbox); block("SYSTEM STATUS", w)
-        self.lbl_clock = label("", "mono", bold=True); block("DATE / TIME (UTC)", self.lbl_clock)
+        block(tr("OPERATOR"), self.ed_operator)
+        block(tr("CAMPAIGN"), label(self.cfg.campaign, bold=True)); block(tr("TEST PLAN"), label(f"SRS-DVT-SW Rev B · cat v{self.cat.version}", bold=True))
+        sysbox = QHBoxLayout(); self.dot_sys = PulseDot(T.MUTED); sysbox.addWidget(self.dot_sys); self.lbl_sys = label(tr("OFFLINE"), bold=True, size=15, color=T.MUTED); sysbox.addWidget(self.lbl_sys)
+        w = QWidget(); w.setLayout(sysbox); block(tr("SYSTEM STATUS"), w)
+        self.lbl_clock = label("", "mono", bold=True); block(tr("DATE / TIME (UTC)"), self.lbl_clock)
         self.p_sync = Pill("Drive: —", T.MUTED); hl.addWidget(self.p_sync)
         v.addWidget(hdr)
-        self.sim_banner = QLabel("◉  SIMULATION MODE — you are connected to the built-in simulated machine. Nothing here touches real hardware. Inject faults from DUT Control.")
+        self.sim_banner = QLabel(tr("◉  SIMULATION MODE — you are connected to the built-in simulated machine. Nothing here touches real hardware. Inject faults from DUT Control."))
         self.sim_banner.setStyleSheet(f"background: #efe9fb; color: #3d2a7a; border-bottom: 1px solid #cdbdf0; padding: 8px 18px; font-weight: 600;"); self.sim_banner.hide()
         v.addWidget(self.sim_banner)
         # ---- body
@@ -132,8 +133,8 @@ class MainWindow(QMainWindow):
         side = QFrame(); side.setProperty("card", "sidebar"); side.setFixedWidth(230); sl = QVBoxLayout(side); sl.setContentsMargins(10, 14, 10, 14); sl.setSpacing(4)
         self.nav_buttons = {}
         for key, icon, text in self.NAV:
-            b = QPushButton(f"{icon}   {text}"); b.setProperty("kind", "nav"); b.setCheckable(True); b.clicked.connect(lambda _, k=key: self.show_page(k)); sl.addWidget(b); self.nav_buttons[key] = b
-        sl.addSpacing(10); sl.addWidget(label("TEST SUBSYSTEMS", "eyebrow-rail"))
+            b = QPushButton(f"{icon}   {tr(text)}"); b.setProperty("kind", "nav"); b.setCheckable(True); b.clicked.connect(lambda _, k=key: self.show_page(k)); sl.addWidget(b); self.nav_buttons[key] = b
+        sl.addSpacing(10); sl.addWidget(label(tr("TEST SUBSYSTEMS"), "eyebrow-rail"))
         self.nav_sub = {}
         for name in ("Thermal", "Electrical", "Safety", "Environmental"):
             b = QPushButton(f"{T.SUBSYSTEM_ICON[name]}   {name}"); b.setProperty("kind", "nav"); b.clicked.connect(lambda _, n=name: (self.show_page("dashboard"), self.dashboard.set_filter(n)))
@@ -141,11 +142,11 @@ class MainWindow(QMainWindow):
             cnt = QLabel("0"); cnt.setStyleSheet(f"background: {T.RAIL_2}; color: {T.SUBSYSTEM[name]}; border-radius: 10px; padding: 2px 9px; font-weight: 700; font-size: 11px;")
             row.addWidget(cnt); w = QWidget(); w.setLayout(row); w.setStyleSheet("background: transparent;"); sl.addWidget(w); self.nav_sub[name] = cnt
         sl.addStretch()
-        self.sim_toggle = QPushButton("◉   Simulation mode: OFF"); self.sim_toggle.setProperty("kind", "nav"); self.sim_toggle.setCheckable(True)
+        self.sim_toggle = QPushButton("◉   " + tr("Simulation mode: OFF")); self.sim_toggle.setProperty("kind", "nav"); self.sim_toggle.setCheckable(True)
         self.sim_toggle.clicked.connect(self.toggle_sim); sl.addWidget(self.sim_toggle)
         self.health = QFrame(); self.health.setStyleSheet(f"QFrame {{ background: {T.RAIL_2}; border-radius: 10px; }}"); hb = QVBoxLayout(self.health); hb.setContentsMargins(12, 10, 12, 10)
-        self.health_dot = PulseDot(T.OK); hr = QHBoxLayout(); hr.addWidget(self.health_dot); hr.addWidget(label("System Health", bold=True, color="#ffffff")); hr.addStretch(); hb.addLayout(hr)
-        self.health_text = label("All systems nominal", "rail", wrap=True); hb.addWidget(self.health_text); sl.addWidget(self.health)
+        self.health_dot = PulseDot(T.OK); hr = QHBoxLayout(); hr.addWidget(self.health_dot); hr.addWidget(label(tr("System Health"), bold=True, color="#ffffff")); hr.addStretch(); hb.addLayout(hr)
+        self.health_text = label(tr("All systems nominal"), "rail", wrap=True); hb.addWidget(self.health_text); sl.addWidget(self.health)
         body.addWidget(side)
         self.pages = FadeStack(); body.addWidget(self.pages, 1)
         self.page_index = {}
@@ -205,9 +206,13 @@ class MainWindow(QMainWindow):
     def _on_dut(self, st: DutState):
         self.dut_state = st
         sim = bool(st.online and st.flags.get("simulated"))
-        self.sim_banner.setVisible(sim); self.sim_toggle.setChecked(sim); self.sim_toggle.setText(f"◉   Simulation mode: {'ON' if sim else 'OFF'}")
+        self.sim_banner.setVisible(sim); self.sim_toggle.setChecked(sim)
+        if hasattr(self, "rb_mode_sim") and self.rb_mode_sim.isChecked() != sim:
+            self.rb_mode_sim.blockSignals(True); self.rb_mode_normal.blockSignals(True)
+            (self.rb_mode_sim if sim else self.rb_mode_normal).setChecked(True)
+            self.rb_mode_sim.blockSignals(False); self.rb_mode_normal.blockSignals(False); self.sim_toggle.setText("◉   " + tr("Simulation mode: ON" if sim else "Simulation mode: OFF"))
         col = T.MODE.get(st.mode, T.MUTED)
-        txt = "RUNNING" if st.mode in ("CURING", "HEATING", "COOLING") else st.mode
+        txt = tr("RUNNING") if st.mode in ("CURING", "HEATING", "COOLING") else tr(st.mode)
         self.dot_sys.set_color(col if not sim or st.mode != "IDLE" else T.PURPLE); self.lbl_sys.setText(("SIM · " if sim else "") + txt); self.lbl_sys.setStyleSheet(f"font-weight: 700; font-size: 15px; color: {col};")
         if self.dut_panel: self.dut_panel.on_state(st)
         self.dashboard.on_dut(st)
@@ -215,7 +220,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ pages: plans
     def _plans_page(self):
         w = QWidget(); l = QHBoxLayout(w); l.setContentsMargins(18, 16, 18, 16); l.setSpacing(14)
-        self.plan_tree = QTreeWidget(); self.plan_tree.setHeaderLabels(["Test", "Title", "Method", "Appl.", "Runs"]); self.plan_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.plan_tree = QTreeWidget(); self.plan_tree.setHeaderLabels([tr("Test"), tr("Test name"), tr("Method"), tr("Appl."), tr("Runs")]); self.plan_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
         self.plan_tree.currentItemChanged.connect(lambda it, _: it and it.data(0, Qt.UserRole) and self._show_plan(it.data(0, Qt.UserRole)))
         l.addWidget(self.plan_tree, 2)
         self.plan_detail = QPlainTextEdit(); self.plan_detail.setReadOnly(True); l.addWidget(self.plan_detail, 3)
@@ -240,30 +245,30 @@ class MainWindow(QMainWindow):
         self.console_stack = FadeStack(); l.addWidget(self.console_stack, 1)
         home = QWidget(); hl = QHBoxLayout(home); hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(14)
         left = QVBoxLayout(); hl.addLayout(left, 1)
-        c = Card("Units under test"); self.units = QListWidget(); self.units.currentItemChanged.connect(lambda *_: self.refresh_console()); c.body.addWidget(self.units)
+        c = Card(tr("Units under test")); self.units = QListWidget(); self.units.currentItemChanged.connect(lambda *_: self.refresh_console()); c.body.addWidget(self.units)
         row = QHBoxLayout()
-        b = QPushButton("Freeze config"); b.setProperty("kind", "ghost"); b.clicked.connect(self.freeze_config); row.addWidget(b)
-        b = QPushButton("Sign phase TRR"); b.setProperty("kind", "ghost"); b.clicked.connect(self.sign_phase); row.addWidget(b)
+        b = QPushButton(tr("Freeze config")); b.setProperty("kind", "ghost"); b.clicked.connect(self.freeze_config); row.addWidget(b)
+        b = QPushButton(tr("Sign phase TRR")); b.setProperty("kind", "ghost"); b.clicked.connect(self.sign_phase); row.addWidget(b)
         c.body.addLayout(row); left.addWidget(c)
-        c = Card("Open NCRs"); self.ncr_list = QListWidget(); c.body.addWidget(self.ncr_list)
-        b = QPushButton("Close selected NCR…"); b.setProperty("kind", "ghost"); b.clicked.connect(self.close_ncr); c.body.addWidget(b); left.addWidget(c)
-        c = Card("Search"); self.search = QLineEdit(); self.search.setPlaceholderText("run, value, error code, NCR text…"); self.search.returnPressed.connect(self.do_search); c.body.addWidget(self.search)
+        c = Card(tr("Open NCRs")); self.ncr_list = QListWidget(); c.body.addWidget(self.ncr_list)
+        b = QPushButton(tr("Close selected NCR…")); b.setProperty("kind", "ghost"); b.clicked.connect(self.close_ncr); c.body.addWidget(b); left.addWidget(c)
+        c = Card(tr("Search")); self.search = QLineEdit(); self.search.setPlaceholderText(tr("run, value, error code, NCR text…")); self.search.returnPressed.connect(self.do_search); c.body.addWidget(self.search)
         self.search_out = QListWidget(); c.body.addWidget(self.search_out); left.addWidget(c, 1)
         centre = QVBoxLayout(); hl.addLayout(centre, 2)
-        self.next_card = Card("Next action", kind="raised")
+        self.next_card = Card(tr("Next action"), kind="raised")
         self.lbl_next = label("", "instruction", wrap=True); self.next_card.body.addWidget(self.lbl_next)
         self.lbl_block = label("", "banner-bad", wrap=True); self.lbl_block.hide(); self.next_card.body.addWidget(self.lbl_block)
         fix = QHBoxLayout(); self.fix_buttons = {}
-        for key, text, slot in (("CONFIG", "Freeze configuration now", self.freeze_config), ("TRR", "Sign phase readiness now", self.sign_phase),
-                                ("CAL", "Record calibrations…", lambda: self.show_page("instruments")), ("EARTH", "Go to ELE-001 (earth first)", lambda: self.open_test("DVT-ELE-001"))):
+        for key, text, slot in (("CONFIG", tr("Freeze configuration now"), self.freeze_config), ("TRR", tr("Sign phase readiness now"), self.sign_phase),
+                                ("CAL", tr("Record calibrations…"), lambda: self.show_page("instruments")), ("EARTH", tr("Go to ELE-001 (earth first)"), lambda: self.open_test("DVT-ELE-001"))):
             b = QPushButton(text); b.setProperty("kind", "ghost"); b.clicked.connect(slot); b.hide(); fix.addWidget(b); self.fix_buttons[key] = b
         fix.addStretch(); self.next_card.body.addLayout(fix)
         row = QHBoxLayout()
-        self.btn_start = QPushButton("Start guided run →"); self.btn_start.setProperty("kind", "big"); self.btn_start.clicked.connect(self.start_run); row.addWidget(self.btn_start)
-        self.btn_override = QPushButton("Start anyway (supervisor)"); self.btn_override.setProperty("kind", "danger"); self.btn_override.clicked.connect(lambda: self.start_run(override=True)); row.addWidget(self.btn_override)
+        self.btn_start = QPushButton(tr("Start guided run →")); self.btn_start.setProperty("kind", "big"); self.btn_start.clicked.connect(self.start_run); row.addWidget(self.btn_start)
+        self.btn_override = QPushButton(tr("Start anyway (supervisor)")); self.btn_override.setProperty("kind", "danger"); self.btn_override.clicked.connect(lambda: self.start_run(override=True)); row.addWidget(self.btn_override)
         row.addStretch(); self.next_card.body.addLayout(row); centre.addWidget(self.next_card)
-        c = Card("Runs of this test", hint="double-click a NOT_STARTED / IN_PROGRESS run to open it")
-        self.runs_tbl = QTableWidget(0, 6); self.runs_tbl.setHorizontalHeaderLabels(["Unit", "Variant", "Rep", "Status", "Verdict", "Operator"])
+        c = Card(tr("Runs of this test"), hint=tr("double-click a NOT_STARTED / IN_PROGRESS run to open it"))
+        self.runs_tbl = QTableWidget(0, 6); self.runs_tbl.setHorizontalHeaderLabels([tr("Unit"), tr("Variant"), tr("Rep"), tr("Status"), tr("Verdict"), tr("Operator")])
         self.runs_tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch); self.runs_tbl.verticalHeader().hide(); self.runs_tbl.setSelectionBehavior(QTableWidget.SelectRows)
         self.runs_tbl.cellDoubleClicked.connect(self._open_run_row); c.body.addWidget(self.runs_tbl); centre.addWidget(c, 1)
         self.console_stack.addWidget(home)
@@ -273,7 +278,7 @@ class MainWindow(QMainWindow):
         it = self.units.currentItem(); return it.data(Qt.UserRole) if it else None
 
     def _unit_from_header(self, _idx):
-        """Header 'UNIT UNDER TEST' drives the console unit list (and vice versa)."""
+        """Header tr('UNIT UNDER TEST') drives the console unit list (and vice versa)."""
         u = self.cb_unit.currentData()
         for i in range(self.units.count()):
             if self.units.item(i).data(Qt.UserRole) == u and self.units.currentRow() != i:
@@ -291,12 +296,12 @@ class MainWindow(QMainWindow):
         self.select_unit(u)
         na = self.engine.next_action(u)
         self.lbl_next.setText(na.message)
-        self.lbl_block.setVisible(bool(na.blockers)); self.lbl_block.setText("Blocked:\n• " + "\n• ".join(b.text for b in na.blockers))
+        self.lbl_block.setVisible(bool(na.blockers)); self.lbl_block.setText(tr("Blocked:") + "\n• " + "\n• ".join(b.text for b in na.blockers))
         codes = {b.code for b in na.blockers}
         for k, b in self.fix_buttons.items(): b.setVisible(k in codes)
         startable = na.run is not None and na.run["status"] in ("NOT_STARTED", "IN_PROGRESS")
         self.btn_start.setEnabled(startable and not na.blockers); self.btn_override.setEnabled(startable and bool(na.blockers))
-        self.btn_start.setText("Resume guided run →" if na.run and na.run["status"] == "IN_PROGRESS" else "Start guided run →")
+        self.btn_start.setText(tr("Resume guided run →") if na.run and na.run["status"] == "IN_PROGRESS" else tr("Start guided run →"))
         self._fill_runs(na.run["test_id"] if na.run else None)
 
     def _fill_runs(self, test_id):
@@ -332,7 +337,7 @@ class MainWindow(QMainWindow):
 
     def _launch_wizard(self, run, override_check=True):
         if not self.operator:
-            QMessageBox.warning(self, "Operator", "Enter the operator name in the header first."); return
+            QMessageBox.warning(self, "Operator", tr("Enter the operator name in the header first.")); return
         if run["status"] == "NOT_STARTED":
             self.store.start_run(run["run_id"], self.operator)
         self.wizard = RunWizard(self, run["run_id"])
@@ -353,10 +358,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ pages: instruments
     def _instruments_page(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(18, 16, 18, 16); l.setSpacing(14)
-        c = Card("Instruments & calibration records", hint="SRS-DVT-085 — a run is blocked while any of its instruments has no valid record")
-        self.inst_tbl = QTableWidget(0, 4); self.inst_tbl.setHorizontalHeaderLabels(["Instrument", "Calibration id", "Valid until", "Used by"])
+        c = Card(tr("Instruments & calibration records"), hint="SRS-DVT-085 — a run is blocked while any of its instruments has no valid record")
+        self.inst_tbl = QTableWidget(0, 4); self.inst_tbl.setHorizontalHeaderLabels([tr("Instrument"), tr("Calibration id"), tr("Valid until"), tr("Used by")])
         self.inst_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch); self.inst_tbl.verticalHeader().hide(); c.body.addWidget(self.inst_tbl)
-        b = QPushButton("Record calibration for selected…"); b.clicked.connect(self._record_calibration); c.body.addWidget(b, 0, Qt.AlignLeft)
+        b = QPushButton(tr("Record calibration for selected…")); b.clicked.connect(self._record_calibration); c.body.addWidget(b, 0, Qt.AlignLeft)
         l.addWidget(c)
         return w
 
@@ -385,14 +390,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ pages: reports / settings
     def _reports_page(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(18, 16, 18, 16); l.setSpacing(14)
-        c = Card("Reports & exports"); l.addWidget(c)
+        c = Card(tr("Reports & exports")); l.addWidget(c)
         self.lbl_reports = label("", "muted", wrap=True); c.body.addWidget(self.lbl_reports)
         row = QHBoxLayout()
-        b = QPushButton("Export + sync now"); b.clicked.connect(self.kick_sync); row.addWidget(b)
-        b = QPushButton("Open Drive folder"); b.setProperty("kind", "ghost"); b.clicked.connect(self.open_reports); row.addWidget(b)
-        b = QPushButton("Open local export folder"); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: os.startfile(str(self.data / "export"))); row.addWidget(b)
+        b = QPushButton(tr("Export + sync now")); b.clicked.connect(self.kick_sync); row.addWidget(b)
+        b = QPushButton(tr("Open Drive folder")); b.setProperty("kind", "ghost"); b.clicked.connect(self.open_reports); row.addWidget(b)
+        b = QPushButton(tr("Open local export folder")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: os.startfile(str(self.data / "export"))); row.addWidget(b)
         row.addStretch(); c.body.addLayout(row)
-        self.events = QPlainTextEdit(); self.events.setReadOnly(True); c2 = Card("Campaign events (latest)"); c2.body.addWidget(self.events); l.addWidget(c2, 1)
+        self.events = QPlainTextEdit(); self.events.setReadOnly(True); c2 = Card(tr("Campaign events (latest)")); c2.body.addWidget(self.events); l.addWidget(c2, 1)
         return w
 
     def open_reports(self):
@@ -402,17 +407,37 @@ class MainWindow(QMainWindow):
 
     def _settings_page(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(18, 16, 18, 16); l.setSpacing(14); l.setAlignment(Qt.AlignTop)
-        c = Card("Google Drive sync"); g = QGridLayout(); c.body.addLayout(g)
+        c = Card(tr("Google Drive sync")); g = QGridLayout(); c.body.addLayout(g)
         self.cb_mode = QComboBox(); self.cb_mode.addItems(["folder", "api", "off"]); self.cb_mode.setCurrentText(self.cfg.mode)
-        self.ed_folder = QLineEdit(str(self.cfg.folder_path or "")); b = QPushButton("Browse…"); b.setProperty("kind", "ghost"); b.clicked.connect(self._browse_folder)
-        g.addWidget(label("Mode"), 0, 0); g.addWidget(self.cb_mode, 0, 1); g.addWidget(label("Synced folder (mode=folder)"), 1, 0); g.addWidget(self.ed_folder, 1, 1); g.addWidget(b, 1, 2)
-        g.addWidget(label("OAuth client (mode=api)"), 2, 0); self.lbl_cred = label(str(self.cfg.credentials_file), "mono"); g.addWidget(self.lbl_cred, 2, 1)
-        b2 = QPushButton("Select credentials.json…"); b2.setProperty("kind", "ghost"); b2.clicked.connect(self._pick_credentials); g.addWidget(b2, 2, 2)
-        b3 = QPushButton("Apply"); b3.clicked.connect(self._apply_sync); g.addWidget(b3, 3, 1, alignment=Qt.AlignLeft); l.addWidget(c)
-        c = Card("Motion"); self.cb_motion = QComboBox(); self.cb_motion.addItems(["animations on", "reduced motion"]); self.cb_motion.currentIndexChanged.connect(lambda i: setattr(FadeStack, "duration", 0 if i else 260))
+        self.ed_folder = QLineEdit(str(self.cfg.folder_path or "")); b = QPushButton(tr("Browse…")); b.setProperty("kind", "ghost"); b.clicked.connect(self._browse_folder)
+        g.addWidget(label("Mode"), 0, 0); g.addWidget(self.cb_mode, 0, 1); g.addWidget(label(tr("Synced folder (mode=folder)")), 1, 0); g.addWidget(self.ed_folder, 1, 1); g.addWidget(b, 1, 2)
+        g.addWidget(label(tr("OAuth client (mode=api)")), 2, 0); self.lbl_cred = label(str(self.cfg.credentials_file), "mono"); g.addWidget(self.lbl_cred, 2, 1)
+        b2 = QPushButton(tr("Select credentials.json…")); b2.setProperty("kind", "ghost"); b2.clicked.connect(self._pick_credentials); g.addWidget(b2, 2, 2)
+        b3 = QPushButton(tr("Apply")); b3.clicked.connect(self._apply_sync); g.addWidget(b3, 3, 1, alignment=Qt.AlignLeft); l.addWidget(c)
+        c = Card(tr("Work mode")); mrow = QHBoxLayout(); c.body.addLayout(mrow)
+        from PySide6.QtWidgets import QRadioButton
+        self.rb_mode_normal = QRadioButton(tr("Normal — real machine")); self.rb_mode_sim = QRadioButton(tr("Simulation — built-in simulated machine"))
+        (self.rb_mode_sim if self.machine_url.startswith("sim://") else self.rb_mode_normal).setChecked(True)
+        self.rb_mode_normal.toggled.connect(lambda on: on and self.machine_url.startswith("sim://") and self.toggle_sim())
+        self.rb_mode_sim.toggled.connect(lambda on: on and not self.machine_url.startswith("sim://") and self.toggle_sim())
+        mrow.addWidget(self.rb_mode_normal); mrow.addWidget(self.rb_mode_sim); mrow.addStretch(); l.addWidget(c)
+        c = Card(tr("Language")); lrow = QHBoxLayout(); c.body.addLayout(lrow)
+        self.cb_lang = QComboBox()
+        for code, name in LANGUAGES.items(): self.cb_lang.addItem(name, code)
+        self.cb_lang.setCurrentIndex(max(0, self.cb_lang.findData(self.store.get_meta("language", "en"))))
+        lrow.addWidget(self.cb_lang); lrow.addWidget(label(tr("Language / mode changes apply after the console restarts."), "muted"))
+        b = QPushButton(tr("Restart console now")); b.setProperty("kind", "ghost"); b.clicked.connect(self.restart); lrow.addWidget(b); lrow.addStretch(); l.addWidget(c)
+        c = Card(tr("Motion")); self.cb_motion = QComboBox(); self.cb_motion.addItems([tr("animations on"), tr("reduced motion")]); self.cb_motion.currentIndexChanged.connect(lambda i: setattr(FadeStack, "duration", 0 if i else 260))
         c.body.addWidget(self.cb_motion); l.addWidget(c)
-        c = Card("About"); c.body.addWidget(label(f"sCure DVT · SRS-DVT-SW Rev B · catalog v{self.cat.version} · data {self.data}", "muted", wrap=True)); l.addWidget(c)
+        c = Card(tr("About")); c.body.addWidget(label(f"sCure DVT · SRS-DVT-SW Rev B · catalog v{self.cat.version} · data {self.data}", "muted", wrap=True)); l.addWidget(c)
         return w
+
+    RESTART_CODE = 42
+
+    def restart(self):
+        self.store.set_meta("language", self.cb_lang.currentData())
+        self.store.set_meta("show_start_dialog", "0")
+        QApplication.instance().exit(self.RESTART_CODE)
 
     def _browse_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Synced folder (e.g. G:\\My Drive\\sCure DVT)")
@@ -509,15 +534,40 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="sCure DVT desktop application")
     ap.add_argument("--catalog", default=str(HERE.parent / "catalog" / "DVT_test_catalog.yaml"))
     ap.add_argument("--data", default=os.path.expanduser("~/.scure-dvt"))
-    ap.add_argument("--machine", help="DUT address, e.g. http://192.168.2.155:3001")
+    ap.add_argument("--machine", help="DUT address, e.g. http://192.168.2.155:3001, or 'sim'")
+    ap.add_argument("--lang", choices=list(LANGUAGES), help="UI language (en / he)")
+    ap.add_argument("--no-dialog", action="store_true", help="skip the start dialog")
     a = ap.parse_args(argv)
     cat = Catalog.load(a.catalog)
-    app = QApplication(sys.argv[:1]); app.setStyleSheet(T.QSS)
-    w = MainWindow(cat, Path(a.data), a.machine); w.show()
-    rc = app.exec()
-    del w                       # tear the window (and its threads/timers) down before the QApplication
-    del app
-    return rc
+    data = Path(a.data); data.mkdir(parents=True, exist_ok=True)
+    while True:
+        meta = Store(data / "campaign.db")
+        lang = a.lang or meta.get_meta("language", "en"); set_language(lang)
+        app = QApplication(sys.argv[:1]); app.setStyleSheet(T.QSS); app.setLayoutDirection(Qt.RightToLeft if is_rtl() else Qt.LeftToRight)
+        machine = a.machine
+        if machine is None and not a.no_dialog and meta.get_meta("show_start_dialog", "1") != "0":
+            from dvt_tool.ui.start import StartDialog
+            saved = (meta.get_meta("machines", "") or "").split("|")
+            machines = [m for m in dict.fromkeys([*saved, *DEFAULT_MACHINES]) if m]
+            cur = meta.get_meta("machine_url", DEFAULT_MACHINES[0])
+            dlg = StartDialog(machines, cat.units, getpass.getuser(), lang, "sim" if cur.startswith("sim://") else "normal", cur, meta.get_meta("last_unit"))
+            if dlg.exec() != StartDialog.Accepted or not dlg.result_:
+                return 0
+            r = dlg.result_
+            if r["lang"] != lang:
+                meta.set_meta("language", r["lang"]); set_language(r["lang"]); app.setLayoutDirection(Qt.RightToLeft if is_rtl() else Qt.LeftToRight)
+            machine = SIM_URL if r["mode"] == "sim" else (r["machine"] or DEFAULT_MACHINES[0])
+            meta.set_meta("last_unit", r["unit"] or ""); meta.set_meta("operator", r["operator"] or "")
+        meta.set_meta("show_start_dialog", "1"); meta.db.close()
+        w = MainWindow(cat, data, machine)
+        op = w.store.get_meta("operator")
+        if op: w.ed_operator.setText(op)
+        w.show()
+        rc = app.exec()
+        del w; del app
+        if rc != MainWindow.RESTART_CODE:
+            return rc
+        a.machine = None; a.lang = None          # restart: re-read the saved language, skip the dialog once
 
 
 if __name__ == "__main__":

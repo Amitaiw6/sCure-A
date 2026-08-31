@@ -29,6 +29,18 @@ cd C:\Users\User\Documents\GitHub\sCure-A\DVT
 
 Data lives in `%USERPROFILE%\.scure-dvt\` (`campaign.db`, `export\`, `sync.json`).
 
+### Start dialog — work mode and language
+
+Every launch opens a small dialog: **language** (English / עברית — the whole
+UI flips to right-to-left in Hebrew), **work mode** (Normal — real machine
+by address, or Simulation — the built-in simulated machine), the machine
+address, the unit under test and the operator. All of it can be changed
+later: mode in Settings → *Work mode* (or the rail toggle), language in
+Settings → *Language* → *Restart console now*. `run.bat --machine sim
+--no-dialog` skips the dialog. Catalog content (test titles, procedures,
+criteria) stays in the language it was written in — only the console's own
+text is translated (`dvt_tool/ui/i18n.py`).
+
 ### Simulation mode (test the console without a machine)
 
 Click **◉ Simulation mode** at the bottom of the rail (or type `sim` as the

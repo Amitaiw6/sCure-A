@@ -18,9 +18,18 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridL
 from .ui import theme as T
 from .ui.widgets import Card, Pill, StatTile, label
 from .ui.dut import MetricTile, TILES
+from .ui.i18n import tr
 
 SUBSYSTEM_COLORS, SUBSYSTEM_ICONS = T.SUBSYSTEM, T.SUBSYSTEM_ICON
-STATUS_LABEL = {"Complete": "✓ Complete", "Running": "▶ Running", "Failed": "✗ Failed", "Blocked": "⊘ Blocked", "Pending": "○ Pending"}
+def status_label(status: str) -> str:
+    return {"Complete": "✓ ", "Running": "▶ ", "Failed": "✗ ", "Blocked": "⊘ ", "Pending": "○ "}.get(status, "") + tr(status)
+
+
+class _StatusLabels(dict):            # keeps the old `STATUS_LABEL[status]` call sites working, translated lazily
+    def __getitem__(self, k): return status_label(k)
+
+
+STATUS_LABEL = _StatusLabels()
 
 
 class DonutWidget(QWidget):
@@ -69,22 +78,22 @@ class DashboardPage(QWidget):
         root = QHBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(16)
         centre = QVBoxLayout(); centre.setSpacing(16); root.addLayout(centre, 3)
         strip = QHBoxLayout(); strip.setSpacing(12); self.kpis = {}
-        for key, cap, col in (("tests", "Tests", T.INK), ("running", "Running", T.WARN), ("failed", "Failed", T.BAD), ("complete", "Complete", T.OK), ("runs", "Runs done", T.INK)):
+        for key, cap, col in (("tests", tr("Tests"), T.INK), ("running", tr("Running"), T.WARN), ("failed", tr("Failed"), T.BAD), ("complete", tr("Complete"), T.OK), ("runs", tr("Runs done"), T.INK)):
             t = StatTile(cap, "—", col); strip.addWidget(t); self.kpis[key] = t
         centre.addLayout(strip)
 
-        c = Card("Test distribution by subsystem", hint="click a slice or a subsystem to filter the matrix"); row = QHBoxLayout(); row.setSpacing(24); c.body.addLayout(row)
+        c = Card(tr("Test distribution by subsystem"), hint=tr("click a slice or a subsystem to filter the matrix")); row = QHBoxLayout(); row.setSpacing(24); c.body.addLayout(row)
         self.donut = DonutWidget(); self.donut.sliceClicked.connect(self.set_filter); row.addWidget(self.donut)
         self.legend = QGridLayout(); self.legend.setHorizontalSpacing(18); self.legend.setVerticalSpacing(8); row.addLayout(self.legend, 1)
         centre.addWidget(c)
 
-        c = Card("Progress by subsystem", hint="% of applicable runs committed"); self.prog_grid = QGridLayout(); self.prog_grid.setHorizontalSpacing(14); self.prog_grid.setVerticalSpacing(6)
+        c = Card(tr("Progress by subsystem"), hint=tr("% of applicable runs committed")); self.prog_grid = QGridLayout(); self.prog_grid.setHorizontalSpacing(14); self.prog_grid.setVerticalSpacing(6)
         c.body.addLayout(self.prog_grid); self.overall_bar = None; centre.addWidget(c)
 
-        c = Card("Test matrix — grouped by subsystem"); self.matrix_card = c
+        c = Card(tr("Test matrix — grouped by subsystem")); self.matrix_card = c
         self.matrix_hint = label("", "muted"); c.body.addWidget(self.matrix_hint, 0, Qt.AlignRight)
         self.tree = QTreeWidget(); self.tree.setColumnCount(9)
-        self.tree.setHeaderLabels(["ID / Subsystem", "Test name", "Method", "Appl.", "Status", "Result", "Runs", "Reps", "Est (min)"])
+        self.tree.setHeaderLabels([tr("ID / Subsystem"), tr("Test name"), tr("Method"), tr("Appl."), tr("Status"), tr("Result"), tr("Runs"), tr("Reps"), tr("Est (min)")])
         hdr = self.tree.header(); hdr.setSectionResizeMode(1, QHeaderView.Stretch)
         for i in (0, 2, 3, 4, 5, 6, 7, 8): hdr.setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self.tree.setRootIsDecorated(True); self.tree.setUniformRowHeights(True); self.tree.setIndentation(18)
@@ -92,17 +101,17 @@ class DashboardPage(QWidget):
         c.body.addWidget(self.tree, 1); centre.addWidget(c, 1)
 
         right = QVBoxLayout(); right.setSpacing(16); root.addLayout(right, 1)
-        c = Card("Live telemetry"); self.tele_status = label("waiting for the machine…", "muted"); c.body.addWidget(self.tele_status)
+        c = Card(tr("Live telemetry")); self.tele_status = label(tr("waiting for the machine…"), "muted"); c.body.addWidget(self.tele_status)
         self.tiles = {}
         for key, cap, unit, col, rng in TILES[:4]:
             t = MetricTile(cap, unit, col, rng); c.body.addWidget(t); self.tiles[key] = t
         right.addWidget(c)
-        c = Card("Safety & interlocks"); g = QGridLayout(); g.setVerticalSpacing(8); c.body.addLayout(g); self.inter = {}
-        for i, (k, txt) in enumerate((("door", "Door closed / locked"), ("uv", "UV off"), ("heater", "Heater off"), ("fault", "No active fault"))):
+        c = Card(tr("Safety & interlocks")); g = QGridLayout(); g.setVerticalSpacing(8); c.body.addLayout(g); self.inter = {}
+        for i, (k, txt) in enumerate((("door", tr("Door closed / locked")), ("uv", tr("UV off")), ("heater", tr("Heater off")), ("fault", tr("No active fault")))):
             g.addWidget(label(txt), i, 0); pl = Pill("—", T.MUTED); g.addWidget(pl, i, 1, alignment=Qt.AlignRight); self.inter[k] = pl
         right.addWidget(c)
-        c = Card("What is left", hint="pending runs per test · double-click to open"); self.remaining = QTreeWidget(); self.remaining.setColumnCount(3)
-        self.remaining.setHeaderLabels(["Test", "Pending runs", "Est (min)"]); self.remaining.header().setSectionResizeMode(0, QHeaderView.Stretch); self.remaining.setRootIsDecorated(False)
+        c = Card(tr("What is left"), hint=tr("pending runs per test · double-click to open")); self.remaining = QTreeWidget(); self.remaining.setColumnCount(3)
+        self.remaining.setHeaderLabels([tr("Test"), tr("Pending runs"), tr("Est (min)")]); self.remaining.header().setSectionResizeMode(0, QHeaderView.Stretch); self.remaining.setRootIsDecorated(False)
         self.remaining.itemDoubleClicked.connect(lambda it, _: it.data(0, Qt.UserRole) and self.openTest.emit(it.data(0, Qt.UserRole)))
         c.body.addWidget(self.remaining, 1); self.remaining_hint = label("", "muted"); c.body.addWidget(self.remaining_hint); right.addWidget(c, 1)
 
@@ -121,7 +130,7 @@ class DashboardPage(QWidget):
         while self.prog_grid.count():
             w = self.prog_grid.takeAt(0).widget()
             if w: w.deleteLater()
-        rows = [("Campaign", pct, prog["done"], prog["total"], T.ACCENT)] + [(n, s["percent"], s["runsDone"], s["runsTotal"], T.SUBSYSTEM.get(n, T.MUTED)) for n, s in self.summary.items()]
+        rows = [(tr("Campaign"), pct, prog["done"], prog["total"], T.ACCENT)] + [(n, s["percent"], s["runsDone"], s["runsTotal"], T.SUBSYSTEM.get(n, T.MUTED)) for n, s in self.summary.items()]
         for i, (name, p, d, t_, col) in enumerate(rows):
             nm = label(name, bold=(i == 0)); self.prog_grid.addWidget(nm, i, 0)
             bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(p); bar.setTextVisible(False); bar.setFixedHeight(10)
@@ -133,7 +142,7 @@ class DashboardPage(QWidget):
         for r in left:
             it = QTreeWidgetItem([f"{r['testId']}  {r['title'][:48]}", f"{r['pendingRuns']}  ({', '.join(f'{u} ×{n}' for u, n in r['perUnit'].items())})", str(r["estMin"])])
             it.setData(0, Qt.UserRole, r["testId"]); it.setForeground(0, QColor(T.SUBSYSTEM.get(r["subsystem"], T.INK))); self.remaining.addTopLevelItem(it); est += r["estMin"]
-        self.remaining_hint.setText(f"{len(left)} tests still owe runs · ≈ {est // 60} h {est % 60} min of bench time" if left else "Nothing left — every applicable run is committed.")
+        self.remaining_hint.setText(f"{len(left)} tests still owe runs · ≈ {est // 60} h {est % 60} min of bench time" if left else tr("Nothing left — every applicable run is committed."))
         self.donut.set_data([(n, s["tests"], T.SUBSYSTEM.get(n, T.MUTED)) for n, s in self.summary.items()])
         while self.legend.count():
             w = self.legend.takeAt(0).widget()

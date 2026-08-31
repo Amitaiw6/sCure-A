@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget
                                QGraphicsOpacityEffect, QSizePolicy)
 
 from . import theme as T
+from .i18n import tr
 
 
 def label(text="", role=None, color=None, size=None, bold=False, wrap=False) -> QLabel:
@@ -29,9 +30,9 @@ class Card(QFrame):
         self.setProperty("card", kind)
         self.body = QVBoxLayout(self); self.body.setContentsMargins(16, 14, 16, 14); self.body.setSpacing(10)
         if title:
-            row = QHBoxLayout(); row.addWidget(label(title.upper(), "eyebrow")); row.addStretch()
+            row = QHBoxLayout(); row.addWidget(label(tr(title).upper(), "eyebrow")); row.addStretch()
             if hint:
-                self.hint = label(hint, "muted"); self.hint.setStyleSheet(f"color: {T.MUTED}; font-size: 11px;"); row.addWidget(self.hint)
+                self.hint = label(tr(hint), "muted"); self.hint.setStyleSheet(f"color: {T.MUTED}; font-size: 11px;"); row.addWidget(self.hint)
             self.body.addLayout(row)
 
 
@@ -48,7 +49,7 @@ class StatTile(QFrame):
     def __init__(self, caption: str, value: str = "—", color: str = T.INK):
         super().__init__(); self.setProperty("card", "true")
         l = QVBoxLayout(self); l.setContentsMargins(16, 12, 16, 12); l.setSpacing(2)
-        self.value = label(value, size=24, bold=True, color=color); self.caption = label(caption.upper(), "eyebrow")
+        self.value = label(value, size=24, bold=True, color=color); self.caption = label(tr(caption).upper(), "eyebrow")
         l.addWidget(self.value); l.addWidget(self.caption)
 
     def set(self, value, color=None):

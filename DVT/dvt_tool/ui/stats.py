@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QTa
 
 from . import theme as T
 from .widgets import Card, label
+from .i18n import tr
 
 UNIT_COLORS = ["#2f6fdb", "#e8461f", "#1f9d61", "#7c5cbf", "#d68a0c", "#0aa3b5"]
 
@@ -32,7 +33,7 @@ class LineChart(QWidget):
         p.fillRect(self.rect(), QColor(T.CARD))
         pts = [y for s in self.series.values() for _, y in s]
         if not pts:
-            p.setPen(QColor(T.MUTED)); p.drawText(self.rect(), Qt.AlignCenter, "No recorded values yet for this field"); return
+            p.setPen(QColor(T.MUTED)); p.drawText(self.rect(), Qt.AlignCenter, tr("No recorded values yet for this field")); return
         lo, hi = min(pts + ([self.limit] if self.limit is not None else [])), max(pts + ([self.limit] if self.limit is not None else []))
         if hi == lo: hi = lo + 1
         pad = (hi - lo) * 0.1; lo -= pad; hi += pad
@@ -63,14 +64,14 @@ class StatisticsPage(QWidget):
     def __init__(self, engine):
         super().__init__(); self.engine, self.cat, self.store = engine, engine.cat, engine.store
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(16)
-        cm = Card("All machines — verdict per test", hint="rolled-up verdict of each test on each unit · N/A = not applicable to that unit")
+        cm = Card(tr("All machines — verdict per test"), hint=tr("rolled-up verdict of each test on each unit · N/A = not applicable to that unit"))
         self.matrix = QTableWidget(0, 0); self.matrix.verticalHeader().hide(); self.matrix.setMinimumHeight(220); cm.body.addWidget(self.matrix, 1); root.addWidget(cm, 2)
-        c = Card("Comparison across units", hint="SRS-DVT-095 — one curve per unit, x = sweep value (or repetition)")
-        row = QHBoxLayout(); row.addWidget(label("Test", "muted")); self.cb_test = QComboBox(); self.cb_test.setMinimumWidth(420)
+        c = Card(tr("Comparison across units"), hint=tr("SRS-DVT-095 — one curve per unit, x = sweep value (or repetition)"))
+        row = QHBoxLayout(); row.addWidget(label(tr("Test"), "muted")); self.cb_test = QComboBox(); self.cb_test.setMinimumWidth(420)
         for tid in self.cat.ordered_test_ids(): self.cb_test.addItem(f"{tid} — {self.cat.tests[tid]['title']}", tid)
-        row.addWidget(self.cb_test); row.addWidget(label("Field", "muted")); self.cb_field = QComboBox(); self.cb_field.setMinimumWidth(220); row.addWidget(self.cb_field); row.addStretch()
+        row.addWidget(self.cb_test); row.addWidget(label(tr("Field"), "muted")); self.cb_field = QComboBox(); self.cb_field.setMinimumWidth(220); row.addWidget(self.cb_field); row.addStretch()
         c.body.addLayout(row); self.chart = LineChart(); c.body.addWidget(self.chart, 1); root.addWidget(c, 2)
-        c2 = Card("Values"); self.tbl = QTableWidget(0, 0); self.tbl.verticalHeader().hide(); c2.body.addWidget(self.tbl); root.addWidget(c2, 1)
+        c2 = Card(tr("Values")); self.tbl = QTableWidget(0, 0); self.tbl.verticalHeader().hide(); c2.body.addWidget(self.tbl); root.addWidget(c2, 1)
         self.cb_test.currentIndexChanged.connect(self._fields); self.cb_field.currentIndexChanged.connect(self.refresh)
         self._fields()
 
@@ -82,7 +83,7 @@ class StatisticsPage(QWidget):
 
     def refresh_matrix(self):
         m = self.engine.unit_matrix(); units = m["units"]
-        self.matrix.clear(); self.matrix.setColumnCount(len(units) + 2); self.matrix.setHorizontalHeaderLabels(["Test", "Subsystem"] + units); self.matrix.setRowCount(len(m["rows"]))
+        self.matrix.clear(); self.matrix.setColumnCount(len(units) + 2); self.matrix.setHorizontalHeaderLabels([tr("Test"), "Subsystem"] + units); self.matrix.setRowCount(len(m["rows"]))
         for i, r in enumerate(m["rows"]):
             self.matrix.setItem(i, 0, QTableWidgetItem(f"{r['testId']}  {r['title'][:40]}"))
             sub = QTableWidgetItem(r["subsystem"]); sub.setForeground(QColor(T.SUBSYSTEM.get(r["subsystem"], T.INK))); self.matrix.setItem(i, 1, sub)
@@ -117,7 +118,7 @@ class StatisticsPage(QWidget):
         m = re.search(rf"{re.escape(field)}\s*(<=|<)\s*([0-9.]+)", self.cat.tests[tid]["pass_criteria"])
         if m: limit = float(m.group(2))
         self.chart.set(series, xs, field, limit)
-        self.tbl.clear(); self.tbl.setColumnCount(len(xs) + 1); self.tbl.setHorizontalHeaderLabels(["Unit"] + xs); self.tbl.setRowCount(len(table))
+        self.tbl.clear(); self.tbl.setColumnCount(len(xs) + 1); self.tbl.setHorizontalHeaderLabels([tr("Unit")] + xs); self.tbl.setRowCount(len(table))
         for row, (u, vals) in enumerate(sorted(table.items())):
             self.tbl.setItem(row, 0, QTableWidgetItem(u))
             for i in range(len(xs)):
