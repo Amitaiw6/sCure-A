@@ -1,0 +1,1884 @@
+# DVT Test Catalog — consolidated
+# Project: sCure / CureBox DVT
+# Schema: SRS-DVT-SW Rev B, Appendix A
+# Status: draft — items marked "CONFIRM" require a decision before baseline
+#
+# This file is the single source of truth for the DVT tool (DVT/dvt_tool).
+# Add a test = add an entry under `tests:`; the tool derives the run set,
+# the wizard order and the report from it. Do not edit pass_criteria of a
+# baselined test without bumping catalog_version.
+
+catalog_version: 0.9
+
+# LED back-face temperature ladder. All values are measured on the aluminium
+# MCPCB back face, 2 mm behind the LED — never at the junction or the solder
+# joint. Tests reference these names rather than repeating numbers.
+led_temperature_thresholds:
+  working_limit: 75          # acceptance criterion in normal operation
+  warning: null              # CONFIRM — maintenance warning, above working_limit
+  protective_shutdown: null  # CONFIRM — must exceed working_limit by more than
+                             # measurement uncertainty plus control ripple, and
+                             # must leave room for the post-shutdown thermal
+                             # overshoot measured in DVT-SAF-019
+  absolute_max_tj: 100       # SST-10-UV datasheet PDS-002674 Rev 05
+
+# Units under test. The tool derives which runs each unit owes from each
+# test's `applicability`.
+units:
+  - {id: UUT-01, role: reference, notes: "SAF-010 review, SAF-018 software stack"}
+  - {id: UUT-02, role: standard}
+  - {id: UUT-03, role: standard}
+  - {id: UUT-04, role: standard}
+  - {id: UUT-05, role: destructive, notes: "SAF-001 / SAF-002 — last"}
+
+# Phase order and gates (SRS-DVT-SW Rev B §4.1). Tests are assigned to a
+# phase by prefix/explicit list; a phase opens for a unit only when the
+# previous one is closed for that unit.
+phases:
+  - {id: 0, name: Incoming and configuration, tests: [], gate: "Configuration frozen and signed; equipment calibrations valid"}
+  - {id: 1, name: Electrical safety, tests: [DVT-ELE-001, DVT-ELE-002, DVT-ELE-003, DVT-ELE-004, DVT-ELE-005], gate: "All ELE tests PASS"}
+  - {id: 2, name: Protective functions, tests: [DVT-SAF-012, DVT-SAF-013, DVT-SAF-014, DVT-SAF-004, DVT-SAF-005, DVT-SAF-003, DVT-SAF-007, DVT-SAF-006, DVT-SAF-008, DVT-SAF-009, DVT-SAF-015, DVT-SAF-016, DVT-SAF-017, DVT-SAF-011, DVT-SAF-018, DVT-SAF-019, DVT-SAF-010], gate: "All protective functions PASS or approved disposition"}
+  - {id: 3, name: Performance, tests: [DVT-THM-001, DVT-THM-002, DVT-THM-003], gate: "Data complete"}
+  - {id: 4, name: Transport, tests: [DVT-ENV-001], gate: "Post-shipment functional test PASS"}
+  - {id: 5, name: Destructive, tests: [DVT-SAF-001, DVT-SAF-002], gate: null}
+
+tests:
+
+# =============================================================
+# SAFETY — protective devices and fault response
+# =============================================================
+
+- test_id: DVT-SAF-001
+  title: Voltage selector mismatch — 110 V selector on 230 V mains
+  subsystem: Safety
+  requirement_ids: []          # CONFIRM: link to the mains-configuration safety requirement
+  method: Test
+  purpose: >
+    Verify that operating the unit with the voltage selector set to 110 V while
+    connected to 230 V mains is contained by the branch protection: the heater
+    branch fuse opens, the chamber does not heat, and no fire, smoke, enclosure
+    damage or accessible-part hazard results.
+  applicability:
+    rule: SINGLE
+    unit: UUT-05
+  sample_rationale: >
+    Destructive fault-injection test that stresses the heater branch wiring and
+    consumes protective devices. It verifies a design property of the AC
+    distribution, which is identical across all units, not a unit-to-unit
+    variable. Run on the unit designated for destructive testing.
+  safety_plan:
+    - Test performed with the unit inside a fire-rated enclosure or on a
+      non-combustible bench, extinguisher within reach, no personnel within 2 m
+    - Mains applied through a remotely operated contactor; no one touches the
+      unit while energised
+    - Thermal camera and video recording running for the full duration
+    - Arc-flash rated PPE for the operator applying power
+  equipment:
+    - name: Isolation transformer / programmable AC source, 230 V, >=3 kVA
+      calibration_id: null     # CONFIRM
+    - name: Current probe + oscilloscope with single-shot capture on the heater branch
+      calibration_id: null
+    - name: Thermal camera
+      calibration_id: null
+    - name: Spare fuses — 0BLF005.T (5 A branch), 0215015.MXP (15 A inlet)
+  preconditions:
+    - Unit at ambient temperature, chamber empty, door closed
+    - Voltage selector set to 110 V, verified visually and photographed
+    - Mains source set to 230 V nominal
+    - New, verified fuses fitted in both the inlet holder and the heater branch
+  procedure_steps:
+    - step: Record the fuse part numbers and the selector position (photograph both)
+    - step: Connect the current probe around the heater branch conductor
+    - step: Energise the unit remotely and record the inrush and steady current
+      capture: [heater_branch_peak_current, time_to_fuse_open]
+    - step: Command HEAT mode to 80 C setpoint
+    - step: Observe for 10 minutes or until the fuse opens, whichever is first
+      capture: [chamber_temp_rise, fuse_opened, which_fuse_opened]
+    - step: De-energise, isolate, allow to cool, then inspect
+      capture: [smoke_or_fire, enclosure_damage, heater_element_continuity, wiring_insulation_condition]
+    - step: Replace the opened fuse, set the selector correctly, and run a
+        functional heat-up to confirm no collateral damage
+      capture: [post_test_functional_pass]
+  data_fields:
+    - {name: heater_branch_peak_current, unit: A, type: float, range: [0, 60]}
+    - {name: time_to_fuse_open, unit: s, type: float, range: [0, 600]}
+    - {name: chamber_temp_rise, unit: C, type: float, range: [0, 100]}
+    - {name: fuse_opened, type: bool}
+    - {name: which_fuse_opened, type: enum, values: [heater_branch_5A, inlet_15A, both, none]}
+    - {name: smoke_or_fire, type: bool}
+    - {name: enclosure_damage, type: bool}
+    - {name: heater_element_continuity, type: bool}
+    - {name: wiring_insulation_condition, type: enum, values: [intact, discoloured, damaged]}
+    - {name: post_test_functional_pass, type: bool}
+  pass_criteria: >
+    fuse_opened == true AND which_fuse_opened == 'heater_branch_5A'
+    AND chamber_temp_rise <= 5 AND smoke_or_fire == false
+    AND enclosure_damage == false AND wiring_insulation_condition == 'intact'
+    AND post_test_functional_pass == true
+  # NOTE: the selectivity term (branch fuse opens, inlet fuse does not) is the
+  # part most likely to fail and is the reason this test is worth running.
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: []
+  safety_critical: true
+
+- test_id: DVT-SAF-002
+  title: Mains input short circuit — inlet fuse interruption
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that a short circuit downstream of the inlet fuse is interrupted by
+    the 15 A time-lag inlet fuse without fire, arc propagation, damage to the
+    filtered inlet or the distribution terminals, or hazard to the operator.
+  applicability:
+    rule: SINGLE
+    unit: UUT-05
+  sample_rationale: >
+    Destructive test of a design feature common to all units. EN 62368-1
+    abnormal-operating-condition testing is performed on a single sample.
+  safety_plan:
+    - Fault applied remotely through a contactor and a defined shorting link;
+      no manual short is applied by hand
+    - Supply must be capable of the declared prospective short-circuit current;
+      record the actual source impedance
+    - Full PPE, remote observation, fire watch for 30 minutes after the event
+  equipment:
+    - name: AC source with known prospective short-circuit current
+      calibration_id: null
+    - name: Shorting link with a remotely actuated contactor
+    - name: High-bandwidth current probe + oscilloscope, single-shot
+      calibration_id: null
+    - name: Spare Schaffner FN9264-10-06 inlet, spare 0215015.MXP fuses
+  preconditions:
+    - Unit powered from 230 V nominal
+    - Fault point defined and recorded  # CONFIRM: fault applied at the distribution terminal block, downstream of the inlet fuse
+    - PE continuity verified before the test
+  procedure_steps:
+    - step: Measure and record supply prospective short-circuit current and PE resistance
+      capture: [prospective_scc, pe_resistance]
+    - step: Energise the unit and confirm normal standby
+    - step: Apply the short remotely; capture the current waveform
+      capture: [peak_fault_current, fuse_clearing_time]
+    - step: De-energise and inspect the inlet, filter, terminals, and harness
+      capture: [fuse_opened, arc_damage, terminal_damage, inlet_filter_functional]
+    - step: Verify PE continuity and insulation resistance after the event
+      capture: [pe_continuity_post, insulation_resistance_post]
+  data_fields:
+    - {name: prospective_scc, unit: A, type: float}
+    - {name: pe_resistance, unit: ohm, type: float}
+    - {name: peak_fault_current, unit: A, type: float}
+    - {name: fuse_clearing_time, unit: ms, type: float}
+    - {name: fuse_opened, type: bool}
+    - {name: arc_damage, type: bool}
+    - {name: terminal_damage, type: bool}
+    - {name: inlet_filter_functional, type: bool}
+    - {name: pe_continuity_post, unit: ohm, type: float}
+    - {name: insulation_resistance_post, unit: Mohm, type: float}
+  pass_criteria: >
+    fuse_opened == true AND arc_damage == false AND terminal_damage == false
+    AND pe_continuity_post <= 0.1 AND insulation_resistance_post >= 2
+  repetitions: 1
+  duration_est_min: 180
+  dependencies: []
+  safety_critical: true
+
+- test_id: DVT-SAF-003
+  title: Chamber circulation fan failure during heating — software heater cutoff
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that loss of the heater circulation fan is detected and the software
+    disables the heater within the required response time, issues a shutdown
+    command, and raises an operator alarm identifying the fan.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: Thermocouple logger on the heater element and heater duct
+      calibration_id: null
+    - name: Stopwatch or logged system timestamps
+  preconditions:
+    - Chamber in HEAT mode, setpoint 80 C, steady operation reached
+    - Fan failure injected by disconnecting the fan supply
+      # CONFIRM: detection means. If the fan has no tach feedback and no current
+      # sensing, disconnection is not observable in software and this test cannot pass.
+  procedure_steps:
+    - step: Bring the chamber to steady state at the setpoint
+    - step: Disconnect the circulation fan supply and start the timer
+    - step: Record the time from disconnection to heater SSR de-energisation
+      capture: [detection_time, heater_off_time]
+    - step: Record the alarm text and error code presented to the operator
+      capture: [alarm_raised, alarm_identifies_fan, error_code]
+    - step: Record the peak heater element temperature after the event
+      capture: [peak_heater_temp]
+    - step: Reconnect the fan and verify the alarm clears only after operator acknowledgement
+      capture: [recovery_requires_ack]
+  data_fields:
+    - {name: detection_time, unit: s, type: float}
+    - {name: heater_off_time, unit: s, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: alarm_identifies_fan, type: bool}
+    - {name: error_code, type: string}
+    - {name: peak_heater_temp, unit: C, type: float}
+    - {name: recovery_requires_ack, type: bool}
+  pass_criteria: >
+    heater_off_time <= 5 AND alarm_raised == true AND alarm_identifies_fan == true
+    AND recovery_requires_ack == true
+  # CONFIRM: 5 s limit. The LED overtemp path is specified at 2 s; the heater has
+  # more thermal mass but the element itself does not.
+  repetitions: 3
+  duration_est_min: 60
+  dependencies: []
+
+- test_id: DVT-SAF-004
+  title: Heater temperature sensor disconnected — open circuit
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that an open-circuit heater temperature sensor is detected, heating
+    is disabled, and the operator is instructed to reconnect the sensor.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: Access to the sensor connector without opening live compartments
+  preconditions:
+    - Chamber in HEAT mode at setpoint, steady state
+  procedure_steps:
+    - step: Disconnect the heater control sensor and start the timer
+    - step: Record the time to heater de-energisation
+      capture: [heater_off_time]
+    - step: Record the alarm text and error code
+      capture: [alarm_raised, alarm_text_instructs_reconnect, error_code]
+    - step: Attempt to command HEAT mode again while the sensor is disconnected
+      capture: [heat_start_inhibited]
+    - step: Reconnect and verify normal operation resumes only after acknowledgement
+      capture: [recovery_requires_ack]
+  data_fields:
+    - {name: heater_off_time, unit: s, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: alarm_text_instructs_reconnect, type: bool}
+    - {name: error_code, type: string}
+    - {name: heat_start_inhibited, type: bool}
+    - {name: recovery_requires_ack, type: bool}
+  pass_criteria: >
+    heater_off_time <= 2 AND alarm_raised == true
+    AND alarm_text_instructs_reconnect == true AND heat_start_inhibited == true
+  repetitions: 3
+  duration_est_min: 45
+  dependencies: []
+
+- test_id: DVT-SAF-005
+  title: Heater temperature sensor shorted — low-reading failure mode
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify detection of a shorted sensor. An open sensor is the benign failure;
+    a shorted NTC reads a false low temperature and drives the heater to full
+    output, so this is the failure mode that produces thermal runaway. Verify
+    that the plausibility check and the independent thermal cutout stop heating.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # ADDED: not in the original list. Recommended — an open-circuit-only test
+  # leaves the dangerous failure mode unverified.
+  equipment:
+    - name: Shorting link across the sensor terminals
+    - name: Independent reference thermocouple in the chamber
+      calibration_id: null
+  preconditions:
+    - Chamber in HEAT mode at setpoint, steady state
+    - Independent reference thermocouple logging chamber temperature
+  procedure_steps:
+    - step: Short the heater control sensor terminals and start the timer
+    - step: Record whether the software detects an implausible reading and the time to detection
+      capture: [detection_time, plausibility_detected]
+    - step: If software does not detect, record the temperature at which the
+        independent thermal cutout opens
+      capture: [cutout_trip_temp, max_chamber_temp]
+    - step: Record the alarm and error code
+      capture: [alarm_raised, error_code]
+  data_fields:
+    - {name: detection_time, unit: s, type: float}
+    - {name: plausibility_detected, type: bool}
+    - {name: cutout_trip_temp, unit: C, type: float}
+    - {name: max_chamber_temp, unit: C, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: error_code, type: string}
+  pass_criteria: >
+    max_chamber_temp <= 95 AND alarm_raised == true
+  # CONFIRM: 95 C ceiling — set from the material and enclosure limits, not the setpoint.
+  repetitions: 3
+  duration_est_min: 90
+  dependencies: [DVT-SAF-004]
+
+- test_id: DVT-SAF-006
+  title: LED thermistor detached from the MCPCB
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that a thermistor that is electrically connected but no longer
+    thermally coupled to the LED MCPCB is detected and an alarm is raised
+    identifying the affected sensor.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: Reference thermocouple bonded to the MCPCB 2 mm behind the LED
+      calibration_id: null
+  preconditions:
+    - One LED panel thermistor mechanically detached from the MCPCB but left
+      connected, hanging in free air inside the chamber
+    - Reference thermocouple installed on the same panel
+  # CONFIRM: a simple range check cannot detect this — the sensor reads a valid
+  # ambient value. Detection requires a plausibility rule, e.g. LED drive above
+  # a threshold for N seconds with no corresponding rate of rise, or a
+  # cross-check against the other panel sensors. If that logic does not exist,
+  # this test is a requirement on the software, not something to verify yet.
+  procedure_steps:
+    - step: Start CURE mode at the normal working point (405 nm, 0.75 A)
+    - step: Log both the detached thermistor and the reference thermocouple
+      capture: [thermistor_reading_at_5min, reference_reading_at_5min]
+    - step: Record whether an alarm is raised and how long it took
+      capture: [alarm_raised, detection_time, alarm_identifies_sensor, error_code]
+    - step: Verify that LED drive is inhibited or reduced on detection
+      capture: [led_drive_inhibited]
+  data_fields:
+    - {name: thermistor_reading_at_5min, unit: C, type: float}
+    - {name: reference_reading_at_5min, unit: C, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: detection_time, unit: s, type: float}
+    - {name: alarm_identifies_sensor, type: bool}
+    - {name: error_code, type: string}
+    - {name: led_drive_inhibited, type: bool}
+  pass_criteria: >
+    alarm_raised == true AND alarm_identifies_sensor == true
+    AND led_drive_inhibited == true AND detection_time <= 120
+  repetitions: 1
+  duration_est_min: 60
+  dependencies: []
+
+- test_id: DVT-SAF-007
+  title: LED thermistor disconnected — open circuit
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that an open-circuit LED thermistor is detected, LED drive is
+    inhibited, and the alarm identifies which sensor is missing.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  preconditions:
+    - Unit ready for CURE mode
+  procedure_steps:
+    - step: Disconnect one LED thermistor (repeat separately for R, L, Back, Door)
+      capture: [sensor_position]
+    - step: Attempt to start CURE mode
+      capture: [cure_start_inhibited]
+    - step: Disconnect during an active cure and record the time to LED shutdown
+      capture: [led_off_time]
+    - step: Record the alarm text and error code
+      capture: [alarm_raised, alarm_identifies_sensor, error_code]
+  data_fields:
+    - {name: sensor_position, type: enum, values: [right, left, back, door]}
+    - {name: cure_start_inhibited, type: bool}
+    - {name: led_off_time, unit: s, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: alarm_identifies_sensor, type: bool}
+    - {name: error_code, type: string}
+  pass_criteria: >
+    cure_start_inhibited == true AND led_off_time <= 2
+    AND alarm_raised == true AND alarm_identifies_sensor == true
+  repetitions: 4    # once per sensor position
+  duration_est_min: 60
+  dependencies: []
+
+- test_id: DVT-SAF-008
+  title: LED cooling fan failure — job start inhibit and fan identification
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that a non-functioning LED cooling fan prevents a job from starting,
+    stops an active job, and produces an error naming the specific fan.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  preconditions:
+    - Unit ready for CURE mode, all fans functional at start
+    # CONFIRM: detection means per fan — tach, current sense, or PWM feedback.
+    # Also confirm whether "not working" includes a stalled fan (blocked rotor)
+    # as well as a disconnected one; these are electrically different.
+  procedure_steps:
+    - step: Disable one LED cooling fan (repeat separately for each fan position)
+      capture: [fan_position, failure_mode]
+    - step: Attempt to start a cure job
+      capture: [job_start_inhibited]
+    - step: Record the error message and confirm it names the correct fan
+      capture: [alarm_raised, alarm_identifies_correct_fan, error_code]
+    - step: Restore the fan and repeat with the failure injected mid-job
+      capture: [led_off_time_midjob]
+    - step: Confirm that the LED temperature did not exceed the shutdown threshold
+      capture: [max_led_temp]
+  data_fields:
+    - {name: fan_position, type: enum, values: [right, left, back, door]}
+    - {name: failure_mode, type: enum, values: [disconnected, blocked_rotor]}
+    - {name: job_start_inhibited, type: bool}
+    - {name: alarm_raised, type: bool}
+    - {name: alarm_identifies_correct_fan, type: bool}
+    - {name: error_code, type: string}
+    - {name: led_off_time_midjob, unit: s, type: float}
+    - {name: max_led_temp, unit: C, type: float}
+  pass_criteria: >
+    job_start_inhibited == true AND alarm_raised == true
+    AND alarm_identifies_correct_fan == true AND led_off_time_midjob <= 2
+    AND max_led_temp <= 50
+  repetitions: 8    # 4 positions x 2 failure modes
+  duration_est_min: 180
+  dependencies: [DVT-SAF-007]
+
+- test_id: DVT-SAF-009
+  title: Chamber cooling fan failure — job start inhibit and fan identification
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that a non-functioning chamber cooling / intake fan prevents job
+    start, stops an active job, and produces an error naming the fan.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  preconditions:
+    - Unit ready for a cure or cooling cycle
+  procedure_steps:
+    - step: Disable the chamber cooling fan (disconnected, then blocked rotor)
+      capture: [failure_mode]
+    - step: Attempt to start a job
+      capture: [job_start_inhibited]
+    - step: Record the error message and confirm it names the correct fan
+      capture: [alarm_raised, alarm_identifies_correct_fan, error_code]
+    - step: Inject the failure during an active cooling cycle
+      capture: [response_time, max_chamber_temp]
+  data_fields:
+    - {name: failure_mode, type: enum, values: [disconnected, blocked_rotor]}
+    - {name: job_start_inhibited, type: bool}
+    - {name: alarm_raised, type: bool}
+    - {name: alarm_identifies_correct_fan, type: bool}
+    - {name: error_code, type: string}
+    - {name: response_time, unit: s, type: float}
+    - {name: max_chamber_temp, unit: C, type: float}
+  pass_criteria: >
+    job_start_inhibited == true AND alarm_raised == true
+    AND alarm_identifies_correct_fan == true AND response_time <= 5
+  repetitions: 2
+  duration_est_min: 90
+  dependencies: []
+
+- test_id: DVT-SAF-010
+  title: Fault alarm presentation — coverage and clarity review
+  subsystem: Safety
+  requirement_ids: []
+  method: Inspection
+  purpose: >
+    Verify that every fault condition exercised in DVT-SAF-003 through -009
+    produces a unique error code, a message that names the affected component,
+    and an operator instruction for recovery, consistently across the UI and
+    the log.
+  applicability:
+    rule: SINGLE
+    unit: UUT-01
+  sample_rationale: >
+    Alarm text and error codes are software properties identical across units.
+    A single review against the centralised error registry is sufficient.
+  procedure_steps:
+    - step: Collect the error codes and messages recorded in SAF-003 to SAF-009
+    - step: Cross-check each against the centralised error registry
+      capture: [codes_unique, codes_registered]
+    - step: Verify each message names the component and states the recovery action
+      capture: [messages_name_component, messages_state_recovery]
+    - step: Verify each event appears in the persistent log with a timestamp
+      capture: [all_logged]
+  data_fields:
+    - {name: codes_unique, type: bool}
+    - {name: codes_registered, type: bool}
+    - {name: messages_name_component, type: bool}
+    - {name: messages_state_recovery, type: bool}
+    - {name: all_logged, type: bool}
+  pass_criteria: >
+    codes_unique AND codes_registered AND messages_name_component
+    AND messages_state_recovery AND all_logged
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: [DVT-SAF-003, DVT-SAF-004, DVT-SAF-006, DVT-SAF-007, DVT-SAF-008, DVT-SAF-009]
+
+- test_id: DVT-SAF-011
+  title: Voltage selector mismatch — 220 V selector on 110 V mains (under-power)
+  subsystem: Safety
+  requirement_ids: []       # CONFIRM: link to the mains-configuration requirement and to REQ-48
+  method: Test
+  purpose: >
+    Verify the benign direction of the selector mismatch. With the selector on
+    220 V and 110 V applied, the heater sees half voltage and roughly a quarter
+    of rated power. No protective device operates and nothing is damaged — the
+    failure is silent under-performance. Verify that the system detects it and
+    alarms rather than heating indefinitely, and record the resulting heat-up
+    behaviour on all five units.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # This is non-destructive, unlike DVT-SAF-001. Run on every unit — it doubles
+  # as the unit-to-unit comparison of heat-up behaviour under the fault.
+  # CONFIRM: detection means. If there is no mains voltage sensing and the
+  # selector position is not readable in software, the mismatch cannot be
+  # detected directly. The only available detection is a heating-rate watchdog:
+  # setpoint not reached within a timeout, or dT/dt below a floor for N minutes.
+  # If that watchdog does not exist, this test is a software requirement first.
+  equipment:
+    - name: Programmable AC source or variac set to 110 V
+      calibration_id: null
+    - name: True-RMS meter at the inlet
+      calibration_id: null
+    - name: Clamp meter on the heater branch
+      calibration_id: null
+    - name: Reference thermocouple in the chamber
+      calibration_id: null
+  preconditions:
+    - Unit at ambient, chamber empty, door closed
+    - Voltage selector set to 220 V, verified visually and photographed
+    - Mains source set to 110 V nominal, measured and recorded
+    - Inlet and heater branch fuses verified intact before the run
+  procedure_steps:
+    - step: Record the selector position and the measured inlet voltage
+      capture: [selector_position, applied_voltage]
+    - step: Energise and confirm the unit powers up normally
+      capture: [unit_powers_up]
+    - step: Command HEAT to the setpoint and start the timer
+      capture: [setpoint]
+    - step: Record the heater branch current and compute delivered power
+      capture: [heater_branch_current, delivered_power]
+    - step: Log chamber temperature for 60 minutes or until the setpoint is
+        reached, whichever is first
+      capture: [setpoint_reached, heat_up_time, max_temp_reached, plateau_temp, time_to_plateau]
+    - step: Record whether an alarm is raised, when, and what it says
+      capture: [alarm_raised, time_to_alarm, alarm_identifies_cause, error_code]
+    - step: Confirm no protective device operated and no damage occurred
+      capture: [fuse_opened, thermal_cutout_tripped, visible_damage]
+    - step: Restore the correct configuration and verify normal heat-up
+      capture: [post_test_functional_pass]
+  data_fields:
+    - {name: selector_position, type: string}
+    - {name: applied_voltage, unit: V, type: float}
+    - {name: unit_powers_up, type: bool}
+    - {name: setpoint, unit: C, type: float}
+    - {name: heater_branch_current, unit: A, type: float}
+    - {name: delivered_power, unit: W, type: float}
+    - {name: setpoint_reached, type: bool}
+    - {name: heat_up_time, unit: min, type: float, note: null if the setpoint is never reached}
+    - {name: max_temp_reached, unit: C, type: float}
+    - {name: plateau_temp, unit: C, type: float, note: where heater output equals chamber losses}
+    - {name: time_to_plateau, unit: min, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: time_to_alarm, unit: min, type: float}
+    - {name: alarm_identifies_cause, type: bool}
+    - {name: error_code, type: string}
+    - {name: fuse_opened, type: bool}
+    - {name: thermal_cutout_tripped, type: bool}
+    - {name: visible_damage, type: bool}
+    - {name: post_test_functional_pass, type: bool}
+  pass_criteria: >
+    alarm_raised == true AND time_to_alarm <= 30 AND alarm_identifies_cause == true
+    AND fuse_opened == false AND visible_damage == false
+    AND post_test_functional_pass == true
+  # CONFIRM: the 30 minute alarm timeout. Note that a correctly configured unit
+  # takes 27-33 min to reach 80 C at the 500 W setting, so any timeout watchdog
+  # set below roughly 40 min would false-trigger in normal operation. The
+  # watchdog is better based on heating rate than on elapsed time.
+  # NOTE: heat_up_time is expected to be null on most or all units — at a
+  # quarter of rated power the chamber will plateau below the setpoint rather
+  # than reach it. plateau_temp is the comparable figure across the 5 units;
+  # spread in plateau_temp is a direct measure of unit-to-unit insulation and
+  # sealing variation.
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: []
+
+# =============================================================
+# THERMAL — chamber temperature uniformity vs mains voltage
+# =============================================================
+
+- test_id: DVT-THM-001
+  title: Chamber thermal characterisation — step response, uniformity and heat-up time
+  subsystem: Thermal
+  requirement_ids: [48]     # heat-up time; CONFIRM the uniformity requirement ID
+  method: Test
+  purpose: >
+    One instrumented heat-up run yields the whole thermal picture at a given
+    setpoint and mains voltage: heat-up time, overshoot, settling time,
+    steady-state error, limit cycle, and spatial uniformity across the chamber.
+    Splitting these into separate tests would mean running the same 2.5 hour
+    heat-up several times to extract different numbers from identical data.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  sweep:
+    parameters: [setpoint, mains_voltage]
+    matrix:
+      # Full setpoint sweep at nominal mains — this is the control-quality and
+      # uniformity curve across the operating range.
+      - {setpoint: 30, mains_voltage: 230}
+      - {setpoint: 40, mains_voltage: 230}
+      - {setpoint: 50, mains_voltage: 230}
+      - {setpoint: 60, mains_voltage: 230}
+      - {setpoint: 70, mains_voltage: 230}
+      - {setpoint: 80, mains_voltage: 230}
+      # Range extremes at the line extremes. Heater power scales with the
+      # square of mains voltage, so the effective loop gain changes and tuning
+      # stable at 230 V may not be at 110 V. The 80 V/80 C corners are also the
+      # REQ-48 heat-up measurements.
+      - {setpoint: 30, mains_voltage: 110}
+      - {setpoint: 80, mains_voltage: 110}
+      - {setpoint: 30, mains_voltage: 240}
+      - {setpoint: 80, mains_voltage: 240}
+    unit: {setpoint: C, mains_voltage: V}
+  # The reduced matrix is deliberate. A full 6 x 3 cross is 18 runs per unit,
+  # 90 across the campaign, for information that is largely redundant: at
+  # steady state the controller modulates heater duty, so uniformity is set by
+  # geometry and airflow and is only weakly a function of mains voltage. What
+  # genuinely changes with voltage is heat-up time and loop gain, and both are
+  # bounded by the extremes. If the extreme runs show uniformity differing
+  # materially from the 230 V curve, fill in the middle then — not before.
+  # CONFIRM: low line is still absent. 99 V and 207 V are where heat-up time is
+  # worst and where REQ-48 is most at risk.
+  equipment:
+    - name: PicoLog TC-08 x2 (16 thermocouple channels)
+      calibration_id: null
+    - name: 16x type-K thermocouples, matched batch, on a fixed 3D grid
+      calibration_id: null
+    - name: Reference thermocouple adjacent to the control sensor
+      calibration_id: null
+    - name: Programmable AC source or variac, 110 / 230 / 240 V
+      calibration_id: null
+    - name: Ambient temperature and humidity logger
+      calibration_id: null
+  preconditions:
+    - Chamber empty, door closed
+    - Grid positions recorded and photographed, identical for every run and
+      every unit
+    - Unit returned to ambient and thermally settled before each run — a run
+      started from a warm chamber is not comparable and must be rejected
+    - Voltage selector matched to the applied mains voltage, verified and
+      recorded
+    - Ambient controlled at 25 +/- 1 C, logged continuously. Tightened from
+      the original 20-25 C band because DVT-THM-003 is co-executed on the
+      descent of the 80 C rows and cooling rate is driven by the difference to
+      ambient
+  procedure_steps:
+    - step: Record the applied mains voltage at the inlet, the selector
+        position, the ambient and the starting chamber temperature
+      capture: [mains_voltage, selector_position, ambient_temp, start_temp]
+    - step: Start logging all 16 grid channels, the reference thermocouple and
+        the control sensor at 1 Hz
+    - step: Command a step from ambient directly to the setpoint, no ramp, and
+        start the timer
+      capture: [setpoint]
+    - step: Record the time for the control sensor to first reach the setpoint
+      capture: [heat_up_time]
+    - step: From the reference thermocouple, extract the peak temperature and
+        the time at which it occurred
+      capture: [peak_temp, overshoot, time_to_peak]
+    - step: Extract the settling time and the steady-state error
+      capture: [settling_time, steady_state_error, undershoot]
+    - step: Continue logging 30 minutes past steady state. Over the final 20
+        minutes extract the control sensor oscillation and its period
+      capture: [limit_cycle_amplitude, limit_cycle_period]
+    - step: At steady state, extract the spatial spread across all 16 grid
+        channels and identify the hottest and coldest positions
+      capture: [uniformity_pp, uniformity_sd, hottest_position, coldest_position]
+    - step: Record the same overshoot figure computed from the raw control
+        sensor before compensation, for comparison
+      capture: [overshoot_uncompensated]
+    - step: Do not stop logging at the end of the soak. The chamber has to
+        return to ambient before the next row can start, so continue logging
+        through the descent. On the 80 C rows this descent IS the DVT-THM-003
+        run and is executed under its procedure. On the other rows it is
+        recorded as supplementary data, giving a cooling-rate-versus-delta-T
+        curve at no additional bench time
+      capture: [descent_logged, descent_linked_run_id]
+    - step: Attach the raw log
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: setpoint, unit: C, type: float}
+    - {name: mains_voltage, unit: V, type: float}
+    - {name: descent_logged, type: bool}
+    - {name: descent_linked_run_id, type: string}
+    - {name: selector_position, type: string}
+    - {name: ambient_temp, unit: C, type: float}
+    - {name: start_temp, unit: C, type: float}
+    - {name: heat_up_time, unit: min, type: float, note: REQ-48 measurement at the 80 C rows}
+    - {name: peak_temp, unit: C, type: float}
+    - {name: overshoot, unit: C, type: float, note: peak_temp minus setpoint, from the reference thermocouple}
+    - {name: time_to_peak, unit: min, type: float}
+    - {name: settling_time, unit: min, type: float}
+    - {name: steady_state_error, unit: C, type: float}
+    - {name: undershoot, unit: C, type: float}
+    - {name: limit_cycle_amplitude, unit: C, type: float}
+    - {name: limit_cycle_period, unit: min, type: float}
+    - {name: uniformity_pp, unit: C, type: float, note: peak-to-peak across 16 channels at steady state}
+    - {name: uniformity_sd, unit: C, type: float}
+    - {name: hottest_position, type: string}
+    - {name: coldest_position, type: string}
+    - {name: overshoot_uncompensated, unit: C, type: float}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    uniformity_pp <= 5 AND overshoot <= 3 AND abs(steady_state_error) <= 1
+    AND limit_cycle_amplitude <= 1 AND settling_time <= 45
+  # A verdict is produced per matrix row and rolled up per SRS-DVT-096. The
+  # test passes only if every row passes, but a failure is attributed to the
+  # specific setpoint and voltage rather than to the test as a whole — which is
+  # the reason merging costs nothing diagnostically.
+  #
+  # CONFIRM every limit above. Notes:
+  # - uniformity: EVT gave 3 C peak-to-peak at a 70 C setpoint with 15
+  #   thermocouples. 5 C is proposed here for 16.
+  # - overshoot: for a resin curing process the consequence is material
+  #   property drift, so the limit should come from the process window rather
+  #   than from control-theory habit.
+  # - 30 C and 40 C are the hard rows, not the easy ones. The chamber can only
+  #   add heat; it cannot actively cool in HEAT mode. Once it overshoots at
+  #   30 C the only recovery is passive loss to a 20-25 C room, so expect the
+  #   worst overshoot and the slowest settling at the bottom of the range.
+  # - define the minimum controllable setpoint as ambient + N degrees and state
+  #   N. A setpoint near ambient on a warm day is not controllable at all.
+  # - overshoot is evaluated on the reference thermocouple, not the control
+  #   sensor. The compensation Tactual = 1.0979*Tsensor - 3.980 puts roughly
+  #   4 C between the two at the low end, the same order as the overshoot
+  #   being measured.
+  # - REQ-48 is 20 min to 80 C. EVT measured 32.6 min at 110 V and 27.0 min at
+  #   233 V with the 500 W heater, so the 80 C rows are expected to fail as the
+  #   requirement currently stands. Resolve the requirement before running them.
+  repetitions: 1      # per matrix row (10 rows)
+  duration_est_min: 150
+  dependencies: []
+
+# =============================================================
+# ENVIRONMENTAL — transport
+# =============================================================
+
+- test_id: DVT-ENV-001
+  title: Road transport test — full unit, packaged
+  subsystem: Environmental
+  requirement_ids: [29]     # mass / packaging; CONFIRM additional requirement links
+  method: Test
+  purpose: >
+    Verify that a packaged unit survives road transport with no glass breakage,
+    no mechanical or functional damage, and passes the full functional
+    acceptance test on arrival.
+  applicability:
+    rule: SINGLE
+    unit: null              # CONFIRM: which unit is shipped
+  sample_rationale: >
+    Transport survivability is a property of the packaging design and the unit
+    structure, both identical across units. A single shipped unit is the
+    standard sample for a transport simulation.
+  equipment:
+    - name: 3-axis shock and vibration data logger inside the crate
+      calibration_id: null
+    - name: Impact indicators (e.g. ShockWatch) and tilt indicators on the crate exterior
+    - name: Temperature and humidity logger inside the crate
+  preconditions:
+    - Unit packed per the Packaging Requirements Specification
+    - Full functional acceptance test performed and recorded before shipment
+    - All optical surfaces and glass photographed before packing
+    - Crate weight and dimensions recorded
+  procedure_steps:
+    - step: Perform and record the pre-shipment functional acceptance test
+      capture: [pre_ship_functional_pass]
+    - step: Install the data logger and indicators; record their positions
+    - step: Ship by truck over the defined route
+      capture: [route, distance_km, transit_days]
+    - step: On arrival, photograph the crate exterior and read all indicators
+        before opening
+      capture: [impact_indicator_triggered, tilt_indicator_triggered, crate_damage]
+    - step: Unpack and inspect — glass, LED panels, optical surfaces, fasteners,
+        connectors, harness routing, door and interlock alignment
+      capture: [glass_broken, glass_cracked_or_chipped, loose_fasteners, connector_dislodged, visible_damage]
+    - step: Download the shock logger and record the peak accelerations per axis
+      capture: [peak_g_x, peak_g_y, peak_g_z]
+    - step: Repeat the full functional acceptance test and compare against the
+        pre-shipment baseline
+      capture: [post_ship_functional_pass, deviations_from_baseline]
+  data_fields:
+    - {name: pre_ship_functional_pass, type: bool}
+    - {name: route, type: string}
+    - {name: distance_km, unit: km, type: float}
+    - {name: transit_days, unit: days, type: float}
+    - {name: impact_indicator_triggered, type: bool}
+    - {name: tilt_indicator_triggered, type: bool}
+    - {name: crate_damage, type: bool}
+    - {name: glass_broken, type: bool}
+    - {name: glass_cracked_or_chipped, type: bool}
+    - {name: loose_fasteners, type: int}
+    - {name: connector_dislodged, type: int}
+    - {name: visible_damage, type: string}
+    - {name: peak_g_x, unit: g, type: float}
+    - {name: peak_g_y, unit: g, type: float}
+    - {name: peak_g_z, unit: g, type: float}
+    - {name: post_ship_functional_pass, type: bool}
+    - {name: deviations_from_baseline, type: string}
+  pass_criteria: >
+    glass_broken == false AND glass_cracked_or_chipped == false
+    AND loose_fasteners == 0 AND connector_dislodged == 0
+    AND post_ship_functional_pass == true
+  # CONFIRM: destination and route. A single real shipment is one sample of an
+  # uncontrolled input — the shock levels are whatever the trip happened to
+  # deliver. If the packaging needs to be defensible, pair this with a lab
+  # transport simulation to ISTA 3E or ASTM D4169, which applies defined and
+  # repeatable drop, vibration and compression levels.
+  repetitions: 1
+  duration_est_min: null    # governed by transit time
+  dependencies: []
+
+# =============================================================
+# ELECTRICAL SAFETY — Phase 1
+# Performed on an intact, correctly configured unit BEFORE any fault
+# injection or extended powered operation. Limits come from IEC/EN 62368-1;
+# NASA practice supplies the verification framework, not the electrical limits.
+# =============================================================
+
+- test_id: DVT-ELE-001
+  title: Protective earth bonding continuity
+  subsystem: Electrical
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that every accessible conductive part is bonded to the protective
+    earth terminal with a resistance low enough to carry fault current until
+    the protective device operates.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # Run on all units: bonding depends on assembly workmanship (paint under
+  # star washers, missing bonding straps), which is exactly a unit-to-unit
+  # variable. This is the single most common finding in a first bonding check.
+  equipment:
+    - name: Bonding/ground continuity tester, capable of the required test current
+      calibration_id: null
+    - name: 4-wire Kelvin probes
+  preconditions:
+    - Unit de-energised and disconnected from mains
+    - List of accessible conductive parts prepared from the mechanical BOM
+      (covers, panels, door frame, handles, inlet body, chamber shell, brackets)
+  procedure_steps:
+    - step: Record the test current used and the rating of the upstream protective device
+      capture: [test_current, protective_device_rating]
+    - step: Measure from the PE pin of the appliance inlet to each listed
+        accessible conductive part in turn, 1 minute per point
+      capture: [part_name, measured_resistance]
+    - step: Record the highest measured resistance and where it occurred
+      capture: [max_resistance, worst_point]
+    - step: Verify the PE conductor is not interrupted by any switch or fuse
+      capture: [pe_uninterrupted]
+  data_fields:
+    - {name: test_current, unit: A, type: float}
+    - {name: protective_device_rating, unit: A, type: float}
+    - {name: part_name, type: string}
+    - {name: measured_resistance, unit: ohm, type: float}
+    - {name: max_resistance, unit: ohm, type: float}
+    - {name: worst_point, type: string}
+    - {name: pe_uninterrupted, type: bool}
+  pass_criteria: "max_resistance <= 0.1 AND pe_uninterrupted == true"
+  # CONFIRM against the applicable edition of IEC 62368-1: the test current is
+  # normally 200% of the rated current of the upstream protective device
+  # applied for 1 minute, with a limit of 0.1 ohm. Verify the clause and the
+  # current with the compliance lab before baseline.
+  repetitions: 1
+  duration_est_min: 90
+  dependencies: []
+
+- test_id: DVT-ELE-002
+  title: Insulation resistance
+  subsystem: Electrical
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Establish the insulation resistance baseline before the dielectric strength
+    test, and repeat it after transport and after the endurance soak to detect
+    degradation.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # This is an engineering and routine test, not itself a 62368-1 requirement.
+  # Its value is as a repeatable before/after number.
+  equipment:
+    - name: Insulation resistance tester, 500 Vdc
+      calibration_id: null
+  preconditions:
+    - Unit de-energised, mains disconnected, mains switch closed
+    - EMC filter Y-capacitors and any electronics not rated for the test
+      voltage identified and isolated per the manufacturer instructions
+  procedure_steps:
+    - step: Short L and N together at the inlet
+    - step: Apply 500 Vdc between the shorted L+N and PE for 60 s
+      capture: [insulation_resistance_lnpe]
+    - step: Record ambient temperature and relative humidity
+      capture: [ambient_temp, ambient_rh]
+  data_fields:
+    - {name: insulation_resistance_lnpe, unit: Mohm, type: float}
+    - {name: ambient_temp, unit: C, type: float}
+    - {name: ambient_rh, unit: '%', type: float}
+  pass_criteria: "insulation_resistance_lnpe >= 10"
+  # CONFIRM the 10 Mohm engineering limit.
+  repetitions: 1
+  duration_est_min: 30
+  dependencies: [DVT-ELE-001]
+
+- test_id: DVT-ELE-003
+  title: Dielectric strength (hipot)
+  subsystem: Electrical
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that the insulation between the mains circuit and accessible parts
+    withstands the required test voltage without breakdown.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  safety_plan:
+    - High voltage test — barriered area, single operator, interlocked test
+      station, no one in contact with the unit while the voltage is applied
+    - Discharge and ground the unit before touching it after each application
+  equipment:
+    - name: Hipot tester, AC and DC capable, with programmable trip current
+      calibration_id: null
+  preconditions:
+    - PE bonding (DVT-ELE-001) passed
+    - Insulation coordination analysis available, defining working voltage,
+      insulation class (basic / supplementary / reinforced) and clearance
+      and creepage at each barrier
+    - Y-capacitors, surge protection and any voltage-limiting components
+      identified; either disconnected or the DC variant of the test used
+    - Unit at ambient, dry, not previously humidity conditioned
+      # CONFIRM: whether humidity preconditioning per the standard is required
+      # for the DVT sample or only for the certification sample at the lab.
+  procedure_steps:
+    - step: Record the test voltage, waveform (AC or DC), ramp rate, dwell time
+        and trip current setting, and the clause they derive from
+      capture: [test_voltage, waveform, dwell_time, trip_current_setting, clause_reference]
+    - step: Apply between the shorted mains conductors and PE / accessible parts
+      capture: [breakdown, leakage_current_at_voltage]
+    - step: Apply across each additional insulation barrier identified in the
+        analysis (mains to SELV, mains to LED driver output)
+      capture: [barrier_name, barrier_breakdown]
+    - step: Repeat DVT-ELE-002 afterwards and compare
+      capture: [post_hipot_insulation_resistance]
+  data_fields:
+    - {name: test_voltage, unit: V, type: float}
+    - {name: waveform, type: enum, values: [ac, dc]}
+    - {name: dwell_time, unit: s, type: float}
+    - {name: trip_current_setting, unit: mA, type: float}
+    - {name: clause_reference, type: string}
+    - {name: breakdown, type: bool}
+    - {name: leakage_current_at_voltage, unit: mA, type: float}
+    - {name: barrier_name, type: string}
+    - {name: barrier_breakdown, type: bool}
+    - {name: post_hipot_insulation_resistance, unit: Mohm, type: float}
+  pass_criteria: >
+    breakdown == false AND barrier_breakdown == false
+    AND post_hipot_insulation_resistance >= 10
+  # CONFIRM the test voltage. It is not a single fixed number — IEC 62368-1
+  # derives it from the peak working voltage and the insulation class at each
+  # barrier. Mains to accessible parts across reinforced insulation is
+  # typically in the region of 1.5 kV AC, but the value must come from the
+  # insulation coordination analysis and be agreed with the compliance lab.
+  # Note also that hipot is an insulation-stressing test — do not repeat it
+  # more than necessary on the same sample.
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: [DVT-ELE-001, DVT-ELE-002]
+  safety_critical: true
+
+- test_id: DVT-ELE-004
+  title: Touch current
+  subsystem: Electrical
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that the current flowing through a person contacting accessible
+    parts remains within limits, in normal condition and with the protective
+    earth conductor open.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # Leakage is dominated by the EMC filter Y-capacitors and by the four LED
+  # driver input filters. Component tolerance stacks across units, so this is a
+  # per-unit measurement, not a design-level one.
+  equipment:
+    - name: Touch current meter with the IEC 60990 measuring network
+      calibration_id: null
+    - name: Variable AC source able to reach 110% of rated voltage
+      calibration_id: null
+  preconditions:
+    - Unit fully assembled, all covers fitted
+    - Test at 110% of the highest rated mains voltage
+  procedure_steps:
+    - step: Measure in normal condition, both mains polarities
+      capture: [touch_current_normal_max]
+    - step: Measure with the PE conductor open (single fault condition)
+      capture: [touch_current_pe_open]
+    - step: Measure with the machine idle and again at full load (heater and
+        all four LED drivers active), recording the worst case
+      capture: [load_condition, touch_current_worst]
+  data_fields:
+    - {name: touch_current_normal_max, unit: mA, type: float}
+    - {name: touch_current_pe_open, unit: mA, type: float}
+    - {name: load_condition, type: enum, values: [idle, heater, cure, heater_and_cure]}
+    - {name: touch_current_worst, unit: mA, type: float}
+  pass_criteria: "touch_current_worst <= 3.5"
+  # CONFIRM: 3.5 mA is the usual limit for pluggable class I equipment under
+  # IEC 62368-1. If the four LED driver input filters push the unit over the
+  # limit, the options are lower-value Y-capacitors or reclassification to
+  # permanently connected / industrial-plug equipment, which has a higher
+  # limit but changes the installation requirements. Worth measuring early.
+  repetitions: 1
+  duration_est_min: 90
+  dependencies: [DVT-ELE-001]
+
+- test_id: DVT-ELE-005
+  title: Rated input current, input power and inrush current
+  subsystem: Electrical
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that measured input current and power agree with the rating label,
+    and that inrush current does not open the 15 A time-lag inlet fuse or trip
+    a typical installation circuit breaker.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: Power analyser with inrush capture
+      calibration_id: null
+    - name: Programmable AC source, 110 / 230 / 240 V
+      calibration_id: null
+  preconditions:
+    - Voltage selector matched to the applied voltage for every run
+    - Unit at ambient at the start of each inrush measurement
+  procedure_steps:
+    - step: Measure steady-state input current, real power and power factor in
+        the worst-case operating mode (heater at full output plus all four LED
+        drivers at the working point), at each mains voltage
+      capture: [mains_voltage, input_current_rms, input_power, power_factor]
+    - step: Capture peak inrush current and its duration at switch-on, from cold,
+        at each mains voltage, worst-case switch-on phase angle
+      capture: [inrush_peak, inrush_duration, i2t]
+    - step: Compare against the inlet fuse I2t rating and against a type B and
+        type C 16 A breaker characteristic
+      capture: [fuse_margin_ok, breaker_type_b_ok, breaker_type_c_ok]
+    - step: Compare measured values against the rating label
+      capture: [label_agreement]
+  data_fields:
+    - {name: mains_voltage, unit: V, type: float}
+    - {name: input_current_rms, unit: A, type: float}
+    - {name: input_power, unit: W, type: float}
+    - {name: power_factor, type: float}
+    - {name: inrush_peak, unit: A, type: float}
+    - {name: inrush_duration, unit: ms, type: float}
+    - {name: i2t, unit: A2s, type: float}
+    - {name: fuse_margin_ok, type: bool}
+    - {name: breaker_type_b_ok, type: bool}
+    - {name: breaker_type_c_ok, type: bool}
+    - {name: label_agreement, type: bool}
+  pass_criteria: >
+    fuse_margin_ok == true AND breaker_type_c_ok == true AND label_agreement == true
+  # NOTE: four LED drivers plus a 120 W PSU switching on together is a
+  # meaningful inrush source. The prior finding that measured LED driver AC
+  # currents differ from the datasheet makes this measurement, rather than the
+  # calculated power budget, the number to trust.
+  repetitions: 3
+  duration_est_min: 150
+  dependencies: [DVT-ELE-001]
+
+# =============================================================
+# PROTECTIVE FUNCTIONS — Phase 2 additions
+# =============================================================
+
+- test_id: DVT-SAF-012
+  title: Door interlock — UV inhibited with the door open
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that UV cannot be energised with the door open, that opening the
+    door during a cure removes UV within the required time, and that the
+    interlock cannot be defeated by ordinary means.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  preconditions:
+    - Unit ready for CURE mode
+    - UV radiometer positioned at the door opening
+  procedure_steps:
+    - step: With the door open, attempt to start a cure
+      capture: [cure_start_inhibited]
+    - step: Start a cure with the door closed, then open the door and measure
+        the time to UV removal and the residual irradiance at the opening
+      capture: [uv_off_time, residual_irradiance]
+    - step: Verify the magnetic lock engages during cure and that the door
+        cannot be opened while UV is on without first breaking the interlock
+      capture: [lock_engaged]
+    - step: Attempt defeat with a hand-held magnet applied to the door sensor
+      capture: [defeat_by_magnet_possible]
+    - step: Verify DOOR_STATUS on GPIO27 reflects the true door state and
+        cannot be driven by software
+      capture: [door_status_read_only_confirmed]
+    - step: Verify the alarm and error code raised
+      capture: [alarm_raised, error_code]
+  data_fields:
+    - {name: cure_start_inhibited, type: bool}
+    - {name: uv_off_time, unit: s, type: float}
+    - {name: residual_irradiance, unit: mW/cm2, type: float}
+    - {name: lock_engaged, type: bool}
+    - {name: defeat_by_magnet_possible, type: bool}
+    - {name: door_status_read_only_confirmed, type: bool}
+    - {name: alarm_raised, type: bool}
+    - {name: error_code, type: string}
+  pass_criteria: >
+    cure_start_inhibited == true AND uv_off_time <= 1 AND lock_engaged == true
+    AND defeat_by_magnet_possible == false
+    AND door_status_read_only_confirmed == true AND alarm_raised == true
+  # NOTE: the magnet defeat step matters. A reed or hall sensor triggered by a
+  # door magnet is defeatable with a magnet from outside unless the design uses
+  # a coded sensor. If it is defeatable, that is a design finding, not a
+  # test failure to be waived.
+  repetitions: 3
+  duration_est_min: 90
+  dependencies: []
+
+- test_id: DVT-SAF-013
+  title: Independent thermal cutout — trip verification
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify the hardware thermal cutout, which is independent of the controller,
+    opens at its rated temperature and removes heater power regardless of
+    software state.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: Reference thermocouple at the cutout body
+      calibration_id: null
+    - name: Continuity monitoring across the cutout contacts
+  preconditions:
+    - Software temperature limits temporarily raised or the control sensor
+      substituted so that the cutout is the first device to act
+      # CONFIRM: how the cutout is exercised without defeating other protections.
+  procedure_steps:
+    - step: Drive the chamber above the software setpoint until the cutout opens
+      capture: [cutout_trip_temp, chamber_temp_at_trip]
+    - step: Verify heater power is removed at the SSR and at the element
+      capture: [heater_power_removed]
+    - step: Verify the cutout is non-self-resetting, or if self-resetting,
+        record the reset temperature and confirm the system does not resume
+        heating without operator acknowledgement
+      capture: [self_resetting, reset_temp, resume_requires_ack]
+    - step: Verify the alarm and error code
+      capture: [alarm_raised, error_code]
+  data_fields:
+    - {name: cutout_trip_temp, unit: C, type: float}
+    - {name: chamber_temp_at_trip, unit: C, type: float}
+    - {name: heater_power_removed, type: bool}
+    - {name: self_resetting, type: bool}
+    - {name: reset_temp, unit: C, type: float}
+    - {name: resume_requires_ack, type: bool}
+    - {name: alarm_raised, type: bool}
+    - {name: error_code, type: string}
+  pass_criteria: >
+    heater_power_removed == true AND resume_requires_ack == true
+    AND alarm_raised == true
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: [DVT-SAF-005]
+
+- test_id: DVT-SAF-014
+  title: Controller watchdog and heartbeat loss
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that loss of the controller heartbeat de-energises the SSRs through
+    hardware, independently of software, covering controller hang, process
+    crash and loss of the control application.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  preconditions:
+    - Unit operating in HEAT and separately in CURE
+    - Access to the heartbeat signal and to the SSR drive for monitoring
+  procedure_steps:
+    - step: With the heater active, stop the heartbeat and measure the time to
+        SSR de-energisation
+      capture: [operating_mode, heartbeat_stop_method, ssr_off_time]
+    - step: Repeat with UV active
+      capture: [ssr_off_time_uv]
+    - step: Repeat by killing the control process rather than stopping the
+        heartbeat directly
+      capture: [ssr_off_time_process_kill]
+    - step: Verify recovery requires an explicit restart, not an automatic one
+      capture: [auto_restart_prevented]
+    - step: Verify the event is logged with a distinct error code
+      capture: [logged, error_code]
+  data_fields:
+    - {name: operating_mode, type: enum, values: [heat, cure]}
+    - {name: heartbeat_stop_method, type: string}
+    - {name: ssr_off_time, unit: s, type: float}
+    - {name: ssr_off_time_uv, unit: s, type: float}
+    - {name: ssr_off_time_process_kill, unit: s, type: float}
+    - {name: auto_restart_prevented, type: bool}
+    - {name: logged, type: bool}
+    - {name: error_code, type: string}
+  pass_criteria: >
+    ssr_off_time <= 2 AND ssr_off_time_uv <= 2
+    AND ssr_off_time_process_kill <= 2 AND auto_restart_prevented == true
+  repetitions: 3
+  duration_est_min: 90
+  dependencies: []
+
+- test_id: DVT-SAF-015
+  title: Mains interruption and restoration during operation
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify the unit enters a safe state on loss of mains and does not resume
+    heating or UV emission automatically when mains returns.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: Programmable AC source able to produce defined dropouts and dips
+      calibration_id: null
+  preconditions:
+    - Unit operating at temperature with UV active
+  procedure_steps:
+    - step: Interrupt mains for 20 ms, 200 ms, 2 s and 60 s in separate runs
+      capture: [interruption_duration]
+    - step: On restoration, record whether heating or UV resumes without
+        operator action
+      capture: [auto_resume_heat, auto_resume_uv]
+    - step: Verify the door lock state on power loss — the door must not be
+        left locked with the operator unable to open it
+      capture: [door_releasable_on_power_loss]
+    - step: Verify the interrupted job is recorded as aborted, not as complete
+      capture: [job_marked_aborted]
+    - step: Verify filesystem and configuration integrity after an uncontrolled
+        power cut during a write
+      capture: [config_intact, log_intact]
+  data_fields:
+    - {name: interruption_duration, unit: ms, type: float}
+    - {name: auto_resume_heat, type: bool}
+    - {name: auto_resume_uv, type: bool}
+    - {name: door_releasable_on_power_loss, type: bool}
+    - {name: job_marked_aborted, type: bool}
+    - {name: config_intact, type: bool}
+    - {name: log_intact, type: bool}
+  pass_criteria: >
+    auto_resume_uv == false AND door_releasable_on_power_loss == true
+    AND job_marked_aborted == true AND config_intact == true
+  # NOTE: a job silently marked complete after a power cut is a process-quality
+  # failure, not only a software one — the part would ship under-cured.
+  repetitions: 4
+  duration_est_min: 120
+  dependencies: []
+
+- test_id: DVT-SAF-016
+  title: UV emission outside the enclosure
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that UV escaping the closed enclosure is below the exposure limit
+    for an operator standing at the machine for a full working day.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # Light leakage depends on door seal compression and panel fit, which vary
+  # unit to unit.
+  equipment:
+    - name: Calibrated UV radiometer, spectrally matched to 385-405 nm
+      calibration_id: null
+  preconditions:
+    - All four LED panels at maximum drive, door closed and latched
+    - Room darkened to avoid ambient contribution
+  procedure_steps:
+    - step: Scan the door seam, hinge line, damper, vents, cable entries and
+        every panel joint at 10 cm, recording the maximum
+      capture: [leak_location, max_irradiance_10cm]
+    - step: Measure at the operator position at the front of the machine
+      capture: [irradiance_operator_position]
+    - step: Compute the permitted daily exposure duration at the measured level
+      capture: [permitted_exposure_hours]
+  data_fields:
+    - {name: leak_location, type: string}
+    - {name: max_irradiance_10cm, unit: mW/cm2, type: float}
+    - {name: irradiance_operator_position, unit: mW/cm2, type: float}
+    - {name: permitted_exposure_hours, unit: h, type: float}
+  pass_criteria: "permitted_exposure_hours >= 8"
+  # CONFIRM against EN 62471. For UV-A the continuous exposure limit used for
+  # durations beyond about 1000 s is 10 W/m2, i.e. 1 mW/cm2. Confirm the
+  # applicable limit and the weighting for the actual emission spectrum with
+  # the compliance lab, since 405 nm sits at the boundary between UV-A and
+  # visible blue light and the two limits are derived differently.
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: []
+
+# =============================================================
+# SAFETY — interlock defeat and software stack failure
+# =============================================================
+
+- test_id: DVT-SAF-017
+  title: Interlock disabled, disconnected or bypassed
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify the system fails safe when the interlock chain is not intact.
+    DVT-SAF-012 covers the normal case of an open door. This test covers the
+    abnormal cases: the interlock sensor unplugged, the chain shorted out, and
+    any deliberate service bypass.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  preconditions:
+    - Unit ready for CURE and for HEAT
+    - Access to the door sensor connector and to the interlock chain
+  procedure_steps:
+    - step: Unplug the door sensor. Attempt to start a cure and a heat cycle
+      capture: [open_chain_cure_inhibited, open_chain_heat_inhibited, open_chain_alarm, open_chain_error_code]
+    - step: Unplug the sensor during an active cure and record the time to UV removal
+      capture: [open_chain_uv_off_time]
+    - step: Short the interlock chain to simulate a defeated sensor, door open.
+        Attempt to start a cure
+      capture: [shorted_chain_cure_started, shorted_chain_detected, shorted_chain_alarm]
+    - step: Verify that the hardware SSR enable path, not only software, is
+        broken when the chain is open — measure at the SSR drive with the
+        controller commanding output
+      capture: [hardware_path_broken]
+    - step: If a service bypass exists, verify it requires a tool or credential,
+        is time limited, is logged, is impossible from the normal user
+        interface, and is visibly indicated while active
+      capture: [bypass_exists, bypass_requires_credential, bypass_time_limited, bypass_logged, bypass_indicated]
+    - step: Verify that after any interlock fault the system requires an
+        explicit operator acknowledgement before resuming
+      capture: [resume_requires_ack]
+  data_fields:
+    - {name: open_chain_cure_inhibited, type: bool}
+    - {name: open_chain_heat_inhibited, type: bool}
+    - {name: open_chain_alarm, type: bool}
+    - {name: open_chain_error_code, type: string}
+    - {name: open_chain_uv_off_time, unit: s, type: float}
+    - {name: shorted_chain_cure_started, type: bool}
+    - {name: shorted_chain_detected, type: bool}
+    - {name: shorted_chain_alarm, type: bool}
+    - {name: hardware_path_broken, type: bool}
+    - {name: bypass_exists, type: bool}
+    - {name: bypass_requires_credential, type: bool}
+    - {name: bypass_time_limited, type: bool}
+    - {name: bypass_logged, type: bool}
+    - {name: bypass_indicated, type: bool}
+    - {name: resume_requires_ack, type: bool}
+  pass_criteria: >
+    open_chain_cure_inhibited == true AND open_chain_heat_inhibited == true
+    AND open_chain_alarm == true AND open_chain_uv_off_time <= 1
+    AND hardware_path_broken == true AND resume_requires_ack == true
+  # NOTE, and this is the finding to expect: DOOR_STATUS on GPIO27 is a single
+  # read-only monitor line driven by a magnet-operated sensor. A single channel
+  # with no diagnostic coverage cannot distinguish a genuinely closed door from
+  # a shorted sensor or an externally applied magnet. The shorted_chain step
+  # will therefore probably show the cure starting with the door open. That is
+  # a design finding, not a test to be waived: detecting it needs either a
+  # dual-channel antivalent interlock with cross-monitoring, or a coded
+  # magnetic sensor. Route the result to the risk register and to the
+  # functional safety assessment of the UV and heater hazards.
+  repetitions: 3
+  duration_est_min: 60
+  dependencies: [DVT-SAF-012]
+
+- test_id: DVT-SAF-018
+  title: Software stack failure — heater and UV response per layer
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that the heater and the LEDs are removed on failure of any layer of
+    the software stack, and that the protection does not depend on the layer
+    that failed. DVT-SAF-014 verifies the heartbeat path itself; this test
+    exercises the realistic ways the stack actually fails.
+  applicability:
+    rule: SINGLE
+    unit: UUT-01
+  sample_rationale: >
+    The software stack is identical across all units, so this is a design
+    property rather than a unit-to-unit variable. Per-unit coverage of the
+    same protection is provided by DVT-SAF-014, which runs on all five.
+  case_matrix:
+    - {case: ui_kill, description: Kill the React UI process only}
+    - {case: api_kill, description: Kill the API process only}
+    - {case: daemon_kill, description: Kill the control daemon}
+    - {case: daemon_hang, description: Suspend the daemon (SIGSTOP) — hung process holding its handles}
+    - {case: os_freeze, description: Force an OS-level freeze or kernel panic}
+    - {case: storage_loss, description: Force the filesystem read-only or remove storage}
+    - {case: i2c_loss, description: Interrupt the I2C bus to the IO expander and PWM controller}
+  preconditions:
+    - Unit operating at 70 C in HEAT, and separately with UV active in CURE
+    - Console access for injecting each failure
+    - Instrumentation on the SSR drive and on the heater element
+  procedure_steps:
+    - step: Inject the failure mode of this case. Record heater and UV state,
+        the response time and what the machine displays
+      capture: [failure_mode, heater_state, uv_state, response_time, display_state]
+    - step: Verify no automatic resumption of heating or UV on recovery, and
+        that the event is logged with a distinct code
+      capture: [auto_resume, logged, error_code]
+  data_fields:
+    - {name: failure_mode, type: enum, values: [ui_kill, api_kill, daemon_kill, daemon_hang, os_freeze, storage_loss, i2c_loss]}
+    - {name: heater_state, type: enum, values: [off, on, unknown]}
+    - {name: uv_state, type: enum, values: [off, on, unknown]}
+    - {name: response_time, unit: s, type: float}
+    - {name: display_state, type: string}
+    - {name: auto_resume, type: bool}
+    - {name: logged, type: bool}
+    - {name: error_code, type: string}
+  pass_criteria: >
+    heater_state == 'off' AND uv_state == 'off'
+    AND response_time <= 2 AND auto_resume == false
+  # NOTE: the layered architecture is what makes this test necessary. Killing
+  # the UI should not stop a cure — that would be a nuisance failure. Killing
+  # or hanging the daemon must stop everything. If protection lives in the same
+  # process that failed, it did not protect anything; the pass condition is
+  # really that the hardware heartbeat path acts independently of all of it.
+  # The daemon_hang case is the one that catches heartbeat implementations
+  # kicked from a timer thread that survives the hang of the control loop.
+  repetitions: 1      # per case (7 cases)
+  duration_est_min: 45
+  dependencies: [DVT-SAF-014]
+
+# =============================================================
+# LED THERMAL — steady-state limit and degraded cooling detection
+# =============================================================
+
+- test_id: DVT-THM-002
+  title: LED temperature profile over a 30 minute cure
+  subsystem: Thermal
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that no LED exceeds the back-face temperature limit at any point
+    during a full working cure, on every panel and every unit, and record the
+    maximum reached. This is the measurement the 4,500 h lifetime target rests
+    on, not only a safety check.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  sweep:
+    parameters: [chamber_setpoint]
+    matrix:
+      - {chamber_setpoint: 30}
+      - {chamber_setpoint: 80}
+    unit: {chamber_setpoint: C}
+  # Two chamber conditions. Ambient-chamber curing is the common case; 80 C is
+  # the worst case and the one the limit must hold at. EVT already measured
+  # 72 C at 80 C chamber and only 50% drive — 3 C below the limit — so the
+  # 80 C run is where this test will actually be decided.
+  equipment:
+    - name: Thermocouple logger, minimum 8 channels
+      calibration_id: null
+    - name: Type-K thermocouples bonded to the MCPCB back face, 2 mm behind the
+        LED, per the established convention — not at the solder joint
+      calibration_id: null
+    - name: Thermal camera for the one-time hot-spot survey
+      calibration_id: null
+  preconditions:
+    - Hot-spot survey completed once per panel design, identifying the worst
+      position on each of the four panels; thermocouples then bonded at those
+      positions on every unit
+    - Built-in panel thermistors (R / L / Back / Door) logged in parallel with
+      the bonded thermocouples, so the correlation between what the machine
+      sees and what the LED actually reaches is captured
+    - LED working point 405 nm at 0.75 A, all four panels active
+    - Chamber at the sweep setpoint and thermally settled before UV is enabled
+    - All cooling fans at their normal duty
+  procedure_steps:
+    - step: Record chamber setpoint, ambient, and the LED drive setting
+      capture: [chamber_setpoint, ambient_temp, led_current, drive_percent]
+    - step: Enable cure and log all thermocouples and all built-in thermistors
+        at 1 Hz for 30 minutes
+    - step: Extract the maximum back-face temperature reached on each panel
+      capture: [max_temp_right, max_temp_left, max_temp_back, max_temp_door]
+    - step: Record the time at which each panel reached its maximum
+      capture: [time_to_max]
+    - step: Record the rate of rise over the final 5 minutes on the hottest panel
+      capture: [final_dtdt]
+    - step: Record the difference between the bonded thermocouple and the
+        built-in thermistor on the same panel, at the maximum
+      capture: [thermistor_error_at_max]
+    - step: Compute the junction temperature from the back-face measurement
+        using the thermal ladder, and the resulting margin to the 100 C absolute
+        maximum
+      capture: [computed_tj, tj_margin]
+    - step: Record whether any protective trip occurred during the run. A trip
+        during healthy operation below the working limit is a nuisance trip and
+        is itself a failure of this test
+      capture: [protective_trip_occurred, trip_temp_if_any]
+    - step: Attach the raw log and the hot-spot survey
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: chamber_setpoint, unit: C, type: float}
+    - {name: ambient_temp, unit: C, type: float}
+    - {name: led_current, unit: A, type: float}
+    - {name: drive_percent, unit: '%', type: float}
+    - {name: max_temp_right, unit: C, type: float}
+    - {name: max_temp_left, unit: C, type: float}
+    - {name: max_temp_back, unit: C, type: float}
+    - {name: max_temp_door, unit: C, type: float}
+    - {name: time_to_max, unit: min, type: float}
+    - {name: final_dtdt, unit: C/min, type: float}
+    - {name: thermistor_error_at_max, unit: C, type: float}
+    - {name: computed_tj, unit: C, type: float}
+    - {name: tj_margin, unit: C, type: float}
+    - {name: protective_trip_occurred, type: bool}
+    - {name: trip_temp_if_any, unit: C, type: float}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    max(max_temp_right, max_temp_left, max_temp_back, max_temp_door)
+      <= led_temperature_thresholds.working_limit
+    AND protective_trip_occurred == false
+    AND final_dtdt <= 0.2 AND tj_margin >= 15
+  # 75 C is the WORKING limit: the temperature an LED is allowed to reach in
+  # normal operation. It is an acceptance criterion, not a trip point. The
+  # protective shutdown must therefore sit ABOVE it, not below, or the machine
+  # trips during normal work. Two existing numbers contradict that:
+  #   50 C - the current firmware overtemp shutdown, with re-enable at 30 C.
+  #          This is 25 C BELOW the working limit and 22 C below what EVT
+  #          actually measured at 80 C chamber. As it stands the machine would
+  #          shut itself down in the middle of ordinary curing. Either the
+  #          firmware value is stale or it refers to a different sensor point;
+  #          it has to be resolved before this test can run.
+  #   65 C - the back-face threshold recommended by the thermal ladder
+  #          analysis. Also below the working limit. That recommendation was
+  #          driven by junction temperature for the 4,500 h lifetime target,
+  #          not by the absolute maximum. Accepting 75 C as the working limit
+  #          does not by itself violate the 100 C absolute maximum, but it does
+  #          move the lifetime margin, and that has to be checked against the
+  #          L70 curve rather than assumed.
+  # Both are recorded as open items 19 and 22 in the plan.
+  #
+  # The final_dtdt term exists because 30 minutes may not be steady state. If
+  # the panel is still rising at the end of the run, the recorded maximum is
+  # not the maximum — it is just where the clock stopped. A run that ends with
+  # the temperature still climbing should be extended, not recorded as a pass.
+  repetitions: 1      # per sweep row (2 rows)
+  duration_est_min: 90
+  dependencies: [DVT-SAF-007]
+
+- test_id: DVT-SAF-019
+  title: Degraded LED cooling — detection, side identification and fault isolation
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that gradual loss of LED cooling is detected before the LED
+    temperature limit is exceeded, that the alarm identifies the affected side,
+    and that the diagnostic message correctly reflects what the system can and
+    cannot actually know about which fan failed.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # Cooling per side is provided by two fans, only one of which has tachometer
+  # feedback. That asymmetry is the whole reason this test needs a case matrix
+  # rather than a single injection:
+  #
+  #   the monitored fan degrades   -> tach drops. Direct identification.
+  #   the unmonitored fan degrades -> tach normal, temperature rising. The fan
+  #                                   is identified only by elimination.
+  #   the shared air path blocks   -> tach normal, temperature rising. This
+  #                                   looks IDENTICAL to the case above, and it
+  #                                   is what breaks the elimination.
+  #
+  # A tachometer reports rotation, not airflow. A fan spinning at the correct
+  # speed against a blocked inlet gives a perfect tach reading and moves no
+  # air. So "tach healthy, therefore the other fan is the faulty one" is not a
+  # sound inference — it is one of at least two possibilities. The diagnostic
+  # message has to say so, or a technician gets sent to replace a good fan.
+  # Case C exists specifically to find out what the system claims in that
+  # situation.
+  case_matrix:
+    - {case: A_hottest, description: "Case A: monitored fan degraded, hottest side"}
+    - {case: B_right, description: "Case B: unmonitored fan degraded, right"}
+    - {case: B_left, description: "Case B: unmonitored fan degraded, left"}
+    - {case: B_back, description: "Case B: unmonitored fan degraded, back"}
+    - {case: B_door, description: "Case B: unmonitored fan degraded, door"}
+    - {case: C_hottest, description: "Case C: shared inlet or air path obstructed, both fans healthy, hottest side"}
+    - {case: D_hottest, description: "Case D: both fans degraded, hottest side"}
+  equipment:
+    - name: Thermocouples bonded per DVT-THM-002, on all four panels
+      calibration_id: null
+    - name: Means of setting each fan duty independently to a commanded percentage
+    - name: Tachometer readback logged from the monitored fan
+    - name: Anemometer at the panel inlet, for the airflow-versus-tach correlation
+      calibration_id: null
+    - name: Defined partial obstruction for case C, e.g. a mesh covering a
+        recorded percentage of the inlet area
+  preconditions:
+    - DVT-THM-002 complete on this unit, so the healthy baseline temperature
+      and the healthy tach reading of each panel are known
+    - Chamber at the worst-case setpoint used in THM-002
+    - Firmware protection thresholds at their production values, with the
+      protective shutdown set above the 75 C working limit
+  procedure_steps:
+    - step: Record the case, the side, and the healthy baseline temperature and
+        tach reading for that side
+      capture: [case, side, baseline_temp, baseline_tach]
+    - step: Apply the degradation in defined steps — 75%, 50%, 25% of normal
+        duty for a fan, or a recorded obstruction percentage for case C —
+        holding each step until the panel temperature settles
+      capture: [degradation_level, settled_panel_temp, tach_reading, airflow]
+    - step: Record the degradation level and panel temperature at which the
+        alarm first fires
+      capture: [level_at_alarm, temp_at_alarm, time_to_alarm]
+    - step: Record the alarm text verbatim and the error code
+      capture: [alarm_raised, alarm_text, error_code]
+    - step: Confirm the alarm identifies the correct SIDE
+      capture: [alarm_identifies_correct_side]
+    - step: Record what the message claims about WHICH fan, and whether that
+        claim is true for this case. For cases B and C the message should
+        express the ambiguity rather than name a single fan
+      capture: [message_names_specific_fan, claim_is_correct, message_states_ambiguity]
+    - step: Record the tach reading at the moment of alarm, to confirm the
+        elimination logic behaved as designed
+      capture: [tach_at_alarm, tach_within_normal_band]
+    - step: After the protection acts, record how much further the LED
+        temperature rises before it starts to fall
+      capture: [post_shutdown_overshoot, peak_temp_after_shutdown]
+    - step: Confirm the other three panels do not raise a false alarm
+      capture: [false_alarm_on_other_sides]
+    - step: Restore normal cooling and confirm recovery requires acknowledgement
+      capture: [recovery_requires_ack]
+  data_fields:
+    - {name: case, type: enum, values: [A, B, C, D]}
+    - {name: side, type: enum, values: [right, left, back, door]}
+    - {name: baseline_temp, unit: C, type: float}
+    - {name: baseline_tach, unit: rpm, type: float}
+    - {name: degradation_level, type: string}
+    - {name: settled_panel_temp, unit: C, type: float}
+    - {name: tach_reading, unit: rpm, type: float}
+    - {name: airflow, unit: m/s, type: float}
+    - {name: level_at_alarm, type: string}
+    - {name: temp_at_alarm, unit: C, type: float}
+    - {name: time_to_alarm, unit: s, type: float}
+    - {name: alarm_raised, type: bool}
+    - {name: alarm_text, type: string}
+    - {name: error_code, type: string}
+    - {name: alarm_identifies_correct_side, type: bool}
+    - {name: message_names_specific_fan, type: bool}
+    - {name: claim_is_correct, type: bool}
+    - {name: message_states_ambiguity, type: bool}
+    - {name: tach_at_alarm, unit: rpm, type: float}
+    - {name: tach_within_normal_band, type: bool}
+    - {name: post_shutdown_overshoot, unit: C, type: float}
+    - {name: peak_temp_after_shutdown, unit: C, type: float}
+    - {name: false_alarm_on_other_sides, type: bool}
+    - {name: recovery_requires_ack, type: bool}
+  pass_criteria: >
+    alarm_raised == true AND alarm_identifies_correct_side == true
+    AND (message_names_specific_fan == false OR claim_is_correct == true)
+    AND peak_temp_after_shutdown < led_temperature_thresholds.protective_shutdown
+                                   + post_shutdown_overshoot
+    AND false_alarm_on_other_sides == false AND recovery_requires_ack == true
+  # The third term is the point of the whole test. The system is allowed to say
+  # "cooling degraded on the left side, check both fans and the air path". It is
+  # not allowed to name a specific fan unless that claim is actually true for
+  # the case being injected. Case C is where a naive elimination rule fails
+  # this criterion, and finding that here is cheaper than finding it in a
+  # service call.
+  #
+  # NOTE on post_shutdown_overshoot: cutting LED drive does not remove the heat
+  # already in the aluminium, so the back face keeps rising for some seconds.
+  # That measured overshoot is what sets how far below the damage limit the
+  # protective shutdown must sit. Until it is measured, the threshold is a
+  # guess — and while `protective_shutdown` is null the tool reports this
+  # test as BLOCKED (criterion not evaluable), not as PASS.
+  #
+  # DESIGN RECOMMENDATION, not a test: fit the tachometer lead on the second
+  # fan. Most fans of this class already have the wire; the cost is a connector
+  # position and an input. That converts case B from an inference into a direct
+  # measurement, and it separates case B from case C, which nothing in the
+  # current sensing arrangement can do. If inputs are the constraint, per-fan
+  # current sensing on the existing PCA9685 channels gives degradation
+  # information from hardware already fitted. Either way, an early differential
+  # check — one side running consistently warmer than the other three at the
+  # same drive — detects the degradation long before any absolute threshold and
+  # is the right basis for a maintenance warning ahead of the safety alarm.
+  repetitions: 1      # per case (7 cases)
+  duration_est_min: 120
+  dependencies: [DVT-THM-002, DVT-SAF-008]
+
+# =============================================================
+# THERMAL — cool-down
+# =============================================================
+
+- test_id: DVT-THM-003
+  title: Chamber cool-down — fast, normal and slow rates
+  subsystem: Thermal
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify the closed-loop cooling control at all three rate settings: that the
+    commanded cooling rate is actually achieved and held over its specified
+    band, that the end temperature is reached without undershoot, and that the
+    chamber does not develop excessive gradients while cooling.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  sweep:
+    parameters: [cooling_mode]
+    matrix:
+      - {cooling_mode: fast}
+      - {cooling_mode: normal}
+      - {cooling_mode: slow}
+  co_executed_with:
+    test_id: DVT-THM-001
+    rows:
+      - {cooling_mode: fast,   parent_row: {setpoint: 80, mains_voltage: 230}}
+      - {cooling_mode: normal, parent_row: {setpoint: 80, mains_voltage: 110}}
+      - {cooling_mode: slow,   parent_row: {setpoint: 80, mains_voltage: 240}}
+  # This test does not need its own heat-up. DVT-THM-001 already brings the
+  # chamber to 80 C and steady state on three matrix rows, and the chamber has
+  # to come back down before the next row can start. That descent is currently
+  # dead time with the full 16-channel grid, the reference thermocouple and the
+  # ambient logger already installed and running. Commanding a cooling mode on
+  # the way down turns it into this test at close to zero additional bench
+  # time — roughly 30 hours saved across the campaign.
+  #
+  # Two consequences of the pairing, both acceptable but worth stating:
+  #
+  # 1. Each cooling mode ends up paired with a different mains voltage. That is
+  #    tolerable because cooling is fan-driven from the 12 V rail with the
+  #    heater off, so mains voltage is not a meaningful covariate here. If a
+  #    cooling anomaly does appear, repeat that mode at 230 V as a standalone
+  #    confirmation run before drawing any conclusion.
+  # 2. A rejected parent row takes its cooling run with it. If the heat-up row
+  #    is rejected for ambient drift or a warm start, the descent data is
+  #    rejected too — the run is one thermal history, not two.
+  #
+  # EVT measured 80 -> 40 C in 10 / 14 / 18 minutes at fixed intake fan PWM of
+  # 100 / 60 / 30 percent. The DVT design is different: the user sets a target
+  # cooling RATE and the fan PWM is regulated in closed loop to hold it. The
+  # acceptance criterion therefore has to be expressed as a rate with a
+  # tolerance, not as an elapsed time copied from the EVT runs. Elapsed time is
+  # still recorded, as the comparable figure against EVT.
+  equipment:
+    - name: PicoLog TC-08 x2, same 16-channel grid as DVT-THM-001
+      calibration_id: null
+    - name: Reference thermocouple adjacent to the control sensor
+      calibration_id: null
+    - name: Ambient temperature logger, positioned away from the exhaust
+      calibration_id: null
+    - name: Anemometer at the intake, optional, for fan authority correlation
+      calibration_id: null
+  preconditions:
+    - Ambient controlled at 25 +/- 1 C for the whole run, logged continuously.
+      A run in which ambient leaves the band is rejected, not recorded
+    - Chamber empty, door closed
+    - Chamber at 80 C and thermally settled — satisfied by the parent
+      DVT-THM-001 row, which ends in exactly this state
+    - Damper and all fans in their normal configuration
+  procedure_steps:
+    - step: Record ambient, its stability over the preceding 30 minutes, and the
+        starting chamber temperature
+      capture: [ambient_temp, ambient_stability, start_temp]
+    - step: Command the cooling mode under test and record the commanded rate
+      capture: [cooling_mode, commanded_rate]
+    - step: Confirm the damper opens and the heater fan goes to 100% PWM on
+        entry to cooling
+      capture: [damper_opened, heater_fan_100pct]
+    - step: Log all 16 grid channels, the control sensor and the intake fan PWM
+        at 1 Hz until the chamber reaches 30 C
+    - step: Extract the elapsed time from 80 C to 40 C, for comparison with the
+        EVT figures
+      capture: [time_80_to_40]
+    - step: Extract the achieved rate over each 10 C band and the tracking error
+        against the commanded rate in each band
+      capture: [rate_80_70, rate_70_60, rate_60_50, rate_50_40, max_tracking_error]
+    - step: Record the chamber temperature at which the intake fan PWM first
+        saturates at 100%, if it does
+      capture: [pwm_saturation_temp, pwm_saturated]
+    - step: Record the lowest temperature reached and any undershoot below the
+        target end temperature
+      capture: [min_temp_reached, undershoot]
+    - step: At the point of maximum cooling rate, extract the spatial spread
+        across the 16 channels
+      capture: [uniformity_pp_during_cooling, max_gradient_position]
+    - step: Compare the rate reported by the machine against the rate measured
+        by the reference instrumentation
+      capture: [reported_rate, reported_vs_measured_error]
+    - step: Attach the raw log
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: cooling_mode, type: enum, values: [fast, normal, slow]}
+    - {name: commanded_rate, unit: C/min, type: float}
+    - {name: ambient_temp, unit: C, type: float}
+    - {name: ambient_stability, unit: C, type: float, note: peak-to-peak over the run}
+    - {name: start_temp, unit: C, type: float}
+    - {name: damper_opened, type: bool}
+    - {name: heater_fan_100pct, type: bool}
+    - {name: time_80_to_40, unit: min, type: float}
+    - {name: rate_80_70, unit: C/min, type: float}
+    - {name: rate_70_60, unit: C/min, type: float}
+    - {name: rate_60_50, unit: C/min, type: float}
+    - {name: rate_50_40, unit: C/min, type: float}
+    - {name: max_tracking_error, unit: '%', type: float}
+    - {name: pwm_saturation_temp, unit: C, type: float}
+    - {name: pwm_saturated, type: bool}
+    - {name: min_temp_reached, unit: C, type: float}
+    - {name: undershoot, unit: C, type: float}
+    - {name: uniformity_pp_during_cooling, unit: C, type: float}
+    - {name: max_gradient_position, type: string}
+    - {name: reported_rate, unit: C/min, type: float}
+    - {name: reported_vs_measured_error, unit: '%', type: float}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    max_tracking_error <= 15 AND undershoot <= 2
+    AND uniformity_pp_during_cooling <= 10
+    AND reported_vs_measured_error <= 10
+  # CONFIRM every limit, and in particular the band over which the rate
+  # tolerance applies. A constant-rate closed loop cannot hold its rate all the
+  # way down: cooling is driven by the difference to ambient, so as the chamber
+  # approaches 25 C the available cooling collapses and the fan saturates at
+  # 100% with nowhere left to go. The rate spec is therefore only meaningful
+  # over a stated band — 80 to 40 C is the natural choice, matching the EVT
+  # reference — and pwm_saturation_temp is the measurement that tells you where
+  # the loop actually ran out of authority. Below that point the machine is no
+  # longer controlling anything and the honest specification is a time, not a
+  # rate.
+  #
+  # The uniformity term exists because rapid cooling produces gradients in the
+  # opposite direction to heating: the walls and the glass cool faster than the
+  # air. That is a thermal stress case for the cover glass, which is also the
+  # item ENV-001 checks for breakage. If fast cooling shows large gradients,
+  # the two findings are related.
+  #
+  # CONFIRM: all runs are on an empty chamber, as EVT was. A loaded chamber has
+  # more thermal mass and will cool more slowly. If the specification is meant
+  # to hold with a part in the chamber, a loaded run has to be added.
+  repetitions: 1      # per sweep row (3 rows)
+  duration_est_min: 30   # incremental only — the heat-up is charged to DVT-THM-001
+  dependencies: [DVT-THM-001]

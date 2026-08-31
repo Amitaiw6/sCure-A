@@ -1,0 +1,9 @@
+# Google OAuth client + cached token — never commit
+credentials.json
+token.json
+# local campaign data lives in ~/.scure-dvt; ignore any copies here
+*.db
+*.db-journal
+export/
+__pycache__/
+.pytest_cache/
