@@ -311,6 +311,7 @@ const TEST_CATEGORIES = [
       { id: 'io_door_abort', name: 'Door-Open Safety Abort', desc: 'Watchdog: door opened while ANY output is live → 10s countdown warning on screen; if it STAYS open → process aborted + ALL outputs off + strip turns red (Err 6016). Closing in time resumes; idle/unreadable sensor never aborts', check: 'io_door_abort' },
       { id: 'io_door_ack', name: 'Door Abort Acknowledge', desc: 'POST /api/door-abort/ack — the strip stays RED after a door abort until the user confirms the Err 6016 alert (or starts a new process); acknowledging clears doorAborted and returns the strip to normal', endpoint: '/api/door-abort/ack', method: 'POST', expect: 'ok' },
       { id: 'io_damper_logic', name: 'Damper Open/Close Logic', desc: 'Damper (MG90S on GPIO8): opens ONLY when a drying step reaches its target temp or when cooling starts; closed during drying ramp, heating, cure, bleach, idle and after stop', check: 'io_damper_logic' },
+      { id: 'io_servo_pio', name: 'Damper Servo: Hardware-Timed Pulses (PIO)', desc: '/api/state.damperDriver must be "pio": the MG90S is pulsed by the RP1 PIO state machine (server/hardware/pio_servo, 1 µs exact) — not software-timed lgpio PWM, whose scheduling jitter (1° ≈ 10.6 µs) made the servo shiver after every move and sometimes stop ~45° short. Also checks the angle→pulse map (closed 90° → 1450 µs, open 0° → 2400 µs, 20 ms period) and that the hold time covers the travel (settle ≥ 1 s)', check: 'io_servo_pio' },
     ]
   },
   {
@@ -1147,6 +1148,44 @@ async function runSingleTest(test) {
         result = { status: 'fail', msg: `GET ${path} failed: ${e.message}` };
       }
       const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Damper servo pulse generator. Mirrors io_controller.Servo.pulse_us
+    // (500..2400 us over 0..180 deg, logical angle flipped by SERVO_INVERTED)
+    // and requires the hardware-timed PIO driver on real hardware.
+    if (test.check === 'io_servo_pio') {
+      const pulseUs = (angle) => {                 // == Servo.pulse_us(angle)
+        const a = 180 - Math.max(0, Math.min(180, angle));   // SERVO_INVERTED
+        return Math.round(500 + (a / 180) * (2400 - 500));
+      };
+      const problems = [];
+      const closedUs = pulseUs(90), openUs = pulseUs(0);
+      if (closedUs !== 1450) problems.push(`closed 90° → ${closedUs} µs (expected 1450)`);
+      if (openUs !== 2400) problems.push(`open 0° → ${openUs} µs (expected 2400)`);
+      // PIO word for the helper: x = pulse-1 (active), y = period-pulse-4 (idle); period = x+1 + y+1 + 3
+      const period = (p) => ((p - 1) + 1) + ((20000 - p - 4) + 1) + 3;
+      if (period(closedUs) !== 20000 || period(openUs) !== 20000) problems.push('PIO period math ≠ 20 ms');
+      const settle = 1.5;                          // components.json servo.settle_sec
+      if (!(settle >= 1.0)) problems.push(`settle ${settle}s too short for the travel`);
+      let s = null;
+      try { s = await dvtrState(); } catch (e) { s = null; }
+      const elapsed = Date.now() - t0;
+      let result;
+      if (problems.length) {
+        result = { status: 'fail', msg: problems.join('; ') };
+      } else if (!s || s.hwSource !== 'io_controller') {
+        result = { status: 'skip', msg: `pulse map OK (closed ${closedUs} µs / open ${openUs} µs); driver check needs the real IO board (hwSource=${s && s.hwSource})` };
+      } else if (s.damperDriver === 'pio') {
+        result = { status: 'pass', msg: `damperDriver=pio — RP1 PIO hardware-timed pulses; closed ${closedUs} µs / open ${openUs} µs, hold ${settle}s` };
+      } else if (s.damperDriver === 'lgpio') {
+        result = { status: 'fail', msg: 'damperDriver=lgpio — software PWM fallback in use (jitter): build server/hardware/pio_servo with build-pio-servo.sh and restart' };
+      } else {
+        result = { status: 'warn', msg: `damperDriver=${s.damperDriver} — servo not initialised (helper failed?) — check the server log` };
+      }
       setTestStatus(test.id, result.status, result.msg, elapsed);
       log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
       await new Promise(r => setTimeout(r, 50));

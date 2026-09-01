@@ -45,6 +45,11 @@ echo "== 4/6 Python environment (Flask API + IO-board drivers) =="
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r server/requirements.txt
 
+echo "== 4b Damper servo helper (RP1 PIO, hardware-timed pulses on GPIO8) =="
+# Optional: without it the servo falls back to software PWM (jittery).
+(cd server/hardware && chmod +x build-pio-servo.sh && ./build-pio-servo.sh) \
+  || echo "WARNING: pio_servo build failed - damper servo will use lgpio software PWM"
+
 echo "== 5/6 Build the UI =="
 npm install
 npm run build

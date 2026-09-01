@@ -80,8 +80,9 @@
   "servo": {
     "gpio": 8,
     "signal_inverted": true,
-    "settle_sec": 0.6,
-    "_comment": "Damper servo (MG90S) on GPIO8. The board buffers the signal through Q16 (transistor driver, J2_MOTOR_DAMPER) which INVERTS it - signal_inverted=true pre-inverts the PWM so the servo sees normal pulses. Set false only if the servo is wired directly to the GPIO pin."
+    "driver": "auto",
+    "settle_sec": 1.5,
+    "_comment": "Damper servo (MG90S) on GPIO8. The board buffers the signal through Q16 (transistor driver, J2_MOTOR_DAMPER) which INVERTS it - signal_inverted=true pre-inverts the pulses so the servo sees normal ones. Set false only if the servo is wired directly to the GPIO pin. driver: auto|pio|lgpio - pio = hardware-timed pulses from the RP1 PIO block via server/hardware/pio_servo (build-pio-servo.sh; 1 us exact, no jitter); lgpio = software-timed PWM fallback (jitters -> servo shivers, may stop short). auto picks pio when available. settle_sec: how long to keep pulsing after a move before releasing (must cover the full travel under load; 0 = hold forever)."
   },
 
   "cooling": {

@@ -415,6 +415,7 @@ class IOBridge:
             'ventOn': self._vent_on,                       # no-heat UV fresh-air vent
 
             'damperOpen': self._damper_open,
+            'damperDriver': self._damper_driver(),         # 'pio' (hardware-timed) / 'lgpio' (software PWM)
             'fans': dict(self._fan_duty),
             'fanRpm': fan_rpm,
             'ledTemps': led_temps,
@@ -812,6 +813,16 @@ class IOBridge:
         if fan in self._fan_duty:
             self._fan_duty[fan] = int(percent)
         return True, None
+
+    def _damper_driver(self):
+        """Which pulse generator drives the damper servo: 'pio' (RP1 PIO,
+        hardware-timed) or 'lgpio' (software PWM fallback); None until the
+        servo has been created."""
+        try:
+            s = self.sys.io._servo
+            return s.driver if s is not None else None
+        except Exception:            # noqa: BLE001
+            return None
 
     def set_damper(self, open_state):
         # Command the servo only when the position actually changes. Many code

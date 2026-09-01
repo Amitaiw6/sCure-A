@@ -2,6 +2,16 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.8.2",
+      "date": "2026-09-01",
+      "notes": [
+        "Damper servo (MG90S, GPIO8): pulses are now hardware-timed by the CM5's RP1 PIO block (new server/hardware/pio_servo helper + build-pio-servo.sh) instead of software-timed lgpio PWM — 1 µs exact edges, no scheduling jitter, so the servo stops dead after a move instead of shivering, and no longer stops short (~45°) of open",
+        "Servo hold time 0.6 s → 1.5 s so the travel completes under load; a re-assert of the same position after release re-drives the servo (a stalled servo used to be ignored until the damper was cycled); releases always finish the pulse in flight",
+        "components.json servo.driver auto|pio|lgpio (auto = PIO when available, lgpio fallback); /api/state.damperDriver reports which is active; `io_controller.py servo` prints the driver",
+        "QA: 'Damper Servo: Hardware-Timed Pulses (PIO)' test"
+      ]
+    },
+    {
       "version": "0.7.5",
       "date": "2026-08-25",
       "notes": [

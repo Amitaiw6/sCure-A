@@ -10,7 +10,8 @@ Merges into one file all the drivers that used to live in separate modules:
                                fan ON/OFF, NFC reset
   - ADS1115   (analog)       - analog reads: light sensors and signals (0x48 on i2c-0/i2c-1)
   - ADS1115   (temperature)  - NTC thermistors -> temperature (beta equation, 0x49)
-  - Servo     (GPIO8)        - SG90 via gpiozero
+  - Servo     (GPIO8)        - MG90S damper: hardware-timed pulses via RP1 PIO
+                               (server/hardware/pio_servo), lgpio software PWM fallback
   - Direct GPIO (pinctrl)    - signals driven straight from a pin (nitrogen valve)
 
 A single object - IOController - owns all components and drives/reads them together.
@@ -143,11 +144,15 @@ CHAMBER_CAL_COOL_FULL = -2.5   # C/min at which the cooling term is fully blende
 CHAMBER_CAL_AMBIENT = 25.0
 CHAMBER_RATE_WINDOW_SEC = 45.0
 
-# --- Servo (SG90 via gpiozero) --------------------------------------------
+# --- Servo (MG90S damper, GPIO8) --------------------------------------------
 SERVO_PIN = 8
 SERVO_MIN_PULSE, SERVO_MAX_PULSE = 0.0005, 0.0024
 SERVO_MIN_ANGLE, SERVO_MAX_ANGLE = 0, 180
 SERVO_INVERTED = True
+# Hardware-timed pulse helper (RP1 PIO). Built on the Pi by
+# server/hardware/build-pio-servo.sh; components.json "servo.pio_helper" overrides.
+SERVO_PIO_HELPER = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "server", "hardware", "pio_servo"))
 
 # --- Direct GPIO (pinctrl) -------------------------------------------------
 GPIO_SIGNALS = {
@@ -450,14 +455,32 @@ def ntc_resistance_to_temp(r):
 #  Servo (SG90) and direct GPIO (pinctrl)
 # ===========================================================================
 class Servo:
-    """MG90S/SG90 damper servo - direct lgpio 50 Hz PWM on GPIO8.
+    """MG90S/SG90 damper servo on GPIO8 - 50 Hz pulses from one of two drivers:
+
+      pio   (default when available) - hardware-timed pulses from the RP1 PIO
+            block through the `pio_servo` helper (server/hardware/pio_servo,
+            built by build-pio-servo.sh; needs /dev/pio0 = Pi 5 / CM5 kernel).
+            Pulse edges are clocked by the PIO state machine, 1 us exact, no
+            jitter: the servo moves, stops dead and stays there - the signal
+            an Arduino Servo library (Timer1) produces.
+      lgpio (fallback) - software-timed lgpio tx_pwm. Every edge depends on
+            Linux scheduling; tens of us of jitter = several degrees on a
+            500..2400 us scale (1 deg ~= 10.6 us) -> the servo shivers while
+            driven and sometimes stops short of its target.
+
+    components.json "servo": {"driver": "auto" | "pio" | "lgpio"} selects;
+    "auto" = pio when the helper and /dev/pio0 exist, else lgpio.
 
     The board routes the servo signal through Q16 (a transistor driver stage,
     same as the Q15 nitrogen-valve driver) on its way to J2_MOTOR_DAMPER -
     that stage INVERTS the logic level. A servo cannot decode inverted
-    pulses, so with components.json "servo": {"signal_inverted": true} the
-    PWM is generated pre-inverted and comes out of Q16 as normal servo
-    pulses. Set false for a servo wired directly to the GPIO."""
+    pulses, so with "signal_inverted": true the pulses are generated
+    pre-inverted (idle HIGH, pulse LOW) and come out of Q16 as normal servo
+    pulses. Set false for a servo wired directly to the GPIO.
+
+    NOTE: the PIO takes over the pin mux; never drive the same GPIO through
+    lgpio/gpiozero while the PIO driver is active (the writes never reach
+    the pad)."""
 
     def __init__(self, pin=SERVO_PIN):
         cfg = {}
@@ -468,35 +491,113 @@ class Servo:
         self.pin = int(cfg.get("gpio", pin))
         self.signal_inverted = bool(cfg.get("signal_inverted", False))
         # After reaching a position the pulse train is stopped ("released") so
-        # the servo stops hunting/buzzing. settle_sec = time to keep driving
-        # before releasing (0 = hold forever).
-        self.settle_sec = float(cfg.get("settle_sec", 0.6))
-        self._last_angle = None                  # dedup: last angle actually driven
+        # a loaded servo does not hum forever; the servo then holds by gear
+        # friction. settle_sec = time to keep driving before releasing
+        # (0 = hold forever). Must cover the full travel under load - an
+        # MG90S needs ~0.3 s for 90 deg unloaded, more against the damper flap.
+        self.settle_sec = float(cfg.get("settle_sec", 1.5))
+        self._last_angle = None                  # last angle actually driven
+        self._holding = False                    # pulse train currently running
         self._release_timer = None
-        import lgpio
-        self._lgpio = lgpio
-        self.h = lgpio.gpiochip_open(0)
+        self._io_lock = threading.Lock()         # goto() vs the release timer
         # idle level: LOW normally; HIGH when pre-inverting (post-Q16 low)
         self._idle = 1 if self.signal_inverted else 0
-        lgpio.gpio_claim_output(self.h, self.pin, self._idle)
+        self.driver = None
+        self._proc = None                        # pio_servo helper process
+        self._lgpio = None
+        self.h = None
+        want = str(cfg.get("driver", "auto")).lower()
+        if want in ("auto", "pio"):
+            try:
+                self._start_pio(cfg)
+                self.driver = "pio"
+            except Exception as e:   # noqa: BLE001 - helper missing / no PIO
+                if want == "pio":
+                    raise
+                LOG.warning("servo: PIO helper unavailable (%s) - falling back "
+                            "to lgpio software PWM (expect jitter)", e)
+        if self.driver is None:
+            import lgpio
+            self._lgpio = lgpio
+            self.h = lgpio.gpiochip_open(0)
+            lgpio.gpio_claim_output(self.h, self.pin, self._idle)
+            self.driver = "lgpio"
+        LOG.info("servo: GPIO%d driver=%s inverted=%s settle=%.1fs",
+                 self.pin, self.driver, self.signal_inverted, self.settle_sec)
 
-    def goto(self, angle, force=False):
-        """Drive the servo to `angle`, then (after settle_sec) stop the pulse
-        train so it stops buzzing. A repeat request for the SAME angle is
-        skipped (force=True overrides) so re-asserting the damper state does not
-        re-issue the pulse and make the servo twitch."""
+    # -- PIO helper process ------------------------------------------------
+    def _start_pio(self, cfg):
+        import select
+        import subprocess
+        exe = cfg.get("pio_helper") or SERVO_PIO_HELPER
+        if not os.path.isfile(exe):
+            raise FileNotFoundError(f"{exe} not built - run server/hardware/build-pio-servo.sh")
+        if not os.path.exists("/dev/pio0"):
+            raise FileNotFoundError("/dev/pio0 missing (RP1 PIO: Pi 5 / CM5 kernel only)")
+        args = [exe, str(self.pin)]
+        if self.signal_inverted:
+            args.append("--inverted")
+        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, bufsize=1)
+        ready, _, _ = select.select([proc.stdout], [], [], 3.0)
+        line = proc.stdout.readline() if ready else ""
+        if not line.startswith("READY"):
+            proc.kill()
+            try:
+                _, err = proc.communicate(timeout=1.0)
+            except Exception:        # noqa: BLE001
+                err = ""
+            raise RuntimeError(f"pio_servo: {(line or err).strip() or 'no READY'}")
+        self._select = select
+        self._proc = proc
+        LOG.info("servo: %s", line.strip())
+
+    def _pio_cmd(self, cmd):
+        """Send one command line to pio_servo and wait for its OK/ERR reply."""
+        p = self._proc
+        if p is None or p.poll() is not None:
+            raise RuntimeError("pio_servo helper is not running")
+        with self._io_lock:
+            p.stdin.write(cmd + "\n")
+            p.stdin.flush()
+            ready, _, _ = self._select.select([p.stdout], [], [], 1.0)
+            reply = p.stdout.readline().strip() if ready else ""
+        if reply != "OK":
+            raise RuntimeError(f"pio_servo '{cmd}': {reply or 'no reply'}")
+
+    # -- pulse math ----------------------------------------------------------
+    @staticmethod
+    def pulse_us(angle):
+        """Servo pulse width (us) for a LOGICAL angle, honoring SERVO_INVERTED
+        (the logical->physical angle flip; NOT the electrical Q16 inversion)."""
         angle = max(SERVO_MIN_ANGLE, min(SERVO_MAX_ANGLE, angle))
-        if not force and self._last_angle == angle:
-            return angle                         # already here: send nothing
         a = (SERVO_MAX_ANGLE + SERVO_MIN_ANGLE - angle) if SERVO_INVERTED else angle
         span = SERVO_MAX_ANGLE - SERVO_MIN_ANGLE
         pulse = SERVO_MIN_PULSE + (a - SERVO_MIN_ANGLE) / span * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
-        duty = pulse / 0.02 * 100.0              # 50 Hz -> 20 ms period
-        if self.signal_inverted:
-            duty = 100.0 - duty
+        return int(round(pulse * 1e6))
+
+    # -- motion --------------------------------------------------------------
+    def goto(self, angle, force=False):
+        """Drive the servo to `angle`, then (after settle_sec) stop the pulse
+        train. A repeat request for the SAME angle while the train is still
+        running is skipped (force=True overrides). Once released the request
+        is honored again: a re-assert re-drives the servo, which is what
+        recovers it if it stalled short of the target (a released, stuck
+        servo used to be ignored forever)."""
+        angle = max(SERVO_MIN_ANGLE, min(SERVO_MAX_ANGLE, angle))
+        if not force and self._holding and self._last_angle == angle:
+            return angle                         # already driving there
+        pulse = self.pulse_us(angle)
         self._cancel_release()
-        self._lgpio.tx_pwm(self.h, self.pin, 50, duty)
+        if self.driver == "pio":
+            self._pio_cmd(f"P {pulse}")
+        else:
+            duty = pulse / 20000.0 * 100.0       # 50 Hz -> 20 ms period
+            if self.signal_inverted:
+                duty = 100.0 - duty
+            self._lgpio.tx_pwm(self.h, self.pin, 50, duty)
         self._last_angle = angle
+        self._holding = True
         if self.settle_sec > 0:                  # let it reach position, then go quiet
             self._release_timer = threading.Timer(self.settle_sec, self._release)
             self._release_timer.daemon = True
@@ -504,11 +605,17 @@ class Servo:
         return angle
 
     def _release(self):
-        """Stop the pulse train so the servo goes silent (no more buzzing).
-        Keeps the pin at its idle level; the servo holds by gear friction."""
+        """Stop the pulse train so the servo goes silent. Keeps the pin at its
+        idle level; the servo holds by gear friction. With the PIO driver the
+        pulse in flight always completes (the state machine idles only at a
+        'pull'), so the servo never sees a truncated pulse."""
+        self._holding = False
         try:
-            self._lgpio.tx_pwm(self.h, self.pin, 0, 0)   # stop the 50 Hz train
-            self._lgpio.gpio_write(self.h, self.pin, self._idle)
+            if self.driver == "pio":
+                self._pio_cmd("R")
+            else:
+                self._lgpio.tx_pwm(self.h, self.pin, 0, 0)   # stop the 50 Hz train
+                self._lgpio.gpio_write(self.h, self.pin, self._idle)
         except Exception:            # noqa: BLE001 - best-effort, never raise
             pass
 
@@ -527,6 +634,17 @@ class Servo:
 
     def close(self):
         self._cancel_release()                           # don't fire after close
+        if self.driver == "pio":
+            p, self._proc = self._proc, None
+            if p is not None:
+                try:
+                    if p.poll() is None:
+                        p.stdin.write("Q\n"); p.stdin.flush()
+                        p.wait(timeout=2.0)              # releases + idles the pin
+                except Exception:    # noqa: BLE001
+                    try: p.kill()
+                    except Exception: pass
+            return
         try:
             self._lgpio.tx_pwm(self.h, self.pin, 0, 0)   # stop the pulse train
             self._lgpio.gpio_free(self.h, self.pin)
@@ -1576,15 +1694,17 @@ def cmd_analog(args):
 
 def cmd_servo(args):
     s = Servo()
+    print(f"driver: {s.driver} (GPIO{s.pin}, inverted={s.signal_inverted}, settle={s.settle_sec}s)")
+    hold = max(1.0, s.settle_sec + 0.2)          # keep the process alive through the drive
     try:
         if args.cmd == "angle":
-            print(f"angle -> {s.goto(args.deg)} deg"); time.sleep(1.0)
+            print(f"angle -> {s.goto(args.deg)} deg ({s.pulse_us(args.deg)} us)"); time.sleep(hold)
         elif args.cmd == "min":
-            print(f"angle -> {s.goto(SERVO_MIN_ANGLE)} deg"); time.sleep(1.0)
+            print(f"angle -> {s.goto(SERVO_MIN_ANGLE)} deg"); time.sleep(hold)
         elif args.cmd == "max":
-            print(f"angle -> {s.goto(SERVO_MAX_ANGLE)} deg"); time.sleep(1.0)
+            print(f"angle -> {s.goto(SERVO_MAX_ANGLE)} deg"); time.sleep(hold)
         elif args.cmd == "center":
-            print(f"angle -> {s.goto((SERVO_MIN_ANGLE + SERVO_MAX_ANGLE) / 2)} deg"); time.sleep(1.0)
+            print(f"angle -> {s.goto((SERVO_MIN_ANGLE + SERVO_MAX_ANGLE) / 2)} deg"); time.sleep(hold)
         elif args.cmd == "sweep":
             s.sweep(step=args.step, delay=args.delay, cycles=args.cycles); print("sweep complete")
     finally:
