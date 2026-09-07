@@ -98,16 +98,12 @@ class StatusLeds(threading.Thread):
         st = rgb_cfg.get('status', {})
         self.bridge = bridge
         self.leds = leds
-        self.color_normal = parse_color(str(st.get('normal', 'green')))
-        self.color_fault = parse_color(str(st.get('fault', 'red')))
-        self.color_door = parse_color(str(st.get('door_open', 'ff7800')))
-        self.color_busy = parse_color(str(st.get('busy', 'yellow')))
-        self.color_no_net = parse_color(str(st.get('no_internet', 'blue')))
-        # Manual chamber heating (Settings slider) gets its own SOLID color -
-        # steady orange, no comet / no blink - so it is visually distinct from
-        # a running cure program (moving yellow) and from door-open (blinking).
-        self.color_manual = parse_color(str(st.get('manual_heat', 'ff8c00')))
-        self.brightness = float(st.get('brightness', 40))
+        # Colors + brightness come from components.json rgb.status and are
+        # re-read LIVE every status_sec (_reload_colors) - edit the file, the
+        # strip follows within a second, no service restart needed.
+        self._parse_color = parse_color
+        self._status_cfg = dict(st)
+        self._apply_colors(st)
         self.blink_sec = max(0.1, float(st.get('blink_sec', 0.5)))
         # chase_sec = time per one-LED step of the moving busy animation
         self.chase_sec = max(0.03, float(st.get('chase_sec', 0.12)))
@@ -135,6 +131,39 @@ class StatusLeds(threading.Thread):
         self._stop_evt = threading.Event()
         self._last_frame = None
         self._warned = False              # first loop error is logged once
+
+    def _apply_colors(self, st):
+        """Parse the rgb.status colors (+ brightness) into the attributes
+        the paint loop uses."""
+        p = self._parse_color
+        self.color_normal = p(str(st.get('normal', 'green')))
+        self.color_fault = p(str(st.get('fault', 'red')))
+        self.color_door = p(str(st.get('door_open', 'ff7800')))
+        # busy = a running cure/bleaching program: purple comet (was yellow
+        # until 2026-09-07 - the bench asked for the purple back).
+        self.color_busy = p(str(st.get('busy', 'purple')))
+        self.color_no_net = p(str(st.get('no_internet', 'blue')))
+        # Manual chamber heating (Settings slider) gets its own SOLID color -
+        # steady orange, no comet / no blink - so it is visually distinct from
+        # a running cure program (moving comet) and from door-open (blinking).
+        self.color_manual = p(str(st.get('manual_heat', 'ff8c00')))
+        self.brightness = float(st.get('brightness', 40))
+
+    def _reload_colors(self):
+        """Re-read rgb.status from components.json (called from _evaluate,
+        i.e. every status_sec). A changed table is applied at once and the
+        strip repaints; any read/parse problem keeps the last good colors."""
+        try:
+            from io_controller import load_component_config
+            st = load_component_config().get('rgb', {}).get('status', {})
+            if st != self._status_cfg:
+                self._apply_colors(st)
+                self._status_cfg = dict(st)
+                self._last_frame = None       # force a repaint in the new colors
+                print('[API] RGB status colors reloaded from components.json',
+                      flush=True)
+        except Exception:                 # noqa: BLE001 - keep the last good table
+            pass
 
     def _net_watch(self):
         """Background flag refresher: does the machine actually reach the
@@ -195,6 +224,7 @@ class StatusLeds(threading.Thread):
         output forced off. The check is independent of the displayed mode,
         so it fires even when a fault has priority on the strip."""
         b = self.bridge
+        self._reload_colors()
         try:
             outputs_on = False
             if b.sys.door_open() is True:
@@ -706,6 +736,31 @@ class IOBridge:
                 # (including a fast->medium/slow change) releases them.
                 self._set_cool_led_fans(mode == 'fast')
             return ok, why
+
+    def set_rgb(self, on, color=None, brightness=None):
+        """Manual RGB strip override (/api/rgb): a solid color while on; the
+        automatic status colors pause meanwhile and repaint as soon as the
+        override is released (StatusLeds watches bridge._rgb_state)."""
+        leds = self.status_leds
+        if not leds:
+            return False, 'RGB strip unavailable'
+        if not on:
+            self._rgb_state = {'on': False, 'color': None, 'brightness': None}
+            leds._last_frame = None       # status loop repaints on its next tick
+            return True, None
+        try:
+            from io_controller import parse_rgb_color
+            rgb = parse_rgb_color(color or 'white')
+        except Exception as e:            # noqa: BLE001 - bad color name/hex
+            return False, str(e)
+        br = leds.brightness if brightness is None else max(0.0, min(100.0, float(brightness)))
+        self._rgb_state = {'on': True, 'color': color or 'white', 'brightness': br}
+        try:
+            leds.leds.fill(rgb, br)
+        except Exception as e:            # noqa: BLE001 - strip write failed
+            self._rgb_state = {'on': False, 'color': None, 'brightness': None}
+            return False, f'strip write failed: {e}'
+        return True, None
 
     def door_abort(self):
         """SAFETY: the door opened while outputs were live. Kill EVERY output

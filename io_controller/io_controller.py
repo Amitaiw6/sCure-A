@@ -158,7 +158,7 @@ SERVO_PIO_HELPER = os.path.normpath(os.path.join(
 GPIO_SIGNALS = {
     "NITROGEN_VALVE": 13,   # nitrogen valve - GPIO13
     "RGB_LED": 12,          # RGB status LEDs (TM1903 driver, RGB_LV line) - GPIO12
-    # GPIO16 (450nm SSR), GPIO20 (405nm SSR) and GPIO27 (voltage routing) are
+    # GPIO16 (450nm SSR), GPIO20 (405nm SSR) and GPIO17 (voltage routing) are
     # driven by SystemController per the wavelength mode - see components.json
     # "led_power". They are not manual signals.
 }
@@ -1022,7 +1022,12 @@ class SystemController:
         self.io = controller or IOController()
         self.config = config or load_component_config(config_path)
         self.leds = self.config["leds"]
-        self.lp = self.config.get("led_power", {})   # SSR + voltage-routing GPIOs
+        self._config_path = config_path
+        # led_power (SSR + voltage-routing GPIOs, mode table, min_intensity,
+        # led_max_duty) is served by the `lp` property below, which re-reads
+        # components.json live - see LP_RELOAD_SEC.
+        self._lp_static = self.config.get("led_power", {})
+        self._lp_cache = (0.0, self._lp_static)
         self.mode_override = None        # the software-selected wavelength mode
         self._leds_on = set()            # which LEDs are currently on
         self.led_fault = None            # last LED-driver / routing fault message
@@ -1038,6 +1043,30 @@ class SystemController:
             except Exception:            # noqa: BLE001 - gpiozero / tach unavailable
                 self.tachs[fan] = None
 
+    # led_power is re-read from components.json at most this often (seconds)
+    LP_RELOAD_SEC = 1.0
+
+    @property
+    def lp(self):
+        """The led_power section (SSR / routing GPIOs, mode table,
+        min_intensity, led_max_duty), re-read from components.json at most
+        once per LP_RELOAD_SEC so edits take effect LIVE - like heater_cfg(),
+        no service restart needed (added 2026-09-07 after the GPIO17 routing
+        polarity fix sat unused in a running service). Falls back to the
+        last good table, then to the section loaded at start-up, if the file
+        is missing or unreadable."""
+        now = time.monotonic()
+        ts, cached = self._lp_cache
+        if now - ts < self.LP_RELOAD_SEC:
+            return cached
+        try:
+            fresh = load_component_config(self._config_path).get("led_power",
+                                                                 self._lp_static)
+        except Exception:                 # noqa: BLE001 - keep the last good table
+            fresh = cached
+        self._lp_cache = (now, fresh)
+        return fresh
+
     def wavelength_mode(self):
         """The software-selected wavelength mode ('405nm' / '450nm')."""
         return self.mode_override or self.lp.get("default_mode", "405nm")
@@ -1045,7 +1074,7 @@ class SystemController:
     # --- LED-driver power: SSR + voltage routing (GPIO16/20/27) -----------
     def apply_led_power(self, mode=None):
         """Drive the SSR + routing GPIOs for `mode` per the config table, then
-        read GPIO27 back to verify routing. Returns (ok, reason)."""
+        read GPIO17 back to verify routing. Returns (ok, reason)."""
         mode = mode or self.wavelength_mode()
         states = self.lp.get("modes", {}).get(mode)
         if not states:
@@ -1151,7 +1180,7 @@ class SystemController:
     def set_led(self, led, intensity):
         """Set LED duty (0-100) with wavelength gating, LED-driver SSR + routing
         control, and automatic fan control. Returns True if applied, False if
-        blocked (wavelength mode or GPIO27 routing could not be verified)."""
+        blocked (wavelength mode or GPIO17 routing could not be verified)."""
         if led not in self.leds:
             raise ValueError(f"unknown LED: {led}")
         # Below the configured minimum intensity the LED counts as OFF: PWM is

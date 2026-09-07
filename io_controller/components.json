@@ -9,10 +9,10 @@
     "min_intensity": 10,
     "led_max_duty": 60,
     "modes": {
-      "450nm": { "ssr_450nm": 1, "ssr_405nm": 0, "routing": 1 },
+      "450nm": { "ssr_450nm": 1, "ssr_405nm": 0, "routing": 0 },
       "405nm": { "ssr_450nm": 1, "ssr_405nm": 1, "routing": 0 }
     },
-    "_comment": "Software-driven LED-driver SSR + wavelength-select GPIOs (OUTPUTS). GPIO16 = 450nm SSR, GPIO20 = 405nm SSR, GPIO17 = wavelength select (HIGH=450nm, LOW=405nm). GPIO17 is set BEFORE the SSRs and read back to verify before any LED may operate; on a mode change all LEDs turn off first, then GPIO17 changes. (GPIO27 is the door sensor, not here.) Below 'min_intensity' (user-facing brightness %) an LED counts as OFF: its PWM is zeroed, and once no LED remains on the SSRs (GPIO16 + GPIO20) are switched off. 'led_max_duty' is the PWM duty that equals 100% brightness (must match LED_MAX_DUTY in the dashboards); it converts min_intensity into duty for SystemController.set_led."
+    "_comment": "Software-driven LED-driver SSR + wavelength-select GPIOs (OUTPUTS). GPIO16 = 450nm SSR, GPIO20 = 405nm SSR, GPIO17 = voltage-routing line. BENCH FINDING 2026-09-07 (testingcm5): GPIO17 HIGH cuts the 12 V rail of the door LED-driver DIM stage in EVERY SSR combination (door DIM measured 0 V), while GPIO17 LOW with only the 450nm SSR on gives the door its full 12 V DIM - so the old assumption HIGH=450nm was inverted and Bleaching never dimmed the door. Both modes therefore keep routing=0; the wavelength is selected by the SSRs alone (450nm: GPIO16 only, 405nm: GPIO16+GPIO20). Do not set routing=1 for 450nm again without re-measuring the door DIM. GPIO17 is still set BEFORE the SSRs and read back to verify before any LED may operate; on a mode change all LEDs turn off first, then GPIO17 changes. (GPIO27 is the door sensor, not here.) Below 'min_intensity' (user-facing brightness %) an LED counts as OFF: its PWM is zeroed, and once no LED remains on the SSRs (GPIO16 + GPIO20) are switched off. 'led_max_duty' is the PWM duty that equals 100% brightness (must match LED_MAX_DUTY in the dashboards); it converts min_intensity into duty for SystemController.set_led."
   },
 
   "door_sensor": {
@@ -37,7 +37,7 @@
       "normal": "green",
       "fault": "red",
       "door_open": "ff7800",
-      "busy": "yellow",
+      "busy": "purple",
       "no_internet": "blue",
       "internet_check_sec": 5,
       "busy_direction": "rtl",
@@ -47,7 +47,7 @@
       "blink_sec": 0.5,
       "status_sec": 1
     },
-    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 1 s - the HSI sampling-time rule: every reading is sampled at most every 1 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper). 'no_internet' marks a machine that cannot reach the internet (checked in the background every 'internet_check_sec' seconds, default 5 s - TCP 443 to www.google.com / 1.1.1.1, so a router that fakes DNS answers cannot spoof \"online\"): while IDLE the strip is solid in this color, and while a PROCESS RUNS the moving comet switches from the 'busy' color to this color - process + no-internet are visible at once. Faults and door-open always take priority."
+    "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet (busy = purple since 2026-09-07; every color here is re-read LIVE about once a second, so edits apply without a service restart) ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 1 s - the HSI sampling-time rule: every reading is sampled at most every 1 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper). 'no_internet' marks a machine that cannot reach the internet (checked in the background every 'internet_check_sec' seconds, default 5 s - TCP 443 to www.google.com / 1.1.1.1, so a router that fakes DNS answers cannot spoof \"online\"): while IDLE the strip is solid in this color, and while a PROCESS RUNS the moving comet switches from the 'busy' color to this color - process + no-internet are visible at once. Faults and door-open always take priority."
   },
 
   "heater": {

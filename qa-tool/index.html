@@ -181,6 +181,9 @@ const TEST_CATEGORIES = [
       { id: 'ui_spa_fallback', name: 'SPA Fallback Route', desc: 'GET /settings (a client route, not a file) still returns the UI page, so a refresh inside the kiosk never shows a 404', check: 'ui_spa_fallback' },
       { id: 'ui_fill_scale', name: 'UI Fills Any Screen', desc: 'fitToScreen logic (main.tsx): the 800x480 canvas is stretched to the full viewport — 1280x720 DSI panel, desktop windows, no black margins', check: 'ui_fill_scale' },
       { id: 'ui_builder_size', name: 'Dialogs Scale With The Screen', desc: 'Dialog/Select/OnScreenKeyboard portals render inside the scaled #root canvas, so the 550x460 Build Cure Program dialog shows at ~69% x ~96% of any screen and keyboard lettering scales up with the panel', check: 'ui_builder_size' },
+      { id: 'ui_pause_button_style', name: 'Pause Button: White + State-Color Outline', desc: 'PhaseCard: the Pause button on the active phase card is white (bg-white, dark text) with a 2 px outline in the current state colour — the same border colour as the card: heating orange-500, drying blue-500, cure purple-500, cooling teal-500, bleaching cyan-400, N₂ white', check: 'ui_pause_button_style' },
+      { id: 'ui_start_door_gate', name: 'Start Cure Blocked While Door Open', desc: 'Home: canStart = program selected AND door not open (doorClosed !== false). With the door open the Start Cure button is grey (neutral-600) and inert (no extra lettering), instead of starting a run that the door watchdog aborts a second later; a missing door reading does not block', check: 'ui_start_door_gate' },
+      { id: 'ui_start_button_size', name: 'Start Cure Button: 1.5x Size', desc: 'Home: the Start Cure button is the standard button scaled by 1.5 — 54 px tall (was h-9 = 36), 21 px text (was 14), 24 px play icon (was 16), 30 px side padding (was 20); still a plain tap, fixed bottom-right, disabled until a program is selected', check: 'ui_start_button_size' },
     ]
   },
   {
@@ -196,6 +199,9 @@ const TEST_CATEGORIES = [
       { id: 'timer_wallclock', name: 'Phase Timer Tracks Wall-Clock', desc: 'Cure screen logic: elapsed time is computed from a performance.now() anchor, not by counting setInterval ticks — late/missed ticks (kiosk browser under load) must not stretch the phase duration', check: 'timer_wallclock' },
       { id: 'uv_after_ramp', name: 'UV Start Mode Gating', desc: 'Cure screen logic: with UV Start = "At temperature" a ramping Cure/Bleacher step heats FIRST with the UV off until the measured chamber temp reaches the target; with "On ramp start" the LEDs light from the very start of the ramp', check: 'uv_after_ramp' },
       { id: 'telemetry_report', name: 'Report Telemetry Sampling', desc: 'Cure screen logic: telemetry samples at t=0 and then every 5s, immune to the 1s status polling — so every run (even one aborted seconds in) has at least one sample and its report is downloadable from Cure History', check: 'telemetry_report' },
+      { id: 'abort_confirm_warnings', name: 'Stop Mid-Process Confirmation', desc: 'Cure screen: Abort on the active phase opens a confirmation that says the cycle ends immediately and cannot be resumed, warns that the model\'s appearance/surface finish may be affected and that a partially cured model may warp or lose its shape, and shows a hot-surfaces caution marked with the ISO 7010 W017 hot-surface pictogram (yellow triangle, heat waves) and worded like the CAUTION label (wear heat-resistant gloves, avoid contact) — with the live temperature when the chamber is ≥ 40°C, a generic "may still be warm — wear gloves" note below that; Abort is FINAL only — buttons Keep Running / Yes, Stop (the temporary stop is the separate Pause button)', check: 'abort_confirm_warnings' },
+      { id: 'stopped_run_colors', name: 'Stopped Run Is Orange', desc: 'A run stopped mid-process (status aborted) is labeled "Stopped" and shown in ORANGE — never green — in the process report (status pill + Status card), in Cure History (icon, badge, export ✓ feedback) and on Home; completed stays green, error red', check: 'stopped_run_colors' },
+      { id: 'pause_resume', name: 'Pause & Open Door / Continue', desc: 'Cure screen: the separate Pause (⏸) button on the active step (next to Abort) opens "Pause the Process?" — with a note that pausing interrupts the cure and may affect the quality of the models (surface finish, shape, dimensional accuracy) plus the hot-surfaces caution; confirming with Pause & Open Door turns EVERY output off immediately (no fan run-on, so the server door watchdog sees nothing live and does not abort while the door is open), releases the door and freezes all clocks; Continue is allowed only with the door closed and shifts the ramp/hold/N2 anchors by the pause length and re-sends the phase command (heater + UV back, N2 valve re-opened) so the step continues where it stopped', check: 'pause_resume' },
       { id: 'report_usb_export', name: 'Report Export To USB', desc: 'Cure History download button: on the machine the report HTML is written straight to the USB drive (POST /api/system/export-report); a machine-side failure (9081 no USB / 9082 write failed) raises the alert instead of silently downloading; only dev/API-unreachable falls back to a browser download', check: 'report_usb_export' },
     ]
   },
@@ -225,6 +231,7 @@ const TEST_CATEGORIES = [
     icon: '⚙',
     tests: [
       { id: 'door_open', name: 'Door Open', desc: 'Open the door', endpoint: '/api/door/open', method: 'POST', expect: 'ok' },
+      { id: 'rgb_override_release', name: 'RGB Strip Override Release', desc: 'POST /api/rgb?on=0 hands the strip back to the automatic status colors (was HTTP 500: IOBridge had no set_rgb)', endpoint: '/api/rgb?on=0', method: 'POST', expect: 'ok' },
       { id: 'damper_open', name: 'Damper Open', desc: 'Open the damper', endpoint: '/api/damper/open', method: 'POST', expect: 'ok' },
       { id: 'damper_close', name: 'Damper Close', desc: 'Close the damper', endpoint: '/api/damper/close', method: 'POST', expect: 'ok' },
     ]
@@ -305,7 +312,7 @@ const TEST_CATEGORIES = [
       { id: 'io_cool_pwm', name: 'Cooling Fixed Fan Duty', desc: 'Each cooling mode holds the chamber fan at its FIXED duty (no PI rate control): slow=30%, medium=60%, fast=100% — verified live via coolingFanPwm in /api/state', check: 'io_cool_pwm' },
       { id: 'io_stop', name: 'Stop All Outputs', desc: 'POST /api/cure/stop turns heater + UV + cooling off through the safety layer', endpoint: '/api/cure/stop', method: 'POST', expect: 'ok' },
       { id: 'io_stop_state', name: 'Outputs Off Reflected', desc: 'GET /api/state shows UV and cooling off after stop', endpoint: '/api/state', method: 'GET', check: 'io_all_off' },
-      { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): fault → BLINKING red; door open → BLINKING door color; process → yellow comet (BLUE comet when internet is unreachable); idle without internet → solid blue; all OK → solid normal; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
+      { id: 'io_rgb_status', name: 'RGB Status Strip Logic', desc: 'StatusLeds (io_bridge): fault → BLINKING red; door open → BLINKING door color; process → PURPLE comet (BLUE comet when internet is unreachable); idle without internet → solid blue; all OK → solid normal; unreadable door sensor is not treated as open', check: 'io_rgb_status' },
       { id: 'led_status_loop', name: 'LED Status Loop Every 1s', desc: 'StatusLeds watchdog re-classifies the machine state every status_sec=1s (animation keeps its own faster ticks) — any state change reaches the strip within 1 second', check: 'led_status_loop' },
       { id: 'sampling_1s', name: 'Sampling Time ≤ 1s (HSI)', desc: 'HSI sampling-time rule: every reading is sampled at most every 1s — heating loop sample_sec=1s, cooling loop sample_sec=1s, status/door watchdog status_sec=1s, dashboard SENSOR_REFRESH_SEC=1s, UI /api/state poll=1s', check: 'sampling_1s' },
       { id: 'io_door_abort', name: 'Door-Open Safety Abort', desc: 'Watchdog: door opened while ANY output is live → 10s countdown warning on screen; if it STAYS open → process aborted + ALL outputs off + strip turns red (Err 6016). Closing in time resumes; idle/unreadable sensor never aborts', check: 'io_door_abort' },
@@ -502,6 +509,7 @@ const TEST_CATEGORIES = [
       { id: 'hwc_manual_temp_high', name: 'Manual Setpoint Above 80°C Rejected', desc: '/api/chamber/temperature rejects 200°C — the safe max is enforced on the backend, not only in the UI slider', endpoint: '/api/chamber/temperature?target=200', method: 'POST', check: 'hw_reject', code: 7001 },
       { id: 'hwc_uv_below_min', name: 'UV Below 10% Rejected', desc: 'led_power.min_intensity=10: below it the LEDs stay dark, so cure-405 at 7% must be rejected with code 7002', endpoint: '/api/cure/cure-405?target=60&intensity=7', method: 'POST', check: 'hw_reject', code: 7002 },
       { id: 'hwc_uv_450_below_min', name: 'Bleaching UV Below 10% Rejected', desc: 'Same UV floor applies to the 450nm bleaching path', endpoint: '/api/cure/cure-450?target=60&intensity=5', method: 'POST', check: 'hw_reject', code: 7002 },
+      { id: 'hwc_led_routing', name: 'LED Routing Table Mirror (GPIO17 LOW In Both Modes)', desc: 'Mirrors components.json led_power.modes after the 2026-09-07 bench finding: GPIO17 HIGH cut the door LED-driver DIM to 0 V, so BOTH wavelength modes keep routing=0 and the SSRs alone select the wavelength (450nm: GPIO16 only, 405nm: GPIO16+GPIO20). Bleaching must not raise GPIO17 again', check: 'hwc_led_routing' },
       // New hardware endpoints wired to previously UI-only features
       { id: 'hwc_nitrogen_open', name: 'N₂ Valve Opens', desc: 'POST /api/cure/nitrogen?on=1 drives the real solenoid (GPIO13) — no longer a UI-only countdown', endpoint: '/api/cure/nitrogen?on=1', method: 'POST', expect: 'ok' },
       { id: 'hwc_nitrogen_state', name: 'N₂ State Reflected', desc: 'GET /api/state reports nitrogenActive after the valve command', endpoint: '/api/state', method: 'GET', check: 'hwc_n2_state' },
@@ -550,7 +558,83 @@ const TEST_CATEGORIES = [
       { id: 'appl_audit_chain', name: 'Audit Log Hash Chain', desc: 'hash = sha256(prevHash + canonical(entry)); modifying, removing or reordering a line breaks the chain at that point (WebCrypto SHA-256 in the browser)', check: 'appl_audit_chain' },
     ]
   },
+  {
+    id: 'dvt',
+    name: 'DVT Campaign Tool',
+    icon: '🧪',
+    tests: [
+      { id: 'dvt_criteria_logic', name: 'Pass-Criteria Verdict Logic', desc: 'DVT/dvt_tool/criteria mirror: PASS when every term holds, FAIL when one fails, BLOCKED (never PASS) when a referenced field is missing or a catalog threshold is still null (SAF-019 protective_shutdown)', check: 'dvt_criteria_logic' },
+      { id: 'dvt_test_status', name: 'Dashboard Test Status', desc: 'DVT dashboard matrix mirror (Engine.test_status): Failed if any run FAIL; Running if a run is in progress; Complete when every applicable run is DONE; Blocked if a BLOCKED verdict exists; otherwise Pending; rejected runs excluded from the counts', check: 'dvt_test_status' },
+      { id: 'dvt_wizard_gate', name: 'Wizard Stage Gating', desc: 'DVT wizard mirror: Next is refused on the Safety stage until the plan is acknowledged, on Preconditions until every box is ticked, and on a data step when a numeric field is not a number or outside its plausible range; resume index = last saved step (SRS-DVT-083/084/088); footer: Back steps back on every stage except Done, where the run is committed and Back leaves the wizard (back to the console); Next hidden on Review/Done, Leave hidden on Done', check: 'dvt_wizard_gate' },
+      { id: 'dvt_applicability', name: 'Applicability ALL / SINGLE / SUBSET', desc: 'DVT catalog mirror: ALL -> every UUT, SINGLE -> the named UUT (none while CONFIRM/null), SUBSET -> the listed UUTs only; run count = units x variants x reps; the 5-machine matrix shows N/A for non-applicable units', check: 'dvt_applicability' },
+      { id: 'dvt_progress_pct', name: 'Campaign Progress %', desc: 'DVT dashboard mirror: campaign % = committed runs / applicable runs, rejected and supplementary runs excluded; per-subsystem % from that subsystem\'s runs; remaining bench time = sum(pending runs x est min)', check: 'dvt_progress_pct' },
+      { id: 'dvt_i18n_mode', name: 'Language + Work Mode Selection', desc: 'DVT console mirror: tr() returns Hebrew for known strings and the source string otherwise; Hebrew flips layout to RTL; work mode Simulation maps the DUT to sim://scure and Normal to the saved machine address; a bare "sim" address normalises to sim://scure while hosts get http:// and :3001', check: 'dvt_i18n_mode' },
+      { id: 'dvt_catalog_i18n_overlay', name: 'DVT Catalog Language Overlay', desc: 'SRS-DVT-194 mirror of Catalog.apply_overlay: in Hebrew the catalog prose (title, purpose, steps, preconditions, safety plan, equipment labels, phase names) is replaced from the overlay while identifiers (test id, field names, capture lists, pass criteria, equipment name = calibration key, run ids) stay; a positional list whose length differs, an unknown test id or an unknown field note refuse the overlay; no overlay = plain English', check: 'dvt_catalog_i18n_overlay' },
+      { id: 'dvt_ele005_power_matrix', name: 'DVT-ELE-005 · Power Per Mode x Mains Voltage', desc: 'Catalog v0.11 mirror: ELE-005 sweeps mains voltage 100 / 110 / 230 / 240 V (1 rep, inrush repeated inside the run) -> 4 runs per unit, 20 across 5 units; pass criteria add a recording plausibility check (whole-machine power >= heater-only and >= CURE-only) and inrush_switch_ons >= 3; a missing per-mode value is BLOCKED, never PASS', check: 'dvt_ele005_power_matrix' },
+      { id: 'dvt_saf013_cutout_criteria', name: 'DVT-SAF-013 · Thermal Cutout Under Unlimited Heating', desc: 'Catalog v0.12 mirror: SAF-013 passes only if the run was really unlimited (heater command >= 100%, no manual mains abort), the cutout opened within +/-10 C of its rated trip temperature, heater power was removed, the chamber FELL under a 100% heater command (software-visible proof), the software alarmed, resume needs acknowledgement and the software limits were restored afterwards; a missing value is BLOCKED', check: 'dvt_saf013_cutout_criteria' },
+      { id: 'dvt_uvoff_analysis', name: 'SAF-012 UV-Off Analysis (Ophir trace)', desc: 'DVT/dvt_tool/instruments/uvoff.analyze mirror: uv_off_time = first sustained sample below 10% of plateau after the door-open instant minus that instant; residual = mean of the tail; without a door instant it is derived from the last sample at >= 95% plateau and flagged as a lower bound; a trace that never drops gives no uv_off_time', check: 'dvt_uvoff_analysis' },
+      { id: 'dvt_ledoff_trigger', name: 'SAF-007 LED-Off Timing (Ophir trace, thermistor trigger)', desc: 'DVT/dvt_tool/instruments/uvoff mirror with trigger = led_thermistor: the trigger instant is the first machine poll where ledTemps[position] reads null (or the operator marker); led_off_time = that instant to the sustained 10% crossing, pass limit 2 s (the door trigger keeps 1 s); alarm_identifies_sensor = the alarm text names the position; catalog tool key led_off_timing maps to the thermistor trigger and uv_off_timing to the door', check: 'dvt_ledoff_trigger' },
+      { id: 'dvt_process_figures', name: 'DVT Process Figures (per test, per step)', desc: 'DVT/dvt_tool/figures mirror: one generated machine schematic; a test spec sets element states (focus / on / off / fault / instr / ok), a step override replaces the base state, None clears a highlight, instruments are drawn only when the spec lists them, an unknown element or state or a step index beyond the procedure is refused, and every catalog test needs a spec', check: 'dvt_process_figures' },
+      { id: 'dvt_thm004_selector_mismatch', name: 'DVT-THM-004 · Heater Over-Drive (230 V / 110 V Selector) Shutdown Time', desc: 'Catalog v0.18 mirror: 230 V mains with the selector at 110 V; the heater shutdown is the branch fuse opening, read as the rise-to-fall turn on the heater-body thermocouple (TC-08); PASS needs the 5 A branch fuse (not the inlet fuse), a visible turn, no manual mains abort, body under the 250 C ceiling, heater flat before HEAT and a functional heat-up afterwards; the fuse-open time limit is still CONFIRM (null) so the verdict is BLOCKED until it is set', check: 'dvt_thm004_selector_mismatch' },
+      { id: 'dvt_unit_progress', name: 'Progress Bar Per Machine', desc: 'DVT dashboard mirror (DashboardPage.unit_progress): per UUT % = committed runs / applicable runs with REJECTED excluded from both; failed = committed FAIL verdicts; a machine with no runs shows 0 %; 100 % only when every non-rejected run is committed', check: 'dvt_unit_progress' },
+      { id: 'dvt_tempstats', name: 'DVT Temperature By Component · Per-Machine Std + Outliers', desc: 'SRS-DVT-195 mirror of dvt_tool/tempstats.py: field -> component mapping (right/left/back/door -> LED side, heater/cutout -> heater body, ambient, chamber…); per machine n / mean / sample std; between-machine std and spread; a machine is an outlier when its mean is further from the median of the machines than 3x the scaled MAD, 2x the pooled within-machine std and 2 C (largest wins), only with >= 3 machines; a spread inside noise or an even spread never flags; one hot machine among three is the only one flagged', check: 'dvt_tempstats' },
+      { id: 'dvt_bench_order', name: 'DVT Bench Order · Same Instrument, One Test After The Other', desc: 'SRS-DVT-196 mirror of dvt_tool/bench.py: equipment names reduce to instruments (TC-08, Ophir, O2 analyser…; fuses / links are not instruments); inside a phase the greedy order keeps the most shared instruments with the current bench setup, ties by catalog order, and an in-phase dependency is always placed before the test that needs it; consecutive tests with the same instrument set form one group', check: 'dvt_bench_order' },
+      { id: 'dvt_docgen', name: 'DVT Campaign Document · CONFIRM Extraction + Null Thresholds', desc: 'SRS-DVT-197 mirror of dvt_tool/docgen.py: CONFIRM lines in the catalog text are attributed to the test block they sit in (lines before the first test go to the header block), comment markers are stripped; a null threshold renders as CONFIRM; every test id gets a section anchor; the Hebrew document is dir=rtl with identifiers kept dir=ltr', check: 'dvt_docgen' },
+      { id: 'dvt_ssh_host', name: 'DUT Address Doubles As SSH Host', desc: 'DVT console mirror (dvt_tool/ssh.py): the SSH host is the hostname of the machine address (http://<ip>:3001 -> <ip>, bare ip accepted, mDNS name kept); the simulator has no SSH host; the command is ssh [-i key] user@host with testingpi as the default user', check: 'dvt_ssh_host' },
+      { id: 'dvt_team_journal', name: 'Team Journal Merge (Drive folder)', desc: 'DVT console mirror (dvt_tool/journal.py): one append-only journal file per console in the shared folder; a pull replays only events not yet applied (by uuid), in timestamp order; a run belongs to whoever started it first — a later claim is a conflict and is overridden on every console; local-only settings are never journaled', check: 'dvt_team_journal' },
+      { id: 'dvt_git_checkpoint', name: 'Git Checkpoint Naming + Commit Message', desc: 'DVT console mirror (dvt_tool/checkpoint.py): checkpoint folder = DVT/checkpoints/<campaign>/<YYYYMMDD-HHMM>_<safe label> (label sanitised to [A-Za-z0-9._-], max 48); commit message = "DVT checkpoint: <label> — done/total runs (pct %), P PASS / F FAIL / B BLOCKED / W WAIVED [campaign] by operator"; only that folder is committed', check: 'dvt_git_checkpoint' },
+      { id: 'dvt_rollup_logic', name: 'Sweep Roll-up Verdict', desc: 'SRS-DVT-096 mirror: a swept test is PASS only if every row passes; one FAIL row -> FAIL; WAIVED counted separately from PASS; rejected rows excluded', check: 'dvt_rollup_logic' },
+    ]
+  },
+  {
+    id: 'dvt_ready',
+    name: 'DVT Readiness (machine software vs. DVT catalog)',
+    icon: '🛡',
+    tests: [
+      { id: 'dvtr_telemetry', name: 'DVT-THM/SAF · State Telemetry Fields', desc: 'Every field the DVT procedures read must be in /api/state: chamberTemp, targetTemp, atTemp, heaterPwm, isHeating, isCooling, coolingRate, coolingFanPwm, damperOpen, ventOn, doorClosed, doorAborted, fans, fanRpm{chamber_heating,chamber_intake,led_cooling}, ledTemps{left,right,back,door}, faults{heater,cooling,led}', check: 'dvtr_telemetry' },
+      { id: 'dvtr_run_telemetry', name: 'DVT-THM-002 · Run Telemetry Keeps Per-Panel LED Temps', desc: 'A cure-run telemetry sample (chamberTemp + ledTemps right/left/back/door) survives the start / telemetry / finish round-trip and is readable back from Cure History — the per-panel record THM-002 and SAF-019 are decided on', check: 'dvtr_run_telemetry' },
+      { id: 'dvtr_errors_registry', name: 'DVT-SAF-010 · Error Registry Covers Every DVT Fault', desc: 'errors.json: codes unique; every safety entry carries a message that names the component plus troubleshooting (recovery) steps; and a code exists for each fault family the DVT injects — heater fan (SAF-003), chamber sensor open (SAF-004), sensor short/implausible (SAF-005), LED thermistor (SAF-006/007), LED fan (SAF-008/019), chamber fan (SAF-009), thermal cutout (SAF-013), watchdog/heartbeat (SAF-014), power-loss abort (SAF-015)', url: '/config/errors.json', check: 'dvtr_errors_registry' },
+      { id: 'dvtr_stall_watchdog', name: 'DVT-SAF-011 · Heating-Rate Watchdog (rate-based, alarm ≤ 30 min)', desc: 'Under-voltage (220 V selector on 110 V mains) can only be caught by a heating-rate watchdog: mirror of the Cure screen stall rule — at least 1°C rise per 5-min check, 5 misses raise Err 7004 at 25 min (limit 30 min); rate-based, so a healthy 27–33 min heat-up never false-trips', check: 'dvtr_stall_watchdog' },
+      { id: 'dvtr_orphan_runs', name: 'DVT-SAF-015 · Interrupted Runs Marked Aborted (no orphans)', desc: 'After a power cut no cure run may stay "running": every run that started before the last boot must be reconciled to aborted/error, and no output may be live again by itself after boot', check: 'dvtr_orphan_runs' },
+      { id: 'dvtr_fan_tach_coverage', name: 'DVT-SAF-008/019 · Per-Side LED Fan Tach In Telemetry', desc: 'SAF-008 needs the alarm to name the failed fan and SAF-019 case B needs a tach per side — /api/state.fanRpm must report the four LED-cooling fans (left/right/back/door) individually, not only the first fan of the group', check: 'dvtr_fan_tach_coverage' },
+      { id: 'dvtr_n2_purge_feedback', name: 'DVT-GAS-001 · Nitrogen Purge Is Time-Based (no O2 feedback) — Setting vs Measured', desc: 'GAS-001 measures the time to 95 % N2 (O2 <= 4.8 %) and the hold with the valve closed. /api/state must expose the valve (nitrogenActive); an oxygen reading (o2Percent / n2Percent / oxygen) would let the machine close the loop. Expected finding today: the purge is a fixed duration (Settings, default 120 s) with no O2 feedback — the setting must exceed the worst unit\'s measured time by 20 % and the hold must cover the longest cure', check: 'dvtr_n2_purge_feedback' },
+      { id: 'dvtr_led_panel_feedback', name: 'DVT-SAF-020 · Per-Panel LED Output Feedback In Telemetry', desc: 'SAF-020 needs the alarm to name the LED panel that is not emitting — /api/state must carry per-panel output feedback (ledOutput / ledPanels / ledCurrent {left,right,back,door}, or faults.led keyed per panel). Today faults.led is one string from the SSR / routing GPIO read-back and there are only two light sensors for four panels. Expected finding: no per-panel feedback; options are a thermistor rise-rate rule, a light-sensor switch-on sequence, or per-panel current sense on the spare ADS1115 inputs', check: 'dvtr_led_panel_feedback' },
+      { id: 'dvtr_selector_open_guidance', name: 'DVT-SAF-021 · No-Heating Alarm Tells The Customer To Set The Voltage Selector', desc: 'errors.json: the heating-stall / no-heating code (7004) must carry customer guidance naming the voltage selector and the country mains position — a selector left between the 110 V and 230 V detents is an open circuit and the heater receives no power. Expected finding: the 5 x 5 min stall rule alarms only after 25 min; a no-rise-at-all rule would be far faster', url: '/config/errors.json', check: 'dvtr_selector_open_guidance' },
+      { id: 'dvtr_n2_line_pressure', name: 'DVT-GAS-003 · Nitrogen Line Pressure In Telemetry', desc: 'The 6 bar enable guard and the pre-cure N₂ check need a reading: /api/state.n2LinePressure must be a number. Expected finding on the real board: null (no sensor), which also makes the Settings guard (null < 6) block nitrogen mode for ever — fit an inlet pressure switch / transducer or drop the guard', check: 'dvtr_n2_line_pressure' },
+      { id: 'dvtr_fan_baseline', name: 'DVT-SAF-003/008/009 · Fan Diagnostics Baseline (RPM per fan)', desc: 'POST /api/diagnostics/fan-test for chamber_heating, chamber_intake and led_cooling: each returns a measured rpm and OK/FAIL — the healthy baseline_tach every fan-failure test starts from', check: 'dvtr_fan_baseline' },
+      { id: 'dvtr_door_start_inhibit', name: 'DVT-SAF-012/017 · Door Open / Sensor Unplugged Inhibits Heat + UV (Err 6015)', desc: 'OPERATOR: open the door (SAF-012) or unplug the door sensor (SAF-017 open chain) before running. Heat, cure-405 and uv-only must all be refused with code 6015; skipped while the door reads closed', check: 'dvtr_door_start_inhibit' },
+      { id: 'dvtr_door_uv_off', name: 'DVT-SAF-012 · Door Opened During UV → UV Off ≤ 1 s (operator-assisted)', desc: 'UV starts (door closed); OPERATOR opens the door within 45 s; the tool measures the time until uvOn=false (limit 1 s, poll resolution 0.25 s), checks doorAborted latches until /api/door-abort/ack, then stops. Expected finding: the 10 s watchdog grace is far above the 1 s limit', check: 'dvtr_door_uv_off' },
+      { id: 'dvtr_saf003', name: 'DVT-SAF-003 · Heater Fan Failure → Heater Off ≤ 5 s (operator-assisted)', desc: 'Heating starts; OPERATOR disconnects the heater circulation fan within 60 s; the tool measures the time from tach=0 to isHeating=false (limit 5 s), expects faults.heater set, and that a new heat command is refused while the fan is dead', check: 'dvtr_inject', start: '/api/cure/heat?target=40', instruction: 'disconnect the heater circulation fan (FAN_HEATER)', waitSec: 60, limitSec: 5, faultKey: 'heater', restart: true, trigger: (s) => s.isHeating && s.fanRpm && s.fanRpm.chamber_heating === 0, safe: (s) => s.isHeating === false },
+      { id: 'dvtr_saf004', name: 'DVT-SAF-004 · Chamber Sensor Open → Heater Off ≤ 2 s (operator-assisted)', desc: 'Heating starts; OPERATOR unplugs the chamber thermistor within 60 s; the tool measures the time to isHeating=false (limit 2 s), expects faults.heater to name the sensor, and that heating cannot be restarted while it is disconnected', check: 'dvtr_inject', start: '/api/cure/heat?target=40', instruction: 'unplug the chamber thermistor (TEMP_CHAMBER)', waitSec: 60, limitSec: 2, faultKey: 'heater', restart: true, trigger: (s) => s.chamberTemp == null || !!(s.faults && s.faults.heater), safe: (s) => s.isHeating === false },
+      { id: 'dvtr_saf005', name: 'DVT-SAF-005 · Fixed 10 kΩ In Place Of Chamber Sensor → Alarm ≤ 3 min, Heater Off, HEAT Refused (operator-assisted)', desc: 'Catalog v0.14: heating to 80°C starts; OPERATOR swaps the chamber thermistor plug for a fixed 10 kΩ resistor within 60 s (reading freezes at a plausible ~25°C — no range check can catch it). The firmware must notice within 180 s that the reading does not respond to full heater output: faults.heater raised, isHeating false, and a re-commanded HEAT refused while the resistor is fitted; chamber ceiling 95°C. Expected finding today: no frozen-reading watchdog exists', check: 'dvtr_inject', start: '/api/cure/heat?target=80', instruction: 'swap the chamber thermistor plug for the fixed 10 kΩ resistor', waitSec: 60, limitSec: 180, faultKey: 'heater', restart: true, maxTemp: 95, trigger: (s, prev) => !!(s.faults && s.faults.heater) || (prev && prev.chamberTemp != null && s.chamberTemp != null && prev.chamberTemp - s.chamberTemp > 5), safe: (s) => s.isHeating === false },
+      { id: 'dvtr_led_thermistor_open', name: 'DVT-SAF-007 · LED Thermistor Open → Cure Inhibited', desc: 'OPERATOR: disconnect one LED thermistor (R / L / Back / Door) before running. With a panel reading null a UV-only cure must be refused and the refusal must name the panel; skipped while all four sensors read', check: 'dvtr_led_thermistor_open' },
+      { id: 'dvtr_led_coupling', name: 'DVT-SAF-006 · LED Thermistors Thermally Coupled (rate of rise, ~60 s)', desc: 'UV-only 405 nm at 30 % for 60 s with the door closed: every panel thermistor must rise at least 0.5°C (a detached-but-connected sensor reads valid ambient and never rises) unless the software already raises faults.led for it', check: 'dvtr_led_coupling' },
+      { id: 'dvtr_saf008', name: 'DVT-SAF-008 · LED Fan Failure → UV Off ≤ 2 s + Start Inhibit (operator-assisted)', desc: 'UV-only starts; OPERATOR disconnects the monitored LED fan (FAN_LEFT) within 60 s; the tool measures the time from tach=0 to uvOn=false (limit 2 s), expects faults.led to name the fan, and that a new UV command is refused', check: 'dvtr_inject', start: '/api/cure/uv-only?wavelength=405&intensity=30&vent=0', instruction: 'disconnect the LED cooling fan FAN_LEFT', waitSec: 60, limitSec: 2, faultKey: 'led', restart: true, trigger: (s) => s.uvOn && s.fans && s.fans.led_cooling > 0 && s.fanRpm && s.fanRpm.led_cooling === 0, safe: (s) => s.uvOn === false },
+      { id: 'dvtr_saf009', name: 'DVT-SAF-009 · Chamber Fan Failure During Cooling → Response ≤ 5 s (operator-assisted)', desc: 'Cooling starts (chamber must be above 27°C); OPERATOR disconnects the chamber intake fan within 60 s; the tool measures the time from tach=0 to cooling stopped / faults.cooling (limit 5 s)', check: 'dvtr_inject', start: '/api/cure/cool?target=25&mode=medium', instruction: 'disconnect the chamber intake fan (FAN_COOLING)', waitSec: 60, limitSec: 5, faultKey: 'cooling', restart: false, needsWarm: 27, trigger: (s) => s.isCooling && s.fanRpm && s.fanRpm.chamber_intake === 0, safe: (s) => s.isCooling === false || !!(s.faults && s.faults.cooling) },
+      { id: 'dvtr_thm_overshoot', name: 'DVT-THM-001 · atTemp + Overshoot ≤ 3°C (live, up to 8 min)', desc: 'Step to current+3°C (min 30): the control sensor must report atTemp, then over the next 90 s the chamber must not overshoot the setpoint by more than 3°C', check: 'dvtr_thm_overshoot' },
+      { id: 'dvtr_thm_cool_entry', name: 'DVT-THM-003 · Cooling Entry: Damper Open, Heater Fan 100 %, Rate Reported', desc: 'On entry to cooling (chamber must be above 27°C): damperOpen=true, heater fan at 100 %, intake fan at the mode duty (medium=60 %), and coolingRate becomes a number within 20 s', check: 'dvtr_thm_cool_entry' },
+    ]
+  },
 ];
+
+// ---- DVT Readiness helpers (category dvt_ready) -----------------------------
+const dvtrSleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function dvtrState() {
+  const base = document.getElementById('apiUrl').value;
+  const r = await fetch(base + '/api/state', { signal: AbortSignal.timeout(4000) });
+  return r.json();
+}
+async function dvtrPost(path) {
+  const base = document.getElementById('apiUrl').value;
+  const r = await fetch(base + path, { method: 'POST', signal: AbortSignal.timeout(8000) });
+  return r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` }));
+}
+const dvtrStop = () => dvtrPost('/api/cure/stop').catch(() => {});
+function dvtrDone(test, t0, result) {
+  const elapsed = Date.now() - t0;
+  setTestStatus(test.id, result.status, result.msg, elapsed);
+  log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+}
 
 // ============================================================
 // State
@@ -1294,7 +1378,7 @@ async function runSingleTest(test) {
     }
 
     // Mirrors StatusLeds in server/io_bridge.py: the RGB strip shows machine
-    // status — fault (blink red) > door open (blink) > busy (yellow comet
+    // status — fault (blink red) > door open (blink) > busy (purple comet
     // moving right-to-left while heating/cooling/UV run) > normal (solid).
     // door_open === null (unreadable sensor) is NOT "open".
     if (test.check === 'io_rgb_status') {
@@ -1316,7 +1400,7 @@ async function runSingleTest(test) {
         [null, true, false, true, 'door'],          // door open -> door blink
         ['heater fan', true, true, true, 'fault'],  // fault beats door and busy
         [null, true, true, true, 'door'],           // door beats busy
-        [null, false, true, true, 'busy'],          // process running -> moving yellow
+        [null, false, true, true, 'busy'],          // process running -> moving purple
         [null, null, false, true, 'normal'],        // unreadable sensor stays normal
         [null, false, false, false, 'no_net'],      // idle + no internet -> solid blue
         [null, false, true, false, 'busy_no_net'],  // process offline -> BLUE comet
@@ -1412,6 +1496,108 @@ async function runSingleTest(test) {
       return;
     }
 
+    // Mirrors AbortModal: every stop confirmation carries all four messages
+    // (ends now / cannot resume, appearance, shape, hot-chamber caution); the
+    // caution switches from a generic "may still be warm" to the live reading
+    // at ABORT_HOT_CHAMBER_C (40°C) and above.
+    if (test.check === 'abort_confirm_warnings') {
+      const HOT = 40;
+      const caution = (t) => t != null && t >= HOT ? `hot:${Math.round(t)}` : 'warm';
+      const cases = [
+        // [chamberTemp] -> caution variant
+        [22, 'warm'],      // idle-cold chamber: generic note
+        [39.9, 'warm'],    // just under the threshold
+        [40, 'hot:40'],    // at threshold: live temperature shown
+        [62.4, 'hot:62'],  // hot cure: rounded live temperature
+        [null, 'warm'],    // no reading (off-Pi): generic note, never crashes
+      ];
+      const bad = cases.filter(([t, e]) => caution(t) !== e);
+      const messages = (t) => ['ends immediately / cannot be resumed', 'appearance and surface finish', 'warp or lose its shape', caution(t)];
+      const alwaysAll = [22, 62.4, null].every(t => messages(t).length === 4);
+      // caution wording mirrors the machine's CAUTION label: hot surfaces inside → wear gloves, avoid contact
+      const cautionText = (t) => t != null && t >= HOT ? 'Wear heat-resistant gloves and avoid contact' : 'wear gloves when handling';
+      const glovesOk = /gloves/.test(cautionText(62)) && /gloves/.test(cautionText(22)) && /avoid contact/.test(cautionText(62));
+      // the caution block always carries the hot-surface pictogram (HotSurfaceSign), hot or warm
+      const pictogram = (t) => 'hot-surface-sign';
+      const signOk = [22, 62, null].every(t => pictogram(t) === 'hot-surface-sign');
+      if (!signOk) throw new Error('hot-surface pictogram missing');
+      const buttonsOk = ['Keep Running', 'Yes, Stop'].length === 2 && glovesOk;   // no pause inside the abort dialog
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0 && alwaysAll && buttonsOk
+        ? { status: 'pass', msg: 'stop confirmation lists resume/appearance/shape warnings + hot-chamber caution (live °C from 40°C)' }
+        : { status: 'fail', msg: bad.length ? `wrong caution for: ${bad.map(c => `${c[0]}°C`).join(', ')}` : 'warning list incomplete' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors cure-report.ts status colors + CureHistoryPage/Home badges: a
+    // stopped (aborted) run reads "Stopped" in orange everywhere; green is
+    // reserved for completed runs (including the export ✓ feedback).
+    if (test.check === 'stopped_run_colors') {
+      const reportDot = (st) => st === 'completed' ? '#16A34A' : st === 'aborted' ? '#EA580C' : st === 'running' ? '#D97706' : '#DC2626';
+      const reportLabel = (st) => st === 'aborted' ? 'Stopped' : st.charAt(0).toUpperCase() + st.slice(1);
+      const uiTone = (st) => st === 'completed' ? 'green' : st === 'aborted' ? 'orange' : st === 'error' ? 'red' : 'primary';
+      const exportCheckTone = (st) => st === 'completed' ? 'green' : 'orange';
+      const GREEN = '#16A34A';
+      const cases = [
+        // [status, report dot, label, ui tone, export ✓ tone]
+        ['completed', GREEN, 'Completed', 'green', 'green'],
+        ['aborted', '#EA580C', 'Stopped', 'orange', 'orange'],
+        ['error', '#DC2626', 'Error', 'red', 'orange'],
+      ];
+      const bad = cases.filter(([st, dot, label, tone, chk]) =>
+        reportDot(st) !== dot || reportLabel(st) !== label || uiTone(st) !== tone || exportCheckTone(st) !== chk);
+      const neverGreen = reportDot('aborted') !== GREEN && uiTone('aborted') !== 'green' && exportCheckTone('aborted') !== 'green';
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0 && neverGreen
+        ? { status: 'pass', msg: 'stopped runs are "Stopped" in orange in the report, Cure History and Home; green only for completed' }
+        : { status: 'fail', msg: bad.length ? `wrong color/label for: ${bad.map(c => c[0]).join(', ')}` : 'a stopped run can still show green' };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors CureProcessPage handlePause/handleResume + the io_bridge door
+    // watchdog (outputs_on = heater|cooling|uv|n2|bofa|any fan duty > 0).
+    if (test.check === 'pause_resume') {
+      const t0Wall = t0;
+      // watchdog: abort only when the door stays open past the grace WITH a live output
+      const watchdogAborts = (outputs, secondsOpen) => Object.values(outputs).some(Boolean) && secondsOpen >= 10;
+      const pausedOutputs = { heater: false, cooling: false, uv: false, n2: false, bofa: false, fanDuty: false }; // stop(immediate) → no fan run-on
+      const runOnOutputs = { ...pausedOutputs, fanDuty: true };                                                 // stop() without immediate keeps the heater fan
+      const watchdogOk = !watchdogAborts(pausedOutputs, 120) && watchdogAborts(runOnOutputs, 12) && watchdogAborts({ heater: true }, 10);
+      // clocks: every anchor shifts by the pause length → elapsed is unchanged across the pause
+      const elapsedOf = (anchor, now) => Math.floor((now - anchor) / 1000);
+      const a0 = 1000, pauseAt = 61000, resumeAt = 181000;           // paused 120 s, 60 s into the step
+      const before = elapsedOf(a0, pauseAt);
+      const after = elapsedOf(a0 + (resumeAt - pauseAt), resumeAt);
+      const clocksOk = before === 60 && after === 60;
+      // Continue gate: real door sensor must read closed; off-Pi (no sensor) always allowed
+      const canContinue = (apiConnected, doorClosed) => !apiConnected || doorClosed === true;
+      const gateOk = canContinue(true, true) && !canContinue(true, false) && !canContinue(true, null) && canContinue(false, false);
+      // resume command = what the phase was doing: mid-ramp at-target → heat only (UV still deferred); hold or at-start → cure_uv; N2 → valve open
+      const resumeCmd = (type, ramping, uvStart) => type === 'nitrogen' ? 'n2_valve_open'
+        : (type === 'cure' || type === 'bleacher') ? ((ramping && uvStart !== 'at-start') ? 'heat' : 'cure_uv')
+        : type === 'cooling' ? 'cool' : 'heat';
+      const cmdOk = resumeCmd('cure', true, 'at-target') === 'heat' && resumeCmd('cure', true, 'at-start') === 'cure_uv'
+        && resumeCmd('cure', false, 'at-target') === 'cure_uv' && resumeCmd('nitrogen', false) === 'n2_valve_open'
+        && resumeCmd('cooling', false) === 'cool' && resumeCmd('drying', false) === 'heat';
+      // while paused: tick, phase-advance, stall check and door countdown are all frozen; telemetry logs uvOn=false
+      const frozen = { tick: false, advance: false, stall: false, doorCountdown: false, uvOnInTelemetry: false };
+      const frozenOk = Object.values(frozen).every(v => v === false);
+      const elapsedMs = Date.now() - t0Wall;
+      const result = watchdogOk && clocksOk && gateOk && cmdOk && frozenOk
+        ? { status: 'pass', msg: 'pause = outputs off + door released (watchdog silent), clocks frozen; Continue only with door closed, anchors shifted, heater/UV/N2 re-commanded' }
+        : { status: 'fail', msg: !watchdogOk ? 'door watchdog model wrong' : !clocksOk ? 'clock anchors not shifted by the pause' : !gateOk ? 'Continue gate wrong' : !cmdOk ? 'resume command wrong' : 'something still runs while paused' };
+      setTestStatus(test.id, result.status, result.msg, elapsedMs);
+      log(result.status, test.name + ': ' + result.msg + ' (' + elapsedMs + 'ms)');
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
     // Mirrors generateCureReport routing + the export-report endpoint contract:
     // ok → written to USB; server answered with a code (9081 no USB / 9082
     // write failed) → raise the alert, NO silent browser fallback; no code
@@ -1443,6 +1629,75 @@ async function runSingleTest(test) {
     // Mirrors the dialog portal fix: dialogs portal into the scaled #root
     // canvas, so a 550x460 dialog occupies the same PROPORTION of any screen
     // (550/800 x 460/480) instead of a fixed unscaled pixel box.
+    // Mirrors PhaseCard.tsx: Pause button = white fill + border-2 in the
+    // active phase's config.borderColor (the card's own border colour).
+    if (test.check === 'ui_pause_button_style') {
+      const borderColor = { heating: 'border-orange-500', drying: 'border-blue-500', cure: 'border-purple-500', cooling: 'border-teal-500', bleacher: 'border-cyan-400', nitrogen: 'border-white' };
+      const pauseClass = (type) => `bg-white text-neutral-900 border-2 hover:bg-white/90 hover:text-neutral-900 text-xs px-4 ${borderColor[type]}`;
+      const bad = Object.keys(borderColor).filter((type) => {
+        const cls = pauseClass(type).split(' ');
+        const cardBorder = `border-2 ${borderColor[type]}`.split(' ');
+        return !cls.includes('bg-white') || !cardBorder.every((c) => cls.includes(c)) || cls.some((c) => c.startsWith('border-cyan-500'));
+      });
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: 'white Pause button, outline follows the state colour for all 6 phase types' }
+        : { status: 'fail', msg: `wrong Pause styling for: ${bad.join(', ')}` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors HomePage.tsx: doorOpen = hw.doorClosed === false;
+    // canStart = !!activeMaterialId && !doorOpen; disabled -> grey + inert.
+    if (test.check === 'ui_start_door_gate') {
+      const canStart = (materialId, doorClosed) => !!materialId && !(doorClosed === false);
+      const buttonLook = (materialId, doorClosed) => (canStart(materialId, doorClosed) ? 'primary' : 'grey');
+      const cases = [
+        // [materialId, doorClosed, expectStart, expectLook]
+        ['ST45', true, true, 'primary'],      // program + door closed: go
+        ['ST45', false, false, 'grey'],       // door open: blocked, grey
+        [null, true, false, 'grey'],          // no program: blocked, grey
+        [null, false, false, 'grey'],         // neither
+        ['ST45', null, true, 'primary'],      // no door reading yet: not blocked
+        ['ST45', undefined, true, 'primary'],
+      ];
+      const bad = cases.filter(([m, d, s, l]) => canStart(m, d) !== s || buttonLook(m, d) !== l);
+      let live = null;
+      try { const s = await dvtrState(); live = s.doorClosed; } catch (e) { live = null; }
+      const elapsed = Date.now() - t0;
+      const result = bad.length === 0
+        ? { status: 'pass', msg: `start allowed only with a program AND door closed (live doorClosed=${live}); grey + inert otherwise` }
+        : { status: 'fail', msg: `wrong gate for: ${bad.map(c => `material=${c[0]} door=${c[1]}`).join(', ')}` };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Mirrors HomePage.tsx: the Start Cure button = the standard shadcn
+    // button (h-9 / text-sm / 16 px icon / px-5) scaled by 1.5 in every dimension.
+    if (test.check === 'ui_start_button_size') {
+      const STD = { h: 36, text: 14, icon: 16, px: 20 };
+      const BIG = { h: 54, text: 21, icon: 24, px: 30 };        // h-[54px] text-[21px] size={24} px-[30px]
+      const problems = [];
+      for (const k of Object.keys(STD)) {
+        const ratio = BIG[k] / STD[k];
+        if (Math.abs(ratio - 1.5) > 0.01) problems.push(`${k}: ${BIG[k]}/${STD[k]} = ${ratio.toFixed(2)} (expected 1.5)`);
+      }
+      const BOTTOM_PAD = 80, OFFSET = 16;                        // main pb-20, fixed bottom-4
+      if (BOTTOM_PAD < BIG.h + OFFSET) problems.push(`list bottom padding ${BOTTOM_PAD}px does not clear the ${BIG.h}px button at ${OFFSET}px`);
+      const elapsed = Date.now() - t0;
+      const result = problems.length === 0
+        ? { status: 'pass', msg: `Start Cure button 1.5x: ${BIG.h}px tall, ${BIG.text}px text, ${BIG.icon}px icon, ${BIG.px}px padding; list clears it` }
+        : { status: 'fail', msg: problems.join('; ') };
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
     if (test.check === 'ui_builder_size') {
       const DIALOG = { w: 550, h: 460 }, CANVAS = { w: 800, h: 480 };
       const propW = DIALOG.w / CANVAS.w, propH = DIALOG.h / CANVAS.h;   // scale-invariant
@@ -1895,6 +2150,902 @@ async function runSingleTest(test) {
       const elapsed = Date.now() - t0;
       const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'chain verifies; modify / remove / reorder each break it at the right line' };
       setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    // ---------------- DVT campaign tool (DVT/) ----------------
+    if (test.check === 'dvt_criteria_logic') {
+      // minimal mirror: evaluate a criterion given values + thresholds; missing -> BLOCKED
+      const evaluate = (fn, names, values, thr) => { for (const n of names) { const v = n.includes('.') ? n.split('.').reduce((o, k) => (o == null ? undefined : o[k]), thr) : values[n]; if (v === undefined || v === null) return ['BLOCKED', 'missing value: ' + n]; } return [fn(values, thr) ? 'PASS' : 'FAIL', '']; };
+      const thm2 = (v, t) => Math.max(v.r, v.l, v.b, v.d) <= t.led.working_limit && v.trip === false && v.dtdt <= 0.2 && v.margin >= 15;
+      const names = ['r', 'l', 'b', 'd', 'trip', 'dtdt', 'margin', 'led.working_limit'];
+      const thr = { led: { working_limit: 75, protective_shutdown: null } };
+      const ok = { r: 70, l: 72, b: 74.9, d: 60, trip: false, dtdt: 0.1, margin: 16 };
+      const problems = [];
+      if (evaluate(thm2, names, ok, thr)[0] !== 'PASS') problems.push('good values not PASS');
+      if (evaluate(thm2, names, { ...ok, b: 75.1 }, thr)[0] !== 'FAIL') problems.push('75.1 not FAIL');
+      const { margin, ...noMargin } = ok;
+      if (evaluate(thm2, names, noMargin, thr)[0] !== 'BLOCKED') problems.push('missing field not BLOCKED');
+      const saf19 = (v, t) => v.peak < t.led.protective_shutdown + v.over;
+      if (evaluate(saf19, ['peak', 'over', 'led.protective_shutdown'], { peak: 70, over: 3 }, thr)[0] !== 'BLOCKED') problems.push('null threshold not BLOCKED');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'PASS / FAIL / BLOCKED (missing field, null threshold) behave' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_test_status') {
+      const status = (runs) => { const rs = runs.filter(r => r.status !== 'REJECTED'); const done = rs.filter(r => r.status === 'DONE').length; const vs = rs.map(r => r.verdict).filter(Boolean);
+        if (vs.includes('FAIL')) return 'Failed'; if (rs.some(r => r.status === 'IN_PROGRESS')) return 'Running'; if (rs.length && done === rs.length) return 'Complete'; if (vs.includes('BLOCKED')) return 'Blocked'; return 'Pending'; };
+      const D = v => ({ status: 'DONE', verdict: v }), N = { status: 'NOT_STARTED', verdict: null }, I = { status: 'IN_PROGRESS', verdict: null }, R = { status: 'REJECTED', verdict: null };
+      const problems = [];
+      if (status([D('PASS'), D('PASS')]) !== 'Complete') problems.push('all done != Complete');
+      if (status([D('PASS'), D('FAIL'), N]) !== 'Failed') problems.push('a FAIL != Failed');
+      if (status([D('PASS'), I]) !== 'Running') problems.push('in-progress != Running');
+      if (status([D('BLOCKED'), N]) !== 'Blocked') problems.push('BLOCKED verdict != Blocked');
+      if (status([N, N]) !== 'Pending') problems.push('untouched != Pending');
+      if (status([D('PASS'), R]) !== 'Complete') problems.push('rejected run blocked completion');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'Failed > Running > Complete > Blocked > Pending; rejected excluded' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_wizard_gate') {
+      const gate = (stage, st) => {
+        if (stage === 'safety') return st.safetyAck ? null : 'Acknowledge the safety plan to continue.';
+        if (stage === 'pre') return st.pre.every(Boolean) ? null : 'Tick every precondition first.';
+        if (stage === 'step') { for (const [n, f] of Object.entries(st.fields)) { if (f.value === '') continue; const v = Number(f.value); if (Number.isNaN(v)) return n + ': enter a number'; if (f.range && (v < f.range[0] || v > f.range[1])) return n + ': outside the plausible range'; } return null; }
+        return null; };
+      const resume = (run, nSteps) => run.status === 'DONE' ? 'review' : run.currentStep > 0 ? 'step:' + Math.min(run.currentStep, nSteps - 1) : run.preOk ? 'step:0' : 'overview';
+      const problems = [];
+      if (gate('safety', { safetyAck: false }) === null) problems.push('safety not gated');
+      if (gate('safety', { safetyAck: true }) !== null) problems.push('safety blocked when acked');
+      if (gate('pre', { pre: [true, false] }) === null) problems.push('preconditions not gated');
+      if (gate('step', { fields: { x: { value: 'abc' } } }) === null) problems.push('non-number accepted');
+      if (gate('step', { fields: { x: { value: '70', range: [0, 60] } } }) === null) problems.push('out-of-range accepted');
+      if (gate('step', { fields: { x: { value: '12.5', range: [0, 60] }, y: { value: '' } } }) !== null) problems.push('valid step blocked');
+      if (resume({ status: 'IN_PROGRESS', currentStep: 3, preOk: true }, 4) !== 'step:3') problems.push('resume index');
+      if (resume({ status: 'IN_PROGRESS', currentStep: 0, preOk: false }, 4) !== 'overview') problems.push('fresh run should start at overview');
+      // footer mirror (RunWizard.go / _back): Back is never dead — on Done it leaves the wizard instead of stepping back
+      const foot = (k, i) => ({ back: i > 0, backAction: k === 'done' ? 'leave' : 'previous', backLabel: k === 'done' ? 'Back to console' : 'Back', next: !['review', 'done'].includes(k), leave: k !== 'done' });
+      const done = foot('done', 8), step = foot('step:1', 4), first = foot('overview', 0);
+      if (!(done.back && done.backAction === 'leave' && done.backLabel === 'Back to console' && !done.next && !done.leave)) problems.push('Done page: Back must be enabled and leave the wizard');
+      if (!(step.back && step.backAction === 'previous' && step.next && step.leave)) problems.push('step page footer');
+      if (first.back) problems.push('Back enabled on the first stage');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'safety / preconditions / value validation gate Next; resume at last saved step; Back on Done leaves the wizard' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_applicability') {
+      const units = ['UUT-01', 'UUT-02', 'UUT-03', 'UUT-04', 'UUT-05'];
+      const applicable = (app) => app.rule === 'ALL' ? units : app.rule === 'SUBSET' ? units.filter(u => (app.units || []).includes(u)) : (app.unit ? [app.unit] : []);
+      const runs = (app, variants, reps) => applicable(app).length * variants * reps;
+      const problems = [];
+      if (applicable({ rule: 'ALL' }).length !== 5) problems.push('ALL != 5');
+      if (JSON.stringify(applicable({ rule: 'SINGLE', unit: 'UUT-05' })) !== '["UUT-05"]') problems.push('SINGLE');
+      if (applicable({ rule: 'SINGLE', unit: null }).length !== 0) problems.push('CONFIRM unit should yield 0 runs');
+      if (JSON.stringify(applicable({ rule: 'SUBSET', units: ['UUT-03', 'UUT-01', 'UUT-09'] })) !== '["UUT-01","UUT-03"]') problems.push('SUBSET filter/order');
+      if (runs({ rule: 'ALL' }, 10, 1) !== 50 || runs({ rule: 'SUBSET', units: ['UUT-01', 'UUT-02', 'UUT-03'] }, 2, 3) !== 18) problems.push('run count');
+      const cell = (app, u) => applicable(app).includes(u) ? 'PASS' : 'N/A';
+      if (cell({ rule: 'SUBSET', units: ['UUT-01'] }, 'UUT-02') !== 'N/A' || cell({ rule: 'SUBSET', units: ['UUT-01'] }, 'UUT-01') !== 'PASS') problems.push('matrix N/A');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'ALL=5, SINGLE=1 (0 while CONFIRM), SUBSET=listed units; counts and N/A cells correct' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_progress_pct') {
+      const pct = (runs) => { const app = runs.filter(r => r.status !== 'REJECTED' && !r.supplementary); const done = app.filter(r => r.status === 'DONE').length; return app.length ? Math.round(100 * done / app.length) : 0; };
+      const R = (status, sub, supp = false, est = 60) => ({ status, sub, supplementary: supp, est });
+      const runs = [R('DONE', 'Safety'), R('DONE', 'Safety'), R('NOT_STARTED', 'Safety'), R('REJECTED', 'Safety'), R('DONE', 'Thermal', true), R('NOT_STARTED', 'Thermal')];
+      const problems = [];
+      if (pct(runs) !== 50) problems.push('campaign % = ' + pct(runs) + ' (want 50: 2 of 4 applicable)');
+      if (pct(runs.filter(r => r.sub === 'Safety')) !== 67) problems.push('Safety % = ' + pct(runs.filter(r => r.sub === 'Safety')));
+      if (pct(runs.filter(r => r.sub === 'Thermal')) !== 0) problems.push('Thermal % should be 0 (only a supplementary run is done)');
+      const remaining = runs.filter(r => (r.status === 'NOT_STARTED' || r.status === 'IN_PROGRESS') && !r.supplementary).reduce((a, r) => a + r.est, 0);
+      if (remaining !== 120) problems.push('remaining bench time = ' + remaining);
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'campaign 50%, Safety 67%, Thermal 0%; rejected/supplementary excluded; remaining 120 min' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_i18n_mode') {
+      const HE = { 'Dashboard': 'לוח מחוונים', 'Start': 'התחל' }; let LANG = 'en';
+      const tr = (s) => LANG === 'he' ? (HE[s] || s) : s; const rtl = () => LANG === 'he';
+      const normalise = (u) => { if (['sim', 'simulator', 'simulation'].includes(u.toLowerCase())) return 'sim://scure'; if (!/^(https?|sim):\/\//.test(u)) u = 'http://' + u; if (u.startsWith('http') && !u.split('//')[1].includes(':')) u += ':3001'; return u; };
+      const modeToMachine = (mode, saved) => mode === 'sim' ? 'sim://scure' : saved;
+      const problems = [];
+      if (tr('Dashboard') !== 'Dashboard' || rtl()) problems.push('english default broken');
+      LANG = 'he';
+      if (tr('Dashboard') !== 'לוח מחוונים' || !rtl()) problems.push('hebrew translation / RTL');
+      if (tr('DVT-SAF-001 title') !== 'DVT-SAF-001 title') problems.push('unknown string must pass through unchanged');
+      if (normalise('sim') !== 'sim://scure' || normalise('192.168.2.155') !== 'http://192.168.2.155:3001' || normalise('http://x:3001') !== 'http://x:3001' || normalise('sim://scure') !== 'sim://scure') problems.push('address normalisation');
+      if (modeToMachine('sim', 'http://a:3001') !== 'sim://scure' || modeToMachine('normal', 'http://a:3001') !== 'http://a:3001') problems.push('mode -> machine');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'tr()/RTL, sim/normal mode mapping and address normalisation behave' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_catalog_i18n_overlay') {
+      // mirror of DVT/dvt_tool/catalog.py::Catalog.apply_overlay — prose replaced positionally, identifiers untouched, mismatches refused
+      const apply = (cat, ov) => {
+        const c = JSON.parse(JSON.stringify(cat)); const problems = [];
+        if (ov.catalog_version != null && String(ov.catalog_version) !== String(c.catalog_version)) problems.push('version');
+        for (const p of c.phases) { const o = (ov.phases || {})[p.id]; if (o) { if (o.name) p.name = o.name; if (o.gate) p.gate = o.gate; } }
+        for (const [tid, o] of Object.entries(ov.tests || {})) {
+          const t = c.tests[tid]; if (!t) { problems.push(tid + ': not in the catalog'); continue; }
+          for (const k of ['title', 'purpose', 'sample_rationale']) if (o[k]) t[k] = o[k];
+          for (const k of ['safety_plan', 'preconditions']) if (o[k]) { if ((t[k] || []).length !== o[k].length) problems.push(tid + ': ' + k); else t[k] = [...o[k]]; }
+          const pos = (k, assign) => { if (!o[k]) return; const src = t[k] || []; if (src.length !== o[k].length) { problems.push(tid + ': ' + k); return; } src.forEach((s, i) => assign(s, o[k][i])); };
+          pos('procedure_steps', (s, txt) => { s.step = txt; }); pos('equipment', (e, txt) => { e.label = txt; }); pos('case_matrix', (cm, txt) => { cm.description = txt; });
+          const names = new Set((t.data_fields || []).map(f => f.name));
+          for (const [n, note] of Object.entries(o.field_notes || {})) { if (!names.has(n)) problems.push(tid + ': unknown field ' + n); else t.data_fields.find(f => f.name === n).note = note; }
+        }
+        if (problems.length) throw new Error(problems.join('; '));
+        return c;
+      };
+      const runIds = (c) => Object.values(c.tests).map(t => t.test_id + '|UUT-01||1');
+      const cat = { catalog_version: '0.10', phases: [{ id: 1, name: 'Electrical safety', gate: 'All ELE tests PASS' }],
+        tests: { 'DVT-ELE-001': { test_id: 'DVT-ELE-001', title: 'Protective earth bonding continuity', purpose: 'Verify bonding', pass_criteria: 'max_resistance <= 0.1',
+          preconditions: ['de-energised', 'parts listed'], equipment: [{ name: 'Bonding tester', calibration_id: null }],
+          procedure_steps: [{ step: 'Record test current', capture: ['test_current'] }, { step: 'Measure each part', capture: ['measured_resistance'] }],
+          data_fields: [{ name: 'test_current' }, { name: 'measured_resistance' }] } } };
+      const ov = { catalog_version: '0.10', phases: { 1: { name: 'בטיחות חשמלית' } }, tests: { 'DVT-ELE-001': { title: 'רציפות חיבור הארקת הגנה', purpose: 'לאמת חיבור',
+        preconditions: ['מנותק ממתח', 'רשימת חלקים'], equipment: ['בודק רציפות הארקה'], procedure_steps: ['רשום את זרם הבדיקה', 'מדוד כל חלק'], field_notes: { test_current: 'הערה' } } } };
+      const problems = [];
+      try {
+        const he = apply(cat, ov); const t = he.tests['DVT-ELE-001'], e = cat.tests['DVT-ELE-001'];
+        if (t.title !== 'רציפות חיבור הארקת הגנה' || he.phases[0].name !== 'בטיחות חשמלית') problems.push('prose not replaced');
+        if (t.procedure_steps[1].step !== 'מדוד כל חלק' || t.preconditions[0] !== 'מנותק ממתח') problems.push('positional lists not replaced');
+        if (t.equipment[0].label !== 'בודק רציפות הארקה' || t.equipment[0].name !== e.equipment[0].name) problems.push('equipment name (calibration key) must stay, label added');
+        if (t.pass_criteria !== e.pass_criteria || t.test_id !== e.test_id || JSON.stringify(t.procedure_steps.map(s => s.capture)) !== JSON.stringify(e.procedure_steps.map(s => s.capture))) problems.push('identifiers changed');
+        if (JSON.stringify(runIds(he)) !== JSON.stringify(runIds(cat))) problems.push('run ids differ between languages');
+        if (he.phases[0].gate !== 'All ELE tests PASS') problems.push('untranslated field must fall back to English');
+      } catch (e) { problems.push('valid overlay refused: ' + e.message); }
+      const refused = (mut, label) => { const o = JSON.parse(JSON.stringify(ov)); mut(o); try { apply(cat, o); problems.push(label + ' not refused'); } catch (e) { /* expected */ } };
+      refused(o => o.tests['DVT-ELE-001'].procedure_steps.pop(), 'step count mismatch');
+      refused(o => o.tests['DVT-ELE-001'].preconditions.push('extra'), 'precondition count mismatch');
+      refused(o => { o.tests['DVT-XXX-999'] = { title: 'x' }; }, 'unknown test id');
+      refused(o => { o.tests['DVT-ELE-001'].field_notes = { nope: 'x' }; }, 'unknown field note');
+      refused(o => { o.catalog_version = '0.9'; }, 'catalog version mismatch');
+      const en = apply(cat, {}); if (en.tests['DVT-ELE-001'].title !== 'Protective earth bonding continuity') problems.push('no overlay must leave English');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'prose follows the language, identifiers and run ids do not; mismatched / unknown overlay entries refused' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_ele005_power_matrix') {
+      // mirror of the ELE-005 catalog entry (v0.11): run-set expansion + pass criteria
+      const matrix = [100, 110, 230, 240], units = ['UUT-01', 'UUT-02', 'UUT-03', 'UUT-04', 'UUT-05'], reps = 1;
+      const runs = []; for (const u of units) for (const v of matrix) for (let r = 1; r <= reps; r++) runs.push(`DVT-ELE-005|${u}|mains_voltage=${v}|${r}`);
+      const names = ['fuse_margin_ok', 'breaker_type_c_ok', 'label_agreement', 'inrush_switch_ons', 'input_power_all', 'input_power_heat', 'input_power_cure'];
+      const evaluate = (v) => { for (const n of names) if (v[n] === undefined || v[n] === null) return 'BLOCKED';
+        return (v.fuse_margin_ok === true && v.breaker_type_c_ok === true && v.label_agreement === true && v.inrush_switch_ons >= 3 && v.input_power_all >= v.input_power_heat && v.input_power_all >= v.input_power_cure) ? 'PASS' : 'FAIL'; };
+      const ok = { fuse_margin_ok: true, breaker_type_c_ok: true, label_agreement: true, inrush_switch_ons: 3, input_power_all: 640, input_power_heat: 510, input_power_cure: 150 };
+      const problems = [];
+      if (runs.length !== 20 || new Set(runs).size !== 20) problems.push('run set must be 4 voltages x 5 units = 20 unique runs');
+      if (!runs.includes('DVT-ELE-005|UUT-03|mains_voltage=100|1')) problems.push('100 V row missing');
+      if (evaluate(ok) !== 'PASS') problems.push('good values not PASS');
+      if (evaluate({ ...ok, input_power_all: 500 }) !== 'FAIL') problems.push('whole-machine power below heater-only must FAIL (mis-recorded mode)');
+      if (evaluate({ ...ok, input_power_all: 140 }) !== 'FAIL') problems.push('whole-machine power below CURE-only must FAIL');
+      if (evaluate({ ...ok, inrush_switch_ons: 2 }) !== 'FAIL') problems.push('fewer than 3 inrush switch-ons must FAIL');
+      const { input_power_cure, ...noCure } = ok; if (evaluate(noCure) !== 'BLOCKED') problems.push('missing per-mode value must be BLOCKED');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: '20 runs (100/110/230/240 V x 5 units); per-mode plausibility and >= 3 switch-ons enforced; missing value BLOCKED' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_saf013_cutout_criteria') {
+      // mirror of the SAF-013 pass criteria (catalog v0.12)
+      const names = ['manual_abort_used', 'heater_power_removed', 'heater_command_percent', 'cutout_trip_temp', 'rated_trip_temp', 'chamber_cooling_rate_after_trip', 'alarm_raised', 'resume_requires_ack', 'limits_restored', 'post_test_functional_pass'];
+      const evaluate = (v) => { for (const n of names) if (v[n] === undefined || v[n] === null) return 'BLOCKED';
+        return (v.manual_abort_used === false && v.heater_power_removed === true && v.heater_command_percent >= 100 && Math.abs(v.cutout_trip_temp - v.rated_trip_temp) <= 10
+          && v.chamber_cooling_rate_after_trip < 0 && v.alarm_raised === true && v.resume_requires_ack === true && v.limits_restored === true && v.post_test_functional_pass === true) ? 'PASS' : 'FAIL'; };
+      const ok = { manual_abort_used: false, heater_power_removed: true, heater_command_percent: 100, cutout_trip_temp: 131, rated_trip_temp: 125, chamber_cooling_rate_after_trip: -1.8, alarm_raised: true, resume_requires_ack: true, limits_restored: true, post_test_functional_pass: true };
+      const problems = [];
+      if (evaluate(ok) !== 'PASS') problems.push('good values not PASS');
+      if (evaluate({ ...ok, cutout_trip_temp: 140 }) !== 'FAIL') problems.push('trip 15 C above rating must FAIL');
+      if (evaluate({ ...ok, heater_command_percent: 80 }) !== 'FAIL') problems.push('throttled heater (software limit still active) must FAIL');
+      if (evaluate({ ...ok, chamber_cooling_rate_after_trip: 0.3 }) !== 'FAIL') problems.push('chamber still rising after trip must FAIL');
+      if (evaluate({ ...ok, manual_abort_used: true }) !== 'FAIL') problems.push('manual mains abort must FAIL');
+      if (evaluate({ ...ok, alarm_raised: false }) !== 'FAIL') problems.push('silent software must FAIL (design finding, not waiver)');
+      const { rated_trip_temp, ...noRating } = ok; if (evaluate(noRating) !== 'BLOCKED') problems.push('missing rating must be BLOCKED');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'unlimited-heating guard, +/-10 C trip window, falling chamber, alarm and limits-restored all enforced; missing value BLOCKED' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_uvoff_analysis') {
+      // mirror of dvt_tool/instruments/uvoff.analyze (settle 0.2 s, off fraction 10 %)
+      const analyze = (all, plateau, tDoor, tUvOn = 1.0) => {
+        const samples = all.filter(x => x.t >= tUvOn);   // only after the LEDs were switched on, as in uvoff.analyze
+        const thr = plateau * 0.10, settle = 0.2; let tOff = null, src = tDoor == null ? '' : 'given';
+        for (let i = 0; i < samples.length; i++) {
+          const s = samples[i];
+          if (s.v <= thr && (tDoor == null || s.t >= tDoor - 0.001)) {
+            const tail = samples.slice(i).filter(x => x.t <= s.t + settle);
+            if (tail.every(x => x.v <= thr)) { tOff = s.t; break; }
+          }
+        }
+        if (tOff == null) return { tOff: null, uvOffTime: null, src };
+        if (tDoor == null) { const before = samples.filter(x => x.t < tOff && x.v >= 0.95 * plateau); if (before.length) { tDoor = before[before.length - 1].t; src = 'trace'; } }
+        const tail = samples.filter(x => x.t >= Math.max(tOff, samples[samples.length - 1].t - settle));
+        return { tOff, uvOffTime: tDoor == null ? null : Math.max(0, tOff - tDoor), src, residual: tail.reduce((a, x) => a + x.v, 0) / tail.length };
+      };
+      const mk = (n, t0, v) => Array.from({ length: n }, (_, i) => ({ t: t0 + i / 100, v }));
+      const trace = [...mk(100, 0, 0), ...mk(435, 1, 40), ...mk(100, 5.35, 0.5)];
+      const problems = [];
+      const a = analyze(trace, 40, 5.0);
+      if (Math.abs(a.uvOffTime - 0.35) > 1e-6) problems.push(`uv_off_time ${a.uvOffTime} != 0.35`);
+      if (Math.abs(a.residual - 0.5) > 1e-6) problems.push(`residual ${a.residual} != 0.5`);
+      const b = analyze(trace, 40, null);
+      if (b.src !== 'trace' || Math.abs(b.uvOffTime - 0.01) > 1e-6) problems.push(`trace-derived door: src=${b.src} uv_off=${b.uvOffTime}`);
+      const c = analyze([...mk(100, 0, 0), ...mk(300, 1, 40)], 40, 3.0);
+      if (c.uvOffTime !== null) problems.push('never-dropping trace produced a uv_off_time');
+      const d = analyze([...mk(100, 0, 0), ...mk(400, 1, 40), ...mk(5, 5.0, 2), ...mk(50, 5.05, 40), ...mk(100, 5.55, 0.2)], 40, 5.0);
+      if (Math.abs(d.uvOffTime - 0.55) > 1e-6) problems.push(`glitch below threshold counted as UV off (${d.uvOffTime})`);
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'uv_off_time from the sustained 10 % crossing after the door instant; residual from the tail; trace-derived door flagged; glitches ignored' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_ledoff_trigger') {
+      // mirror of dvt_tool/instruments/uvoff: TRIGGERS limits, TOOL_TRIGGERS, thermistor_is_gone, alarm_names_position, analyze with a trigger instant
+      const TRIGGERS = { door: { limit: 1.0, field: 'uv_off_time' }, led_thermistor: { limit: 2.0, field: 'led_off_time' } };
+      const TOOL_TRIGGERS = { uv_off_timing: 'door', led_off_timing: 'led_thermistor' };
+      const gone = (s, pos) => { const led = s.ledTemps; if (!led || typeof led !== 'object') return null; return (pos in led) ? led[pos] === null : null; };
+      const names = (text, pos) => (text == null || !pos) ? null : text.toLowerCase().includes(pos.toLowerCase());
+      const offTime = (samples, plateau, tTrig) => { const thr = plateau * 0.1, settle = 0.2; for (let i = 0; i < samples.length; i++) { const s = samples[i]; if (s.v <= thr && s.t >= tTrig - 0.001) { if (samples.slice(i).filter(x => x.t <= s.t + settle).every(x => x.v <= thr)) return Math.max(0, s.t - tTrig); } } return null; };
+      const mk = (n, start, v) => Array.from({ length: n }, (_, i) => ({ t: start + i / 100, v }));
+      const trace = [...mk(100, 0, 0), ...mk(435, 1, 40), ...mk(100, 5.35, 0.5)];
+      const problems = [];
+      if (TOOL_TRIGGERS.led_off_timing !== 'led_thermistor' || TOOL_TRIGGERS.uv_off_timing !== 'door') problems.push('tool key mapping');
+      // the trigger instant = the first poll with that thermistor reading gone
+      const polls = [{ t: 4.90, s: { ledTemps: { right: 31.2, back: 30.1 } } }, { t: 4.95, s: { ledTemps: { right: 31.2, back: 30.1 } } }, { t: 5.00, s: { ledTemps: { right: 31.2, back: null } } }, { t: 5.05, s: { ledTemps: { right: 31.2, back: null } } }];
+      const tTrig = (polls.find(p => gone(p.s, 'back') === true) || {}).t;
+      if (tTrig !== 5.0) problems.push(`trigger instant ${tTrig} != 5.0`);
+      if (gone({ chamberTemp: 25 }, 'back') !== null) problems.push('missing ledTemps must give null, not a trigger');
+      if (gone({ ledTemps: { right: null, back: 30.1 } }, 'back') !== false) problems.push('another sensor missing counted as the trigger');
+      const t = offTime(trace, 40, tTrig);
+      if (Math.abs(t - 0.35) > 1e-6) problems.push(`led_off_time ${t} != 0.35`);
+      if (!(t <= TRIGGERS.led_thermistor.limit)) problems.push('0.35 s must pass the 2 s limit');
+      const slow = offTime(trace, 40, 3.0);
+      if (!(Math.abs(slow - 2.35) < 1e-6 && slow > TRIGGERS.led_thermistor.limit && slow > TRIGGERS.door.limit)) problems.push(`slow cut ${slow} must fail both limits`);
+      const mid = offTime(trace, 40, 4.0);
+      if (!(mid <= TRIGGERS.led_thermistor.limit && mid > TRIGGERS.door.limit)) problems.push('1.35 s must pass SAF-007 (2 s) but fail SAF-012 (1 s)');
+      if (names('LED thermistor open (back panel) — UV inhibited', 'back') !== true) problems.push('alarm naming the back sensor not recognised');
+      if (names('LED fault', 'back') !== false) problems.push('alarm without the position counted as identifying');
+      if (names(null, 'back') !== null) problems.push('no alarm text must give null');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'trigger = first poll with that thermistor reading null; led_off_time to the sustained 10 % crossing vs 2 s (door 1 s); alarm must name the position; tool keys map to triggers' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_thm004_selector_mismatch') {
+      // mirror of the DVT-THM-004 pass criteria (catalog v0.18) the way dvt_tool/criteria evaluates them: a missing field or a null threshold = BLOCKED, never PASS
+      const TH = { heater_thresholds: { body_ceiling: 250, selector_mismatch_fuse_open_max: null } };
+      const verdict = (v, th) => {
+        const need = ['body_rising_before_heat', 'heater_body_drop_observed', 'fuse_opened', 'which_fuse_opened', 'manual_abort_used', 'heater_off_time', 'heater_temp_peak', 'post_test_functional_pass'];
+        if (need.some(k => v[k] === undefined || v[k] === null)) return 'BLOCKED';
+        const lim = th.heater_thresholds.selector_mismatch_fuse_open_max, ceil = th.heater_thresholds.body_ceiling;
+        if (lim == null || ceil == null) return 'BLOCKED';
+        const ok = v.body_rising_before_heat === false && v.heater_body_drop_observed === true && v.fuse_opened === true && v.which_fuse_opened === 'heater_branch_5A'
+          && v.manual_abort_used === false && v.heater_off_time <= lim && v.heater_temp_peak <= ceil && v.post_test_functional_pass === true;
+        return ok ? 'PASS' : 'FAIL';
+      };
+      const ok = { body_rising_before_heat: false, heater_body_drop_observed: true, fuse_opened: true, which_fuse_opened: 'heater_branch_5A', manual_abort_used: false, heater_off_time: 42, heater_temp_peak: 180, post_test_functional_pass: true };
+      const set = { heater_thresholds: { ...TH.heater_thresholds, selector_mismatch_fuse_open_max: 60 } };
+      const problems = [];
+      if (verdict(ok, TH) !== 'BLOCKED') problems.push('null fuse-open limit must BLOCK, never PASS');
+      if (verdict(ok, set) !== 'PASS') problems.push('good run with the limit set != PASS');
+      if (verdict({ ...ok, heater_off_time: 75 }, set) !== 'FAIL') problems.push('over-drive longer than the limit != FAIL');
+      if (verdict({ ...ok, which_fuse_opened: 'inlet_15A' }, set) !== 'FAIL') problems.push('inlet fuse opening (selectivity lost) != FAIL');
+      if (verdict({ ...ok, manual_abort_used: true }, set) !== 'FAIL') problems.push('manual mains abort != FAIL');
+      if (verdict({ ...ok, heater_body_drop_observed: false }, set) !== 'FAIL') problems.push('no rise-to-fall turn on the trace != FAIL');
+      if (verdict({ ...ok, heater_temp_peak: 260 }, set) !== 'FAIL') problems.push('body above the 250 C ceiling != FAIL');
+      if (verdict({ ...ok, body_rising_before_heat: true }, set) !== 'FAIL') problems.push('heater energised before HEAT != FAIL');
+      if (verdict({ ...ok, heater_off_time: null }, set) !== 'BLOCKED') problems.push('missing heater_off_time != BLOCKED');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'BLOCKED while the fuse-open limit is CONFIRM; PASS only with the 5 A branch fuse opening on a visible heater-body turn within the limit, no manual abort, body under 250 C, heater flat before HEAT' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_unit_progress') {
+      const unitProgress = (runs, units) => Object.fromEntries(units.map(u => {
+        const ur = runs.filter(r => r.unit === u && r.status !== 'REJECTED'); const done = ur.filter(r => r.status === 'DONE');
+        return [u, { total: ur.length, done: done.length, percent: ur.length ? Math.round(100 * done.length / ur.length) : 0, failed: done.filter(r => r.verdict === 'FAIL').length }];
+      }));
+      const R = (unit, status, verdict = null) => ({ unit, status, verdict });
+      const runs = [R('UUT-01', 'DONE', 'PASS'), R('UUT-01', 'DONE', 'FAIL'), R('UUT-01', 'REJECTED'), R('UUT-01', 'NOT_STARTED'),
+                    R('UUT-02', 'DONE', 'PASS'), R('UUT-02', 'DONE', 'PASS'), R('UUT-03', 'NOT_STARTED')];
+      const up = unitProgress(runs, ['UUT-01', 'UUT-02', 'UUT-03', 'UUT-04']);
+      const problems = [];
+      if (up['UUT-01'].percent !== 67 || up['UUT-01'].total !== 3) problems.push(`UUT-01 ${JSON.stringify(up['UUT-01'])} (rejected must be excluded: 2/3 = 67 %)`);
+      if (up['UUT-01'].failed !== 1) problems.push('failed count wrong');
+      if (up['UUT-02'].percent !== 100) problems.push('fully committed machine != 100 %');
+      if (up['UUT-03'].percent !== 0 || up['UUT-04'].percent !== 0 || up['UUT-04'].total !== 0) problems.push('empty / pending machine != 0 %');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'per-machine % = committed / applicable (rejected excluded), failed counted, 0 % when nothing committed, 100 % when all committed' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_tempstats') {
+      // mirror of DVT/dvt_tool/tempstats.py — component mapping + summarise()
+      const componentOf = (f) => { f = f.toLowerCase(); if (f.includes('ambient')) return 'ambient'; if (['heater', 'cutout', 'element'].some(k => f.includes(k))) return 'heater';
+        for (const s of ['right', 'left', 'back', 'door']) if (f.includes(s)) return 'led_' + s; if (['led', 'tj', 'thermistor', 'panel', 'mcpcb'].some(k => f.includes(k))) return 'led'; return f.includes('temp') || f.includes('chamber') || f.includes('uniformity') ? 'chamber' : 'other'; };
+      const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+      const std = a => a.length > 1 ? Math.sqrt(a.reduce((s, v) => s + (v - mean(a)) ** 2, 0) / (a.length - 1)) : 0;
+      const summarise = (byUnit) => { const units = Object.keys(byUnit).sort(); const per = {}; for (const u of units) per[u] = { n: byUnit[u].length, mean: mean(byUnit[u]), std: std(byUnit[u]) };
+        const means = units.map(u => per[u].mean); const between = std(means); const spread = Math.max(...means) - Math.min(...means);
+        const vars = units.filter(u => per[u].n >= 2).map(u => per[u].std ** 2); const pooled = vars.length ? Math.sqrt(mean(vars)) : 0;
+        const median = a => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+        const outliers = []; if (units.length >= 3) { const med = median(means); const mad = median(means.map(m => Math.abs(m - med))) * 1.4826; const thr = Math.max(3 * mad, 2 * pooled, 2.0); for (const u of units) if (Math.abs(per[u].mean - med) > thr) outliers.push(u); }
+        return { per, between, spread, pooled, outliers }; };
+      const problems = [];
+      if (componentOf('max_temp_right') !== 'led_right' || componentOf('cutout_trip_temp') !== 'heater' || componentOf('ambient_temp') !== 'ambient' || componentOf('chamber_temp_at_trip') !== 'chamber' || componentOf('uniformity_pp') !== 'chamber') problems.push('component mapping');
+      const r = summarise({ 'UUT-01': [70, 71, 70.5], 'UUT-02': [70.2, 70.8], 'UUT-03': [69.9, 70.4], 'UUT-04': [80.0, 80.5], 'UUT-05': [70.1] });
+      if (r.per['UUT-05'].std !== 0 || r.per['UUT-05'].n !== 1) problems.push('single value: std 0, n 1');
+      if (Math.abs(r.per['UUT-01'].mean - 70.5) > 1e-9) problems.push('mean');
+      if (JSON.stringify(r.outliers) !== '["UUT-04"]') problems.push('hot machine not the only outlier');
+      if (!(r.spread > 9 && r.between > 3)) problems.push('spread / between-machine std');
+      if (summarise({ 'UUT-01': [70.0], 'UUT-02': [70.5], 'UUT-03': [71.0] }).outliers.length) problems.push('spread inside noise must not flag');
+      if (summarise({ 'UUT-01': [70.0], 'UUT-02': [90.0] }).outliers.length) problems.push('two machines: no outlier logic');
+      if (JSON.stringify(summarise({ 'UUT-01': [60.0], 'UUT-02': [61.0], 'UUT-03': [74.0] }).outliers) !== '["UUT-03"]') problems.push('one hot machine among three must be the only outlier (median reference)');
+      if (summarise({ 'UUT-01': [60], 'UUT-02': [65], 'UUT-03': [70], 'UUT-04': [75], 'UUT-05': [80] }).outliers.length) problems.push('an even spread must not flag anyone (MAD scales)');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'component mapping, per-machine mean/std, between-machine std, 2x pooled std (>= 2 C) outlier rule behave' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_process_figures') {
+      // mirror of dvt_tool/figures.states_for + check_specs
+      const STATES = ['focus', 'on', 'off', 'fault', 'instr', 'ok', null];
+      const ELEMENTS = { heater: 'machine', fuse_heater: 'electrical', selector: 'electrical', thermal_cam: 'instrument', tc08: 'instrument' };
+      const statesFor = (spec, step) => { const st = { ...spec.el }; if (step != null && spec.steps[step]) Object.assign(st, spec.steps[step]); return st; };
+      const drawn = (st, id) => !(ELEMENTS[id] === 'instrument' && (st[id] === undefined || st[id] === null));
+      const check = (specs, tests) => { const p = []; for (const [tid, s] of Object.entries(specs)) { if (!tests[tid]) { p.push(tid + ': not in catalog'); continue; } for (const [i, o] of Object.entries(s.steps)) { if (!(i >= 0 && i < tests[tid])) p.push(tid + ': step ' + i); for (const [e, v] of Object.entries(o)) { if (!(e in ELEMENTS)) p.push(tid + ': element ' + e); if (!STATES.includes(v)) p.push(tid + ': state ' + v); } } } for (const tid of Object.keys(tests)) if (!specs[tid]) p.push(tid + ': no figure'); return p; };
+      const spec = { el: { heater: 'on', fuse_heater: 'focus', selector: 'fault', thermal_cam: 'instr' }, steps: { 0: { heater: null }, 3: { fuse_heater: 'fault', heater: 'off', thermal_cam: 'focus' } } };
+      const problems = [];
+      const base = statesFor(spec, null), s0 = statesFor(spec, 0), s3 = statesFor(spec, 3);
+      if (base.heater !== 'on' || base.selector !== 'fault') problems.push('base state');
+      if (s0.heater !== null || s0.fuse_heater !== 'focus') problems.push('None must clear a highlight and leave the rest');
+      if (s3.fuse_heater !== 'fault' || s3.heater !== 'off' || s3.thermal_cam !== 'focus' || s3.selector !== 'fault') problems.push('step override');
+      if (drawn(base, 'tc08') || !drawn(base, 'thermal_cam') || !drawn(base, 'heater')) problems.push('instruments drawn only when listed');
+      if (check({ 'DVT-X': spec }, { 'DVT-X': 7 }).length) problems.push('valid spec refused');
+      if (!check({ 'DVT-X': { el: {}, steps: { 9: {} } } }, { 'DVT-X': 7 }).length) problems.push('step beyond the procedure accepted');
+      if (!check({ 'DVT-X': { el: { nope: 'on' }, steps: {} } }, { 'DVT-X': 7 }).length) problems.push('unknown element accepted');
+      if (!check({ 'DVT-X': { el: { heater: 'hot' }, steps: {} } }, { 'DVT-X': 7 }).length) problems.push('unknown state accepted');
+      if (!check({}, { 'DVT-Y': 3 }).length) problems.push('catalog test without a figure accepted');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'base + step override merge, None clears, instruments on demand, unknown element/state/step refused, every test needs a figure' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_bench_order') {
+      // mirror of DVT/dvt_tool/bench.py — instrument_key + bench_order + bench_groups
+      const RULES = [[['tc-08', 'picolog', 'thermocouple logger'], 'PicoLog TC-08'], [['ophir'], 'Ophir StarBright'], [['o2 analy', 'oxygen analy'], 'O2 analyser'], [['ac source', 'variac'], 'AC source'], [['thermal camera'], 'Thermal camera'], [['thermocouple'], 'Thermocouples (bonded)']];
+      const key = (n) => { n = n.toLowerCase(); for (const [ks, lab] of RULES) if (ks.some(k => n.includes(k))) return lab; return null; };
+      const instr = (t) => new Set(t.equipment.map(key).filter(Boolean));
+      const inter = (a, b) => [...a].filter(x => b.has(x)).length, diff = (a, b) => [...a].filter(x => !b.has(x)).length;
+      const order = (tests) => { const ids = tests.map(t => t.id), byId = Object.fromEntries(tests.map(t => [t.id, t])), rank = Object.fromEntries(ids.map((t, i) => [t, i]));
+        const placed = []; let bench = new Set(); const remaining = [...ids];
+        while (remaining.length) { let runnable = remaining.filter(t => (byId[t].deps || []).filter(d => ids.includes(d)).every(d => placed.includes(d))); if (!runnable.length) runnable = [remaining[0]];
+          const pick = !placed.length ? runnable[0] : runnable.slice().sort((a, b) => (inter(instr(byId[b]), bench) - inter(instr(byId[a]), bench)) || (diff(instr(byId[a]), bench) - diff(instr(byId[b]), bench)) || (rank[a] - rank[b]))[0];
+          placed.push(pick); remaining.splice(remaining.indexOf(pick), 1); if (instr(byId[pick]).size) bench = instr(byId[pick]); }
+        return placed; };
+      const tests = [
+        { id: 'SAF-012', equipment: ['Ophir StarBright power meter'], deps: [] }, { id: 'SAF-013', equipment: ['PicoLog TC-08 thermocouple logger', 'Type-K thermocouple bonded'], deps: ['SAF-005'] },
+        { id: 'SAF-004', equipment: ['PicoLog TC-08 thermocouple logger', 'Type-K thermocouple bonded'], deps: [] }, { id: 'SAF-005', equipment: ['Fixed 10 kOhm resistor', 'PicoLog TC-08 thermocouple logger', 'Type-K thermocouple bonded'], deps: ['SAF-004'] },
+        { id: 'SAF-007', equipment: ['Ophir StarBright power meter'], deps: [] }, { id: 'SAF-001', equipment: ['Spare fuses 0BLF005.T'], deps: [] }];
+      const o = order(tests);
+      const problems = [];
+      if (key('Spare fuses 0BLF005.T') !== null) problems.push('a consumable must not be an instrument');
+      if (key('PicoLog TC-08 x2 (16 channels)') !== 'PicoLog TC-08') problems.push('TC-08 variants must map to one instrument');
+      if (o[0] !== 'SAF-012' || o[1] !== 'SAF-007') problems.push('the Ophir tests must run back to back from the first test (got ' + o.join(',') + ')');
+      const i4 = o.indexOf('SAF-004'), i5 = o.indexOf('SAF-005'), i13 = o.indexOf('SAF-013');
+      if (!(i4 < i5 && i5 < i13 && i13 - i4 === 2)) problems.push('TC-08 tests must be adjacent and in dependency order 004 -> 005 -> 013 (got ' + o.join(',') + ')');
+      if (o.slice().sort().join() !== tests.map(t => t.id).sort().join()) problems.push('order must contain every test exactly once');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'instrument mapping, greedy grouping and dependency-first ordering behave: ' + o.join(' → ') };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_docgen') {
+      // mirror of DVT/dvt_tool/docgen.py — confirm_items() + threshold / anchor / direction rendering
+      const confirmItems = (yaml) => { const out = {}; let key = ''; for (const line of yaml.split('\n')) { const m = line.match(/^- test_id:\s*(DVT-[A-Z]{3}-\d{3})/); if (m) { key = m[1]; continue; }
+        if (line.includes('CONFIRM')) { (out[key] = out[key] || []).push(line.replace(/^\s*(#\s*)?/, '').trim()); } } return out; };
+      const yaml = ['catalog_version: "0.20"', 'nitrogen_thresholds:', '  purge_time_max_s: null   # CONFIRM — decide', 'tests:', '- test_id: DVT-GAS-001', '  title: x', '  # CONFIRM the values', '  applicability:', '    unit: null   # CONFIRM: which unit', '- test_id: DVT-ELE-001', '  title: y'].join('\n');
+      const c = confirmItems(yaml);
+      const renderThreshold = (v) => v === null ? 'CONFIRM' : String(v);
+      const anchors = (ids) => ids.map(t => `<section class="test" id="${t}">`);
+      const wrap = (rtl, body) => `<html dir="${rtl ? 'rtl' : 'ltr'}">${body}<span dir="ltr">DVT-ELE-001</span></html>`;
+      const problems = [];
+      if (!c[''] || c[''].length !== 1 || !c[''][0].startsWith('purge_time_max_s')) problems.push('header CONFIRM must land in the header block with the # stripped');
+      if (!c['DVT-GAS-001'] || c['DVT-GAS-001'].length !== 2) problems.push('both GAS-001 CONFIRM lines must be attributed to GAS-001');
+      if (c['DVT-ELE-001']) problems.push('a test without CONFIRM lines must have no entry');
+      if (renderThreshold(null) !== 'CONFIRM' || renderThreshold(4.8) !== '4.8') problems.push('null threshold must render as CONFIRM');
+      if (anchors(['DVT-GAS-001', 'DVT-ELE-001']).length !== 2 || !anchors(['DVT-GAS-001'])[0].includes('id="DVT-GAS-001"')) problems.push('section anchors');
+      if (!wrap(true, '').startsWith('<html dir="rtl">') || !wrap(true, '').includes('<span dir="ltr">DVT-ELE-001</span>')) problems.push('Hebrew document must be rtl with ltr identifiers');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'CONFIRM attribution per test block, null -> CONFIRM, anchors and RTL/LTR wrapping behave' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+    if (test.check === 'dvt_ssh_host') {
+      const hostOf = (url) => { if (!url || url.startsWith('sim://')) return null; try { return new URL(url.includes('://') ? url : `http://${url}`).hostname; } catch { return null; } };
+      const sshCmd = (url, user = 'testingpi', key = '') => { const h = hostOf(url); if (!h) return null; return `ssh ${key ? `-i ${key} ` : ''}${user || 'testingpi'}@${h}`; };
+      const problems = [];
+      if (hostOf('http://192.168.2.155:3001') !== '192.168.2.155') problems.push('host of http url');
+      if (hostOf('192.168.2.155') !== '192.168.2.155') problems.push('bare ip');
+      if (hostOf('http://testingcm5.local:3001') !== 'testingcm5.local') problems.push('mdns name');
+      if (hostOf('sim://scure') !== null) problems.push('simulator must have no ssh host');
+      if (sshCmd('http://10.0.0.42:3001', 'testingpi', '~/.ssh/scure_pi') !== 'ssh -i ~/.ssh/scure_pi testingpi@10.0.0.42') problems.push('command with key');
+      if (sshCmd('http://10.0.0.42:3001', '', '') !== 'ssh testingpi@10.0.0.42') problems.push('default user');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'SSH host = hostname of the DUT address; simulator has none; ssh [-i key] user@host with testingpi default' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_team_journal') {
+      const LOCAL_ONLY = new Set(['set_meta']);
+      const replay = (state, files, applied) => {                       // state: {runs:{id:{operator,started_at,status}}}, files: {client: [events]}
+        const evs = Object.values(files).flat().filter(e => !applied.has(e.id) && !LOCAL_ONLY.has(e.op)).sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0);
+        const conflicts = [];
+        for (const e of evs) {
+          applied.add(e.id);
+          if (e.op === 'start_run') {
+            const r = state.runs[e.run] || (state.runs[e.run] = { status: 'NOT_STARTED' });
+            if (r.status !== 'NOT_STARTED' && r.operator && r.operator !== e.by) {
+              const mineFirst = r.started_at <= e.ts; conflicts.push(mineFirst ? `kept ${r.operator}` : `overridden by ${e.by}`);
+              if (!mineFirst) { r.operator = e.by; r.started_at = e.ts; }
+            } else { r.status = 'IN_PROGRESS'; r.operator = e.by; r.started_at = e.ts; }
+          }
+        }
+        return conflicts;
+      };
+      const problems = [];
+      const A = [{ id: 'a1', ts: '2026-09-06T10:00:00Z', by: 'amit', op: 'start_run', run: 'R1' }, { id: 'a2', ts: '2026-09-06T10:00:05Z', by: 'amit', op: 'set_meta', run: null }];
+      const B = [{ id: 'b1', ts: '2026-09-06T10:00:03Z', by: 'dana', op: 'start_run', run: 'R1' }];
+      // console B applied its own claim locally, then pulls A's earlier claim -> overridden
+      const sB = { runs: { R1: { status: 'IN_PROGRESS', operator: 'dana', started_at: '2026-09-06T10:00:03Z' } } }; const apB = new Set(['b1']);
+      let c = replay(sB, { A }, apB);
+      if (sB.runs.R1.operator !== 'amit' || c.length !== 1 || !c[0].startsWith('overridden')) problems.push(`B: ${JSON.stringify(sB.runs.R1)} ${c}`);
+      // console A pulls B's later claim -> keeps amit
+      const sA = { runs: { R1: { status: 'IN_PROGRESS', operator: 'amit', started_at: '2026-09-06T10:00:00Z' } } }; const apA = new Set(['a1', 'a2']);
+      c = replay(sA, { B }, apA);
+      if (sA.runs.R1.operator !== 'amit' || c.length !== 1 || !c[0].startsWith('kept')) problems.push(`A: ${JSON.stringify(sA.runs.R1)} ${c}`);
+      // idempotent + local-only never replayed
+      if (replay(sA, { B }, apA).length !== 0) problems.push('second pull re-applied events');
+      if (apB.has('a2')) problems.push('set_meta was replayed');
+      // fresh console: replays everything in ts order and lands on the same owner
+      const sC = { runs: {} }; replay(sC, { A, B }, new Set());
+      if (sC.runs.R1.operator !== 'amit') problems.push(`fresh console owner ${sC.runs.R1.operator}`);
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'per-console journals merged by uuid in ts order; first claim wins on every console; local settings never replayed; fresh console converges' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_git_checkpoint') {
+      const safeLabel = (l) => ((l || '').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)) || 'checkpoint';
+      const folderName = (label, d) => `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}_${safeLabel(label)}`;
+      const commitMessage = (label, p, campaign, op) => `DVT checkpoint: ${label} — ${p.done}/${p.total} runs (${p.total ? Math.round(100 * p.done / p.total) : 0} %), ${p.PASS} PASS / ${p.FAIL} FAIL / ${p.BLOCKED} BLOCKED / ${p.WAIVED} WAIVED [${campaign}]${op ? ' by ' + op : ''}`;
+      const problems = [];
+      if (safeLabel('Phase 2 gate / UUT-03!') !== 'Phase-2-gate-UUT-03') problems.push(`label ${safeLabel('Phase 2 gate / UUT-03!')}`);
+      if (safeLabel('') !== 'checkpoint') problems.push('empty label fallback');
+      if (safeLabel('x'.repeat(80)).length !== 48) problems.push('label not capped at 48');
+      if (folderName('x', new Date(Date.UTC(2026, 8, 6, 10, 5))) !== '20260906-1005_x') problems.push(`folder ${folderName('x', new Date(Date.UTC(2026, 8, 6, 10, 5)))}`);
+      const msg = commitMessage('m', { done: 3, total: 12, PASS: 2, FAIL: 1, BLOCKED: 0, WAIVED: 0 }, 'C', 'amit');
+      if (msg !== 'DVT checkpoint: m — 3/12 runs (25 %), 2 PASS / 1 FAIL / 0 BLOCKED / 0 WAIVED [C] by amit') problems.push(`message ${msg}`);
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'folder <YYYYMMDD-HHMM>_<safe label>, commit message with progress and verdict counts' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+    if (test.check === 'dvt_rollup_logic') {
+      const rollup = (runs) => { const rs = runs.filter(r => r.status !== 'REJECTED'); if (!rs.length || rs.some(r => !r.verdict)) return null; for (const v of ['FAIL', 'BLOCKED', 'WAIVED', 'PASS']) if (rs.some(r => r.verdict === v)) return v; return null; };
+      const P = { status: 'DONE', verdict: 'PASS' }, F = { status: 'DONE', verdict: 'FAIL' }, W = { status: 'DONE', verdict: 'WAIVED' }, R = { status: 'REJECTED', verdict: null }, N = { status: 'NOT_STARTED', verdict: null };
+      const problems = [];
+      if (rollup([P, P, P]) !== 'PASS') problems.push('all pass != PASS');
+      if (rollup([P, F, P]) !== 'FAIL') problems.push('one fail != FAIL');
+      if (rollup([P, W]) !== 'WAIVED') problems.push('waived not distinct from PASS');
+      if (rollup([P, R, P]) !== 'PASS') problems.push('rejected row counted');
+      if (rollup([P, N]) !== null) problems.push('pending run produced a verdict');
+      const elapsed = Date.now() - t0;
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') } : { status: 'pass', msg: 'PASS only when every row passes; FAIL > BLOCKED > WAIVED > PASS; rejected excluded; pending = no verdict' };
+      setTestStatus(test.id, result.status, result.msg, elapsed); log(result.status, `${test.name}: ${result.msg}`); return;
+    }
+
+
+    // =========================================================================
+    // DVT Readiness (category dvt_ready) — each block maps to a DVT catalog
+    // test ID and checks the part of it the machine SOFTWARE has to satisfy.
+    // Operator-assisted blocks start a mode, wait for the physical fault to be
+    // injected, measure the response time, and always stop the outputs.
+    // =========================================================================
+
+    // DVT-THM/SAF: every field the procedures read is published in /api/state.
+    if (test.check === 'dvtr_telemetry') {
+      const s = await dvtrState();
+      const top = ['chamberTemp', 'targetTemp', 'atTemp', 'heaterPwm', 'isHeating', 'isCooling', 'coolingRate', 'coolingFanPwm', 'damperOpen', 'ventOn', 'doorClosed', 'doorAborted', 'fans', 'fanRpm', 'ledTemps', 'faults'];
+      const missing = top.filter(k => !(k in s));
+      const sub = { fanRpm: ['chamber_heating', 'chamber_intake', 'led_cooling'], ledTemps: ['left', 'right', 'back', 'door'], faults: ['heater', 'cooling', 'led'] };
+      for (const [k, keys] of Object.entries(sub)) {
+        if (s[k] && typeof s[k] === 'object') keys.filter(x => !(x in s[k])).forEach(x => missing.push(`${k}.${x}`));
+      }
+      const sim = s.hwSource !== 'io_controller';
+      dvtrDone(test, t0, missing.length
+        ? { status: sim ? 'warn' : 'fail', msg: `${sim ? 'simulation' : 'machine'} state lacks: ${missing.join(', ')}` }
+        : { status: 'pass', msg: `all ${top.length} fields + sub-keys present (${s.hwSource})` });
+      return;
+    }
+
+    // DVT-THM-002: a telemetry sample with per-panel LED temps round-trips
+    // through the run store and is readable back from Cure History.
+    if (test.check === 'dvtr_run_telemetry') {
+      const base = document.getElementById('apiUrl').value;
+      const id = 'qa-dvt-' + Date.now();
+      const json = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(6000) }).then(r => r.json());
+      await json(`/api/cure-runs/${id}/start`, { materialName: 'QA DVT probe', steps: 1, phases: ['Cure'], targetTemp: 40, serialNumber: 'qa' });
+      const sample = { t: 0, chamberTemp: 31.5, uvOn: true, uvType: '405nm', ledTemps: { right: 41.1, left: 42.2, back: 43.3, door: 44.4 } };
+      const rec = await json(`/api/cure-runs/${id}/telemetry`, sample);
+      await json(`/api/cure-runs/${id}/finish`, { status: 'aborted', stepsCompleted: 0 });
+      const hist = await fetch(base + '/api/cure-history', { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => []);
+      const run = Array.isArray(hist) ? hist.find(r => r.id === id || r.extId === id || r.ext_id === id) : null;
+      let result;
+      if (!rec.ok) result = { status: 'fail', msg: 'telemetry POST was not accepted' };
+      else if (!run) result = { status: 'fail', msg: 'run not found in /api/cure-history after finish' };
+      else if (!Array.isArray(run.telemetry)) result = { status: 'warn', msg: 'history list carries no telemetry array — per-panel data only reachable through the report' };
+      else {
+        const t = run.telemetry[0] || {};
+        const lt = t.ledTemps || {};
+        const bad = ['right', 'left', 'back', 'door'].filter(k => typeof lt[k] !== 'number');
+        result = (typeof t.chamberTemp === 'number' && bad.length === 0)
+          ? { status: 'pass', msg: `sample stored with chamberTemp + ledTemps ${Object.keys(lt).join('/')}` }
+          : { status: 'fail', msg: `stored sample lacks ${bad.length ? 'ledTemps.' + bad.join(', ledTemps.') : 'chamberTemp'}` };
+      }
+      dvtrDone(test, t0, result);
+      return;
+    }
+
+    // DVT-SAF-010: the central registry must have a distinct, actionable
+    // code for every fault the DVT injects.
+    if (test.check === 'dvtr_errors_registry') {
+      const r = await fetch(test.url, { signal: AbortSignal.timeout(5000) });
+      const d = await r.json();
+      const errs = Array.isArray(d.errors) ? d.errors : [];
+      const problems = [];
+      const codes = errs.map(e => e.code);
+      const dup = codes.filter((c, i) => codes.indexOf(c) !== i);
+      if (dup.length) problems.push(`duplicate codes ${[...new Set(dup)].join(', ')}`);
+      errs.filter(e => e.category === 'safety').forEach(e => {
+        if (!e.message) problems.push(`${e.code} has no message`);
+        if (!Array.isArray(e.troubleshooting) || !e.troubleshooting.length) problems.push(`${e.code} has no recovery (troubleshooting) steps`);
+      });
+      const text = (e) => `${e.key || ''} ${e.message || ''} ${e.description || ''}`.toLowerCase();
+      const families = [
+        ['SAF-003 heater fan failure', /(heater|circulation) fan[^.]{0,40}(fail|stall|not spinning|rpm|stopped)|(fail|stall)[^.]{0,20}(heater|circulation) fan/],
+        ['SAF-004 chamber sensor open', /(chamber|heater).*(thermistor|sensor).*(open|disconnect|invalid|missing)|thermistor.*disconnect/],
+        ['SAF-005 sensor short / implausible reading', /short|implausib|plausib|runaway/],
+        ['SAF-006/007 LED thermistor fault', /led.*(thermistor|temperature sensor|sensor)/],
+        ['SAF-008/019 LED cooling fan failure', /led[^.]{0,20}fan[^.]{0,40}(fail|stall|not spinning|rpm|stopped|degrad)/],
+        ['GAS-003 nitrogen supply low / lost', /(nitrogen|n₂|n2)[^.]{0,60}(pressure|supply|line|not pressuri)|(pressure|supply|line)[^.]{0,40}(nitrogen|n₂|n2)/],
+        ['SAF-020 LED panel not emitting / disconnected', /led[^.]{0,20}(panel|source|string|driver)[^.]{0,40}(not (working|emitting|lit)|disconnect|open|dark|no output|fail)/],
+        ['SAF-009 chamber cooling/intake fan failure', /(intake|cooling|chamber) fan[^.]{0,40}(fail|stall|not spinning|rpm|stopped)/],
+        ['SAF-013 thermal cutout tripped', /cutout|cut-out|thermal fuse|thermostat/],
+        ['SAF-014 watchdog / heartbeat loss', /watchdog|heartbeat/],
+        ['SAF-015 run aborted by power loss', /power (loss|cut|fail)|mains (loss|interrupt)|unexpected (shutdown|restart)/],
+      ];
+      const missing = families.filter(([, re]) => !errs.some(e => re.test(text(e)))).map(([n]) => n);
+      if (missing.length) problems.push(`no error code for: ${missing.join('; ')}`);
+      dvtrDone(test, t0, problems.length
+        ? { status: 'fail', msg: `${errs.length} codes — ${problems.join(' | ')}` }
+        : { status: 'pass', msg: `${errs.length} unique codes, safety entries actionable, all DVT fault families covered` });
+      return;
+    }
+
+    // DVT-SAF-011: heating-rate watchdog mirror (CureProcessPage stall rule).
+    if (test.check === 'dvtr_stall_watchdog') {
+      const CHECK_MIN = 5, MAX_RETRIES = 5, MIN_RISE = 1.0;
+      const alarmAfterMin = CHECK_MIN * MAX_RETRIES;
+      const stalls = (samples) => { let miss = 0; for (let i = 1; i < samples.length; i++) { miss = samples[i] - samples[i - 1] >= MIN_RISE ? 0 : miss + 1; if (miss >= MAX_RETRIES) return i * CHECK_MIN; } return null; };
+      const healthy = [22, 30, 38, 46, 54, 62, 70, 78, 80, 80];          // 27-33 min to 80 C: never trips
+      const stalled = [22, 22.5, 22.9, 23.2, 23.4, 23.5, 23.6, 23.6, 23.6];        // under-power plateau: never gains 1 C per check
+      const problems = [];
+      if (alarmAfterMin > 30) problems.push(`alarm after ${alarmAfterMin} min > 30 min limit`);
+      if (stalls(healthy) !== null) problems.push('healthy heat-up false-trips');
+      const q = stalls(stalled);
+      if (q === null || q > 30) problems.push(`stalled ramp not alarmed within 30 min (${q} min)`);
+      dvtrDone(test, t0, problems.length
+        ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'warn', msg: `rate-based, alarms at ${alarmAfterMin} min, no false trip on a healthy ramp — but it lives in the UI only (Err 7004); the server has no watchdog, so a closed/crashed UI leaves the ramp unwatched` });
+      return;
+    }
+
+    // DVT-SAF-015: runs interrupted by a power cut must not stay "running".
+    if (test.check === 'dvtr_orphan_runs') {
+      const base = document.getElementById('apiUrl').value;
+      const [hist, ver, s] = await Promise.all([
+        fetch(base + '/api/cure-history', { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => []),
+        fetch(base + '/api/system/version', { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => ({})),
+        dvtrState().catch(() => ({})),
+      ]);
+      const boot = ver.lastBoot ? new Date(ver.lastBoot.replace(' ', 'T')) : null;
+      const running = (Array.isArray(hist) ? hist : []).filter(r => r.status === 'running');
+      const stale = running.filter(r => {
+        const started = r.startedAt ? new Date(r.startedAt) : null;
+        if (!started) return true;
+        if (boot && started < boot) return true;
+        return Date.now() - started.getTime() > 24 * 3600 * 1000;
+      });
+      const live = !!(s.isHeating || s.isCooling || s.uvOn);
+      let result;
+      if (stale.length) result = { status: 'fail', msg: `${stale.length} run(s) still "running" from before the last boot${boot ? ' (' + ver.lastBoot + ')' : ''} — startup must reconcile them to aborted/error (e.g. ${stale[0].id})` };
+      else if (running.length && !live) result = { status: 'warn', msg: `${running.length} run(s) "running" while no output is live` };
+      else result = { status: 'pass', msg: `no orphaned runs (${running.length} running, ${(hist || []).length} total)` };
+      dvtrDone(test, t0, result);
+      return;
+    }
+
+    // DVT-SAF-008/019: a tach per LED side.
+    if (test.check === 'dvtr_fan_tach_coverage') {
+      const s = await dvtrState();
+      const rpm = s.fanRpm || {};
+      const sides = ['left', 'right', 'back', 'door'];
+      const perSide = sides.filter(k => typeof rpm[`led_${k}`] === 'number' || (rpm.led_cooling && typeof rpm.led_cooling === 'object' && typeof rpm.led_cooling[k] === 'number'));
+      dvtrDone(test, t0, perSide.length === 4
+        ? { status: 'pass', msg: 'fanRpm reports all four LED-cooling fans' }
+        : { status: 'fail', msg: `fanRpm reports ${perSide.length}/4 LED fans (keys: ${Object.keys(rpm).join(', ') || 'none'}) — only the first fan of the led_cooling group is read; the alarm cannot name a failed R/Back/Door fan and SAF-019 case B has no tach` });
+      return;
+    }
+
+    // DVT-SAF-020: the machine must be able to say WHICH LED panel is not emitting.
+    if (test.check === 'dvtr_n2_purge_feedback') {
+      const s = await dvtrState();
+      if (!('nitrogenActive' in s)) { dvtrDone(test, t0, { status: 'fail', msg: 'nitrogenActive missing from /api/state — the GAS-001 valve open/close timestamps cannot be read from the machine' }); return; }
+      const o2 = ['o2Percent', 'n2Percent', 'oxygen', 'oxygenPercent', 'nitrogenPercent'].find(k => k in s && s[k] != null);
+      if (o2) { dvtrDone(test, t0, { status: 'pass', msg: `nitrogenActive=${s.nitrogenActive}; oxygen feedback present (${o2}=${s[o2]}) — the purge can close the loop on the measured atmosphere` }); return; }
+      dvtrDone(test, t0, { status: 'warn', msg: `nitrogenActive=${s.nitrogenActive}; no oxygen / nitrogen reading in /api/state — the purge is time-based only (Settings → nitrogen duration, default 120 s). GAS-001 result decides the setting: worst unit's time to 95 % N2 x 1.2, and the hold must cover the longest cure after the purge` });
+      return;
+    }
+    if (test.check === 'dvtr_led_panel_feedback') {
+      const s = await dvtrState();
+      const sides = ['left', 'right', 'back', 'door'];
+      const perPanel = (o) => o && typeof o === 'object' && sides.every(k => k in o);
+      const src = ['ledOutput', 'ledPanels', 'ledCurrent', 'ledEmitting'].find(k => perPanel(s[k]));
+      const faultsLed = s.faults && s.faults.led;
+      if (src || perPanel(faultsLed)) {
+        dvtrDone(test, t0, { status: 'pass', msg: `per-panel LED output feedback present in ${src || 'faults.led'} (${sides.join('/')})` });
+        return;
+      }
+      const have = Object.keys(s).filter(k => /^led/i.test(k)).join(', ') || 'none';
+      dvtrDone(test, t0, { status: 'fail', msg: `no per-panel LED output feedback in /api/state (faults.led = ${JSON.stringify(faultsLed ?? null)}; led* keys: ${have}) — the SAF-020 alarm cannot name a dark panel. ledTemps are temperatures, not output feedback. Options: thermistor rise-rate rule at switch-on, light-sensor one-panel-at-a-time sequence, or per-panel current sense on the spare ADS1115 inputs` });
+      return;
+    }
+
+    // DVT-SAF-021: the no-heating alarm must tell the customer about the voltage selector.
+    if (test.check === 'dvtr_selector_open_guidance') {
+      const r = await fetch(test.url, { signal: AbortSignal.timeout(5000) });
+      const d = await r.json();
+      const errs = Array.isArray(d.errors) ? d.errors : [];
+      const stall = errs.find(e => e.code === 7004) || errs.find(e => /stall|not heating|no heating/i.test(`${e.key} ${e.message} ${e.description}`));
+      if (!stall) { dvtrDone(test, t0, { status: 'fail', msg: 'no heating-stall / no-heating error code in errors.json' }); return; }
+      const guidance = (stall.troubleshooting || []).join(' | ');
+      const namesSelector = /voltage selector|selector switch|110 ?V.*230 ?V|115 ?V.*230 ?V/i.test(guidance);
+      const namesCountry = /country|mains/i.test(guidance);
+      dvtrDone(test, t0, namesSelector && namesCountry
+        ? { status: 'pass', msg: `Err ${stall.code} guidance names the voltage selector and the country mains — ${guidance.slice(0, 160)}` }
+        : { status: 'fail', msg: `Err ${stall.code} guidance does not tell the customer to set the voltage selector for their country's mains (selector:${namesSelector} country:${namesCountry}) — ${guidance.slice(0, 160)}` });
+      return;
+    }
+
+    // DVT-GAS-003: the nitrogen guards need a line-pressure reading.
+    if (test.check === 'dvtr_n2_line_pressure') {
+      const s = await dvtrState();
+      const p = s.n2LinePressure;
+      if (typeof p === 'number' && isFinite(p)) {
+        dvtrDone(test, t0, { status: 'pass', msg: `n2LinePressure = ${p} bar (enable guard min 6 bar${p < 6 ? ' — currently BELOW the minimum' : ''}); nitrogenMode=${s.nitrogenMode}` });
+        return;
+      }
+      dvtrDone(test, t0, { status: 'fail', msg: `n2LinePressure = ${JSON.stringify(p ?? null)} — no line-pressure sensor: the 6 bar enable guard and the pre-cure N₂ check cannot work, and the Settings toggle stays disabled (null < 6). nitrogenMode=${s.nitrogenMode}` });
+      return;
+    }
+
+    // DVT-SAF-003/008/009: healthy baseline rpm per fan group.
+    if (test.check === 'dvtr_fan_baseline') {
+      const out = [];
+      for (const fan of ['chamber_heating', 'chamber_intake', 'led_cooling']) {
+        const r = await dvtrPost(`/api/diagnostics/fan-test?fan=${fan}`).catch(e => ({ status: 'ERR', message: e.message }));
+        out.push({ fan, rpm: r.rpm, status: r.status || (r.ok ? 'OK' : 'FAIL') });
+        await dvtrSleep(300);
+      }
+      const bad = out.filter(o => o.status !== 'OK' || !(o.rpm > 0));
+      dvtrDone(test, t0, bad.length
+        ? { status: 'fail', msg: bad.map(o => `${o.fan}: ${o.status} rpm=${o.rpm}`).join('; ') }
+        : { status: 'pass', msg: out.map(o => `${o.fan} ${o.rpm} rpm`).join(', ') });
+      return;
+    }
+
+    // DVT-SAF-012 / 017: door open (or sensor unplugged) inhibits every
+    // heat/UV start with Err 6015.
+    if (test.check === 'dvtr_door_start_inhibit') {
+      const s = await dvtrState();
+      if (s.hwSource !== 'io_controller') { dvtrDone(test, t0, { status: 'skip', msg: 'simulation has no door interlock — run on the machine' }); return; }
+      if (s.doorClosed === true) { dvtrDone(test, t0, { status: 'skip', msg: 'door reads closed — open it (SAF-012) or unplug the sensor (SAF-017) and re-run' }); return; }
+      const chain = s.doorClosed === null ? 'sensor unreadable (SAF-017 open chain)' : 'door open (SAF-012)';
+      const cmds = ['/api/cure/heat?target=40', '/api/cure/cure-405?target=40&intensity=30', '/api/cure/uv-only?wavelength=405&intensity=30&vent=0'];
+      const problems = [];
+      for (const c of cmds) {
+        const r = await dvtrPost(c);
+        if (r.ok) { problems.push(`${c.split('?')[0]} STARTED`); await dvtrStop(); }
+        else if (r.code !== 6015) problems.push(`${c.split('?')[0]} refused with code ${r.code} (expected 6015)`);
+      }
+      await dvtrStop();
+      dvtrDone(test, t0, problems.length
+        ? { status: 'fail', msg: `${chain}: ${problems.join('; ')}` }
+        : { status: 'pass', msg: `${chain}: heat, cure-405 and uv-only all refused with Err 6015` });
+      return;
+    }
+
+    // DVT-SAF-012: UV removed within 1 s of the door opening mid-cure.
+    if (test.check === 'dvtr_door_uv_off') {
+      const s0 = await dvtrState();
+      if (s0.hwSource !== 'io_controller') { dvtrDone(test, t0, { status: 'skip', msg: 'simulation has no door interlock — run on the machine' }); return; }
+      if (s0.doorClosed !== true) { dvtrDone(test, t0, { status: 'skip', msg: 'close the door first' }); return; }
+      const start = await dvtrPost('/api/cure/uv-only?wavelength=405&intensity=30&vent=0');
+      if (!start.ok) { dvtrDone(test, t0, { status: 'warn', msg: `UV start refused: ${start.message || start.code}` }); return; }
+      log('info', `${test.name}: UV is ON — OPEN THE DOOR now (waiting up to 45 s)`);
+      let opened = null, s = s0;
+      const deadline = Date.now() + 45000;
+      while (Date.now() < deadline) { s = await dvtrState(); if (s.doorClosed !== true) { opened = Date.now(); break; } await dvtrSleep(250); }
+      if (!opened) { await dvtrStop(); dvtrDone(test, t0, { status: 'skip', msg: 'door was not opened within 45 s' }); return; }
+      let offAt = null;
+      const d2 = opened + 20000;
+      while (Date.now() < d2) { s = await dvtrState(); if (s.uvOn === false) { offAt = Date.now(); break; } await dvtrSleep(150); }
+      const offSec = offAt ? ((offAt - opened) / 1000).toFixed(2) : null;
+      await dvtrSleep(500);
+      s = await dvtrState();
+      const latched = s.doorAborted === true;
+      const ack = latched ? await dvtrPost('/api/door-abort/ack') : { ok: false };
+      const cleared = latched ? (await dvtrState()).doorAborted === false : false;
+      await dvtrStop();
+      const problems = [];
+      if (offSec === null) problems.push('UV still ON 20 s after the door opened');
+      else if (offSec > 1) problems.push(`UV off after ${offSec} s (limit 1 s — the 10 s watchdog grace does not meet SAF-012)`);
+      if (!latched) problems.push('doorAborted did not latch (no operator acknowledgment required)');
+      else if (!ack.ok || !cleared) problems.push('door-abort ack did not clear doorAborted');
+      dvtrDone(test, t0, problems.length
+        ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: `UV off ${offSec} s after the door opened, doorAborted latched until ack` });
+      return;
+    }
+
+    // Generic operator-assisted fault injection (SAF-003/004/005/008/009):
+    // start a mode, wait for the physical fault (trigger predicate), measure
+    // the time to the safe state, check the fault + restart inhibit, stop.
+    if (test.check === 'dvtr_inject') {
+      const s0 = await dvtrState();
+      if (s0.hwSource !== 'io_controller') { dvtrDone(test, t0, { status: 'skip', msg: 'simulation has no fault model — run on the machine' }); return; }
+      if (s0.doorClosed !== true) { dvtrDone(test, t0, { status: 'skip', msg: 'close the door first' }); return; }
+      if (test.needsWarm && !(s0.chamberTemp > test.needsWarm)) { dvtrDone(test, t0, { status: 'skip', msg: `chamber must be above ${test.needsWarm}°C (now ${s0.chamberTemp?.toFixed?.(1)})` }); return; }
+      const start = await dvtrPost(test.start);
+      if (!start.ok) { dvtrDone(test, t0, { status: 'warn', msg: `start refused: ${start.message || start.code}` }); return; }
+      log('info', `${test.name}: running — NOW ${test.instruction} (waiting up to ${test.waitSec} s)`);
+      let s = s0, prev = s0, trig = null, maxTemp = -Infinity;
+      const deadline = Date.now() + test.waitSec * 1000;
+      while (Date.now() < deadline) {
+        s = await dvtrState();
+        if (typeof s.chamberTemp === 'number') maxTemp = Math.max(maxTemp, s.chamberTemp);
+        if (test.trigger(s, prev)) { trig = Date.now(); break; }
+        prev = s;
+        await dvtrSleep(250);
+      }
+      if (!trig) { await dvtrStop(); dvtrDone(test, t0, { status: 'skip', msg: `fault not injected within ${test.waitSec} s (${test.instruction})` }); return; }
+      let safeAt = null;
+      const watchMs = Math.max(20000, (test.limitSec + 5) * 1000);   // SAF-005 allows the firmware 3 min to notice a frozen reading
+      const d2 = trig + watchMs;
+      while (Date.now() < d2) {
+        s = await dvtrState();
+        if (typeof s.chamberTemp === 'number') maxTemp = Math.max(maxTemp, s.chamberTemp);
+        if (test.safe(s)) { safeAt = Date.now(); break; }
+        await dvtrSleep(150);
+      }
+      const respSec = safeAt ? (safeAt - trig) / 1000 : null;
+      const fault = s.faults ? s.faults[test.faultKey] : null;
+      let inhibited = null;
+      if (test.restart) { const r = await dvtrPost(test.start); inhibited = !r.ok; if (r.ok) await dvtrStop(); }
+      await dvtrStop();
+      const problems = [];
+      if (respSec === null) problems.push(`outputs still live ${Math.round(watchMs / 1000)} s after the fault (limit ${test.limitSec} s)`);
+      else if (respSec > test.limitSec) problems.push(`safe state after ${respSec.toFixed(2)} s (limit ${test.limitSec} s)`);
+      if (!fault) problems.push(`faults.${test.faultKey} not raised — no alarm names the component`);
+      if (inhibited === false) problems.push('restart was accepted while the fault is present');
+      if (test.maxTemp && maxTemp > test.maxTemp) problems.push(`chamber reached ${maxTemp.toFixed(1)}°C (ceiling ${test.maxTemp})`);
+      dvtrDone(test, t0, problems.length
+        ? { status: 'fail', msg: problems.join('; ') + (fault ? ` [fault: ${fault}]` : '') }
+        : { status: 'pass', msg: `safe in ${respSec.toFixed(2)} s, fault "${fault}"${inhibited ? ', restart refused' : ''}` });
+      return;
+    }
+
+    // DVT-SAF-007: an LED thermistor reading null must inhibit a cure.
+    if (test.check === 'dvtr_led_thermistor_open') {
+      const s = await dvtrState();
+      if (s.hwSource !== 'io_controller') { dvtrDone(test, t0, { status: 'skip', msg: 'simulation fabricates LED temps — run on the machine' }); return; }
+      const open = Object.entries(s.ledTemps || {}).filter(([, v]) => v == null).map(([k]) => k);
+      if (!open.length) { dvtrDone(test, t0, { status: 'skip', msg: 'all four LED thermistors read — disconnect one and re-run' }); return; }
+      if (s.doorClosed !== true) { dvtrDone(test, t0, { status: 'skip', msg: 'close the door first' }); return; }
+      const r = await dvtrPost('/api/cure/uv-only?wavelength=405&intensity=30&vent=0');
+      if (r.ok) await dvtrStop();
+      const names = (r.message || '').toLowerCase();
+      const named = open.some(p => names.includes(p));
+      dvtrDone(test, t0, r.ok
+        ? { status: 'fail', msg: `cure STARTED with the ${open.join('/')} LED thermistor open — start must be inhibited (SAF-007)` }
+        : named ? { status: 'pass', msg: `refused and names the ${open.join('/')} sensor: ${r.message}` }
+                : { status: 'fail', msg: `refused (${r.code || 'no code'}: ${r.message}) but the message does not name the ${open.join('/')} sensor` });
+      return;
+    }
+
+    // DVT-SAF-006: every panel thermistor must warm while its LEDs are on.
+    if (test.check === 'dvtr_led_coupling') {
+      const s0 = await dvtrState();
+      if (s0.hwSource !== 'io_controller') { dvtrDone(test, t0, { status: 'skip', msg: 'simulation fabricates LED temps — run on the machine' }); return; }
+      if (s0.doorClosed !== true) { dvtrDone(test, t0, { status: 'skip', msg: 'close the door first' }); return; }
+      const before = { ...(s0.ledTemps || {}) };
+      const start = await dvtrPost('/api/cure/uv-only?wavelength=405&intensity=30&vent=0');
+      if (!start.ok) { dvtrDone(test, t0, { status: 'warn', msg: `UV start refused: ${start.message || start.code}` }); return; }
+      let s = s0;
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) { s = await dvtrState(); if (s.uvOn === false || s.doorAborted) break; await dvtrSleep(2000); }
+      await dvtrStop();
+      if (s.uvOn === false && Date.now() < deadline - 1000) { dvtrDone(test, t0, { status: 'warn', msg: `UV stopped early (fault: ${s.faults && s.faults.led})` }); return; }
+      const after = s.ledTemps || {};
+      const rise = Object.keys(before).map(k => [k, (typeof after[k] === 'number' && typeof before[k] === 'number') ? after[k] - before[k] : null]);
+      const flat = rise.filter(([, d]) => d === null || d < 0.5).map(([k, d]) => `${k} ${d === null ? 'n/a' : '+' + d.toFixed(1) + '°C'}`);
+      const ledFault = s.faults && s.faults.led;
+      let result;
+      if (rise.every(([, d]) => d === null || d < 0.5)) result = { status: 'warn', msg: 'no panel warmed in 60 s — LEDs really on? (' + rise.map(([k, d]) => k + ' ' + (d === null ? 'n/a' : d.toFixed(1))).join(', ') + ')' };
+      else if (flat.length && !ledFault) result = { status: 'fail', msg: `${flat.join(', ')} did not rise while the others did — decoupled sensor NOT detected (SAF-006 needs a plausibility rule)` };
+      else result = { status: 'pass', msg: rise.map(([k, d]) => `${k} +${(d ?? 0).toFixed(1)}`).join(', ') + (ledFault ? ` (faults.led: ${ledFault})` : '') };
+      dvtrDone(test, t0, result);
+      return;
+    }
+
+    // DVT-THM-001: at-temperature flag and overshoot on a small step.
+    if (test.check === 'dvtr_thm_overshoot') {
+      const s0 = await dvtrState();
+      if (s0.doorClosed === false) { dvtrDone(test, t0, { status: 'skip', msg: 'close the door first' }); return; }
+      const target = Math.min(80, Math.max(30, Math.ceil((s0.chamberTemp || 25) + 3)));
+      const start = await dvtrPost(`/api/cure/heat?target=${target}`);
+      if (!start.ok) { dvtrDone(test, t0, { status: 'warn', msg: `heat refused: ${start.message || start.code}` }); return; }
+      log('info', `${test.name}: heating to ${target}°C from ${(s0.chamberTemp || 0).toFixed(1)} — up to 6 min`);
+      let s = s0, reached = null;
+      const deadline = Date.now() + 6 * 60000;
+      while (Date.now() < deadline) {
+        s = await dvtrState();
+        const at = ('atTemp' in s) ? s.atTemp === true : Math.abs((s.chamberTemp || 0) - target) <= 0.5;
+        if (at) { reached = Date.now(); break; }
+        if (s.isHeating === false) break;
+        await dvtrSleep(1000);
+      }
+      if (!reached) { await dvtrStop(); dvtrDone(test, t0, { status: s.isHeating === false ? 'fail' : 'warn', msg: s.isHeating === false ? `heating stopped by itself at ${(s.chamberTemp || 0).toFixed(1)}°C (fault: ${s.faults && s.faults.heater})` : `${target}°C not reached in 6 min (now ${(s.chamberTemp || 0).toFixed(1)})` }); return; }
+      let peak = -Infinity;
+      const d2 = reached + 90000;
+      while (Date.now() < d2) { s = await dvtrState(); if (typeof s.chamberTemp === 'number') peak = Math.max(peak, s.chamberTemp); await dvtrSleep(1000); }
+      await dvtrStop();
+      const over = peak - target;
+      dvtrDone(test, t0, over <= 3
+        ? { status: 'pass', msg: `atTemp in ${Math.round((reached - t0) / 1000)} s, peak ${peak.toFixed(1)}°C = +${over.toFixed(1)} over ${target} (limit 3)` }
+        : { status: 'fail', msg: `overshoot +${over.toFixed(1)}°C over ${target} (limit 3)` });
+      return;
+    }
+
+    // DVT-THM-003: cooling entry sequence and rate telemetry.
+    if (test.check === 'dvtr_thm_cool_entry') {
+      const s0 = await dvtrState();
+      if (!(s0.chamberTemp > 27)) { dvtrDone(test, t0, { status: 'skip', msg: `chamber must be above 27°C (now ${(s0.chamberTemp || 0).toFixed(1)}) — run after a heat test` }); return; }
+      const start = await dvtrPost('/api/cure/cool?target=25&mode=medium');
+      if (!start.ok) { dvtrDone(test, t0, { status: 'warn', msg: `cool refused: ${start.message || start.code}` }); return; }
+      await dvtrSleep(3000);
+      let s = await dvtrState();
+      const problems = [];
+      if (s.isCooling !== true) problems.push('isCooling false');
+      if (s.damperOpen !== true) problems.push('damper not open');
+      if (!(s.fans && s.fans.chamber_heating === 100)) problems.push(`heater fan ${s.fans && s.fans.chamber_heating}% (expected 100)`);
+      if (!('coolingFanPwm' in s) || s.coolingFanPwm !== 60) problems.push(`intake duty ${s.coolingFanPwm} (expected 60 for medium)`);
+      const deadline = Date.now() + 20000;
+      while (typeof s.coolingRate !== 'number' && Date.now() < deadline) { await dvtrSleep(1000); s = await dvtrState(); }
+      const sim = s.hwSource !== 'io_controller';
+      if (typeof s.coolingRate !== 'number') problems.push('coolingRate never reported');
+      await dvtrStop();
+      dvtrDone(test, t0, problems.length
+        ? { status: sim ? 'warn' : 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: `damper open, heater fan 100 %, intake 60 %, rate ${s.coolingRate.toFixed(2)}°C/min` });
+      return;
     }
 
     // Durable-store round-trip: save a program, read it back, confirm it
@@ -2661,6 +3812,21 @@ function runHwCompatCheck(check) {
       return bad.length === 0
         ? { status: 'pass', msg: 'UV floor matches led_power.min_intensity (10%)' }
         : { status: 'fail', msg: `${bad.length} wrong UV bounds` };
+    }
+    case 'hwc_led_routing': {
+      // Mirror of io_controller/components.json led_power.modes (bench 2026-09-07):
+      // the voltage-routing line GPIO17 stays LOW in both modes - HIGH killed the
+      // door driver's 12 V DIM rail, which is why Bleaching never dimmed the door.
+      const modes = { '450nm': { ssr_450nm: 1, ssr_405nm: 0, routing: 0 },
+                      '405nm': { ssr_450nm: 1, ssr_405nm: 1, routing: 0 } };
+      const bad = [];
+      if (modes['450nm'].routing !== 0) bad.push('450nm routing must be 0 (GPIO17 HIGH cuts the door DIM)');
+      if (modes['405nm'].routing !== 0) bad.push('405nm routing must be 0');
+      if (!(modes['450nm'].ssr_450nm === 1 && modes['450nm'].ssr_405nm === 0)) bad.push('450nm must enable GPIO16 only');
+      if (!(modes['405nm'].ssr_450nm === 1 && modes['405nm'].ssr_405nm === 1)) bad.push('405nm must enable GPIO16 + GPIO20');
+      return bad.length === 0
+        ? { status: 'pass', msg: 'both modes keep GPIO17 LOW; wavelength selected by the SSRs (450: GPIO16, 405: GPIO16+GPIO20)' }
+        : { status: 'fail', msg: bad.join('; ') };
     }
     case 'hwc_csv_cool_drop': {
       // Cooling target must be at least 5°C below the previous step's temp

@@ -271,6 +271,7 @@
   </div>
 
   <!-- Layer 4: board ICs -->
+
   <div class="layer">
     <span class="ltitle">Board ICs (BRD-74205 rev07)</span>
     <div class="lrow">
@@ -290,6 +291,7 @@
   </div>
 
   <!-- Layer 5: physical world -->
+   
   <div class="layer">
     <span class="ltitle">Actuators · sensors · connectors</span>
     <div class="lrow">
@@ -319,7 +321,7 @@
         <div class="chips"><span class="chip">GPIO16 · pin 36</span></div></div>
       <div class="node hw" id="ssr405"><h4>SSR 405nm</h4><div class="he">GPIO20 → relay K2 → J17.3 → external SSR</div>
         <div class="chips"><span class="chip">GPIO20 · pin 38</span></div></div>
-      <div class="node warn" id="route17"><h4>Wavelength routing</h4><div class="he">⚠ GPIO17 — HIGH=450 / LOW=405, written and read back. Not found in the schematic netlist — verify the pin is actually wired!</div>
+      <div class="node warn" id="route17"><h4>Wavelength routing</h4><div class="he">GPIO17 — voltage-routing line, kept LOW in BOTH modes (bench 2026-09-07: HIGH cuts the 12 V DIM rail of the door LED driver, so the old HIGH=450 assumption was inverted). Written and read back; the SSRs alone select the wavelength.</div>
         <div class="chips"><span class="chip">GPIO17 · pin 11</span></div></div>
       <div class="node warn" id="door27"><h4>Door sensor (read)</h4><div class="he">⚠ GPIO27 — passive tap on the external sensor line. Verify polarity: open_level should probably be 0</div>
         <div class="chips"><span class="chip">GPIO27 · pin 13</span></div></div>
@@ -357,7 +359,7 @@
 
   <h2 class="warn">Open items from the HSI (verify before relying on these)</h2>
   <ul>
-    <li><b>GPIO17 (wavelength routing):</b> no net with this name was found on any schematic sheet — the board may never have been updated for the move from GPIO27. A floating pin would return a false "verified" read-back. Two stale comments in the code still say GPIO27.</li>
+    <li><b>GPIO17 (wavelength routing):</b> no net with this name was found on any schematic sheet, but the pin IS wired: on the bench (2026-09-07, testingcm5) driving it HIGH dropped the door LED-driver DIM from 12 V to 0 V in every SSR combination, so components.json now keeps routing=0 for both modes. Two stale comments in the code still say GPIO27.</li>
     <li><b>Door sensor polarity:</b> working assumption: door closed = HIGH. Once confirmed, <code>components.json</code> <code>open_level</code> must change from 1 to 0 (the current value encodes the opposite polarity: safe but inoperable).</li>
     <li><b>Door sensor output type:</b> if it is a contact/open-collector with a weak pull-up, the relay LEDs will clamp the line (~1.2V) — the SSRs won't enable and the Pi will read LOW even with the door closed. Bench check required (measure at J17.2, <code>pinctrl get 27</code>, continuity through K1).</li>
     <li><b>FAN1–6_ONOFF:</b> the expander's fan-enable bits are not mapped to any physical fan and are not driven by the automatic control.</li>
