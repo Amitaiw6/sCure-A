@@ -274,14 +274,15 @@ def start_cure_run(ext_id, material_name, steps, phases, target_temp, serial_num
         return cur.fetchone()[0]
 
 
-def finish_cure_run(ext_id, status, steps_completed=None):
+def finish_cure_run(ext_id, status, steps_completed=None, sensor_issues=None):
     with _conn() as conn, conn.cursor() as cur:
         cur.execute(
             """UPDATE cure_runs
                SET status = %s, ended_at = now(),
-                   steps_completed = COALESCE(%s, steps_completed)
+                   steps_completed = COALESCE(%s, steps_completed),
+                   sensor_issues = %s
                WHERE ext_id = %s""",
-            (status, steps_completed, str(ext_id)),
+            (status, steps_completed, psycopg2.extras.Json(list(sensor_issues or [])), str(ext_id)),
         )
         return cur.rowcount > 0
 

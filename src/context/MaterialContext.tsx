@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { estimateProgramMinutes } from '@/lib/program-estimate'
 
 export type TimerMode = 'on-ramp' | 'on-target'
 export type UvStartMode = 'at-start' | 'at-target'
@@ -383,7 +384,9 @@ export function MaterialProvider({ children }: { children: ReactNode }) {
     if (!result.steps || result.errors.length > 0) return { success: false, errors: result.errors }
 
     const name = fileName.replace(/\.csv$/i, '')
-    const totalDuration = result.steps.reduce((sum, s) => sum + s.time, 0)
+    // Stored program length = the estimated REAL duration (holds + heating
+    // ramps + cooling), from the measured-rate model in program-estimate.ts.
+    const totalDuration = estimateProgramMinutes(result.steps)
 
     const newMaterial: Material = {
       id: crypto.randomUUID(),

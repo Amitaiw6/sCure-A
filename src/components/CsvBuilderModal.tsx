@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { estimateProgramMinutes } from '@/lib/program-estimate'
 import { Plus, Trash2, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TouchNumber } from '@/components/ui/touch-number'
@@ -164,7 +165,10 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
     })
   }
 
-  const totalDuration = steps.reduce((sum, s) => sum + (s.process === 'Cooling' || s.process === 'Nitrogen' ? 0 : (s.time || 0)), 0)
+  // Hold minutes (what the user typed) and the estimated REAL length (holds +
+  // heating ramps + cooling); the latter is what gets stored as totalDuration.
+  const holdMinutes = steps.reduce((sum, s) => sum + (s.process === 'Cooling' || s.process === 'Nitrogen' ? 0 : (s.time || 0)), 0)
+  const totalDuration = estimateProgramMinutes(steps)
 
   // Nitrogen validation
   const nitrogenCount = steps.filter(s => s.process === 'Nitrogen').length
@@ -554,7 +558,7 @@ export default function CsvBuilderModal({ isOpen, onClose, editMaterial }: CsvBu
               <Download size={14} /> CSV
             </Button>
             <span className="text-muted-foreground text-sm whitespace-nowrap">
-              <span className="text-foreground font-semibold">{steps.length}</span> steps · <span className="text-foreground font-semibold">{totalDuration} min</span>
+              <span className="text-foreground font-semibold">{steps.length}</span> steps · <span className="text-foreground font-semibold">{holdMinutes} min</span> holds · ~<span className="text-foreground font-semibold">{totalDuration} min</span> total
             </span>
             <div className="flex-1" />
             <Button variant="outline" onClick={handleClose} className="min-w-[90px]">Cancel</Button>

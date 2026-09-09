@@ -138,6 +138,9 @@ CREATE TABLE IF NOT EXISTS cure_runs (
     ended_at          TIMESTAMPTZ,
     status            TEXT NOT NULL DEFAULT 'running'   -- running | completed | aborted | error
 );
+-- v0.8.39: temperature sensors that read open-circuit during the run
+-- ([{"sensor":"back","critical":false}, ...]; [] = all sensors read the whole run)
+ALTER TABLE cure_runs ADD COLUMN IF NOT EXISTS sensor_issues JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS ix_cure_runs_print   ON cure_runs(print_id);
 CREATE INDEX IF NOT EXISTS ix_cure_runs_session ON cure_runs(cure_session_id);
 CREATE INDEX IF NOT EXISTS ix_cure_runs_started ON cure_runs(started_at DESC);
@@ -223,6 +226,7 @@ SELECT
     cr.status                            AS status,
     cr.phases                            AS phases,
     cr.target_temp                       AS "targetTemp",
+    cr.sensor_issues                     AS "sensorIssues",
     cb.serial_number                     AS "serialNumber",
     COALESCE((
         SELECT jsonb_agg(jsonb_build_object(

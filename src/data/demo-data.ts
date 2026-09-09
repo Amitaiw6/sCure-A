@@ -49,7 +49,7 @@ export const DEMO_PRESETS: Material[] = [
         "temperature": 40
       }
     ],
-    "totalDuration": 35,
+    "totalDuration": 79,
     "createdAt": "",
     "isPreset": true
   },
@@ -107,7 +107,7 @@ export const DEMO_PRESETS: Material[] = [
         "temperature": 35
       }
     ],
-    "totalDuration": 58,
+    "totalDuration": 135,
     "createdAt": "",
     "isPreset": true
   },
@@ -155,7 +155,7 @@ export const DEMO_PRESETS: Material[] = [
         "temperature": 30
       }
     ],
-    "totalDuration": 33,
+    "totalDuration": 67,
     "createdAt": "",
     "isPreset": true
   },
@@ -218,7 +218,7 @@ export const DEMO_PRESETS: Material[] = [
         "coolingMode": "medium"
       }
     ],
-    "totalDuration": 40,
+    "totalDuration": 126,
     "createdAt": "",
     "isPreset": true
   },
@@ -269,7 +269,7 @@ export const DEMO_PRESETS: Material[] = [
         "temperature": 30
       }
     ],
-    "totalDuration": 40,
+    "totalDuration": 64,
     "createdAt": "",
     "isPreset": true
   },
@@ -342,7 +342,7 @@ export const DEMO_PRESETS: Material[] = [
         "temperature": 30
       }
     ],
-    "totalDuration": 53,
+    "totalDuration": 97,
     "createdAt": "",
     "isPreset": true
   }
@@ -420,7 +420,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 0
       }
     ],
-    "totalDuration": 10
+    "totalDuration": 96
   },
   {
     "createdAt": "2026-08-04T09:34:53.913Z",
@@ -444,7 +444,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 0
       }
     ],
-    "totalDuration": 10
+    "totalDuration": 70
   },
   {
     "createdAt": "2026-08-04T12:14:42.062Z",
@@ -460,7 +460,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 50
       }
     ],
-    "totalDuration": 50
+    "totalDuration": 86
   },
   {
     "createdAt": "2026-08-04T13:04:24.370Z",
@@ -514,7 +514,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 5
       }
     ],
-    "totalDuration": 20
+    "totalDuration": 56
   },
   {
     "createdAt": "2026-08-05T08:24:13.531Z",
@@ -574,7 +574,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 0
       }
     ],
-    "totalDuration": 40
+    "totalDuration": 96
   },
   {
     "createdAt": "2026-08-05T12:11:14.422Z",
@@ -590,7 +590,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 30
       }
     ],
-    "totalDuration": 30
+    "totalDuration": 66
   },
   {
     "createdAt": "2026-08-06T03:51:46.601Z",
@@ -624,7 +624,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 10
       }
     ],
-    "totalDuration": 10
+    "totalDuration": 12
   },
   {
     "createdAt": "2026-08-06T05:07:42.204Z",
@@ -706,7 +706,7 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 0
       }
     ],
-    "totalDuration": 70
+    "totalDuration": 280
   },
   {
     "createdAt": "2026-08-06T05:37:27.179Z",
@@ -730,6 +730,6 @@ export const DEMO_USER_PROGRAMS: Material[] = [
         "time": 0
       }
     ],
-    "totalDuration": 10
+    "totalDuration": 62
   }
 ]

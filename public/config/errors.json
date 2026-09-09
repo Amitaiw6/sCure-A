@@ -1,7 +1,7 @@
 {
   "_meta": {
     "version": "3.0.0",
-    "lastUpdated": "2026-06-29",
+    "lastUpdated": "2026-09-09",
     "description": "sCure central Error Registry — the single source of truth for every error/warning. Each record has a stable, unique numeric code whose FIRST DIGIT identifies the SRS section/screen the error is documented in (3=Setup, 4=Setup Name, 5=Connect Organization, 6=Home, 7=Cure Process, 8=Cure History, 9=Error Management: device/hardware alerts + cross-cutting system faults). The code is carried UNCHANGED across every layer (C++ driver/daemon -> Flask backend -> React UI); the originating subsystem is recorded in the per-record \"layer\" field. CS may edit message, description, troubleshooting and supportUrl; code, key, severity, category and layer are system-defined.",
     "editableFields": [
       "message",
@@ -447,6 +447,7 @@
       "description": "During a cure, the chamber temperature failed to move toward its target across five consecutive 5-minute stall checks. The user is warned that continuing may distort the printed models, and may Continue or Abort.",
       "troubleshooting": [
         "Choose Abort to stop, or Continue at your own risk",
+        "If the chamber does not heat at all, check the voltage selector next to the mains inlet: it must sit fully in the 230 V or 115 V detent that matches your country's mains — a mid position is an open circuit and the heater receives no power",
         "Check heater/cooling operation and chamber insulation",
         "Run diagnostics from Settings"
       ],
@@ -465,6 +466,37 @@
         "Restart the cure when ready"
       ],
       "supportUrl": "https://docs.scure.com/errors/7005"
+    },
+    {
+      "code": 9001,
+      "key": "TEMP_SENSOR_DISCONNECTED",
+      "message": "Temperature Sensor Disconnected",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "A required temperature sensor (chamber NTC, or the Left / Right LED NTC) has read open-circuit for at least 60 seconds - the input sits at the 3.3 V pull-up rail, so there is no temperature. The check runs at system start-up, every second while running, and again right before every process start. No process can start while a required sensor is open; a running heater already stops on an invalid chamber reading.",
+      "troubleshooting": [
+        "Check the thermistor cable and its connector on the IO board (ADS1115 U6 / U7)",
+        "Check the common ground of the thermistor harness - all sensors jump to 3.3 V together when it opens",
+        "Measure the thermistor: about 12 kOhm at room temperature",
+        "The alert clears by itself once the sensor reads again"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9001"
+    },
+    {
+      "code": 9050,
+      "key": "LED_TEMP_SENSOR_DISCONNECTED",
+      "message": "LED Temperature Sensor Disconnected",
+      "severity": "warning",
+      "category": "maintenance",
+      "layer": "daemon",
+      "description": "The Back or Door LED temperature sensor has read open-circuit for at least 60 seconds (input at the 3.3 V pull-up rail). These sensors are diagnostic only: processes keep running as usual, but the LED temperature of that module is not shown until it is reconnected.",
+      "troubleshooting": [
+        "Check the Back / Door LED thermistor cable and connector on the IO board (ADS1115 U7 AIN0 / AIN1)",
+        "Measure the thermistor: about 12 kOhm at room temperature",
+        "The warning clears by itself once the sensor reads again"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9050"
     },
     {
       "code": 9080,

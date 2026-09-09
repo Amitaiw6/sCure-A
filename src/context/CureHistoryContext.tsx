@@ -22,6 +22,8 @@ export interface CureLog {
   targetTemp: number | null
   serialNumber?: string
   telemetry?: TelemetrySample[]
+  /** Temperature sensors that read open-circuit at any point of the run (v0.8.39+); [] = all read */
+  sensorIssues?: { sensor: string; critical: boolean }[]
 }
 
 interface CureHistoryContextType {

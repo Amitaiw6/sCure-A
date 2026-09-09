@@ -75,6 +75,21 @@ LED_TEST_SENSORS = [
 ]
 LED_TEST_MAX_TEMP = 80.0
 
+# Temperature-sensor supervision (policy defined with the user 2026-09-09):
+# an NTC that reads open-circuit (at the 3.3 V pull-up rail -> no temperature)
+# for SENSOR_OPEN_ALERT_SEC continuously raises a registry alert. The chamber
+# and the Left / Right LED thermistors are REQUIRED: their alert is critical
+# (9001) and no process may start while they are open (checked at start-up
+# and again right before every process start). The Back / Door LED
+# thermistors only raise a warning (9050) - processes run as usual.
+SENSOR_OPEN_ALERT_SEC = 60.0
+CRITICAL_TEMP_SENSORS = {'TEMP_CHAMBER': 'chamber', 'TEMP_LEFT_ORIGIN': 'left',
+                         'TEMP_RIGHT_ORIGIN': 'right'}
+WARNING_TEMP_SENSORS = {'TEMP_BACK_ORIGIN': 'back', 'TEMP_DOOR_ORIGIN': 'door'}
+ERR_TEMP_SENSOR_DISCONNECTED = 9001      # critical - errors.json
+ERR_LED_TEMP_SENSOR_DISCONNECTED = 9050  # warning  - errors.json
+SENSOR_VALID_C = (-20.0, 120.0)          # HSI valid range for every NTC
+
 
 class StatusLeds(threading.Thread):
     """Machine status on the addressable RGB strip (components.json "rgb").
@@ -226,6 +241,10 @@ class StatusLeds(threading.Thread):
         b = self.bridge
         self._reload_colors()
         try:
+            b._sensor_tick()              # NTC open-circuit supervision (60 s rule)
+        except Exception:                 # noqa: BLE001 - never disturb the door safety
+            pass
+        try:
             outputs_on = False
             if b.sys.door_open() is True:
                 outputs_on = (b.temp.active or b.sys.cooling_status().get('active')
@@ -350,6 +369,10 @@ class IOBridge:
             self.sys.startup_safe()       # known-OFF state before serving
             self.temp = TemperatureController(self.sys)
             self.available = True
+            # temperature-sensor supervision (see SENSOR_OPEN_ALERT_SEC)
+            self._sensor_open_since = {}  # sensor name -> time.time() it went open
+            self._sensor_alerts = set()   # active registry codes (9001 / 9050)
+            self._sensor_check(startup=True)
             # RGB strip: manual ON/OFF via /api/rgb for now. The automatic
             # status colors (StatusLeds above) are ready but not enabled yet —
             # flip RGB_AUTO_STATUS to True to turn them on.
@@ -462,6 +485,8 @@ class IOBridge:
                 'cooling': cool.get('fault'),
                 'led': self.sys.led_fault,
             },
+            'sensors': self.sensors_state(),       # per-NTC ok / open seconds
+            'alerts': sorted(self._sensor_alerts), # active registry codes
             'hwSource': 'io_controller',
         }
 
@@ -562,6 +587,9 @@ class IOBridge:
             print('[API] drying intake fan -> 0% (step ended)', flush=True)
 
     def heat_to_target(self, target_c):
+        ok, why = self.sensor_preflight()   # required NTCs must read (9001)
+        if not ok:
+            return False, why
         with self._op:
             self._drying = False
             self._stop_dry_fan()          # not drying anymore
@@ -580,6 +608,9 @@ class IOBridge:
         together - venting the moisture. Both stay on for the rest of the step
         and turn off when any other step takes over. During the ramp the damper
         is closed and the intake fan is off, so heating is not slowed."""
+        ok, why = self.sensor_preflight()   # required NTCs must read (9001)
+        if not ok:
+            return False, why
         with self._op:
             self._drying = False
             self._manual_heat = False     # program heating, not the manual slider
@@ -634,6 +665,9 @@ class IOBridge:
     #  Cure / bleaching = heating + UV together
     # ------------------------------------------------------------------
     def cure_uv(self, target_c, intensity, wavelength):
+        ok, why = self.sensor_preflight()   # required NTCs must read (9001)
+        if not ok:
+            return False, why
         with self._op:
             self._drying = False
             self._stop_dry_fan()          # not drying anymore
@@ -656,6 +690,9 @@ class IOBridge:
         intake fan — outside air flowing through the chamber like cooling's
         airflow, without a cooling loop. A ventilation failure never blocks
         the UV step itself (it is airflow comfort, not a safety interlock)."""
+        ok, why = self.sensor_preflight()   # required NTCs must read (9001)
+        if not ok:
+            return False, why
         with self._op:
             self._drying = False
             self._stop_dry_fan()          # not drying anymore
@@ -704,6 +741,9 @@ class IOBridge:
         self._fan_duty['led_cooling'] = int(pwm) if on else 0
 
     def cool_to_target(self, target_c, mode):
+        ok, why = self.sensor_preflight()   # required NTCs must read (9001)
+        if not ok:
+            return False, why
         with self._op:
             self._drying = False          # cooling owns the damper from here
             self._dry_fan_on = False      # cooling takes over FAN_COOLING itself
@@ -954,6 +994,84 @@ class IOBridge:
         return {'results': results}
 
     # ------------------------------------------------------------------
+    #  Temperature-sensor supervision (open-circuit NTC detection)
+    # ------------------------------------------------------------------
+    def _sensor_read_ok(self, name):
+        """True when the NTC reads a plausible temperature; False when it is
+        open (pull-up rail -> no temperature) or outside the valid range."""
+        try:
+            with self.sys.lock:
+                t = self.sys.io.read_temp(name)['temp']
+        except Exception:                 # noqa: BLE001 - I2C / math error = not ok
+            return False
+        return t is not None and SENSOR_VALID_C[0] <= t <= SENSOR_VALID_C[1]
+
+    def _sensor_check(self, startup=False):
+        """One supervision pass over all NTCs. Tracks how long each has been
+        open and raises / clears the registry alert after SENSOR_OPEN_ALERT_SEC.
+        Returns the set of sensor names currently open."""
+        now = time.time()
+        open_now = set()
+        for name in list(CRITICAL_TEMP_SENSORS) + list(WARNING_TEMP_SENSORS):
+            is_critical = name in CRITICAL_TEMP_SENSORS
+            code = ERR_TEMP_SENSOR_DISCONNECTED if is_critical else ERR_LED_TEMP_SENSOR_DISCONNECTED
+            if self._sensor_read_ok(name):
+                if name in self._sensor_open_since:
+                    print(f'[SENSOR] {name} reads again', flush=True)
+                    del self._sensor_open_since[name]
+                continue
+            open_now.add(name)
+            since = self._sensor_open_since.setdefault(name, now)
+            if startup:
+                kind = 'REQUIRED, processes blocked' if is_critical else 'LED sensor, warning only'
+                print(f'[SENSOR] start-up check: {name} OPEN (no thermistor) - {kind}', flush=True)
+            if now - since >= SENSOR_OPEN_ALERT_SEC and code not in self._sensor_alerts:
+                self._sensor_alerts.add(code)
+                sev = 'critical' if is_critical else 'warning'
+                print(f'[SENSOR] {name} open for {SENSOR_OPEN_ALERT_SEC:.0f}s -> Err {code} ({sev})', flush=True)
+        # clear an alert only when every sensor of its class reads again
+        for code, group in ((ERR_TEMP_SENSOR_DISCONNECTED, CRITICAL_TEMP_SENSORS),
+                            (ERR_LED_TEMP_SENSOR_DISCONNECTED, WARNING_TEMP_SENSORS)):
+            if code in self._sensor_alerts and not (open_now & set(group)):
+                self._sensor_alerts.discard(code)
+                print(f'[SENSOR] Err {code} cleared - sensors read again', flush=True)
+        return open_now
+
+    def _sensor_tick(self):
+        """Called every status_sec by the status loop."""
+        self._sensor_check()
+
+    def sensor_preflight(self):
+        """Right before a process starts: the REQUIRED NTCs (chamber, Left,
+        Right) must read. Up to 3 reads 0.5 s apart to ride out a glitch;
+        still open -> refuse with the critical code (carried to the UI)."""
+        bad = []
+        for attempt in range(3):
+            bad = [n for n in CRITICAL_TEMP_SENSORS if not self._sensor_read_ok(n)]
+            if not bad:
+                return True, None
+            if attempt < 2:
+                time.sleep(0.5)
+        names = ', '.join(f'{n} ({CRITICAL_TEMP_SENSORS[n]})' for n in bad)
+        self._sensor_alerts.add(ERR_TEMP_SENSOR_DISCONNECTED)
+        for n in bad:
+            self._sensor_open_since.setdefault(n, time.time())
+        print(f'[SENSOR] process refused: {names} open -> Err {ERR_TEMP_SENSOR_DISCONNECTED}', flush=True)
+        return False, (f'[{ERR_TEMP_SENSOR_DISCONNECTED}] Temperature sensor disconnected: '
+                       f'{names} - reconnect the sensor before starting a process')
+
+    def sensors_state(self):
+        """Per-NTC supervision snapshot for /api/state."""
+        now = time.time()
+        out = {}
+        for name, key in list(CRITICAL_TEMP_SENSORS.items()) + list(WARNING_TEMP_SENSORS.items()):
+            since = self._sensor_open_since.get(name)
+            out[key] = {'sensor': name, 'ok': since is None,
+                        'openSec': int(now - since) if since else None,
+                        'critical': name in CRITICAL_TEMP_SENSORS}
+        return out
+
+    # ------------------------------------------------------------------
     #  Shutdown (atexit): everything OFF, no run-on
     # ------------------------------------------------------------------
     def shutdown(self):
@@ -961,7 +1079,11 @@ class IOBridge:
                        lambda: self.temp.shutdown('user'),
                        lambda: self.sys.stop_cooling('user'),
                        lambda: self.sys.all_leds_off(),
-                       lambda: self.set_nitrogen(False)):
+                       lambda: self.set_nitrogen(False),
+                       # rest state for the LED path: SSR + switch GPIOs LOW and
+                       # the LED_SWITCH relay (TCA P05 -> K4) at 0
+                       lambda: self.sys.led_power_off(),
+                       lambda: self.sys.io.io.set_pin("LED_SWITCH", 0)):
             try:
                 action()
             except Exception:             # noqa: BLE001

@@ -17,6 +17,7 @@ The C++ driver is compiled as a shared library or called via subprocess.
 """
 
 import os
+import re
 import sys
 import json
 import subprocess
@@ -823,7 +824,7 @@ class _CureFileStore:
                 self._unflushed = 0
             return True
 
-    def finish(self, ext_id, status, steps_completed):
+    def finish(self, ext_id, status, steps_completed, sensor_issues=None):
         with _history_lock:
             r = self._find(ext_id)
             if r is None:
@@ -832,6 +833,9 @@ class _CureFileStore:
             r['endedAt'] = time.strftime('%Y-%m-%dT%H:%M:%S')
             if steps_completed is not None:
                 r['stepsCompleted'] = steps_completed
+            # temperature sensors that read open-circuit at any point of the
+            # run (history indication; [] = every sensor read the whole run)
+            r['sensorIssues'] = list(sensor_issues or [])
             try:
                 t0 = time.mktime(time.strptime(r['startedAt'], '%Y-%m-%dT%H:%M:%S'))
                 r['duration'] = int(time.time() - t0)
@@ -1076,9 +1080,28 @@ def cure_run_start(ext_id):
     return jsonify({'ok': True})
 
 
+# Temperature sensors seen open-circuit during a run (ext_id -> {key: critical}).
+# Sampled on every telemetry post from the hardware supervision and written
+# into the run record at finish as its 'sensorIssues' history indication.
+_run_sensor_issues = {}
+
+
+def _note_open_sensors(ext_id):
+    bridge = getattr(hw, 'bridge', None)
+    if not bridge or not hasattr(bridge, 'sensors_state'):
+        return
+    try:
+        for key, v in bridge.sensors_state().items():
+            if not v.get('ok'):
+                _run_sensor_issues.setdefault(ext_id, {})[key] = bool(v.get('critical'))
+    except Exception:  # noqa: BLE001 - never break telemetry on this
+        pass
+
+
 @app.route('/api/cure-runs/<ext_id>/telemetry', methods=['POST'])
 def cure_run_telemetry(ext_id):
     sample = request.get_json(silent=True) or {}
+    _note_open_sensors(ext_id)
     if _db_on():
         ok = db.record_telemetry(ext_id, sample)
     else:
@@ -1089,11 +1112,16 @@ def cure_run_telemetry(ext_id):
 @app.route('/api/cure-runs/<ext_id>/finish', methods=['POST'])
 def cure_run_finish(ext_id):
     d = request.get_json(silent=True) or {}
+    _note_open_sensors(ext_id)
+    issues = [{'sensor': k, 'critical': c}
+              for k, c in sorted(_run_sensor_issues.pop(ext_id, {}).items())]
     if _db_on():
-        ok = db.finish_cure_run(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'))
+        ok = db.finish_cure_run(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'),
+                                sensor_issues=issues)
     else:
-        ok = _cure_files.finish(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'))
-    return jsonify({'ok': ok})
+        ok = _cure_files.finish(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'),
+                                sensor_issues=issues)
+    return jsonify({'ok': ok, 'sensorIssues': issues})
 
 
 @app.route('/api/cure-runs/<ext_id>/report', methods=['POST'])
@@ -1150,6 +1178,10 @@ def cure_run_phase(ext_id):
         'rampSeconds': d.get('rampSeconds'),    # part of `seconds` spent ramping
         'tempStart': d.get('tempStart'),
         'tempEnd': d.get('tempEnd'),
+        # since v0.8.37 - so the next review can split cooling modes / UV loads
+        'coolingMode': d.get('coolingMode'),
+        'intensity': d.get('intensity'),
+        'timerMode': d.get('timerMode'),
     }
     with _history_lock:
         rows = _load_json_file(_PHASE_TIMINGS_FILE, [])
@@ -1260,8 +1292,14 @@ def _hw_result(ok, why, success_msg):
     """Uniform cure-route response; hardware refusals carry code 6015."""
     if ok:
         return jsonify({'ok': True, 'message': success_msg})
-    return jsonify({'ok': False, 'code': ERR_PRECURE_CHECK_FAILED,
-                    'message': why or 'Hardware refused the operation'})
+    # A refusal may carry its own registry code as a "[NNNN] ..." prefix
+    # (e.g. 9001 temperature sensor disconnected); otherwise it is 6015.
+    code = ERR_PRECURE_CHECK_FAILED
+    msg = why or 'Hardware refused the operation'
+    m = re.match(r'\[(\d{4})\]\s*(.*)', msg)
+    if m:
+        code, msg = int(m.group(1)), m.group(2)
+    return jsonify({'ok': False, 'code': code, 'message': msg})
 
 @app.route('/api/cure/heat', methods=['POST'])
 def cure_heat():

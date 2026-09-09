@@ -1,0 +1,15 @@
+# systemd unit: LED path rest state right after boot (before scure.service).
+# Installed by pi-setup.sh (which replaces __APP_DIR__ with the real path).
+[Unit]
+Description=sCure IO rest state at boot (LED SSR/switch GPIOs LOW, LED_SWITCH relay 0)
+DefaultDependencies=no
+After=sysinit.target
+Before=scure.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash __APP_DIR__/scripts/io-safe-boot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

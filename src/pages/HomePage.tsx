@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { estimateProgramMinutes } from '@/lib/program-estimate'
 import { useNavigate } from 'react-router-dom'
 import MaterialItem from '@/components/MaterialItem'
 import CsvBuilderModal from '@/components/CsvBuilderModal'
@@ -183,7 +184,7 @@ export default function HomePage() {
             <div className="flex-1">
               <MaterialItem
                 label={mat.name}
-                duration={`${mat.totalDuration} min`}
+                duration={`~${estimateProgramMinutes(mat.steps)} min`}
                 isSelected={selectedMaterialId === mat.id}
                 isPreset={mat.isPreset}
                 isFavorite={favoriteIds.includes(mat.id)}

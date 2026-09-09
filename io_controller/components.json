@@ -6,13 +6,14 @@
     "ssr_405nm": 20,
     "routing": 17,
     "default_mode": "405nm",
+    "switch_settle_sec": 0.1,
     "min_intensity": 10,
     "led_max_duty": 60,
     "modes": {
-      "450nm": { "ssr_450nm": 1, "ssr_405nm": 0, "routing": 0 },
-      "405nm": { "ssr_450nm": 1, "ssr_405nm": 1, "routing": 0 }
+      "450nm": { "ssr_450nm": 1, "ssr_405nm": 0, "routing": 0, "led_switch": 0 },
+      "405nm": { "ssr_450nm": 1, "ssr_405nm": 1, "routing": 0, "led_switch": 1 }
     },
-    "_comment": "Software-driven LED-driver SSR + wavelength-select GPIOs (OUTPUTS). GPIO16 = 450nm SSR, GPIO20 = 405nm SSR, GPIO17 = voltage-routing line. BENCH FINDING 2026-09-07 (testingcm5): GPIO17 HIGH cuts the 12 V rail of the door LED-driver DIM stage in EVERY SSR combination (door DIM measured 0 V), while GPIO17 LOW with only the 450nm SSR on gives the door its full 12 V DIM - so the old assumption HIGH=450nm was inverted and Bleaching never dimmed the door. Both modes therefore keep routing=0; the wavelength is selected by the SSRs alone (450nm: GPIO16 only, 405nm: GPIO16+GPIO20). Do not set routing=1 for 450nm again without re-measuring the door DIM. GPIO17 is still set BEFORE the SSRs and read back to verify before any LED may operate; on a mode change all LEDs turn off first, then GPIO17 changes. (GPIO27 is the door sensor, not here.) Below 'min_intensity' (user-facing brightness %) an LED counts as OFF: its PWM is zeroed, and once no LED remains on the SSRs (GPIO16 + GPIO20) are switched off. 'led_max_duty' is the PWM duty that equals 100% brightness (must match LED_MAX_DUTY in the dashboards); it converts min_intensity into duty for SystemController.set_led."
+    "_comment": "Software-driven LED-driver SSR + wavelength-select GPIOs (OUTPUTS) plus the LED_SWITCH relay: led_switch = TCA6424A P05 -> Q28 -> K4 (selects LED_OUT1/LED_OUT2 at J21), 1 while a Cure / 405nm process runs, 0 for Bleaching / 450nm and whenever the machine is idle, safe or shut down (SystemController._set_led_switch, verified by read-back). Turn-on order on every wavelength change: LED_SWITCH relay first -> wait switch_settle_sec (default 0.1 s, only when the relay actually moved) -> SSR enables + GPIO17 -> DIM PWM. GPIO16 = 450nm SSR, GPIO20 = 405nm SSR, GPIO17 = voltage-routing line. BENCH FINDING 2026-09-07 (testingcm5): GPIO17 HIGH cuts the 12 V rail of the door LED-driver DIM stage in EVERY SSR combination (door DIM measured 0 V), while GPIO17 LOW with only the 450nm SSR on gives the door its full 12 V DIM - so the old assumption HIGH=450nm was inverted and Bleaching never dimmed the door. Both modes therefore keep routing=0; the wavelength is selected by the SSRs alone (450nm: GPIO16 only, 405nm: GPIO16+GPIO20). Do not set routing=1 for 450nm again without re-measuring the door DIM. GPIO17 is still set BEFORE the SSRs and read back to verify before any LED may operate; on a mode change all LEDs turn off first, then GPIO17 changes. (GPIO27 is the door sensor, not here.) Below 'min_intensity' (user-facing brightness %) an LED counts as OFF: its PWM is zeroed, and once no LED remains on the SSRs (GPIO16 + GPIO20) are switched off. 'led_max_duty' is the PWM duty that equals 100% brightness (must match LED_MAX_DUTY in the dashboards); it converts min_intensity into duty for SystemController.set_led."
   },
 
   "door_sensor": {

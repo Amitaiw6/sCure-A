@@ -46,6 +46,12 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
     ? `${Math.floor(log.duration / 60)}m ${log.duration % 60}s`
     : '— —'
 
+  // Temperature sensors that read open-circuit during the run (history indication)
+  const SENSOR_LABELS: Record<string, string> = { chamber: 'Chamber', left: 'Left LED', right: 'Right LED', back: 'Back LED', door: 'Door LED' }
+  const sensorIssues = log.sensorIssues ?? []
+  const sensorIssuesStr = sensorIssues.length === 0
+    ? (log.sensorIssues ? 'All sensors read' : 'n/a')
+    : sensorIssues.map(i => SENSOR_LABELS[i.sensor] ?? i.sensor).join(', ') + ' disconnected'
   const statusClass = log.status === 'completed' ? 'ok' : log.status === 'aborted' ? 'warn' : log.status === 'running' ? 'warn' : 'err'
   const statusLabel = log.status.charAt(0).toUpperCase() + log.status.slice(1)
 
@@ -275,6 +281,10 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
     <div class="label">Bleaching · 450 nm</div>
     <div class="value ${uv450Duration > 0 ? 'bleach' : 'muted'}">${uv450Str}</div>
   </div>
+  <div class="info-card">
+    <div class="label">Temperature Sensors</div>
+    <div class="value ${sensorIssues.length === 0 ? 'ok' : sensorIssues.some(i => i.critical) ? 'err' : 'warn'}" style="font-size:14px">${sensorIssuesStr}</div>
+  </div>
 </div>
 
 <!-- Phase ribbon -->
@@ -456,6 +466,7 @@ new Chart(document.getElementById('ledChart'), {
     serialNumber: log.serialNumber,
     startedAt: log.startedAt,
     endedAt: log.endedAt,
+    sensorIssues: log.sensorIssues ?? null,
   })
 
   const filename = `cure-report-${log.materialName}-${new Date(log.startedAt).toISOString().slice(0, 10)}.html`

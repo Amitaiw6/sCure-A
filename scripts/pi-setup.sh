@@ -32,6 +32,17 @@ sudo apt install -y chromium-browser 2>/dev/null || sudo apt install -y chromium
 echo "== 2/6 Enable I2C =="
 sudo raspi-config nonint do_i2c 0 2>/dev/null || true
 
+echo "== 2b LED-driver GPIOs LOW from the firmware (before Linux boots) =="
+# GPIO16/20 = 450/405nm SSR enables, GPIO17 = wavelength switch. Driven LOW as
+# outputs by the firmware so the drivers stay disconnected and the switch sits
+# in the 405nm position from power-on until scure.service takes over (bench
+# 2026-09-07: the 450 position cuts the door driver's DIM rail). Idempotent.
+CFG=/boot/firmware/config.txt; [ -f "$CFG" ] || CFG=/boot/config.txt
+if ! grep -qE '^gpio=16,17,20=op,dl' "$CFG" 2>/dev/null; then
+  echo 'gpio=16,17,20=op,dl' | sudo tee -a "$CFG" >/dev/null
+  echo "   added gpio=16,17,20=op,dl to $CFG (takes effect on the next boot)"
+fi
+
 echo "== 3/6 Get the code (git clone / pull) =="
 if [ -d "$APP_DIR/.git" ]; then
   git -C "$APP_DIR" pull
@@ -57,8 +68,13 @@ npm run build
 echo "== 6/6 Autostart: API service + fullscreen kiosk =="
 sed "s|__APP_DIR__|$APP_DIR|g" scripts/scure.service \
   | sudo tee /etc/systemd/system/scure.service >/dev/null
+# Early-boot rest state for the LED path (SSR/switch GPIOs LOW, LED_SWITCH
+# relay 0) - runs seconds after power-on, long before the API is up.
+sed "s|__APP_DIR__|$APP_DIR|g" scripts/scure-io-safe.service \
+  | sudo tee /etc/systemd/system/scure-io-safe.service >/dev/null
+chmod +x scripts/io-safe-boot.sh
 sudo systemctl daemon-reload
-sudo systemctl enable scure.service
+sudo systemctl enable scure.service scure-io-safe.service
 
 mkdir -p "$HOME/.config/autostart"
 cat > "$HOME/.config/autostart/scure-kiosk.desktop" <<EOF

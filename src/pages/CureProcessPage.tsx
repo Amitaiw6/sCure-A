@@ -13,6 +13,7 @@ import { useCureHistory } from '@/context/CureHistoryContext'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
 import type { CoolingMode, TimerMode, UvStartMode } from '@/context/MaterialContext'
+import { AMBIENT_TEMP, COOL_RATE_C_PER_MIN, estimateHeatSeconds, estimateProgram } from '@/lib/program-estimate'
 import {
   heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450, cureUvOnly,
   coolToTargetTemperature, stopCureOutputs, doorOpen, setNitrogenValve,
@@ -41,12 +42,13 @@ function formatTime(totalSeconds: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-// Simulate ramp time: ~2 seconds per degree from 25°C to target
-const RAMP_RATE = 2 // seconds per degree
-const AMBIENT_TEMP = 25
-// Off-Pi cooling simulation: °C per second per cooling mode (matches the
-// hardware cooling-rate setpoints of 5 / 2.5 / 1 °C per minute)
-const COOL_RATES: Record<CoolingMode, number> = { fast: 5 / 60, medium: 2.5 / 60, slow: 1 / 60 }
+// Ramp / cooling rates and the overall-progress total come from the MEASURED
+// phase timings (src/lib/program-estimate.ts): the heater does ~13 s/°C up to
+// 45 °C and slows a lot above, cooling runs ~1.5 °C/min in medium mode.
+// Off-Pi cooling simulation: °C per second per cooling mode
+const COOL_RATES: Record<CoolingMode, number> = {
+  fast: COOL_RATE_C_PER_MIN.fast / 60, medium: COOL_RATE_C_PER_MIN.medium / 60, slow: COOL_RATE_C_PER_MIN.slow / 60,
+}
 const COOL_DONE_BAND = 0.5  // °C band around the target that counts as "reached"
 
 export default function CureProcessPage() {
@@ -200,7 +202,7 @@ export default function CureProcessPage() {
   // With real hardware the ramp progress follows the measured chamber
   // temperature; off-Pi it follows the simulated time-based ramp.
   const currentPhaseTemp = phases[activePhase]?.temp ?? 80
-  const rampDuration = Math.max(1, Math.abs(currentPhaseTemp - rampStartTemp) * RAMP_RATE)
+  const rampDuration = Math.max(1, estimateHeatSeconds(rampStartTemp, currentPhaseTemp))
   const rampProgress = hw.apiConnected && currentPhaseTemp !== rampStartTemp
     ? Math.min(100, Math.max(0, ((hw.chamberTemp - rampStartTemp) / (currentPhaseTemp - rampStartTemp)) * 100))
     : Math.min(100, (rampElapsed / rampDuration) * 100)
@@ -213,8 +215,12 @@ export default function CureProcessPage() {
   const totalSteps = phases.length
   const currentPhaseElapsed = phaseElapsed[activePhase] ?? 0
 
-  // Overall progress (includes N2 duration)
-  const totalSeconds = phases.reduce((sum, p) => sum + (p.type === 'nitrogen' ? hw.nitrogenDuration : p.time * 60), 0)
+  // Overall progress: holds + estimated heating ramps + estimated cooling
+  // (+ N2 duration) - the real expected length, not just the hold minutes.
+  const totalSeconds = useMemo(
+    () => estimateProgram(steps.filter(s => s.process !== 'Nitrogen' || hw.nitrogenMode),
+                          { nitrogenSeconds: hw.nitrogenMode ? hw.nitrogenDuration : 0 }).totalSeconds,
+    [steps, hw.nitrogenMode, hw.nitrogenDuration])
   const totalElapsed = phaseElapsed.reduce((sum, e, i) => sum + (phases[i]?.type === 'nitrogen' ? n2Elapsed : e), 0)
   const overallProgress = totalSeconds > 0 ? Math.min(100, Math.round((totalElapsed / totalSeconds) * 100)) : 0
 
@@ -449,6 +455,11 @@ export default function CureProcessPage() {
         rampSeconds: phaseWallRef.current.ramp,
         tempStart: phaseWallRef.current.temp,
         tempEnd: hw.chamberTemp,
+        // since v0.8.37: lets the next timing review separate cooling modes
+        // and UV loads instead of guessing them from the rates
+        coolingMode: p.type === 'cooling' ? p.coolingMode : null,
+        intensity: p.intensity ?? null,
+        timerMode: p.timerMode,
       })
     }
     phaseWallRef.current = { start: now, temp: hw.chamberTemp, ramp: null }

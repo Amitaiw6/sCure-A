@@ -90,6 +90,9 @@ TCA_PINS = {
 TCA_SAFE_HIGH = {"NFC_RESET"}
 TCA_INVERTED = {"FAN1_ONOFF", "FAN2_ONOFF", "FAN3_ONOFF",
                 "FAN4_ONOFF", "FAN5_ONOFF", "FAN6_ONOFF"}
+# LED_SWITCH relay (K4) settle time after a position change, before any LED
+# driver is powered; components.json led_power.switch_settle_sec overrides.
+LED_SWITCH_SETTLE_SEC = 0.1
 
 # --- ADS1115 (shared) ------------------------------------------------------
 ADS_REG_CONVERT, ADS_REG_CONFIG = 0x00, 0x01
@@ -370,6 +373,11 @@ class TCA6424A:
         for n in (1, 2):
             self.motor(n, "stop")
             self.valve(n, False)
+        # LED_SWITCH (P05 -> Q28 -> K4 relay, LED_OUT1/LED_OUT2 at J21) must
+        # rest at 0 whenever the machine is idle: the TCA6424A powers up as
+        # inputs with pull-ups, so the net floats HIGH (relay engaged) until
+        # software drives it. Every safe-state path parks it low.
+        self.set_pin("LED_SWITCH", 0)
 
     # --- verified variants (set, read back, retry) ------------------------
     def set_pin_verified(self, name, value, retries=VERIFY_RETRIES):
@@ -1031,6 +1039,7 @@ class SystemController:
         self.mode_override = None        # the software-selected wavelength mode
         self._leds_on = set()            # which LEDs are currently on
         self.led_fault = None            # last LED-driver / routing fault message
+        self._led_switch_moved_at = None # monotonic time of the last relay move
         self.lock = lock or threading.Lock()   # serializes all I2C access (shared with the app)
         self.heater_on = False
         self.heater_fault = None
@@ -1079,6 +1088,13 @@ class SystemController:
         states = self.lp.get("modes", {}).get(mode)
         if not states:
             return False, f"no led_power config for {mode}"
+        # Order matters: 1) LED_SWITCH relay in the mode's position (verified,
+        # then settle), 2) SSR enables + routing line, 3) routing read-back.
+        # The caller only writes the DIM PWM after this returns ok.
+        ok, why = self._set_led_switch(mode)
+        if not ok:
+            return False, why
+        self._wait_led_switch_settled()          # relay contacts settled before power
         for key, want in states.items():
             pin = self.lp.get(key)
             if pin is not None:
@@ -1092,8 +1108,16 @@ class SystemController:
         return True, None
 
     def led_power_off(self):
-        """Disconnect all LED drivers (SSR + routing OFF)."""
+        """Disconnect all LED drivers (SSR + routing OFF) and park the
+        LED_SWITCH relay at its rest level 0."""
         led_power_off(self.config)
+        try:
+            if self.io.io.get_pin("LED_SWITCH") != 0:
+                self.io.io.set_pin("LED_SWITCH", 0)
+                self._led_switch_moved_at = time.monotonic()
+                LOG.info("LED_SWITCH relay -> 0 (rest)")
+        except Exception:                         # noqa: BLE001 - best effort
+            pass
 
     def _refresh_led_power(self):
         """Reconfigure (or shut off) the LED-driver GPIOs for the current state."""
@@ -1105,6 +1129,52 @@ class SystemController:
                 self.led_power_off()
         else:
             self.led_power_off()
+
+    def _set_led_switch(self, mode=None, rest=False):
+        """Drive the LED_SWITCH relay (TCA6424A P05 -> Q28 -> K4, selects
+        LED_OUT1 / LED_OUT2 at J21) and verify it by read-back.
+        components.json led_power.modes[<mode>].led_switch gives the level:
+        1 for Cure / 405nm, 0 for Bleaching / 450nm. `rest=True` (idle, safe
+        state, shutdown) always parks it at 0. Returns (ok, reason)."""
+        if rest:
+            want = 0
+        else:
+            mode = mode or self.wavelength_mode()
+            want = self.lp.get("modes", {}).get(mode, {}).get("led_switch")
+            if want is None:                      # not configured -> nothing to do
+                return True, None
+        want = 1 if want else 0
+        try:
+            changed = self.io.io.get_pin("LED_SWITCH") != want
+            self.io.io.set_pin_verified("LED_SWITCH", want)
+        except Exception as e:                    # noqa: BLE001 - VerificationError / I2C
+            return False, f"LED_SWITCH relay not {want} ({e})"
+        if changed:
+            self._led_switch_moved_at = time.monotonic()
+            LOG.info("LED_SWITCH relay -> %d%s", want, "" if rest else f" ({mode})")
+        return True, None
+
+    def _led_switch_settle_sec(self):
+        settle = self.lp.get("switch_settle_sec", LED_SWITCH_SETTLE_SEC)
+        try:
+            return max(0.0, float(settle))
+        except (TypeError, ValueError):
+            return LED_SWITCH_SETTLE_SEC
+
+    def _wait_led_switch_settled(self):
+        """Block until switch_settle_sec has elapsed since the LED_SWITCH relay
+        last moved (any path: mode change, rest parking in led_power_off).
+        Called right before the SSR enables are raised, so the relay contacts
+        are always settled before any LED driver gets power."""
+        ts = getattr(self, "_led_switch_moved_at", None)
+        if ts is None:
+            return
+        remaining = self._led_switch_settle_sec() - (time.monotonic() - ts)
+        if remaining > 0:
+            time.sleep(remaining)
+            LOG.info("LED_SWITCH relay settled (%.0f ms since it moved)",
+                     self._led_switch_settle_sec() * 1000)
+        self._led_switch_moved_at = None
 
     def _set_routing(self, mode):
         """Drive the wavelength-select GPIO (GPIO17) for `mode` and verify it."""
@@ -1125,6 +1195,8 @@ class SystemController:
         self.all_leds_off()                       # never two modes active at once
         self.mode_override = mode
         ok, why = self._set_routing(mode)
+        if ok:                                    # LED_SWITCH relay: 1 = 405nm, 0 = 450nm
+            ok, why = self._set_led_switch(mode)
         self.led_fault = None if ok else why
         LOG.info("wavelength mode -> %s (%s)", mode, "ok" if ok else why)
         return ok, why
@@ -1295,6 +1367,21 @@ class SystemController:
         self.led_fault = None
         self.heater_on = False
         self.heater_fault = None
+        # Park the wavelength switch (GPIO17) in the DEFAULT mode's position
+        # (405nm table) right away, so the machine never idles in the 450nm
+        # switch state: bench 2026-09-07 showed the 450 position (HIGH) cuts
+        # the door driver's 12 V DIM rail. Verified by read-back like any
+        # mode change; a failure is only logged - nothing is lit yet.
+        mode = self.lp.get("default_mode", "405nm")
+        ok, why = self._set_routing(mode)
+        self.mode_override = mode if ok else None
+        LOG.info("startup: wavelength switch parked in %s position (%s)",
+                 mode, "ok" if ok else why)
+        # LED_SWITCH relay (TCA P05 -> K4) at rest = 0 (it goes to 1 only
+        # while a 405nm / Cure process runs - see _set_led_switch).
+        ok_sw, why_sw = self._set_led_switch(rest=True)
+        LOG.info("startup: LED_SWITCH relay -> 0 (%s)",
+                 "verified" if ok_sw else why_sw)
         LOG.info("startup: all components OFF (safe state)")
 
     # --- fan RPM (from tachometers) --------------------------------------

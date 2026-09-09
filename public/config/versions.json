@@ -2,6 +2,61 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.8.39",
+      "date": "2026-09-09",
+      "notes": [
+        "Temperature-sensor supervision: an NTC reading open-circuit (3.3 V pull-up rail) for 60 s raises a registry alert - 9001 TEMP_SENSOR_DISCONNECTED (critical) for the required chamber / Left LED / Right LED sensors, 9050 LED_TEMP_SENSOR_DISCONNECTED (warning) for the Back / Door LED sensors. Checked at start-up, every second by the status loop, and right before every process start (3 reads 0.5 s apart) - a process is refused with code 9001 while a required sensor is open; Back / Door open only warns, processes run as usual. /api/state now carries sensors {} and alerts []; the UI raises registry codes published by the hardware service",
+        "errors.json 9001 / 9050 added; SRS 7.4 'Temperature-sensor supervision' + registry rows; QA: sensor policy mirror + /api/state sensors/alerts test",
+        "Cure history indication: every telemetry post notes which temperature sensors read open-circuit; at finish the run record gets sensorIssues [{sensor, critical}] (JSON store + Postgres cure_runs.sensor_issues, v_cure_history). History rows show 'Sensor disconnected during run: Back LED, Door LED' (red when a required sensor was involved) and the cure report gets a 'Temperature Sensors' card"
+      ]
+    },
+    {
+      "version": "0.8.38",
+      "date": "2026-09-07",
+      "notes": [
+        "Program totalDuration now IS the estimated real length (holds + heating ramps + cooling, program-estimate.ts): stored on save from the program builder and on CSV import, and the built-in presets were recomputed (demo-data.ts + server/db/seed_presets.sql, e.g. ST45 35 -> 79 min because the 60 -> 25 C medium cooling alone takes ~23 min). Builder footer shows 'holds' and '~total' side by side",
+        "SRS §6.5 Cure time, §6.7 footer / Save Program and CSV import naming updated with the measured-rate model"
+      ]
+    },
+    {
+      "version": "0.8.37",
+      "date": "2026-09-07",
+      "notes": [
+        "Program time estimates re-based on the MEASURED phase timings (141 records collected on the test machine 2026-08-12 .. 2026-09-07, reviewed 2026-09-07): new src/lib/program-estimate.ts - heating ramp 13 s/C up to 45 C, 50 s/C from 45 to 75 C, 80 s/C above (was a flat 2 s/C in the simulation); cooling 1.5 C/min medium, 2.5 fast (measured; was 2.5 / 5), slow 0.8 interpolated (was 1) - the 0.4 C/min runs of 08-31/09-01 were the damper short-travel bug, not slow mode",
+        "Home page material list and the CSV builder now show the estimated REAL program length (holds + ramps + cooling, '~N min'); the cure page overall progress uses the same estimate instead of the hold minutes only; the off-Pi ramp/cooling simulation follows the measured rates",
+        "Phase-timing records now also carry coolingMode, intensity and timerMode (server/app.py + reportPhaseTiming) so the next review can separate cooling modes and UV loads",
+        "QA: 'Program Estimate Mirror' test (heating bands, cooling rates, a worked program)"
+      ]
+    },
+    {
+      "version": "0.8.36",
+      "date": "2026-09-07",
+      "notes": [
+        "Wavelength turn-on order: the LED_SWITCH relay (TCA P05 -> K4) is driven to the mode's position FIRST, verified, and given switch_settle_sec (components.json led_power, default 0.1 s, applied only when the relay actually moved) before the SSR enables / GPIO17 are raised and the DIM PWM is written - apply_led_power() reordered and it also enforces the settle since the relay's LAST move on every power-up, so a Cure -> Bleaching transition (relay parked to 0 inside the all-LEDs-off step) waits too. Logged as 'LED_SWITCH relay -> N (mode)' / 'LED_SWITCH relay settled (X ms since it moved)'",
+        "QA: 'LED Turn-On Order' mirror test"
+      ]
+    },
+    {
+      "version": "0.8.35",
+      "date": "2026-09-07",
+      "notes": [
+        "LED_SWITCH relay (TCA6424A P05 -> Q28 -> K4, LED_OUT1/LED_OUT2 at J21) is now the wavelength router: components.json led_power.modes.<mode>.led_switch = 1 for Cure / 405nm, 0 for Bleaching / 450nm; SystemController._set_led_switch() drives + verifies it on every select_mode() and apply_led_power(), and parks it at 0 at rest (startup, led_power_off, shutdown)",
+        "HSI sCure (3).xlsx: LED_SWITCH, WAVELENGTH_ROUTING-GPIO17 and WAVELENGTH_MODE rows updated to the bench-verified behavior (backup copy kept next to it)",
+        "QA: 'LED Routing Table Mirror' extended with the led_switch column"
+      ]
+    },
+    {
+      "version": "0.8.34",
+      "date": "2026-09-07",
+      "notes": [
+        "Wavelength switch parked in the 405nm position at startup: SystemController.startup_safe() now drives GPIO17 per the default mode's routing table right after the safe-state reset (read-back verified, logged), so the machine never idles in the 450 switch position that cuts the door LED-driver DIM rail (bench 2026-09-07)",
+        "pi-setup.sh: adds gpio=16,17,20=op,dl to /boot/firmware/config.txt (idempotent) so the SSR enables and the switch are driven LOW by the firmware from power-on until scure.service starts",
+        "LED_SWITCH relay (TCA6424A P05 -> Q28 -> K4, LED_OUT1/LED_OUT2 at J21) parked at 0 on every safe path: TCA all_safe(), startup_safe() (verified + logged) and the API shutdown hook (together with SSR/switch GPIOs LOW). The chip powers up as inputs with pull-ups, so the net floated HIGH (relay engaged) from power-on until the API started",
+        "New scripts/scure-io-safe.service + io-safe-boot.sh (installed by pi-setup.sh): seconds after boot, before scure.service, drives GPIO16/17/20 LOW and the TCA P05 output to 0",
+        "QA: 'Startup Wavelength Switch Position' mirror test (switch LOW, LED_SWITCH 0, firmware gpio line)"
+      ]
+    },
+    {
       "version": "0.8.33",
       "date": "2026-09-07",
       "notes": [

@@ -14,6 +14,10 @@ function StatusIcon({ status }: { status: CureLog['status'] }) {
   }
 }
 
+// Temperature-sensor keys published by the hardware service -> operator labels
+const SENSOR_LABELS: Record<string, string> = { chamber: 'Chamber', left: 'Left LED', right: 'Right LED', back: 'Back LED', door: 'Door LED' }
+function sensorLabel(key: string) { return SENSOR_LABELS[key] ?? key }
+
 function statusLabel(status: CureLog['status']) {
   switch (status) {
     case 'completed': return 'Completed'
@@ -93,6 +97,13 @@ export default function CureHistoryPage() {
                     <span className="text-muted-foreground text-[10px]">to {new Date(log.endedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
                   )}
                 </div>
+                {log.sensorIssues && log.sensorIssues.length > 0 && (
+                  <div className={cn('flex items-center gap-1 mt-0.5 text-[10px]',
+                    log.sensorIssues.some(i => i.critical) ? 'text-destructive' : 'text-orange-400')}>
+                    <AlertTriangle size={10} className="shrink-0" />
+                    <span className="truncate">Sensor disconnected during run: {log.sensorIssues.map(i => sensorLabel(i.sensor)).join(', ')}</span>
+                  </div>
+                )}
               </div>
 
               <div className="text-right shrink-0">

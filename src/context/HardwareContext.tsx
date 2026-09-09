@@ -27,6 +27,8 @@ export interface HardwareState {
   networkConnected: boolean     // Ethernet/network available
   apiConnected: boolean         // Python API reachable
   faults: HardwareFaults | null // live faults reported by the IO board
+  /** Temperature-sensor supervision from the IO board: per NTC ok / seconds open / critical */
+  sensors: Record<string, { sensor: string; ok: boolean; openSec: number | null; critical: boolean }> | null
   ledTemps: Record<string, number | null> | null  // per-LED-module thermistors
   counters: {
     led405: number              // hours of 405nm LED usage
@@ -71,6 +73,7 @@ const defaultState: HardwareState = {
   networkConnected: navigator.onLine,
   apiConnected: false,
   faults: null,
+  sensors: null,
   ledTemps: null,
   // Real accumulated ON-hours, counted and persisted by the server
   // (ComponentCounters in app.py); zeros until the first /api/state arrives.
@@ -125,7 +128,7 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // Poll network + API status (real chamber temp, door, etc.) every 2 seconds
-  const alertRef = useRef({ wasConnected: false, heaterFault: null as string | null, coolingFault: null as string | null })
+  const alertRef = useRef({ wasConnected: false, heaterFault: null as string | null, coolingFault: null as string | null, hwAlerts: new Set<number>() })
   useEffect(() => {
     const API_BASE = import.meta.env.VITE_HW_API_URL || 'http://localhost:3001/api'
 
@@ -150,6 +153,16 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
           }
           alertRef.current.heaterFault = hf
           alertRef.current.coolingFault = cf
+          // Registry codes the hardware service itself keeps active (e.g.
+          // 9001 / 9050 temperature sensor disconnected): raise each once
+          // while it is active; it may fire again after it clears.
+          const hwAlerts: number[] = Array.isArray(data.alerts) ? data.alerts : []
+          for (const code of hwAlerts) {
+            if (!alertRef.current.hwAlerts.has(code)) { alertRef.current.hwAlerts.add(code); raiseAlert(code) }
+          }
+          for (const code of Array.from(alertRef.current.hwAlerts)) {
+            if (!hwAlerts.includes(code)) alertRef.current.hwAlerts.delete(code)
+          }
           // The hardware is authoritative: mirror the real readback so the
           // heating/cooling/UV/target indicators reflect the machine, not
           // the UI's optimistic local state.
@@ -180,6 +193,7 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
             n2LinePressure: data.n2LinePressure ?? prev.n2LinePressure,
             faults: data.faults ?? prev.faults,
             ledTemps: data.ledTemps ?? prev.ledTemps,
+            sensors: data.sensors ?? prev.sensors,
             counters: data.counters ?? prev.counters,
           }})
         } else {

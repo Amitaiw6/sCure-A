@@ -302,6 +302,9 @@ const TEST_CATEGORIES = [
     icon: '🔌',
     tests: [
       { id: 'io_state_source', name: 'Hardware Source', desc: 'GET /api/state reports the driving layer: real IO board (io_controller) or simulation', endpoint: '/api/state', method: 'GET', check: 'io_hw_source' },
+      { id: 'io_state_sensors', name: 'Temperature-Sensor Supervision In State', desc: 'GET /api/state carries sensors {chamber,left,right,back,door: {sensor, ok, openSec, critical}} and alerts [] (active registry codes). chamber/left/right must be flagged critical, back/door not; any open sensor reports its seconds open', endpoint: '/api/state', method: 'GET', check: 'io_state_sensors' },
+      { id: 'hist_sensor_issues', name: 'Cure History Carries Sensor Issues', desc: 'GET /api/cure-history: runs finished on v0.8.39+ carry sensorIssues [{sensor, critical}] (empty = every temperature sensor read for the whole run). Sensor keys must be chamber/left/right/back/door; chamber/left/right entries must be flagged critical. Older runs without the field are tolerated', endpoint: '/api/cure-history', method: 'GET', check: 'hist_sensor_issues' },
+      { id: 'hwc_sensor_policy', name: 'Sensor Disconnect Policy Mirror (9001 / 9050, 60 s)', desc: 'Mirrors io_bridge SENSOR_OPEN_ALERT_SEC / CRITICAL_TEMP_SENSORS / WARNING_TEMP_SENSORS: chamber + Left + Right open >= 60 s -> 9001 critical and process start refused (checked at start-up, every second, and 3x0.5 s before each start); Back + Door open >= 60 s -> 9050 warning, processes allowed. Both codes must exist in errors.json with those severities', check: 'hwc_sensor_policy' },
       { id: 'io_door_state', name: 'Door Interlock Read', desc: 'GET /api/state reads the door sensor (GPIO27) — doorClosed must be present', endpoint: '/api/state', method: 'GET', check: 'io_door' },
       { id: 'io_heat_on', name: 'Heating ON (safety pre-flight)', desc: 'POST /api/cure/heat?target=40 — heater enables only after door-closed, fan spin-up + RPM and thermistor checks', endpoint: '/api/cure/heat?target=40', method: 'POST', expect: 'ok' },
       { id: 'io_heat_state', name: 'Heating State Reflected', desc: 'GET /api/state shows isHeating + target after the heat command', endpoint: '/api/state', method: 'GET', check: 'io_heating_on' },
@@ -510,6 +513,9 @@ const TEST_CATEGORIES = [
       { id: 'hwc_uv_below_min', name: 'UV Below 10% Rejected', desc: 'led_power.min_intensity=10: below it the LEDs stay dark, so cure-405 at 7% must be rejected with code 7002', endpoint: '/api/cure/cure-405?target=60&intensity=7', method: 'POST', check: 'hw_reject', code: 7002 },
       { id: 'hwc_uv_450_below_min', name: 'Bleaching UV Below 10% Rejected', desc: 'Same UV floor applies to the 450nm bleaching path', endpoint: '/api/cure/cure-450?target=60&intensity=5', method: 'POST', check: 'hw_reject', code: 7002 },
       { id: 'hwc_led_routing', name: 'LED Routing Table Mirror (GPIO17 LOW In Both Modes)', desc: 'Mirrors components.json led_power.modes after the 2026-09-07 bench finding: GPIO17 HIGH cut the door LED-driver DIM to 0 V, so BOTH wavelength modes keep routing=0 and the SSRs alone select the wavelength (450nm: GPIO16 only, 405nm: GPIO16+GPIO20). Bleaching must not raise GPIO17 again', check: 'hwc_led_routing' },
+      { id: 'hwc_startup_switch', name: 'Startup Wavelength Switch Position (405nm table)', desc: 'Mirrors SystemController.startup_safe(): after the safe-state reset the wavelength switch GPIO17 is driven to the DEFAULT mode\'s routing value (components.json led_power.default_mode = 405nm -> routing 0 = LOW) and the mode is parked there, so the machine never idles in the 450 switch position that cuts the door LED-driver DIM rail; pi-setup.sh also pins gpio=16,17,20=op,dl in config.txt for the power-on window', check: 'hwc_startup_switch' },
+      { id: 'hwc_led_turn_on_order', name: 'LED Turn-On Order (relay -> settle -> SSR -> DIM)', desc: 'Mirrors SystemController.apply_led_power() since v0.8.36: on every wavelength change the LED_SWITCH relay (TCA P05 -> K4) is driven to the mode\'s position first and verified, then switch_settle_sec (components.json led_power, default 0.1 s, only when the relay moved) elapses, then the SSR enables + GPIO17 are raised and read back, and only then set_led() writes the DIM PWM. Bleaching: relay 0 -> settle -> GPIO16 -> DIM', check: 'hwc_led_turn_on_order' },
+      { id: 'hwc_program_estimate', name: 'Program Estimate Mirror (measured ramp + cooling rates)', desc: 'Mirrors src/lib/program-estimate.ts (re-based 2026-09-07 on 141 phase timings from the test machine): heating 13 s/°C up to 45 °C, 50 s/°C 45-75 °C, 80 s/°C above; cooling 2.5 / 1.5 °C/min measured for fast / medium, slow 0.8 °C/min interpolated (no clean slow run yet). Checks 25->35 = 130 s, 25->70 = 1510 s, 25->80 = 2160 s, cooling 42->30 medium = 480 s, and a worked program (Cure 35 °C 15 min + Cooling 30 medium from 25 °C = 15 min hold + 130 s ramp + 200 s cooling)', check: 'hwc_program_estimate' },
       // New hardware endpoints wired to previously UI-only features
       { id: 'hwc_nitrogen_open', name: 'N₂ Valve Opens', desc: 'POST /api/cure/nitrogen?on=1 drives the real solenoid (GPIO13) — no longer a UI-only countdown', endpoint: '/api/cure/nitrogen?on=1', method: 'POST', expect: 'ok' },
       { id: 'hwc_nitrogen_state', name: 'N₂ State Reflected', desc: 'GET /api/state reports nitrogenActive after the valve command', endpoint: '/api/state', method: 'GET', check: 'hwc_n2_state' },
@@ -3817,15 +3823,125 @@ function runHwCompatCheck(check) {
       // Mirror of io_controller/components.json led_power.modes (bench 2026-09-07):
       // the voltage-routing line GPIO17 stays LOW in both modes - HIGH killed the
       // door driver's 12 V DIM rail, which is why Bleaching never dimmed the door.
-      const modes = { '450nm': { ssr_450nm: 1, ssr_405nm: 0, routing: 0 },
-                      '405nm': { ssr_450nm: 1, ssr_405nm: 1, routing: 0 } };
+      // led_switch = LED_SWITCH relay (TCA6424A P05 -> Q28 -> K4): 1 = Cure/405nm,
+      // 0 = Bleaching/450nm and at rest.
+      const modes = { '450nm': { ssr_450nm: 1, ssr_405nm: 0, routing: 0, led_switch: 0 },
+                      '405nm': { ssr_450nm: 1, ssr_405nm: 1, routing: 0, led_switch: 1 } };
       const bad = [];
       if (modes['450nm'].routing !== 0) bad.push('450nm routing must be 0 (GPIO17 HIGH cuts the door DIM)');
       if (modes['405nm'].routing !== 0) bad.push('405nm routing must be 0');
       if (!(modes['450nm'].ssr_450nm === 1 && modes['450nm'].ssr_405nm === 0)) bad.push('450nm must enable GPIO16 only');
       if (!(modes['405nm'].ssr_450nm === 1 && modes['405nm'].ssr_405nm === 1)) bad.push('405nm must enable GPIO16 + GPIO20');
+      if (modes['405nm'].led_switch !== 1) bad.push('Cure/405nm must set the LED_SWITCH relay to 1');
+      if (modes['450nm'].led_switch !== 0) bad.push('Bleaching/450nm must set the LED_SWITCH relay to 0');
       return bad.length === 0
-        ? { status: 'pass', msg: 'both modes keep GPIO17 LOW; wavelength selected by the SSRs (450: GPIO16, 405: GPIO16+GPIO20)' }
+        ? { status: 'pass', msg: 'GPIO17 LOW in both modes; SSRs 450: GPIO16, 405: GPIO16+GPIO20; LED_SWITCH relay 1 for Cure, 0 for Bleaching' }
+        : { status: 'fail', msg: bad.join('; ') };
+    }
+    case 'hwc_startup_switch': {
+      // Mirror of io_controller startup_safe() + components.json led_power:
+      // default_mode 405nm, its routing value is what GPIO17 is parked at.
+      const lp = { default_mode: '405nm',
+                   modes: { '450nm': { routing: 0 }, '405nm': { routing: 0 } } };
+      const parked = lp.modes[lp.default_mode].routing;
+      const firmware = 'gpio=16,17,20=op,dl';            // scripts/pi-setup.sh step 2b
+      // LED_SWITCH relay: TCA6424A P05 (port 0, bit 5) -> Q28 -> K4. Rest = 0 on
+      // every safe path (all_safe, startup_safe, shutdown) and in io-safe-boot.sh
+      // (port-0 output 0x02 = only NFC_RESET high; config 0xDD = P01 + P05 outputs).
+      const ledSwitch = { port: 0, bit: 5, rest: 0, bootOut: 0x02, bootCfg: 0xDD };
+      const bad = [];
+      if (lp.default_mode !== '405nm') bad.push(`default_mode is ${lp.default_mode}, expected 405nm`);
+      if (parked !== 0) bad.push(`startup parks GPIO17 at ${parked}, expected 0 (LOW = 405 position)`);
+      if (!/^gpio=16,17,20=op,dl$/.test(firmware)) bad.push('firmware default line malformed');
+      if (ledSwitch.rest !== 0) bad.push('LED_SWITCH rest state must be 0');
+      if ((ledSwitch.bootOut >> ledSwitch.bit) & 1) bad.push('io-safe-boot.sh drives P05 high');
+      if ((ledSwitch.bootCfg >> ledSwitch.bit) & 1) bad.push('io-safe-boot.sh leaves P05 as input');
+      return bad.length === 0
+        ? { status: 'pass', msg: 'startup parks the switch LOW (405 table) + LED_SWITCH relay 0; firmware/early-boot unit cover the power-on window' }
+        : { status: 'fail', msg: bad.join('; ') };
+    }
+    case 'hwc_led_turn_on_order': {
+      // Mirror of apply_led_power() + set_led(): the order is fixed in code.
+      const order = ['led_switch_relay', 'settle', 'ssr_gpios', 'routing_readback', 'dim_pwm'];
+      const settleSec = 0.1;                            // components.json led_power.switch_settle_sec
+      const bad = [];
+      if (order.indexOf('led_switch_relay') !== 0) bad.push('relay must be first');
+      if (order.indexOf('settle') !== 1) bad.push('settle must follow the relay');
+      if (order.indexOf('ssr_gpios') < order.indexOf('settle')) bad.push('SSRs must wait for the settle');
+      if (order.indexOf('dim_pwm') !== order.length - 1) bad.push('DIM PWM must be last');
+      if (!(settleSec > 0 && settleSec <= 1)) bad.push(`switch_settle_sec ${settleSec} out of the sane 0-1 s range`);
+      return bad.length === 0
+        ? { status: 'pass', msg: `order: ${order.join(' -> ')} (settle ${settleSec * 1000} ms)` }
+        : { status: 'fail', msg: bad.join('; ') };
+    }
+    case 'hwc_program_estimate': {
+      // Mirror of src/lib/program-estimate.ts (keep the numbers in sync).
+      const bands = [[45, 13], [75, 50], [Infinity, 80]];
+      const cool = { fast: 2.5, medium: 1.5, slow: 0.8 };
+      const heat = (from, to) => { let t = from, s = 0; for (const [top, r] of bands) { if (t >= to) break; const up = Math.min(to, top); if (up > t) { s += (up - t) * r; t = up; } } return Math.round(s); };
+      const coolS = (from, to, m) => to >= from ? 0 : Math.round(((from - to) / cool[m]) * 60);
+      const cases = [['heat 25->35', heat(25, 35), 130], ['heat 25->70', heat(25, 70), 1510], ['heat 25->80', heat(25, 80), 2160],
+                     ['heat 40->35 (no ramp)', heat(40, 35), 0], ['cool 42->30 medium', coolS(42, 30, 'medium'), 480],
+                     ['cool 70->30 fast', coolS(70, 30, 'fast'), 960], ['cool 35->30 slow', coolS(35, 30, 'slow'), 375]];
+      // worked program: Cure 35 °C 15 min, then Cooling 30 medium, from 25 °C
+      const program = 15 * 60 + heat(25, 35) + coolS(35, 30, 'medium');
+      cases.push(['program Cure35/15 + Cool30', program, 900 + 130 + 200]);
+      const bad = cases.filter(([, got, exp]) => got !== exp);
+      return bad.length === 0
+        ? { status: 'pass', msg: `${cases.length} cases match the measured-rate model (program example ${Math.ceil(program / 60)} min vs 15 min of holds)` }
+        : { status: 'fail', msg: bad.map(([n, got, exp]) => `${n}: ${got} != ${exp}`).join('; ') };
+    }
+    case 'io_state_sensors': {
+      const s = data || {};
+      const sensors = s.sensors || {};
+      const bad = [];
+      for (const k of ['chamber', 'left', 'right', 'back', 'door']) {
+        const v = sensors[k];
+        if (!v || typeof v.ok !== 'boolean') { bad.push(`${k} missing`); continue; }
+        const wantCrit = ['chamber', 'left', 'right'].includes(k);
+        if (v.critical !== wantCrit) bad.push(`${k} critical=${v.critical}, expected ${wantCrit}`);
+        if (!v.ok && !(typeof v.openSec === 'number')) bad.push(`${k} open but no openSec`);
+      }
+      if (!Array.isArray(s.alerts)) bad.push('alerts[] missing');
+      const open = Object.entries(sensors).filter(([, v]) => v && v.ok === false).map(([k, v]) => `${k} ${v.openSec}s`);
+      return bad.length === 0
+        ? { status: 'pass', msg: open.length ? `supervision live; open: ${open.join(', ')}; alerts ${JSON.stringify(s.alerts)}` : `all 5 sensors read; alerts ${JSON.stringify(s.alerts)}` }
+        : { status: 'fail', msg: bad.join('; ') };
+    }
+    case 'hist_sensor_issues': {
+      const runs = Array.isArray(data) ? data : (data && Array.isArray(data.logs) ? data.logs : []);
+      const keys = ['chamber', 'left', 'right', 'back', 'door'];
+      const crit = ['chamber', 'left', 'right'];
+      const bad = [];
+      let withField = 0, flagged = 0;
+      for (const r of runs) {
+        if (!('sensorIssues' in r) || r.sensorIssues == null) continue;   // pre-0.8.39 run
+        withField++;
+        if (!Array.isArray(r.sensorIssues)) { bad.push(`${r.id}: sensorIssues not an array`); continue; }
+        for (const i of r.sensorIssues) {
+          if (!keys.includes(i.sensor)) bad.push(`${r.id}: unknown sensor ${i.sensor}`);
+          if (crit.includes(i.sensor) !== !!i.critical) bad.push(`${r.id}: ${i.sensor} critical=${i.critical}`);
+        }
+        if (r.sensorIssues.length) flagged++;
+      }
+      return bad.length === 0
+        ? { status: 'pass', msg: `${runs.length} runs, ${withField} with sensorIssues, ${flagged} flagged a disconnected sensor` }
+        : { status: 'fail', msg: bad.slice(0, 4).join('; ') };
+    }
+    case 'hwc_sensor_policy': {
+      // Mirror of server/io_bridge.py constants + errors.json records.
+      const policy = { alertSec: 60, critical: ['TEMP_CHAMBER', 'TEMP_LEFT_ORIGIN', 'TEMP_RIGHT_ORIGIN'], warning: ['TEMP_BACK_ORIGIN', 'TEMP_DOOR_ORIGIN'], codes: { critical: 9001, warning: 9050 }, preflightReads: 3, preflightGapSec: 0.5 };
+      const bad = [];
+      if (policy.alertSec !== 60) bad.push('alert threshold must be one full minute');
+      if (policy.critical.length !== 3 || !policy.critical.includes('TEMP_CHAMBER')) bad.push('chamber + Left + Right must be the required set');
+      if (policy.warning.includes('TEMP_CHAMBER')) bad.push('chamber can never be warning-only');
+      if (policy.codes.critical !== 9001 || policy.codes.warning !== 9050) bad.push('registry codes must be 9001 / 9050');
+      if (!(policy.preflightReads === 3 && policy.preflightGapSec === 0.5)) bad.push('pre-start check must be 3 reads 0.5 s apart');
+      // registry records: 9001 critical / 9050 warning (mirror of public/config/errors.json)
+      const registry = { 9001: 'critical', 9050: 'warning' };
+      if (registry[9001] !== 'critical' || registry[9050] !== 'warning') bad.push('errors.json severities must be 9001 critical / 9050 warning');
+      return bad.length === 0
+        ? { status: 'pass', msg: 'chamber/left/right open >= 60 s -> 9001 critical + start refused (3x0.5 s pre-start reads); back/door -> 9050 warning' }
         : { status: 'fail', msg: bad.join('; ') };
     }
     case 'hwc_csv_cool_drop': {
