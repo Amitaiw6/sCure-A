@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.8.40",
+      "date": "2026-09-09",
+      "notes": [
+        "SRS: new 'UV wavelength selection & turn-on order' block in 7.4 (LED_SWITCH relay / SSR / GPIO17 table per mode and at rest, relay -> settle -> SSR -> DIM order, GPIO17-stays-LOW bench finding, rest-state and early-boot coverage, 60 % duty brightness scale); 10.2 cure_runs.sensor_issues, 10.3 v_cure_history.sensorIssues, 10.5 telemetry/finish notes + the /api/cure-runs/<id>/phase timing endpoint"
+      ]
+    },
+    {
       "version": "0.8.39",
       "date": "2026-09-09",
       "notes": [

@@ -911,6 +911,22 @@
   </tbody>
 </table>
 <p><b>Closed-loop, not a raw switch.</b> For temperature processes the function does not simply turn the heater on — it sets a target temperature and a temperature controller decides when to switch the heater (or cooling) on/off to reach and hold that target. UV LEDs are direct on/off.</p>
+<p><b>UV wavelength selection &amp; turn-on order</b> (bench-verified on the test machine 2026-09-07/09, v0.8.33–0.8.36; source of truth <code>io_controller/components.json → led_power</code>). The wavelength is selected by three outputs; on every mode change all LEDs are switched off first, so two modes are never active together:</p>
+<table>
+  <thead><tr><th>Output</th><th>Cure · 405&nbsp;nm</th><th>Bleaching · 450&nbsp;nm</th><th>Rest (idle / safe state / shutdown)</th></tr></thead>
+  <tbody>
+    <tr><td><b>LED_SWITCH relay</b> — TCA6424A P05 → Q28 → K4, selects LED_OUT1 / LED_OUT2 at J21</td><td><b>1</b></td><td><b>0</b></td><td>0</td></tr>
+    <tr><td><b>SSR 405&nbsp;nm</b> — GPIO20 (through interlock relay K2)</td><td>ON</td><td>OFF</td><td>OFF</td></tr>
+    <tr><td><b>SSR 450&nbsp;nm</b> — GPIO16 (through interlock relay K1)</td><td>ON</td><td>ON</td><td>OFF</td></tr>
+    <tr><td><b>GPIO17</b> (voltage-routing line)</td><td>LOW</td><td>LOW</td><td>LOW</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><b>Turn-on order</b> (every wavelength change, <code>SystemController.apply_led_power</code>): (1) LED_SWITCH relay driven to the mode's position and verified by read-back → (2) <code>switch_settle_sec</code> (default 0.1&nbsp;s, counted from the relay's last move, so a Cure→Bleaching transition waits too) → (3) SSR enables + GPIO17, GPIO17 read back → (4) only then the DIM PWM of the allowed LEDs (Cure: all four panels; Bleaching: the door panel only). A failed read-back blocks the LEDs like any other routing fault.</li>
+  <li><b>GPIO17 stays LOW in both modes.</b> The earlier assumption "HIGH = 450&nbsp;nm" was wrong: with GPIO17 HIGH the door LED driver's 12&nbsp;V DIM rail measured 0&nbsp;V in every SSR combination, which is why Bleaching never dimmed the door panel before v0.8.33.</li>
+  <li><b>Rest state.</b> The relay is parked at 0 and the three GPIOs LOW at start-up (<code>startup_safe</code>, logged), in the TCA safe state and by the API shutdown hook. Because the TCA6424A powers up as inputs with pull-ups, the relay net floats HIGH from power-on until software runs; <code>scure-io-safe.service</code> (early boot) and the firmware line <code>gpio=16,17,20=op,dl</code> (installed by <code>pi-setup.sh</code>) close that window. A hardware pull-down on LED_SWITCH_SIGNAL remains an open item.</li>
+  <li><b>Brightness scale.</b> A requested 100&nbsp;% system power is driven as 60&nbsp;% PWM duty (<code>led_max_duty</code>): the panels reach full output at that duty, and each panel is scaled by its Developer-Mode calibration factor first.</li>
+</ul>
 <p>A step is sent to safety checks first; on failure it does not energise outputs (error). N₂ Purge is not a hardware-control function here — it runs for the system N₂ duration when nitrogen is enabled.</p>
 <p><b>Temperature-sensor supervision (Err 9001 / 9050).</b> Every NTC is read through a 10&nbsp;kΩ pull-up divider; a disconnected sensor reads the full 3.3&nbsp;V rail and yields no temperature. The hardware service supervises all inputs:</p>
 <ul>
@@ -1572,7 +1588,7 @@ erDiagram
     <tr><td class="id">print_hardware</td><td>Per-print binding of build head + tray membrane.</td><td>print_id→prints (PK) · build_head_id · tray_membrane_id · bound_at</td></tr>
     <tr><td class="id">cure_boxes</td><td>The sCure Box units.</td><td>id · serial_number · model · status</td></tr>
     <tr><td class="id">cure_sessions</td><td>A curing session on a box (groups cure runs).</td><td>id · cure_box_id→cure_boxes · started/ended_at · status</td></tr>
-    <tr><td class="id">cure_runs</td><td>A single cure run — a print cured on a box under a profile, in a session.</td><td>id · print_id · cure_box_id · cure_session_id · curing_profile_id · build_head_id · steps · status · <i>ext_id</i></td></tr>
+    <tr><td class="id">cure_runs</td><td>A single cure run — a print cured on a box under a profile, in a session. <code>sensor_issues</code> (v0.8.39) lists the temperature sensors that read open-circuit at any point of the run (<code>[{sensor, critical}]</code>, empty = all read) — the history indication of §7.4.</td><td>id · print_id · cure_box_id · cure_session_id · curing_profile_id · build_head_id · steps · status · sensor_issues · <i>ext_id</i></td></tr>
     <tr><td class="id">cure_run_telemetry</td><td>Per-run telemetry time-series (chamber temp, UV, LED temps).</td><td>cure_run_id→cure_runs · t · chamber_temp · uv_on · uv_type · led_*</td></tr>
     <tr><td class="id">cure_reports</td><td>The generated cure report for a run — persisted, not only downloaded.</td><td>id · cure_run_id→cure_runs · format · content · summary · generated_at</td></tr>
   </tbody>
@@ -1586,7 +1602,7 @@ erDiagram
   <tbody>
     <tr><td class="id">v_materials</td><td>id · name · isPreset · createdAt · steps · totalDuration</td><td>Material List / builder (§6.5, §6.7)</td></tr>
     <tr><td class="id">v_print_history</td><td>id · printName · materialName · printerName · date · duration · status · steps · csvFile</td><td>Recent Prints / Print History (§6.4)</td></tr>
-    <tr><td class="id">v_cure_history</td><td>id · materialName · steps · stepsCompleted · startedAt · endedAt · duration · status · phases · targetTemp · serialNumber · telemetry[]</td><td>Cure History (§8)</td></tr>
+    <tr><td class="id">v_cure_history</td><td>id · materialName · steps · stepsCompleted · startedAt · endedAt · duration · status · phases · targetTemp · sensorIssues[] · serialNumber · telemetry[]</td><td>Cure History (§8)</td></tr>
   </tbody>
 </table>
 
@@ -1613,8 +1629,9 @@ erDiagram
     <tr><td class="id">POST /api/print-history</td><td>Replace print history</td><td><code>prints</code> · <code>jobs</code> · <code>printers</code> · <code>cure_runs</code></td></tr>
     <tr><td class="id">GET /api/cure-history</td><td>List cure history (§8)</td><td><code>v_cure_history</code></td></tr>
     <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/start</td><td>Begin a cure run</td><td><code>cure_runs</code> (+ <code>cure_boxes</code>)</td></tr>
-    <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/telemetry</td><td>Append a telemetry sample</td><td><code>cure_run_telemetry</code></td></tr>
-    <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/finish</td><td>Close a cure run</td><td><code>cure_runs</code></td></tr>
+    <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/telemetry</td><td>Append a telemetry sample; the service also notes which temperature sensors are open-circuit right now (for <code>sensor_issues</code>)</td><td><code>cure_run_telemetry</code></td></tr>
+    <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/finish</td><td>Close a cure run; writes the accumulated <code>sensor_issues</code> and returns them</td><td><code>cure_runs</code></td></tr>
+    <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/phase</td><td>Record one finished phase's real timing (planned vs. actual seconds, ramp, temperatures; since v0.8.37 also coolingMode · intensity · timerMode) — the raw data behind the program time estimates (§6.5)</td><td><code>server/data/phase_timings.json</code></td></tr>
     <tr><td class="id">POST /api/cure-runs/&lt;id&gt;/report</td><td>Persist the cure report</td><td><code>cure_reports</code></td></tr>
     <tr><td class="id">GET /api/cure-runs/&lt;id&gt;/report</td><td>Fetch the latest report</td><td><code>cure_reports</code></td></tr>
   </tbody>
