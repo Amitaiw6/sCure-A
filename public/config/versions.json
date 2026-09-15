@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.9.4",
+      "date": "2026-09-15",
+      "notes": [
+        "Cure page: a process start (heat, cure-405/450, uv-only, cool, dry, Settings heating slider) now waits 20 s for the machine's answer instead of 5 s. The machine answers a heated cure start only after its heater-fan spin-up + RPM check (~3 s) and the LED-cooling-fan pre-flight (~3.5 s), so the screen gave up one second early and showed 'Hardware: TimeoutError: signal timed out' with Err 6015 and a red strip while the machine had actually started (test unit, 2026-09-15). A command that really gets no answer now reads 'no answer from the machine within 20 s'. QA: hwc_start_timeout_budget (mirror) + hwc_start_roundtrip (live timing)"
+      ]
+    },
+    {
       "version": "0.8.40",
       "date": "2026-09-09",
       "notes": [

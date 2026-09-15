@@ -13,10 +13,16 @@ import { sha256Hex } from '@/lib/compliance'
 const API_BASE = import.meta.env.VITE_HW_API_URL || 'http://localhost:3001/api'
 const IS_DEV = import.meta.env.DEV
 
+/** A process start is answered only after the machine's own pre-flights: the heater-fan spin-up + RPM read
+ *  (~3 s) and, before any LED lights, the LED-cooling-fan pre-flight (~3.5 s for four fans) - a heated cure
+ *  start takes ~6.5 s on the machine (measured 2026-09-15). With the 5 s default the screen gave up one second
+ *  early and showed "Hardware: TimeoutError: signal timed out" (Err 6015) while the machine had started. */
+const PROCESS_START_TIMEOUT_MS = 20000
+
 // Never sent to a live server from a dev machine, even if one is reachable
 const DEV_BLOCKED = ['/system/reboot', '/system/shutdown', '/system/update']
 
-async function apiCall(endpoint: string, method = 'POST'): Promise<{ ok: boolean; message: string; code?: number }> {
+async function apiCall(endpoint: string, method = 'POST', timeoutMs = 5000): Promise<{ ok: boolean; message: string; code?: number }> {
   if (IS_DEV && DEV_BLOCKED.some(p => endpoint.startsWith(p))) {
     console.log(`[HW-API] ${method} ${endpoint} (simulated — blocked in dev)`)
     return { ok: true, message: 'Simulated in dev mode' }
@@ -27,7 +33,7 @@ async function apiCall(endpoint: string, method = 'POST'): Promise<{ ok: boolean
   // the measured chamber temperature. Dev without a server falls back to a
   // simulated OK so the local UI simulation keeps working.
   try {
-    const res = await fetch(`${API_BASE}${endpoint}`, { method, signal: AbortSignal.timeout(5000) })
+    const res = await fetch(`${API_BASE}${endpoint}`, { method, signal: AbortSignal.timeout(timeoutMs) })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json()
   } catch (err) {
@@ -36,7 +42,8 @@ async function apiCall(endpoint: string, method = 'POST'): Promise<{ ok: boolean
       return { ok: true, message: 'Simulated in dev mode' }
     }
     console.error(`[HW-API] Error calling ${endpoint}:`, err)
-    return { ok: false, message: String(err) }
+    const timedOut = err instanceof DOMException && err.name === 'TimeoutError'
+    return { ok: false, message: timedOut ? `no answer from the machine within ${timeoutMs / 1000} s` : String(err) }
   }
 }
 
@@ -71,7 +78,7 @@ export async function doorOpen() {
 
 /** Set chamber target temperature */
 export async function setTargetTemperature(tempC: number) {
-  return apiCall(`/chamber/temperature?target=${tempC}`)
+  return apiCall(`/chamber/temperature?target=${tempC}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** Stop chamber heating (Settings slider back to its 25°C rest position) */
@@ -146,34 +153,34 @@ export async function exportLogs() {
 
 /** 1. Heat the chamber to a target temperature (°C). Ends when reached. */
 export async function heatToTargetTemperature(targetC: number) {
-  return apiCall(`/cure/heat?target=${targetC}`)
+  return apiCall(`/cure/heat?target=${targetC}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** 2. Cure: UV 405 nm at intensity (%) with a target temperature (°C). */
 export async function cureUv405(targetC: number, intensityPct: number) {
-  return apiCall(`/cure/cure-405?target=${targetC}&intensity=${intensityPct}`)
+  return apiCall(`/cure/cure-405?target=${targetC}&intensity=${intensityPct}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** 3. Bleaching: UV 450 nm at intensity (%) with a target temperature (°C). */
 export async function cureUv450(targetC: number, intensityPct: number) {
-  return apiCall(`/cure/cure-450?target=${targetC}&intensity=${intensityPct}`)
+  return apiCall(`/cure/cure-450?target=${targetC}&intensity=${intensityPct}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** 3b. UV-only step (no chamber heating). `vent` opens the damper and runs
  *  the chamber intake fan — fresh outside air like cooling's airflow — for
  *  the duration of the UV exposure. */
 export async function cureUvOnly(wavelength: 405 | 450, intensityPct: number, vent: boolean) {
-  return apiCall(`/cure/uv-only?wavelength=${wavelength}&intensity=${intensityPct}&vent=${vent ? 1 : 0}`)
+  return apiCall(`/cure/uv-only?wavelength=${wavelength}&intensity=${intensityPct}&vent=${vent ? 1 : 0}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** 4. Cool the chamber to a target temperature (°C) in a mode. Ends when reached. */
 export async function coolToTargetTemperature(targetC: number, mode: 'fast' | 'medium' | 'slow') {
-  return apiCall(`/cure/cool?target=${targetC}&mode=${mode}`)
+  return apiCall(`/cure/cool?target=${targetC}&mode=${mode}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** 5. Dry toward a target temperature (°C); the process logic stops it. */
 export async function dryToTargetTemperature(targetC: number) {
-  return apiCall(`/cure/dry?target=${targetC}`)
+  return apiCall(`/cure/dry?target=${targetC}`, 'POST', PROCESS_START_TIMEOUT_MS)
 }
 
 /** Stop all cure outputs (heater, UV, cooling, N₂). The heater element stops

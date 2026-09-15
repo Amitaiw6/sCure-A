@@ -522,6 +522,8 @@ const TEST_CATEGORIES = [
       { id: 'hwc_nitrogen_close', name: 'N₂ Valve Closes', desc: 'POST /api/cure/nitrogen?on=0 closes the valve', endpoint: '/api/cure/nitrogen?on=0', method: 'POST', expect: 'ok' },
       { id: 'hwc_bofa_toggle', name: 'BOFA Control Wired', desc: 'POST /api/bofa drives the extraction channel (PCA ch10) — the Settings toggle is no longer decorative', endpoint: '/api/bofa?on=0', method: 'POST', expect: 'ok' },
       { id: 'hwc_uv_endpoint', name: 'Standalone UV Endpoint', desc: 'POST /api/uv gives diagnostics direct UV control through the wavelength-gated safety layer', endpoint: '/api/uv?on=0', method: 'POST', expect: 'ok' },
+      { id: 'hwc_start_timeout_budget', name: 'Process-Start Timeout Budget (UI 20 s > machine pre-flights)', desc: 'Mirrors src/services/hardware-api.ts PROCESS_START_TIMEOUT_MS (v0.9.4): a heated cure start is answered only after enable_heater (2 s spin-up + 1 s RPM read) and the LED-cooling-fan pre-flight (1.5 s spin-up + 4 x 0.5 s reads) plus the 0.5 s sensor pre-flight = ~7 s, so the old 5 s default made the screen show "Hardware: TimeoutError: signal timed out" (Err 6015, red strip) while the machine had started (test unit, 2026-09-15); heat, cure-405/450, uv-only, cool, dry and the Settings heating slider use the 20 s budget', check: 'hwc_start_timeout_budget' },
+      { id: 'hwc_start_roundtrip', name: 'Cure Start Round-Trip Fits The UI Budget', desc: 'POST /api/cure/cure-405?target=35&intensity=10 is timed end-to-end and stopped at once (stop?immediate=1): it must answer within the 20 s UI budget; the measured time is logged, and a start over 5 s shows why the old default could not be kept', check: 'hwc_start_roundtrip' },
       { id: 'hwc_datetime', name: 'System Clock Endpoint', desc: 'POST /api/system/datetime sets the device clock (Settings → Apply now reaches the OS)', endpoint: '/api/system/datetime', method: 'POST', body: { date: '2026-01-15', time: '12:30' }, expect: 'ok' },
       { id: 'hwc_datetime_bad', name: 'Bad Clock Format Rejected', desc: 'Malformed date/time is rejected instead of being passed to the shell', endpoint: '/api/system/datetime', method: 'POST', body: { date: 'not-a-date', time: '99:99' }, check: 'hw_reject' },
       { id: 'hwc_fan_test_param', name: 'Per-Fan Diagnostic Param', desc: '/api/diagnostics/fan-test?fan=led_cooling tests the requested fan, not always the heater fan', endpoint: '/api/diagnostics/fan-test?fan=led_cooling', method: 'POST', expect: 'ok' },
@@ -993,6 +995,48 @@ async function runSingleTest(test) {
 
     // Negative API test: the endpoint must REJECT the request (ok:false),
     // optionally with a specific registry error code.
+
+    // Process-start timeout budget (v0.9.4): the UI waits 20 s for heat / cure / uv-only / cool / dry -
+    // longer than the machine's own pre-flights that run before the command is answered.
+    if (test.check === 'hwc_start_timeout_budget') {
+      const UI_DEFAULT_MS = 5000, PROCESS_START_TIMEOUT_MS = 20000;
+      const machine = { sensorPreflight: 500, heaterSpinUp: 2000, heaterRpmRead: 1000, ledFanSpinUp: 1500, ledFanRpmReads: 4 * 500 };
+      const worst = Object.values(machine).reduce((a, b) => a + b, 0);
+      const problems = [];
+      if (worst <= UI_DEFAULT_MS) problems.push(`machine pre-flights (${worst} ms) fit the old ${UI_DEFAULT_MS} ms default - the budget would not be needed`);
+      if (PROCESS_START_TIMEOUT_MS < 2 * worst) problems.push(`${PROCESS_START_TIMEOUT_MS} ms budget is under twice the ${worst} ms pre-flights`);
+      if (PROCESS_START_TIMEOUT_MS > 30000) problems.push('a budget over 30 s would hide a hung command from the operator');
+      const result = problems.length ? { status: 'fail', msg: problems.join('; ') }
+        : { status: 'pass', msg: `machine pre-flights ${worst} ms > old ${UI_DEFAULT_MS} ms default; UI budget ${PROCESS_START_TIMEOUT_MS} ms` };
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
+    // Live: a real heated cure start must be answered inside the 20 s budget (the machine runs its pre-flights first).
+    if (test.check === 'hwc_start_roundtrip') {
+      const stopNow = () => fetch(apiUrl + '/api/cure/stop?immediate=1', { method: 'POST', signal: AbortSignal.timeout(8000) }).catch(() => {});
+      const t1 = Date.now();
+      let result;
+      try {
+        const r = await (await fetch(apiUrl + '/api/cure/cure-405?target=35&intensity=10', { method: 'POST', signal: AbortSignal.timeout(20000) })).json();
+        const ms = Date.now() - t1;
+        await stopNow();
+        if (!r.ok) result = { status: 'warn', msg: `cure start refused after ${ms} ms: ${r.message || 'unknown'}` };
+        else result = { status: 'pass', msg: `cure-405 answered in ${ms} ms (${ms > 5000 ? 'over the old 5 s default, ' : ''}within the 20 s budget), stopped at once` };
+      } catch (e) {
+        await stopNow();
+        result = { status: 'fail', msg: `no answer within 20 s (${(e && e.name) || e})` };
+      }
+      const elapsed = Date.now() - t0;
+      setTestStatus(test.id, result.status, result.msg, elapsed);
+      log(result.status, `${test.name}: ${result.msg} (${elapsed}ms)`);
+      await new Promise(r => setTimeout(r, 50));
+      return;
+    }
+
     if (test.check === 'hw_reject') {
       const opts = { method: test.method || 'POST', signal: AbortSignal.timeout(8000) };
       if (test.body) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(test.body); }
