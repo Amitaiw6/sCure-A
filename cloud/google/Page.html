@@ -1,0 +1,2035 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<script>
+/* Apps Script shim: the page's three server calls -> google.script.run (see Code.gs). */
+(function () {
+  var KEY = 'scure-cloud-token', mem = '';
+  function tok() { try { return sessionStorage.getItem(KEY) || mem; } catch (e) { return mem; } }
+  function setTok(t) { mem = t; try { sessionStorage.setItem(KEY, t); } catch (e) {} }
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (res, rej) {
+      var r = google.script.run.withSuccessHandler(res).withFailureHandler(rej);
+      r[fn].apply(r, args);
+    });
+  }
+  // report links: GET <web app>?report=<run id>&m=<machine>&t=<session>[&dl=1] (served by doGet in Code.gs)
+  window.scureReportHref = function (m, runId, download) {
+    if (!m.reportUrl) return '#';
+    return m.reportUrl + '?report=' + encodeURIComponent(runId) + '&m=' + encodeURIComponent(m.name) +
+           '&t=' + encodeURIComponent(tok()) + (download ? '&dl=1' : '');
+  };
+  // raw DVT measurement files: GET <web app>?dvtfile=<Drive id>&t=<session> (served by doGet in Code.gs)
+  window.scureDvtFileHref = function (fileUrl, id) {
+    if (!fileUrl) return '#';
+    return fileUrl + '?dvtfile=' + encodeURIComponent(id) + '&t=' + encodeURIComponent(tok());
+  };
+  function reply(status, obj) { return { status: status, ok: status < 400, json: function () { return Promise.resolve(obj); } }; }
+  window.fetch = async function (path, opts) {
+    opts = opts || {};
+    var body = {};
+    try { body = opts.body ? JSON.parse(opts.body) : {}; } catch (e) { body = {}; }
+    if (path === '/login') {
+      var r = await call('portalLogin', body.password || '');
+      if (r && r.ok) { setTok(r.token); return reply(200, { ok: true }); }
+      return reply(401, { ok: false, message: 'Wrong password' });
+    }
+    if (path === '/api/machines') {
+      var list = await call('portalMachines', tok());
+      return list === null ? reply(401, { ok: false }) : reply(200, list);
+    }
+    var a = /^\/api\/alerts(?:\?since=(\d+))?$/.exec(path);
+    if (a) {
+      var errs = await call('portalAlerts', tok(), Number(a[1] || 0));
+      return errs === null ? reply(401, { ok: false }) : reply(200, errs);
+    }
+    if (path === '/api/dvt') {
+      var dvt = await call('portalDvt', tok());
+      return dvt === null ? reply(401, { ok: false }) : reply(200, dvt);
+    }
+    var w = /^\/api\/dvt\/wait\?since=([^&]*)&wait=(\d+)$/.exec(path);
+    if (w) {
+      var ch = await call('portalDvtWait', tok(), decodeURIComponent(w[1]), Number(w[2]));
+      return ch === null ? reply(401, { ok: false }) : reply(200, ch);
+    }
+    if (path === '/api/dvt/detail') {
+      var det = await call('portalDvtDetail', tok());
+      return det === null ? reply(401, { ok: false }) : reply(200, det);
+    }
+    if (path === '/api/dvt/race') {
+      var ro = await call('portalRaceSet', tok(), body);
+      return ro === null ? reply(401, { ok: false }) : reply(ro.ok ? 200 : 400, ro);
+    }
+    if (path === '/api/dvt/files') {
+      var fo = await call('portalDvtFiles', tok(), body.ids || []);
+      return fo === null ? reply(401, { ok: false }) : reply(fo.ok ? 200 : 400, fo);
+    }
+    if (path === '/api/dvt/unit') {
+      var uo = await call('portalDvtUnitSave', tok(), body.unit, body.fields || {});
+      return uo === null ? reply(401, { ok: false }) : reply(uo.ok ? 200 : 400, uo);
+    }
+    // DVT runs requested from the site (confirmed at the CureBox before anything runs)
+    if (path === '/api/dvt/request' || path === '/api/dvt/cancel' || path === '/api/dvt/answer') {
+      var out = path === '/api/dvt/request' ? await call('portalDvtRequest', tok(), body.machine, body.unit, body.testIds || [])
+              : path === '/api/dvt/cancel' ? await call('portalDvtCancel', tok(), body.id)
+              : await call('portalDvtAnswer', tok(), body.id, body.value === undefined ? null : body.value);
+      return out === null ? reply(401, { ok: false }) : reply(out.ok ? 200 : 400, out);
+    }
+    var m = /^\/api\/machines\/([^/]+)\/commands$/.exec(path);
+    if (m) {
+      var c = await call('portalCommand', tok(), decodeURIComponent(m[1]), body);
+      return c === null ? reply(401, { ok: false }) : reply(c.ok ? 200 : 400, c);
+    }
+    return reply(404, { ok: false, message: 'not found' });
+  };
+})();
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sCure Cloud</title>
+<style>
+  /* Light monochrome theme: white ground, black text, black primary buttons;
+     green/red kept for online/offline + errors only. */
+  :root { --bg:#ffffff; --panel:#ffffff; --line:#e5e5e5; --text:#111111;
+          --mut:#6b7280; --acc:#111111; --acc2:#111111; --ok:#16a34a; --err:#dc2626;
+          --field:#ffffff; --inset:#fafafa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.45 "Segoe UI", Arial, sans-serif; }
+  header { display:flex; align-items:center; gap:.8rem; padding:.9rem 1.4rem;
+           border-bottom:1px solid var(--line); }
+  header h1 { font-size:1.05rem; margin:0; letter-spacing:.04em; }
+  header .logo { height:42px; display:block; }
+  main { max-width:1060px; margin:0 auto; padding:1.2rem 1.4rem 3rem; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:1rem 1.2rem; margin-bottom:1rem; }
+  h2 { font-size:.95rem; color:var(--text); text-transform:uppercase;
+       letter-spacing:.08em; margin:0 0 .7rem; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
+  input, select, button, textarea { background:var(--field); color:var(--text);
+    border:1px solid #d4d4d4; border-radius:7px; padding:.45rem .7rem; font:inherit; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--acc); }
+  button { cursor:pointer; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; }
+  button.danger { color:var(--err); }
+  .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+  /* the Machine | DVT tabs under the CureBox chips */
+  .subtab { border:none; border-bottom:2px solid transparent; border-radius:0; background:none; padding:.55rem 1rem; color:var(--mut); }
+  .subtab.active { border-bottom-color:var(--text); color:var(--text); font-weight:600; }
+  /* DVT catalog view: counters, progress, phases with their tests (same layout as the DVT tool) */
+  .dvt-sum { display:grid; grid-template-columns:repeat(5, 1fr); gap:.6rem; margin:.4rem 0 .6rem; }
+  #app select { max-width:100%; }   /* a long option (a test title) must not widen the page on a phone */
+  #app label.mut { max-width:100%; }
+  .race-card { display:flex; gap:.9rem; align-items:center; border:1px solid var(--line); border-radius:10px; padding:.7rem .9rem; margin-bottom:.6rem; cursor:pointer; }
+  .race-card.champ { border-color:#d4a017; box-shadow:0 0 0 2px rgba(212,160,23,.25); }
+  .race-rank { font-size:1.7rem; width:2.2rem; text-align:center; flex:none; }
+  .race-main { flex:1 1 auto; min-width:0; }
+  .race-time { flex:none; text-align:right; }
+  .race-clock { font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .race-win { padding:.8rem 1rem; margin-bottom:.8rem; border-radius:10px; background:rgba(212,160,23,.14); border:1px solid #d4a017; font-size:1.05rem; }
+  .race-lead { padding:.5rem .8rem; margin-bottom:.8rem; border-radius:8px; background:var(--inset); }
+  .dvt-tile { border:1px solid var(--line); border-radius:10px; padding:.7rem; text-align:center; }
+  .dvt-tile .num { font-size:1.7rem; font-weight:700; }
+  .dvt-bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-bottom:1rem; }
+  .dvt-bar > div { height:100%; background:var(--ok); }
+  .dvt-phase { border:1px solid var(--line); border-radius:10px; margin-bottom:.7rem; overflow:hidden; }
+  .dvt-ph-head { display:flex; align-items:center; gap:.8rem; padding:.75rem 1rem; cursor:pointer; background:var(--inset); flex-wrap:wrap; }
+  .dvt-ph-head .ph-id { width:1.2rem; }
+  .dvt-test { display:flex; align-items:center; gap:.6rem; padding:.55rem 1rem; border-top:1px solid var(--line); cursor:pointer; flex-wrap:wrap; }
+  .dvt-test .tid { font-family:ui-monospace,Consolas,monospace; font-size:.85rem; }
+  .dvt-ic { width:1.5rem; height:1.5rem; border-radius:50%; border:1px solid var(--line); display:inline-flex; align-items:center; justify-content:center; font-size:.8rem; color:var(--mut); }
+  .dvt-ic.on { color:var(--ok); border-color:var(--ok); } .dvt-ic.off { color:var(--err); border-color:var(--err); } .dvt-ic.warn { color:#d97706; border-color:#d97706; }
+  .dvt-runs { padding:.2rem 1rem .8rem 3.1rem; border-top:1px solid var(--line); }
+  .badge { font-size:.72rem; padding:.05rem .45rem; border-radius:999px; border:1px solid var(--line); color:var(--mut); }
+  .badge.safety { color:var(--err); border-color:rgba(220,38,38,.4); }
+  .ok-t { color:var(--ok); } .err-t { color:var(--err); } .warn-t { color:#d97706; }
+  .pill.warn { background:rgba(217,119,6,.12); color:#d97706; }
+  .dvt-runpanel { border:1px solid var(--line); border-radius:10px; padding:.8rem 1rem; margin-bottom:1rem; }
+  .dvt-prompt { margin-top:.4rem; padding:.5rem .7rem; border-left:3px solid #d97706; background:rgba(217,119,6,.06); color:var(--text); }
+  .run-btn { padding:.15rem .6rem; font-size:.8rem; }
+  /* what a test is for, what it needs and the steps - laid out like the DVT tool */
+  .dvt-detail { padding:.4rem 0 .6rem; }
+  .dvt-detail h4 { margin:.9rem 0 .35rem; font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
+  .dvt-detail p { margin:.2rem 0; line-height:1.5; }
+  .dvt-detail ul { margin:.2rem 0; padding-left:1.2rem; } .dvt-detail li { margin:.15rem 0; line-height:1.45; }
+  .dvt-cols { display:grid; grid-template-columns:1fr 1fr; gap:0 1.5rem; } @media (max-width:760px) { .dvt-cols { grid-template-columns:1fr; } }
+  .dvt-safety { border-left:3px solid var(--err); background:rgba(220,38,38,.05); padding:.3rem .8rem .4rem; border-radius:0 8px 8px 0; margin-top:.6rem; }
+  .dvt-steps { list-style:none; margin:.4rem 0; padding:0; counter-reset:dvtstep; }
+  .dvt-steps li { position:relative; margin:.4rem 0; padding:.55rem .8rem .55rem 2.3rem; border:1px solid var(--line); border-radius:8px; line-height:1.5; counter-increment:dvtstep; }
+  .dvt-steps li::before { content:counter(dvtstep) '.'; position:absolute; left:.8rem; font-weight:700; color:#dc2626; }
+  .dvt-auto { border:1px solid rgba(37,99,235,.35); border-radius:10px; padding:.7rem .9rem; margin:.4rem 0 .6rem; background:rgba(37,99,235,.04); }
+  .dvt-auto .note { color:#2563eb; font-size:.9rem; line-height:1.5; margin:0 0 .5rem; }
+  .dvt-chk { display:flex; align-items:baseline; gap:.6rem; padding:.18rem 0; font-size:.92rem; flex-wrap:wrap; }
+  .dvt-chk .dot { width:.8rem; height:.8rem; border-radius:50%; background:#9ca3af; flex:none; align-self:center; }
+  .dvt-chk.ok .dot { background:#16a34a; } .dvt-chk.bad .dot { background:#dc2626; } .dvt-chk.warn .dot { background:#d97706; }
+  /* the guide window that opens on Run: how the test goes, then Queue / Cancel */
+  .dvt-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:1rem; }
+  .dvt-modal { background:var(--bg, #fff); color:var(--text); border-radius:12px; width:min(760px, 100%); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.3); }
+  .dvt-modal-head { padding:1rem 1.2rem .6rem; border-bottom:1px solid var(--line); }
+  .dvt-modal-head h3 { margin:0; font-size:1.1rem; } .dvt-modal-head .tid { font-family:ui-monospace,Consolas,monospace; margin-right:.5rem; }
+  .dvt-modal-body { padding:0 1.2rem; overflow-y:auto; }
+  .dvt-modal-run { padding:.7rem 1.2rem; border-bottom:1px solid var(--line); background:var(--inset); display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+  .dvt-modal-run:empty { display:none; }
+  .dvt-modal-run { flex-direction:column; flex-wrap:nowrap; align-items:stretch; max-height:45vh; overflow-y:auto; flex:none; }
+  .dvt-now { border-left:4px solid #2563eb; background:#fff; border-radius:0 8px 8px 0; padding:.5rem .8rem; line-height:1.5; }
+  .dvt-now b.lbl { display:block; font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
+  .dvt-sys { display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; font-size:.86rem; }
+  .dvt-sys .lbl { font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); margin-right:.2rem; }
+  .dvt-log { margin:0; padding:0; list-style:none; font-size:.84rem; }
+  .dvt-log li { display:flex; gap:.6rem; padding:.15rem 0; border-top:1px dashed var(--line); }
+  .dvt-log .t { color:var(--mut); font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
+  .dvt-modal-foot { padding:.8rem 1.2rem; border-top:1px solid var(--line); display:flex; gap:.6rem; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+  .dvt-sim { border:1px dashed #a855f7; border-radius:10px; padding:.6rem .9rem .8rem; margin:1rem 0; background:rgba(168,85,247,.04); }
+  .dvt-sim h4 { color:#7e22ce !important; margin-top:.2rem !important; }
+  .dvt-sim table { width:100%; border-collapse:collapse; font-size:.88rem; margin-top:.5rem; }
+  .dvt-sim td, .dvt-sim th { padding:.3rem .4rem; border-top:1px solid var(--line); text-align:left; vertical-align:top; }
+  .dvt-sim code { font-size:.82rem; } .dvt-sim .ok { color:#16a34a; font-weight:700; } .dvt-sim .bad { color:#dc2626; font-weight:700; }
+  .dvt-sim-verdict { margin-top:.6rem; padding:.5rem .8rem; border-radius:8px; font-weight:700; }
+  .dvt-sim-verdict.ok { background:rgba(22,163,74,.1); color:#15803d; } .dvt-sim-verdict.bad { background:rgba(220,38,38,.08); color:#b91c1c; }
+  .dvt-steps li.sim-on { border-color:#a855f7; background:rgba(168,85,247,.08); }
+  .dvt-steps li.sim-done::after { content:'✓'; position:absolute; right:.8rem; color:#16a34a; font-weight:700; }
+  .dvt-chk .lab { min-width:21rem; } .dvt-chk .val { color:var(--mut); } .dvt-chk.bad .val { color:#dc2626; } .dvt-chk.ok .val { color:var(--text); }
+  @media (max-width:760px) { .dvt-chk .lab { min-width:0; flex:1 1 100%; } }
+  .dvt-crit { border:1px solid var(--line); border-radius:8px; padding:.5rem .8rem .7rem; margin:.7rem 0; }
+  .dvt-crit h4 { margin-top:.2rem; } .dvt-crit code { display:block; overflow-wrap:anywhere; background:var(--inset); padding:.4rem .6rem; border-radius:6px; font-size:.85rem; }
+  .dep { font-family:ui-monospace,Consolas,monospace; font-size:.85rem; margin-right:.9rem; } .dep.ok { color:var(--ok); } .dep.open { color:var(--mut); }
+  a.vid { margin-left:.4rem; font-size:.78rem; font-weight:600; color:#2563eb; text-decoration:none; white-space:nowrap; }
+  .pill { display:inline-block; padding:.1rem .55rem; border-radius:999px; font-size:.78rem; }
+  .pill.on { background:rgba(22,163,74,.12); color:var(--ok); }
+  .pill.off { background:rgba(220,38,38,.10); color:var(--err); }
+  .stat { display:inline-flex; flex-direction:column; margin-right:1.6rem; }
+  .stat b { font-size:1.25rem; }
+  .stat span { color:var(--mut); font-size:.78rem; }
+  #login { max-width:340px; margin:16vh auto; }
+  .steps th, .steps td { padding:.3rem .4rem; }
+  .steps input, .steps select { width:100%; padding:.3rem .4rem; }
+  .msg { color:var(--ok); font-size:.85rem; }
+  .msg.err { color:var(--err); }
+  .mut { color:var(--mut); }
+  /* ---- phone layout (user, 2026-10-23: "add a phone version"): one thumb-friendly column, the sections scroll sideways in one line,
+     the numbers sit three to a row, the unit table becomes one card per unit and the first column of a comparison stays in view ---- */
+  @media (max-width:640px) {
+    header { padding:.5rem .9rem; gap:.6rem; }
+    header .logo { height:30px; }
+    header h1 { font-size:.95rem; }
+    main { padding:.7rem .6rem 2.5rem; }
+    .card { padding:.75rem .8rem; border-radius:9px; margin-bottom:.7rem; }
+    h2 { font-size:.82rem; line-height:1.35; }
+    input, select, button { min-height:44px; font-size:16px; }   /* 16 px: a phone browser does not zoom into the field */
+    .sections { flex-wrap:nowrap !important; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .sections .subtab { white-space:nowrap; flex:0 0 auto; padding:.65rem .85rem; }
+    .dvt-tiles { grid-template-columns:repeat(3, 1fr) !important; gap:.4rem !important; }
+    .dvt-tile { padding:.4rem .2rem; }
+    .dvt-tile .num { font-size:1.3rem; }
+    .dvt-tile .mut { font-size:.68rem; line-height:1.2; }
+    table.ov-units tr:first-child { display:none; }
+    table.ov-units, .ov-units tbody, .ov-units tr, .ov-units td { display:block; width:100%; }
+    .ov-units tr { border:1px solid var(--line); border-radius:9px; padding:.45rem .7rem; margin-bottom:.6rem; }
+    .ov-units td { border:0; padding:.25rem 0; display:flex; justify-content:space-between; align-items:center; gap:.6rem; text-align:right; }
+    .ov-units td[data-l]::before { content:attr(data-l); color:var(--mut); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; text-align:left; flex:0 0 auto; }
+    .ov-units td:first-child { font-size:1.05rem; }
+    .ov-units td input { flex:1 1 auto; width:100% !important; max-width:62%; }
+    .ov-units td .dvt-bar { width:100%; }
+    .cmp-controls { display:grid !important; grid-template-columns:1fr 1fr; gap:.6rem !important; }
+    .cmp-controls > label:first-child { grid-column:1 / -1; }
+    .cmp-controls select, .cmp-controls input { width:100%; }
+    .cmp-table th:first-child, .cmp-table td:first-child { position:sticky; left:0; z-index:1; background:var(--panel); max-width:8.5rem; word-break:break-word; }
+    .cmp-table th, .cmp-table td { padding:.4rem .45rem; font-size:.85rem; }
+    /* any other table (programs, prints, errors, runs) scrolls inside its card instead of widening the page */
+    .dvt-picker { display:none; }   /* the chips above already choose the CureBox */
+    table.rq-table tr:first-child { display:none; }
+    table.rq-table, .rq-table tbody, .rq-table tr, .rq-table td { display:block; width:100%; }
+    .rq-table tr { border:1px solid var(--line); border-radius:9px; padding:.5rem .7rem; margin-bottom:.5rem; }
+    .rq-table td { border:0; padding:.15rem 0; }
+    .rq-table td:first-child { font-size:1.02rem; }
+    .rq-table button { width:100%; min-height:46px; margin-top:.3rem; }
+    /* every list table on the phone is a list of cards: the first cell is the title of the card, the others carry their label */
+    table.cards tr:first-child { display:none; }
+    table.cards, .cards tbody, .cards tr, .cards td { display:block; width:100%; }
+    .cards tr { border:1px solid var(--line); border-radius:9px; padding:.45rem .7rem; margin-bottom:.55rem; }
+    .cards td { border:0; padding:.2rem 0; display:flex; justify-content:space-between; align-items:center; gap:.6rem; text-align:right; }
+    .cards td[data-l]::before { content:attr(data-l); color:var(--mut); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; text-align:left; flex:0 0 auto; }
+    .cards td:first-child { font-weight:700; font-size:1.02rem; justify-content:flex-start; text-align:left; }
+    .cards td.wide, .cards td[colspan] { display:block; text-align:left; }
+    .cards td.act { display:flex; gap:.5rem; justify-content:stretch; }
+    .cards td.act button, .cards td.act a { flex:1 1 0; min-height:46px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #d4d4d4; border-radius:7px; text-decoration:none; color:var(--text); padding:.4rem .6rem; background:var(--field); }
+    .cards td.act button.danger { color:var(--err); }
+    table.steps tr:first-child { display:none; }
+    .steps td:first-child::before { content:'Step '; }
+    .steps td.act { justify-content:flex-end; }
+    .steps td input, .steps td select { width:auto; max-width:64%; flex:1 1 auto; }
+    .steps td[data-l="Options"] { flex-direction:column; align-items:stretch; text-align:left; }
+    .steps td[data-l="Options"] select { max-width:100%; width:100%; margin-top:.3rem; }
+    .steps td[data-l]:has(> .mut:only-child) { display:none; }   /* a field this process does not have */
+    .race-card { flex-wrap:wrap; padding:.6rem .7rem; gap:.5rem .7rem; }
+    .race-time { flex:1 1 100%; text-align:left; padding-left:2.9rem; }
+    .race-clock { font-size:1.3rem; }
+    .sendrow > * { flex:1 1 100% !important; width:100%; }
+    #app .row button.primary { min-height:46px; }
+    #app table:not(.ov-units):not(.cmp-table):not(.rq-table):not(.cards) { display:block; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    /* running a test from the phone: the Run button is a full-width thumb target, the guide is a full-screen sheet with its buttons pinned
+       to the bottom, the questions the machine asks have big answer buttons */
+    .dvt-ph-head, .dvt-test { min-height:48px; }
+    .dvt-test { gap:.4rem .6rem; padding:.65rem .7rem; }
+    .dvt-test .run-btn { flex:1 1 100%; min-height:46px; font-size:1rem; padding:.5rem .8rem; }
+    [data-dvt-run-all] { width:100%; }
+    .dvt-runpanel { padding:.7rem .75rem; overflow-x:auto; }
+    .dvt-modal-bg { padding:0; align-items:stretch; }
+    .dvt-modal { width:100%; height:100%; max-height:100%; border-radius:0; }
+    .dvt-modal-head { padding:.7rem .9rem .5rem; }
+    .dvt-modal-body { padding:0 .9rem; }
+    .dvt-modal-run { padding:.6rem .9rem; max-height:50vh; }
+    .dvt-modal-foot { flex-direction:column-reverse; align-items:stretch; padding:.7rem .9rem calc(.7rem + env(safe-area-inset-bottom, 0px)); background:var(--bg, #fff); }
+    .dvt-modal-foot button { width:100%; min-height:48px; }
+    .dvt-modal-foot .mut { margin:.2rem 0 0 !important; text-align:center; }
+    .dvt-prompt .row { flex-wrap:wrap; gap:.5rem; }
+    .dvt-prompt button, .dvt-prompt select { flex:1 1 40%; min-height:48px; }
+    .dvt-prompt input { flex:1 1 100%; width:100% !important; }
+  }
+</style></head><body>
+<header><img class="logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABJ4AAAHzCAYAAABhQdfJAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAJXRFWHRTb2Z0d2FyZQBXZWJkYW0gaHR0cDovL3d3dy53ZWJkYW0uY29tFioTSwAAAJB6VFh0UmF3IHByb2ZpbGUgdHlwZSBpcHRjAAB4nD1OMQ4DMQjbecU9ISEODnOnbh3uA1XuIlWq1Kr/H0puiBEW2ICQ+2O/bd/fZ7zep2wX2KQ0KBxHQsQCNPek2WeJbsNoYylPqlXT4GynwTyYsmxnIaZJRBZGvzxjiXHGQiWm2jTUCrcjjtFq7pL0emEy5A+dGSfSFx9NbAAAAyZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0n77u/JyBpZD0nVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkJz8+Cjx4OnhtcG1ldGEgeG1sbnM6eD0nYWRvYmU6bnM6bWV0YS8nIHg6eG1wdGs9J0ltYWdlOjpFeGlmVG9vbCAxMi43MCc+CjxyZGY6UkRGIHhtbG5zOnJkZj0naHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyc+CgogPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9JycKICB4bWxuczpXZWJkYW09J2h0dHA6Ly93d3cud2ViZGFtLmNvbS9XZWJkYW1OYW1lc3BhY2UvJz4KICA8V2ViZGFtOkN1c3RvbUZpZWxkMTU+MjAyMyBOZXcgQnJhbmRpbmc8L1dlYmRhbTpDdXN0b21GaWVsZDE1PgogIDxXZWJkYW06Q3VzdG9tRmllbGQ0PkFjdGl2ZTwvV2ViZGFtOkN1c3RvbUZpZWxkND4KICA8V2ViZGFtOkN1c3RvbUZpZWxkNj5HbG9iYWw8L1dlYmRhbTpDdXN0b21GaWVsZDY+CiA8L3JkZjpEZXNjcmlwdGlvbj4KCiA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0nJwogIHhtbG5zOmRjPSdodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyc+CiAgPGRjOnN1YmplY3Q+CiAgIDxyZGY6QmFnPgogICAgPHJkZjpsaT5Mb2dvPC9yZGY6bGk+CiAgICA8cmRmOmxp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" alt="Stratasys"><h1>sCure Cloud</h1>
+  <span id="who" class="mut" style="margin-left:auto"></span></header>
+<main id="app"></main>
+<script>
+const $ = s => document.querySelector(s);
+let MACHINES = [];
+let editing = false;   // an editor is open: auto-refresh must not wipe it
+
+// True while the user is interacting with any form on the page — the
+// periodic refresh skips re-rendering so it never eats typed input.
+function userBusy() {
+  if (editing) return true;
+  const a = document.activeElement;
+  if (a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) return true;
+  // half-filled send-print form counts as busy too
+  return [...document.querySelectorAll('[id^="job-"], [id^="printer-"]')]
+    .some(el => el.value && el.value.trim() !== '');
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  if (r.status === 401) { renderLogin(); throw new Error('auth'); }
+  return r.json();
+}
+
+function renderLogin(msg) {
+  $('#app').innerHTML = `<div class="card" id="login"><h2>Sign in</h2>
+    <div class="row"><input id="pw" type="password" placeholder="Portal password" style="flex:1">
+    <button class="primary" id="go">Sign in</button></div>
+    <p class="msg err">${msg||''}</p></div>`;
+  $('#go').onclick = doLogin;
+  $('#pw').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+}
+async function doLogin() {
+  const r = await fetch('/login', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({password: $('#pw').value})});
+  if (r.ok) load(true); else renderLogin('Wrong password');   // forced: the focused password field counts as "busy"
+}
+
+function fmtAgo(t) {
+  if (!t) return 'never';
+  const s = Math.round(Date.now()/1000 - t);
+  return s < 60 ? s + 's ago' : s < 3600 ? Math.round(s/60) + 'm ago' : Math.round(s/3600) + 'h ago';
+}
+
+async function load(force) {
+  if (!force && userBusy()) return;   // never re-render under the user's hands
+  try { MACHINES = await api('/api/machines'); } catch { return; }
+  if (!force && userBusy()) return;
+  render();
+  if (VIEW === 'errors') loadErrors();
+  if (VIEW === 'dvt' || VIEW === 'overview' || VIEW === 'compare' || VIEW === 'race') loadDvt();
+}
+
+// Which CureBox is shown: 'all' or a machine name (kept across visits).
+let SELECTED = localStorage.getItem('scure-curebox') || 'all';
+// Live filter for work programs + recent prints (name/material/printer/status).
+let SEARCH = '';
+// 'machines' (the machine cards), 'errors' (every alert raised today) or 'dvt' (the DVT campaign).
+let VIEW = 'overview';
+let ERRORS = null;            // alerts from the portal's log: {machine, code, raised, cleared, message}
+// DVT: every run DVT/web/dvt-tool.html recorded, with its values and its raw measurement files.
+const PORTAL_BUILD = '0.9.123';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
+let DVT_DETAIL = null;        // {testId: {purpose, steps, equipment, preconditions, criteria, bench, note ...}} - fetched once per catalog
+let DVT_DETAIL_AT = -1;       // the catalog.updated the detail belongs to
+let DVT_DETAIL_BUSY = false;
+let DVT = null;               // {runs: [{unit, testId, variant, rep, runId, verdict, operator, startedAt, recordedAt, note, values, files}], fileUrl}
+let DVT_UNIT = localStorage.getItem('scure-dvt-unit') || 'all';
+const DVT_NONE = '__unassigned';  // the CureBox list's "not assigned" entry: runs uploaded before their unit had a CureBox
+const dvtMachines = () => [...new Set(((DVT && DVT.runs) || []).map(r => r.machine).filter(Boolean))];
+const DVT_OPEN = new Set();   // run ids whose values + files are expanded
+const CODE_TITLES = {
+  6016: 'Door opened during a process', 7004: 'Temperature stall',
+  9001: 'Temperature sensor disconnected', 9002: 'Fan failure - system stopped', 9003: 'Fan not spinning - job not started',
+  9004: 'LED panel not heating', 9005: 'LED panel temperature dropped', 9006: 'Temperature reading frozen',
+  9007: 'Heater not heating', 9050: 'LED temperature sensor disconnected', 9051: 'Fan speed low - replace fan',
+  9052: 'NFC reader not detected'};
+// the registry title (errors.json, sent by portalAlerts) wins; CODE_TITLES covers a server older than the per-component codes
+const errTitle = e => e.title || CODE_TITLES[e.code] || 'Error ' + e.code;
+const fmtTime = t => new Date(t * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+const fmtDur = s => s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.floor(s/60)} min ${Math.round(s%60)} s` : `${Math.floor(s/3600)} h ${Math.round((s%3600)/60)} min`;
+async function loadErrors() {
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  try { ERRORS = await api(`/api/alerts?since=${Math.floor(midnight.getTime()/1000)}`); } catch { return; }
+  if (VIEW === 'errors' && !userBusy()) render();
+}
+function errorsCard() {
+  if (ERRORS === null) return `<div class="card"><h2>Errors today</h2><p class="mut">Loading…</p></div>`;
+  const now = Date.now() / 1000;
+  const list = ERRORS.filter(e => SELECTED === 'all' || e.machine === SELECTED)
+    .filter(e => { const q = SEARCH.trim().toLowerCase();
+      return !q || [e.machine, String(e.code), errTitle(e), e.message].some(v => (v||'').toLowerCase().includes(q)); });
+  const rows = list.map(e => {
+    const active = e.cleared == null;
+    const status = active ? `<span class="pill off">active · ${fmtDur(now - e.raised)}</span>`
+                          : `<span class="mut">cleared ${fmtTime(e.cleared)} · lasted ${fmtDur(e.cleared - e.raised)}</span>`;
+    return `<tr><td>${fmtTime(e.raised)}</td><td data-l="Machine">${e.machine}</td><td data-l="Code"><b>${e.code}</b></td>
+      <td class="wide"><b>${escH(errTitle(e))}</b>${/^https?:\/{2}/i.test(e.videoUrl || '') ? ` <a class="vid" href="${escH(e.videoUrl)}" target="_blank" rel="noopener">&#9654; Video</a>` : ''}<br><span class="mut">${(e.message||'').replace(/</g,'&lt;')}</span></td>
+      <td data-l="Status">${status}</td></tr>`;
+  }).join('');
+  const active = list.filter(e => e.cleared == null).length;
+  return `<div class="card"><h2>Errors today
+      <span class="mut" style="font-weight:400;text-transform:none">${list.length} raised${active ? ` · ${active} still active` : ''}</span></h2>
+    <table class="cards"><tr><th>Time</th><th>Machine</th><th>Code</th><th>Error</th><th>Status</th></tr>
+      ${rows || '<tr><td colspan=5 class="mut">No errors today</td></tr>'}</table></div>`;
+}
+
+async function loadDvt() {
+  try { DVT = await api('/api/dvt'); } catch { return; }
+  if (DVT && DVT.now) DVT.skew = DVT.now - Date.now() / 1000;      // the server's clock, so a phone with a wrong time does not skew the race
+  if ((VIEW === 'dvt' || VIEW === 'overview' || VIEW === 'compare' || VIEW === 'race') && !userBusy()) render();
+  if (VIEW === 'dvt' && DVT && DVT.catalog && DVT.catalog.updated !== DVT_DETAIL_AT) loadDvtDetail();
+}
+
+/** The "why and how" of every test (purpose, equipment, steps, criteria): about 100 KB, fetched when the catalog changes. */
+async function loadDvtDetail() {
+  if (DVT_DETAIL_BUSY) return;
+  DVT_DETAIL_BUSY = true;
+  try {
+    const d = await api('/api/dvt/detail');
+    DVT_DETAIL = d.tests || {};
+    DVT_DETAIL_AT = d.updated;
+  } catch { /* the rows still work without it */ }
+  finally { DVT_DETAIL_BUSY = false; }
+  if (VIEW === 'dvt' && !userBusy()) render();
+}
+
+const fmtBytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+// when the run was RECORDED in the DVT tool (startedAt); recordedAt is only when it reached the portal
+const dvtWhen = r => (Date.parse(r.startedAt) / 1000) || r.recordedAt;
+const fmtWhen = t => !t ? '—' : Date.now() / 1000 - t < 86400 ? fmtAgo(t)
+  : new Date(t * 1000).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+const dvtClass = v => /^pass$/i.test(v) ? 'on' : /^fail$/i.test(v) ? 'off' : /^(blocked|invalid)$/i.test(v) ? 'warn' : '';
+
+// ---- the catalog view: every phase and test of the DVT catalog for one unit, the way the DVT tool lays it out,
+//      with what this CureBox recorded against each owed run ----
+const DVT_PHASE_OPEN = new Set(), DVT_TEST_OPEN = new Set();
+let DVT_PHASES_TOUCHED = false;          // until a phase is folded by hand, every phase shows its tests
+const DVT_ICON = { PASS: ['on', '✓'], FAIL: ['off', '✗'], BLOCKED: ['warn', '!'], INVALID: ['warn', '?'], WAIVED: ['', 'W'], progress: ['', '…'], open: ['', '–'] };
+const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** A test's verdict from its owed runs - the DVT tool's rule: any FAIL, then BLOCKED, WAIVED, PASS once all are in. */
+function dvtTestVerdict(owed, byId) {
+  const vs = owed.map(id => (byId[id] || {}).verdict || '');
+  if (vs.every(v => !v)) return 'open';
+  if (vs.some(v => !v)) return 'progress';
+  for (const v of ['FAIL', 'INVALID', 'BLOCKED', 'WAIVED', 'PASS']) if (vs.includes(v)) return v;
+  return 'progress';
+}
+
+/** The values, files and note of one recorded run (shown when the run is opened). */
+function dvtRunDetail(r, colspan) {
+  const vals = Object.entries(r.values || {});
+  return `<tr><td colspan=${colspan} style="background:var(--inset)">
+      ${vals.length ? `<table>${vals.map(([k, v]) => `<tr><td class="mut">${escH(k)}</td><td><b>${escH(v)}</b></td></tr>`).join('')}</table>`
+                    : '<span class="mut">No values recorded</span>'}
+      ${(r.files || []).length ? `<p style="margin:.5rem 0 0">${r.files.map(f =>
+          `<a href="${window.scureDvtFileHref ? window.scureDvtFileHref(DVT.fileUrl, f.id) : '#'}" target="_blank">${escH(f.name)}</a>
+           <span class="mut">(${escH(f.kind || 'file')}, ${fmtBytes(f.size)})</span>`).join(' &middot; ')}</p>` : ''}
+      ${r.note ? `<p class="mut" style="margin:.5rem 0 0">${escH(r.note)}</p>` : ''}
+    </td></tr>`;
+}
+
+// ---- DVT runs requested from the site: the CureBox's runner picks them up, asks for Start on the machine's screen,
+//      runs the same scripts as the DVT tool and reports back. Nothing runs until someone at the machine presses Start. ----
+const DVT_ACTIVE_ST = ['queued', 'waiting', 'running', 'cancel_requested'];
+const DVT_REQ_LABEL = { queued: 'queued', waiting: 'waiting at the machine', running: 'running', cancel_requested: 'stopping',
+                        done: 'done', failed: 'failed', cancelled: 'cancelled', blocked: 'not started' };
+const reqClass = st => st === 'done' ? 'on' : st === 'failed' ? 'off' : st === 'cancelled' ? '' : 'warn';
+let DVT_MSG = '';                          // the last answer of a Run / Cancel / Answer click
+
+async function dvtSend(path, body) {
+  try {
+    const r = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    DVT_MSG = r && r.ok === false ? (r.message || 'refused') : '';
+    return r;
+  } catch (e) { DVT_MSG = String(e.message || e); return null; }
+  finally { await loadDvt(); render(); }
+}
+
+/** The answer controls for the step the runner waits on (a physical act, a yes / no, an instrument reading). */
+function dvtPromptControls(r) {
+  const p = r.prompt;
+  if (!p) return '';
+  const b = (v, label, cls) => `<button class="${cls || ''}" data-dvt-answer="${r.id}" data-v='${JSON.stringify(v)}'>${label}</button>`;
+  let ctl;
+  if (p.kind === 'yesno') ctl = b(true, 'Yes', 'primary') + b(false, 'No') + b(null, 'Skip');
+  else if (p.kind === 'value') {
+    const input = Array.isArray(p.values) && p.values.length
+      ? `<select id="dvt-in-${r.id}">${p.values.map(v => `<option>${escH(v)}</option>`).join('')}</select>`
+      : `<input id="dvt-in-${r.id}" placeholder="${escH(p.unit || 'value')}" style="width:9rem">`;
+    ctl = input + `<button class="primary" data-dvt-answer-input="${r.id}">OK</button>` + b(null, 'Skip');
+  } else ctl = b(true, 'Done', 'primary') + b(null, 'Skip');
+  return `<div class="dvt-prompt"><b>The test asks:</b> ${escH(p.text)}<div class="row" style="margin-top:.4rem">${ctl}</div></div>`;
+}
+
+/** Runner state, Run all, and the queue for one CureBox + unit. */
+const DVT_KIND = { auto: 'fully automatic', guided: 'automatic, with prompts', instrumented: 'automatic, instrument readings asked for' };
+const DVT_CHECKS = [['machine', 'Machine connected'], ['svc', 'DVT bench service on the machine (port 3002)'], ['tc08', 'Thermocouple on CH1 (at the cutout)'],
+                    ['chamber', 'Heater thermistor (TEMP_CHAMBER) reading'], ['idle', 'Machine idle']];
+
+/** The live checks of a bench test, as the DVT runner on the selected CureBox reported them (fresh within 45 s). */
+function dvtBenchCard(tid, d, x, runner, verdictOf) {
+  const rd = runner && runner.online && runner.readiness ? runner.readiness[tid] : null;
+  const canAsk = SELECTED !== 'all' && SELECTED !== DVT_NONE;
+  const why = !canAsk ? 'Choose a CureBox above to see its live checks.'
+            : !runner || !runner.online ? `The DVT runner on ${SELECTED} is not online - no live checks.`
+            : !rd ? `Waiting for the first report from ${SELECTED}…` : '';
+  const rows = DVT_CHECKS.map(([key, label]) => {
+    const r = rd && rd.rows ? rd.rows[key] : null;
+    const cls = !r ? '' : r.ok === true ? 'ok' : r.ok === 'warn' ? 'warn' : r.ok === false ? 'bad' : '';
+    return `<div class="dvt-chk ${cls}"><span class="dot"></span><span class="lab">${escH(label)}</span><span class="val">${r ? escH(r.text) : ''}</span></div>`;
+  }).join('');
+  const active = (DVT.requests || []).some(q => q.machine === SELECTED && q.testId === tid && DVT_ACTIVE_ST.includes(q.status));
+  const ready = !!(rd && rd.ready);
+  const line = active ? 'queued - it starts when someone presses Start on the machine screen'
+             : ready ? 'everything is ready - press Run, then Start on the machine screen' : (why || 'Run is enabled when all checks are green');
+  return `<div class="dvt-auto"><p class="note">${escH(d.note || '')}</p>${rows}
+    <div class="row" style="margin-top:.5rem;gap:.7rem;align-items:center">
+      <button class="primary run-btn" data-dvt-run-card="${escH(tid)}" ${ready && canAsk && !active ? '' : 'disabled'}>▶ Run</button>
+      <span class="mut" style="font-size:.9rem">${escH(line)}</span></div></div>`;
+}
+
+/** One test opened: purpose, safety plan, equipment and preconditions, dependencies, the numbered procedure, the pass criteria. */
+function dvtDetailHtml(tid, x, runner, verdictOf) {
+  if (!DVT_DETAIL) return '<p class="mut">Loading the test description…</p>';
+  const d = DVT_DETAIL[tid];
+  if (!d) return `<p class="mut" style="margin:.5rem 0">The description of this test is not in the portal yet - it arrives when the DVT runner on the CureBox starts, or when the DVT tool presses <b>Sync all</b>.</p>`;
+  const ul = items => `<ul>${items.map(i => `<li>${escH(i)}</li>`).join('')}</ul>`;
+  const bits = [];
+  bits.push(`<h4>Purpose</h4><p>${escH(d.purpose)}</p>`);
+  if (d.rationale) bits.push(`<h4>Sample rationale</h4><p>${escH(d.rationale)}</p>`);
+  if (d.safetyPlan && d.safetyPlan.length) bits.push(`<div class="dvt-safety"><h4>Safety plan</h4>${ul(d.safetyPlan)}</div>`);
+  if ((d.equipment && d.equipment.length) || (d.preconditions && d.preconditions.length)) {
+    bits.push(`<div class="dvt-cols"><div>${d.equipment && d.equipment.length ? `<h4>Equipment</h4>${ul(d.equipment)}` : ''}</div>
+      <div>${d.preconditions && d.preconditions.length ? `<h4>Preconditions</h4>${ul(d.preconditions)}` : ''}</div></div>`);
+  }
+  if (d.dependencies && d.dependencies.length) {
+    bits.push(`<h4>Dependencies</h4><p>${d.dependencies.map(dep => {
+      const ok = ['PASS', 'WAIVED'].includes(verdictOf[dep]);
+      return `<span class="dep ${ok ? 'ok' : 'open'}">${escH(dep)} ${ok ? '✓' : '…'}</span>`;
+    }).join('')}</p>`);
+  }
+  bits.push('<h4>Procedure</h4>');
+  if (d.bench) bits.push(dvtBenchCard(tid, d, x, runner, verdictOf));
+  else if (d.note) bits.push(`<div class="dvt-auto"><p class="note" style="margin:0"><b>${escH(DVT_KIND[d.kind] || 'automatic')}${x.t.minutes ? ` · about ${x.t.minutes} min` : ''}.</b> ${escH(d.note)}</p></div>`);
+  bits.push(`<ol class="dvt-steps">${(d.steps || []).map(s => `<li>${escH(s)}</li>`).join('')}</ol>`);
+  bits.push(`<div class="dvt-crit"><h4>Pass criteria</h4><code>${escH(d.criteria)}</code></div>`);
+  return `<div class="dvt-detail">${bits.join('')}</div>`;
+}
+
+let GUIDE = null;               // the open guide window: {bg, tid, machine, unit, sinceId, sent}
+/** Run pressed on one test: show how it goes (purpose, safety, equipment, preconditions, steps, criteria) before queuing it.
+    Queue keeps the window open and follows the run there (status, the machine's questions, Stop). */
+function dvtGuide(tid, title) {
+  if (!DVT_DETAIL) loadDvtDetail();
+  const d = DVT_DETAIL && DVT_DETAIL[tid];
+  const ul = items => `<ul>${items.map(i => `<li>${escH(i)}</li>`).join('')}</ul>`;
+  const bits = [];
+  if (!d) bits.push(`<p class="mut" style="margin:1rem 0">The guide for this test is not in the portal yet - it arrives when the DVT runner on the CureBox starts, or when the DVT tool presses <b>Sync all</b>.</p>`);
+  else {
+    bits.push(`<h4>Purpose</h4><p>${escH(d.purpose)}</p>`);
+    if (d.safetyPlan && d.safetyPlan.length) bits.push(`<div class="dvt-safety"><h4>Safety plan</h4>${ul(d.safetyPlan)}</div>`);
+    if (d.equipment && d.equipment.length) bits.push(`<h4>Equipment</h4>${ul(d.equipment)}`);
+    if (d.preconditions && d.preconditions.length) bits.push(`<h4>Before you start</h4>${ul(d.preconditions)}`);
+    if (d.note) bits.push(`<div class="dvt-auto"><p class="note" style="margin:0">${escH(d.note)}</p></div>`);
+    bits.push(`<h4>Procedure</h4><ol class="dvt-steps">${(d.steps || []).map(s => `<li>${escH(s)}</li>`).join('')}</ol>`);
+    if (d.criteria) bits.push(`<div class="dvt-crit"><h4>Pass criteria</h4><code>${escH(d.criteria)}</code></div>`);
+    bits.push(`<div class="dvt-sim"><h4>Simulation</h4>
+      <p class="mut" style="margin:.2rem 0 .5rem;font-size:.88rem">A dry run in this window only: the steps play through and the pass criteria are checked against made-up readings. Nothing is sent to the CureBox and nothing is recorded.</p>
+      <div class="row"><button data-sim="pass">▶ Simulate a passing run</button><button data-sim="fail">▶ Simulate a failing run</button></div>
+      <div data-sim-out></div></div>`);
+  }
+  const bg = document.createElement('div');
+  bg.className = 'dvt-modal-bg';
+  bg.innerHTML = `<div class="dvt-modal" role="dialog" aria-modal="true">
+    <div class="dvt-modal-head"><h3><span class="tid">${escH(tid)}</span>${escH(title)}</h3></div>
+    <div class="dvt-modal-run" data-guide-run></div>
+    <div class="dvt-modal-body dvt-detail">${bits.join('')}</div>
+    <div class="dvt-modal-foot"><span class="mut" style="margin-right:auto;font-size:.88rem">It starts only when someone presses Start on ${escH(SELECTED)}.</span>
+      <button data-guide="cancel">Cancel</button><button class="primary" data-guide="go">▶ Queue on ${escH(SELECTED)}</button></div></div>`;
+  const g = { bg, tid, machine: SELECTED, unit: DVT_UNIT, sinceId: 0, sent: false, log: [], sig: '' };
+  const close = () => { bg.remove(); document.removeEventListener('keydown', esc); if (GUIDE === g) GUIDE = null; };
+  const esc = e => { if (e.key === 'Escape') close(); };
+  bg.onclick = e => { if (e.target === bg && !g.sent) close(); };       // once a run is queued, only Close / Esc shut it
+  bg.querySelector('[data-guide="cancel"]').onclick = close;
+  const go = bg.querySelector('[data-guide="go"]');
+  go.onclick = async () => {
+    // the portal answers {queued, skipped} without ids: the run is the newest request for this test after this one
+    g.sinceId = Math.max(0, ...(DVT.requests || []).filter(q => q.machine === g.machine && q.testId === tid).map(q => q.id));
+    g.sent = true;
+    go.disabled = true;
+    go.textContent = 'Queuing…';
+    bg.querySelector('[data-guide="cancel"]').textContent = 'Close';
+    const r = await dvtSend('/api/dvt/request', { machine: g.machine, unit: g.unit, testIds: [tid] });
+    if (!r || r.ok === false || !r.queued) {
+      g.sent = false;
+      go.disabled = false;
+      go.textContent = `▶ Queue on ${g.machine}`;
+      bg.querySelector('[data-guide-run]').innerHTML = `<span class="err-t">${escH(r && r.message ? r.message
+        : r && r.skipped ? 'not queued - this test is already queued or every run of it is recorded' : DVT_MSG || 'not queued')}</span>`;
+    }
+    dvtGuideRefresh();
+  };
+  GUIDE = g;
+  [...bg.querySelectorAll('[data-sim]')].forEach(btn => btn.onclick = () => dvtSimulate(bg, d, btn.dataset.sim === 'fail'));
+  document.addEventListener('keydown', esc);
+  document.body.appendChild(bg);                       // outside #app, so the long-poll re-render leaves it alone
+}
+/* ---- DVT simulation: a tiny evaluator for the catalog's pass criteria ----
+   Grammar: a OR b, a AND b, NOT a, x <= y (< > >= == !=), + - * /, max/min/abs(...), numbers, 'strings', true/false,
+   names (dotted names are catalog thresholds). Walked as a tree, never eval()'d. */
+function critParse(src) {
+  const re = /\s*(?:(\d+(?:\.\d+)?(?:e-?\d+)?)|('[^']*'|"[^"]*")|([A-Za-z_][\w.]*)|(<=|>=|==|!=|<|>|\(|\)|,|\*|\/|\+|-))/y;
+  const toks = []; let m;
+  while (re.lastIndex < src.length && (m = re.exec(src))) {
+    if (m[1]) toks.push({ t: 'num', v: Number(m[1]) });
+    else if (m[2]) toks.push({ t: 'str', v: m[2].slice(1, -1) });
+    else if (m[3]) { const w = m[3].toLowerCase(); toks.push(['and', 'or', 'not', 'true', 'false'].includes(w) ? { t: w } : { t: 'id', v: m[3] }); }
+    else toks.push({ t: m[4] });
+  }
+  if (src.slice(re.lastIndex).trim()) throw new Error('unreadable criteria');
+  let i = 0;
+  const peek = () => toks[i] || { t: 'end' }, take = t => { if (peek().t !== t) throw new Error('expected ' + t); return toks[i++]; };
+  const bin = (next, ops, kind) => () => { let n = next(); while (ops.includes(peek().t)) { const op = toks[i++].t; n = { k: kind, op, a: n, b: next() }; } return n; };
+  const primary = () => {
+    const x = peek();
+    if (x.t === 'num' || x.t === 'str') { i++; return { k: 'lit', v: x.v }; }
+    if (x.t === 'true' || x.t === 'false') { i++; return { k: 'lit', v: x.t === 'true' }; }
+    if (x.t === '(') { i++; const n = or(); take(')'); return n; }
+    if (x.t === 'id') {
+      i++;
+      if (peek().t !== '(') return { k: 'id', v: x.v };
+      i++; const args = [];
+      if (peek().t !== ')') { args.push(add()); while (peek().t === ',') { i++; args.push(add()); } }
+      take(')'); return { k: 'fn', v: x.v, args };
+    }
+    throw new Error('unexpected ' + x.t);
+  };
+  const unary = () => peek().t === '-' ? (i++, { k: 'neg', a: unary() }) : primary();
+  const mul = bin(unary, ['*', '/'], 'ar'), add = bin(mul, ['+', '-'], 'ar');
+  const cmp = () => { const a = add(); if (['<=', '>=', '==', '!=', '<', '>'].includes(peek().t)) { const op = toks[i++].t; return { k: 'cmp', op, a, b: add() }; } return a; };
+  const not = () => peek().t === 'not' ? (i++, { k: 'not', a: not() }) : cmp();
+  const and = bin(not, ['and'], 'bool'), or = bin(and, ['or'], 'bool');
+  const tree = or(); if (peek().t !== 'end') throw new Error('unexpected ' + peek().t);
+  return tree;
+}
+function critEval(n, env) {
+  switch (n.k) {
+    case 'lit': return n.v;
+    case 'id': return env[n.v];
+    case 'neg': return -critEval(n.a, env);
+    case 'not': return !critEval(n.a, env);
+    case 'fn': { const a = n.args.map(x => critEval(x, env)), f = n.v.toLowerCase();
+      return f === 'max' ? Math.max(...a) : f === 'min' ? Math.min(...a) : f === 'abs' ? Math.abs(a[0]) : NaN; }
+    case 'ar': { const a = critEval(n.a, env), b = critEval(n.b, env); return n.op === '*' ? a * b : n.op === '/' ? a / b : n.op === '+' ? a + b : a - b; }
+    case 'bool': return n.op === 'and' ? !!critEval(n.a, env) && !!critEval(n.b, env) : !!critEval(n.a, env) || !!critEval(n.b, env);
+    case 'cmp': { const a = critEval(n.a, env), b = critEval(n.b, env);
+      return n.op === '<=' ? a <= b : n.op === '>=' ? a >= b : n.op === '<' ? a < b : n.op === '>' ? a > b : n.op === '==' ? a === b : a !== b; }
+  }
+}
+const critText = n => n.k === 'lit' ? (typeof n.v === 'string' ? `'${n.v}'` : String(n.v)) : n.k === 'id' ? n.v
+  : n.k === 'neg' ? '-' + critText(n.a) : n.k === 'not' ? 'NOT ' + critText(n.a) : n.k === 'fn' ? `${n.v}(${n.args.map(critText).join(', ')})`
+  : n.k === 'cmp' || n.k === 'ar' ? `${critText(n.a)} ${n.op} ${critText(n.b)}` : `(${critText(n.a)} ${n.op.toUpperCase()} ${critText(n.b)})`;
+const critIds = (n, out = []) => { if (n.k === 'id') out.push(n.v); ['a', 'b'].forEach(k => n[k] && critIds(n[k], out)); (n.args || []).forEach(x => critIds(x, out)); return out; };
+const critLeaves = (n, out = []) => { if (n.k === 'bool') { critLeaves(n.a, out); critLeaves(n.b, out); } else if (n.k === 'not' && n.a.k !== 'cmp' && n.a.k !== 'id') critLeaves(n.a, out); else out.push(n); return out; };
+/** Made-up readings: every check passes, except the one at index `bad` (if any), which misses its limit. */
+function critReadings(leaves, bad) {
+  const env = {};
+  const fix = id => { if (!(id in env)) env[id] = 100; };                 // a threshold / reference value nobody set
+  leaves.forEach((leaf, li) => {
+    let node = leaf, want = true;
+    if (node.k === 'not') { node = node.a; want = false; }
+    const ok = (li !== bad) === want;                                     // should this comparison itself come out true?
+    if (node.k === 'id') { if (!(node.v in env)) env[node.v] = ok; return; }
+    if (node.k !== 'cmp') return;
+    critIds(node.b).forEach(fix);
+    const R = critEval(node.b, env);
+    let v;
+    if (typeof R === 'number') {
+      const m = Math.max(Math.abs(R) * 0.2, 0.05), r = x => Number(x.toPrecision(3));
+      const below = r(R - m), above = r(R + m);
+      v = { '<=': ok ? below : above, '<': ok ? below : above, '>=': ok ? above : below, '>': ok ? above : below,
+            '==': ok ? R : above, '!=': ok ? above : R }[node.op];
+    } else if (typeof R === 'boolean') v = (node.op === '==') === ok ? R : !R;
+    else v = (node.op === '==') === ok ? R : String(R) + '_other';
+    critIds(node.a).forEach(id => { if (!(id in env)) env[id] = v; });
+  });
+  return env;
+}
+async function dvtSimulate(bg, d, wantFail) {
+  const out = bg.querySelector('[data-sim-out]'), btns = [...bg.querySelectorAll('[data-sim]')];
+  btns.forEach(b => b.disabled = true);
+  const steps = [...bg.querySelectorAll('.dvt-steps li')];
+  steps.forEach(li => li.classList.remove('sim-on', 'sim-done'));
+  out.innerHTML = '';
+  for (const li of steps) {                                       // play the procedure through
+    if (!bg.isConnected) return;
+    li.classList.add('sim-on'); li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    await new Promise(r => setTimeout(r, 700));
+    li.classList.remove('sim-on'); li.classList.add('sim-done');
+  }
+  if (!bg.isConnected) return;
+  let html;
+  try {
+    const tree = critParse(String(d.criteria || ''));
+    const leaves = critLeaves(tree);
+    let bad = -1, env = critReadings(leaves, -1);
+    if (wantFail) {                                               // break one check that really fails the test
+      const order = leaves.map((_, i) => i).sort(() => Math.random() - .5);
+      for (const k of order) { const e = critReadings(leaves, k); if (!critEval(tree, e)) { bad = k; env = e; break; } }
+    }
+    const verdict = !!critEval(tree, env);
+    const fmt = v => typeof v === 'string' ? `'${escH(v)}'` : escH(String(v));
+    const rows = leaves.map(leaf => {
+      const ok = !!critEval(leaf, env), ids = [...new Set(critIds(leaf))];
+      return `<tr><td><code>${escH(critText(leaf))}</code></td>
+        <td>${ids.map(id => `<code>${escH(id)}</code> = ${fmt(env[id])}${id.includes('.') ? ' <span class="mut">(limit)</span>' : ''}`).join('<br>')}</td>
+        <td class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'}</td></tr>`;
+    }).join('');
+    html = `<table><tr><th>Check</th><th>Simulated reading</th><th></th></tr>${rows}</table>
+      <div class="dvt-sim-verdict ${verdict ? 'ok' : 'bad'}">Simulated verdict: ${verdict ? 'PASS' : 'FAIL'}${wantFail && bad < 0 ? ' - no single reading can fail these criteria' : ''}</div>`;
+  } catch (e) {
+    html = `<p class="mut" style="margin:.6rem 0 0">The steps played through, but the pass criteria could not be read for a simulated check (${escH(e.message)}).</p>`;
+  }
+  out.innerHTML = html + '<p class="mut" style="font-size:.8rem;margin:.4rem 0 0">Simulation only - made-up numbers, not recorded.</p>';
+  out.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  btns.forEach(b => b.disabled = false);
+}
+/** Keep the open guide window in step with its run (called after every render and when the run is queued). */
+function dvtGuideRefresh() {
+  const g = GUIDE;
+  if (!g || !g.bg.isConnected || !g.sent || !DVT) return;
+  const box = g.bg.querySelector('[data-guide-run]'), go = g.bg.querySelector('[data-guide="go"]');
+  const r = (DVT.requests || []).filter(q => q.machine === g.machine && q.testId === g.tid && q.id > g.sinceId)
+    .sort((a, b) => b.id - a.id)[0];
+  if (!r) { box.innerHTML = '<span class="pill warn">queuing…</span>'; return; }
+  const active = DVT_ACTIVE_ST.includes(r.status);
+  // the run log: one line per change of status / machine line / question, with the time the page saw it
+  const sig = [r.status, r.line, r.prompt && r.prompt.text, r.verdict].join('|');
+  if (sig !== g.sig) {
+    g.sig = sig;
+    g.log.push({ t: new Date(), text: (DVT_REQ_LABEL[r.status] || r.status) + (r.verdict ? ' ' + r.verdict : '')
+      + (r.prompt && active ? ' - asks: ' + r.prompt.text : r.line ? ' - ' + r.line : '') });
+  }
+  if (g.bg.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;   // typing an answer
+  box.innerHTML = `<div class="row" style="gap:.6rem;align-items:center">
+      <span class="pill ${reqClass(r.status)}">${DVT_REQ_LABEL[r.status] || escH(r.status)}</span>
+      ${r.verdict ? `<span class="pill ${dvtClass(r.verdict)}">${escH(r.verdict)}</span>` : ''}
+      <span class="mut" style="flex:1;min-width:12rem">${escH(r.line || '')}</span>
+      ${active && r.status !== 'cancel_requested' ? `<button class="danger" data-guide-stop="${r.id}">Stop the run</button>` : ''}</div>
+    <div class="dvt-now"><b class="lbl">What to do now</b>${dvtGuideNow(r, g)}${active ? dvtPromptControls(r) : ''}</div>
+    ${dvtGuideSystem(g.machine)}
+    <div><b class="mut" style="font-size:.74rem;letter-spacing:.06em">RUN LOG</b><ul class="dvt-log">${g.log.slice().reverse()
+      .map(e => `<li><span class="t">${e.t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><span>${escH(e.text)}</span></li>`).join('')}</ul></div>`;
+  go.disabled = active;
+  go.textContent = active ? 'Queued' : '▶ Run again';
+  const stop = box.querySelector('[data-guide-stop]');
+  if (stop) stop.onclick = () => { stop.disabled = true; stop.textContent = 'Stopping…'; dvtSend('/api/dvt/cancel', { id: r.id }); };
+  [...box.querySelectorAll('[data-dvt-answer]')].forEach(b => b.onclick = () => {
+    b.disabled = true;
+    dvtSend('/api/dvt/answer', { id: Number(b.dataset.dvtAnswer), value: JSON.parse(b.dataset.v) });
+  });
+  [...box.querySelectorAll('[data-dvt-answer-input]')].forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.dvtAnswerInput), el = box.querySelector('#dvt-in-' + id);
+    if (!el || el.value === '') return;
+    b.disabled = true;
+    dvtSend('/api/dvt/answer', { id, value: el.value });
+  });
+}
+/** The person's next action for the run's current stage (the runner only reports status, a line and questions). */
+function dvtGuideNow(r, g) {
+  const m = escH(g.machine);
+  switch (r.status) {
+    case 'queued': return `Wait - the DVT runner on ${m} picks the test up within a few seconds. If it stays queued, check that the runner shows online.`;
+    case 'waiting': return `Go to <b>${m}</b> and press <b>Start</b> on its screen (it asks to confirm ${escH(g.tid)}). Check the "Before you start" list below first. Nothing turns on until Start is pressed.`;
+    case 'running': return r.prompt ? 'The test is waiting for you - answer the question below.'
+      : 'The test is running by itself - nothing to do. Stay clear of the machine; keep this window open to follow it, or press Stop the run.';
+    case 'cancel_requested': return `Stopping - ${m} is turning everything off.`;
+    case 'done': return r.verdict ? `Finished with <b>${escH(r.verdict)}</b>. The result is recorded in the campaign. You can close the window.`
+      : 'Finished. You can close the window.';
+    case 'failed': return 'The run did not complete - read the reason above, fix it, then press Run again.';
+    case 'blocked': return 'The test could not start - the reason is above. Fix it, then press Run again.';
+    case 'cancelled': return 'The run was stopped. You can press Run again or close the window.';
+    default: return '';
+  }
+}
+/** The CureBox as its last sync reported it: connection, chamber temperature, door, UV, heating, cooling. */
+function dvtGuideSystem(name) {
+  const m = (MACHINES || []).find(x => x.name === name);
+  if (!m) return `<div class="dvt-sys"><span class="lbl">${escH(name)}</span><span class="mut">no status from this CureBox yet</span></div>`;
+  const s = m.state || {};
+  const chip = (cls, text) => `<span class="pill ${cls}">${text}</span>`;
+  const yes = (v, on, off, warn) => v === undefined ? '' : chip(v ? (warn ? 'warn' : 'on') : '', v ? on : off);
+  return `<div class="dvt-sys"><span class="lbl">${escH(name)} status</span>
+    ${chip(m.online ? 'on' : 'off', m.online ? 'online' : 'offline')}
+    ${typeof s.chamberTemp === 'number' ? chip('', `chamber ${s.chamberTemp.toFixed(1)}°C`) : ''}
+    ${s.doorClosed === undefined ? '' : chip(s.doorClosed ? 'on' : 'warn', s.doorClosed ? 'door closed' : 'door open')}
+    ${yes(s.uvOn, 'UV on', 'UV off', true)}${yes(s.isHeating, 'heating', 'heater off', true)}${yes(s.isCooling, 'cooling', 'not cooling', true)}
+    <span class="mut" style="font-size:.8rem">synced ${fmtAgo(m.lastSeen)}</span></div>`;
+}
+const dvtTitleOf = tid => { const r = document.querySelector(`[data-dvt-test="${tid}"] .tid + span`); return r ? r.textContent : ''; };
+
+function dvtRunPanel(u, runnable) {
+  if (SELECTED === 'all' || SELECTED === DVT_NONE) return `<p class="mut" style="margin:.2rem 0 .8rem">Choose a CureBox above to run tests on it.</p>`;
+  const runner = (DVT.runners || []).find(x => x.machine === SELECTED);
+  const reqs = (DVT.requests || []).filter(r => r.machine === SELECTED && r.unit === u);
+  const active = reqs.filter(r => DVT_ACTIVE_ST.includes(r.status));
+  const recent = reqs.filter(r => !DVT_ACTIVE_ST.includes(r.status)).slice(0, 8);
+  const state = runner && runner.online
+    ? `<span class="pill on">DVT runner online</span> <span class="mut">v${escH(runner.version)} · unit ${escH(runner.unit)}</span>`
+    : `<span class="pill off">DVT runner ${runner ? 'offline · seen ' + fmtWhen(runner.lastSeen) : 'not installed'}</span>
+       <span class="mut">requests wait in the queue until it is online</span>`;
+  const row = r => `<tr><td><b>${escH(r.testId)}</b></td>
+      <td><span class="pill ${reqClass(r.status)}">${DVT_REQ_LABEL[r.status] || escH(r.status)}</span>${r.verdict ? ` <span class="pill ${dvtClass(r.verdict)}">${escH(r.verdict)}</span>` : ''}</td>
+      <td class="mut">${escH(r.line)}${dvtPromptControls(r)}</td>
+      <td style="white-space:nowrap">${DVT_ACTIVE_ST.includes(r.status) && r.status !== 'cancel_requested' ? `<button data-dvt-cancel="${r.id}">Cancel</button>` : `<span class="mut">${fmtWhen(r.finished || r.requested)}</span>`}</td></tr>`;
+  return `<div class="dvt-runpanel">
+      <div class="row" style="gap:.6rem;align-items:center">${state}
+        <button class="primary" style="margin-left:auto" data-dvt-run-all="${escH(u)}" ${runnable.length ? '' : 'disabled'}>▶ Run all open tests (${runnable.length})</button></div>
+      <p class="mut" style="margin:.4rem 0 0;font-size:.85rem">Nothing turns on until someone at ${escH(SELECTED)} presses <b>Start</b> on its screen. Steps that need a person are asked here.</p>
+      ${DVT_MSG ? `<p class="err-t" style="margin:.4rem 0 0">${escH(DVT_MSG)}</p>` : ''}
+      ${active.length || recent.length ? `<table class="rq-table" style="margin-top:.6rem"><tr><th>Test</th><th>Status</th><th>On the machine</th><th></th></tr>
+        ${active.map(row).join('')}${recent.map(row).join('')}</table>` : ''}
+    </div>`;
+}
+
+function dvtCatalogCard(all, picker, where) {
+  const cat = DVT.catalog;
+  const stale = DVT.build && DVT.build !== PORTAL_BUILD
+    ? `<div class="dvt-prompt" style="margin-bottom:.8rem"><b>This page is out of date</b> - the portal was updated since it was opened.
+       <button class="primary" onclick="location.reload()" style="margin-left:.6rem">Reload</button></div>` : '';
+  const catUnits = [...new Set(Object.values(cat.tests).flatMap(t => t.units || []))].sort();
+  const withRuns = [...new Set(all.map(r => r.unit))].sort();
+  // only the units that really belong here (user, 2026-10-12: "there is only one machine"): the unit the CureBox's runner
+  // is set to and the units it has runs of. The catalog's other UUTs are the campaign plan, not machines - they are offered
+  // only in "All CureBoxes", or when a CureBox has neither a runner nor a run yet (then its first unit).
+  const runnerUnit = ((DVT.runners || []).find(x => x.machine === SELECTED) || {}).unit;
+  const own = [...new Set([...(runnerUnit ? [runnerUnit] : []), ...withRuns])].filter(x => catUnits.includes(x));
+  const anyBox = SELECTED === 'all' || SELECTED === DVT_NONE;
+  const units = own.length ? own : anyBox ? catUnits : catUnits.slice(0, 1);
+  if (!units.includes(DVT_UNIT)) DVT_UNIT = units[0];
+  const u = DVT_UNIT;
+  const byId = {};
+  all.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+  const q = SEARCH.trim().toLowerCase();
+  const owedIds = new Set();
+  const phases = cat.phases.map(p => {
+    const tests = (p.tests || []).filter(tid => cat.tests[tid] && (cat.tests[tid].units || []).includes(u)).map(tid => {
+      const t = cat.tests[tid];
+      const owed = (t.runs && t.runs.length ? t.runs : ['|1']).map(k => `${tid}|${u}|${k}`);
+      owed.forEach(id => owedIds.add(id));
+      return { tid, t, owed, verdict: dvtTestVerdict(owed, byId), done: owed.filter(id => (byId[id] || {}).verdict).length };
+    });
+    const pc = { PASS: 0, FAIL: 0, BLOCKED: 0 }, owedN = tests.reduce((n, x) => n + x.owed.length, 0);
+    tests.forEach(x => x.owed.forEach(id => { const v = (byId[id] || {}).verdict; if (v in pc) pc[v]++; }));
+    const shown = tests.filter(x => !q || [x.tid, x.t.title].some(v => (v || '').toLowerCase().includes(q)));
+    return { p, tests: shown, owedN, pc };
+  });
+  // the counters cover every run the catalog owes on this unit, like the DVT tool's
+  const n = { owed: owedIds.size, PASS: 0, FAIL: 0, BLOCKED: 0, WAIVED: 0, INVALID: 0 };
+  owedIds.forEach(id => { const v = (byId[id] || {}).verdict; if (v in n) n[v]++; });
+  const closed = n.PASS + n.FAIL + n.BLOCKED + n.WAIVED;
+  const open = n.owed - closed;
+  const pct = n.owed ? Math.round(closed / n.owed * 100) : 0;
+  const extra = Object.values(byId).filter(r => !owedIds.has(r.runId)).sort((a, b) => dvtWhen(b) - dvtWhen(a));
+  const tile = (num, label, cls) => `<div class="dvt-tile"><div class="num ${cls || ''}">${num}</div><div class="mut">${label}</div></div>`;
+  const runRow = id => {
+    const r = byId[id];
+    const [, , variant, rep] = id.split('|');
+    if (!r) return `<tr><td>${escH(variant) || '—'}</td><td data-l="Rep">r${rep}</td><td colspan=3 class="mut">not run yet</td></tr>`;
+    const o = DVT_OPEN.has(id);
+    return `<tr data-dvt-run="${escH(id)}" style="cursor:pointer"><td>${o ? '▾' : '▸'} ${escH(variant) || '—'}</td><td data-l="Rep">r${rep}</td>
+        <td data-l="Verdict"><span class="pill ${dvtClass(r.verdict)}">${escH(r.verdict) || 'open'}</span></td><td data-l="Operator">${escH(r.operator) || '—'}</td>
+        <td class="mut" data-l="Recorded">${fmtWhen(dvtWhen(r))}</td></tr>${o ? dvtRunDetail(r, 5) : ''}`;
+  };
+  const canRequest = SELECTED !== 'all' && SELECTED !== DVT_NONE;
+  const verdictOf = {};
+  phases.forEach(({ tests }) => tests.forEach(x => { verdictOf[x.tid] = x.verdict; }));
+  const runnerNow = (DVT.runners || []).find(r => r.machine === SELECTED) || null;
+  const activeReq = {};
+  (DVT.requests || []).filter(r => r.machine === SELECTED && r.unit === u && DVT_ACTIVE_ST.includes(r.status)).forEach(r => { activeReq[r.testId] = r; });
+  const runnable = [];
+  phases.forEach(({ tests }) => tests.forEach(x => { if (x.t.auto && !['PASS', 'FAIL', 'BLOCKED', 'WAIVED'].includes(x.verdict) && !activeReq[x.tid]) runnable.push(x.tid); }));
+  const phaseHtml = phases.map(({ p, tests, owedN, pc }) => {
+    const isOpen = DVT_PHASES_TOUCHED ? DVT_PHASE_OPEN.has(p.id) : true;
+    const head = `<div class="dvt-ph-head" data-dvt-phase="${p.id}">
+        <b class="ph-id">${p.id}</b><b>${escH(p.name)}</b>${p.gate ? `<span class="mut">Gate: ${escH(p.gate)}</span>` : ''}
+        <span style="margin-left:auto">${owedN ? `<span class="ok-t">${pc.PASS}P</span> / <span class="err-t">${pc.FAIL}F</span> / <span class="warn-t">${pc.BLOCKED}B</span> / ${owedN}` : '—'}</span>
+        <span class="mut">${isOpen ? '▾' : '▸'}</span></div>`;
+    if (!isOpen) return `<div class="dvt-phase">${head}</div>`;
+    const rows = tests.map(x => {
+      const [cls, ic] = DVT_ICON[x.verdict] || DVT_ICON.open;
+      const to = DVT_TEST_OPEN.has(x.tid);
+      return `<div class="dvt-test" data-dvt-test="${x.tid}">
+          <span class="dvt-ic ${cls}">${ic}</span><b class="tid">${x.tid}</b><span>${escH(x.t.title)}</span>
+          ${x.t.safety ? '<span class="badge safety">safety-critical</span>' : ''}${x.t.auto ? '<span class="badge auto">auto</span>' : ''}
+          <span class="mut" style="margin-left:auto;white-space:nowrap">${x.done}/${x.owed.length} ${new Set((x.t.runs || []).map(k => String(k).split('|')[0])).size > 1 ? 'cases' : 'runs'}${x.t.minutes ? ` · ~${x.t.minutes} min` : ''} ${to ? '▾' : '▸'}</span>
+          ${!canRequest ? '' : activeReq[x.tid] ? `<span class="pill ${reqClass(activeReq[x.tid].status)}">${DVT_REQ_LABEL[activeReq[x.tid].status]}</span>`
+            : x.t.auto ? `<button class="run-btn" data-dvt-run-test="${x.tid}" title="Queue this test on ${escH(SELECTED)} - one click runs ${x.owed.length > 1 ? 'all ' + x.owed.length + (new Set((x.t.runs || []).map(k => String(k).split('|')[0])).size > 1 ? ' cases' : ' runs') + ' one after another' : 'it'}; it starts when someone there presses Start">▶ Run</button>`
+            : '<span class="mut" style="font-size:.78rem" title="no automatic script - run it from the DVT tool">manual</span>'}</div>
+        ${to ? `<div class="dvt-runs">${dvtDetailHtml(x.tid, x, runnerNow, verdictOf)}<table class="cards"><tr><th>Variant</th><th>Rep</th><th>Verdict</th><th>Operator</th><th>Recorded</th></tr>${x.owed.map(runRow).join('')}</table></div>` : ''}`;
+    }).join('');
+    return `<div class="dvt-phase">${head}${rows || `<p class="mut" style="padding:.6rem 1rem">${q ? 'Nothing matches the search' : 'No tests on this unit'}</p>`}</div>`;
+  }).join('');
+  const chips = units.length < 2 ? '' : `<div class="row" style="margin:.2rem 0 .8rem">
+      <span class="mut" style="font-size:.85rem">Unit:</span>
+      ${units.map(x => `<button class="${u === x ? 'primary' : ''}" data-dvt-unit="${x}">${x}${withRuns.includes(x) ? '' : ' <span class="mut">·</span>'}</button>`).join('')}
+    </div>`;
+  return `<div class="card"><h2>DVT campaign${where}
+      <span class="mut" style="font-weight:400;text-transform:none">catalog ${escH(cat.version)} · ${u}</span></h2>
+    ${stale}<div class="row" style="margin-bottom:.6rem">${picker}</div>
+    ${chips}
+    <div class="dvt-sum">${tile(n.owed, 'Runs owed')}${tile(n.PASS, 'Pass', 'ok-t')}${tile(n.FAIL, 'Fail', 'err-t')}${tile(n.BLOCKED, 'Blocked', 'warn-t')}${tile(open, 'Open')}</div>
+    <div class="dvt-bar" title="${pct}% of the owed runs recorded"><div style="width:${pct}%"></div></div>
+    ${dvtRunPanel(u, runnable)}
+    ${phaseHtml}
+    ${extra.length ? `<div class="dvt-phase"><div class="dvt-ph-head"><b>Other uploaded runs</b>
+        <span class="mut">${extra.length} run(s) the catalog ${escH(cat.version)} no longer owes on ${u} (older catalog, other repetitions)</span></div>
+        <div class="dvt-runs"><table><tr><th>Test</th><th>Variant / rep</th><th>Verdict</th><th>Operator</th><th>Recorded</th></tr>
+        ${extra.map(r => `<tr><td><b>${escH(r.testId)}</b></td><td>${escH(r.variant) || '—'} r${r.rep}</td><td><span class="pill ${dvtClass(r.verdict)}">${escH(r.verdict) || 'open'}</span></td>
+          <td>${escH(r.operator) || '—'}</td><td class="mut">${fmtWhen(dvtWhen(r))}</td></tr>`).join('')}</table></div></div>` : ''}
+  </div>`;
+}
+
+function dvtCard() {
+  if (DVT === null) return `<div class="card"><h2>DVT</h2><p class="mut">Loading…</p></div>`;
+  // the CureBox list: every machine of the portal plus any CureBox a DVT unit was assigned to, and the unassigned runs
+  const boxes = [...new Set([...MACHINES.map(m => m.name), ...dvtMachines()])].sort();
+  const picker = `<label class="mut dvt-picker" style="font-size:.85rem">CureBox
+      <select id="dvt-machine" style="margin-left:.4rem">
+        <option value="all"${SELECTED === 'all' ? ' selected' : ''}>All CureBoxes</option>
+        ${boxes.map(b => `<option value="${b}"${SELECTED === b ? ' selected' : ''}>${b}</option>`).join('')}
+        <option value="${DVT_NONE}"${SELECTED === DVT_NONE ? ' selected' : ''}>Not assigned to a CureBox</option>
+      </select></label>`;
+  const all = (DVT.runs || []).filter(r => SELECTED === 'all' || (SELECTED === DVT_NONE ? !r.machine : r.machine === SELECTED));
+  const where = SELECTED === 'all' ? '' : SELECTED === DVT_NONE ? ' not assigned to a CureBox' : ` on ${SELECTED}`;
+  if (!all.length && !(DVT.catalog && DVT.catalog.phases)) return `<div class="card"><h2>DVT${where}</h2><div class="row" style="margin-bottom:.8rem">${picker}</div>
+    <p class="mut">${(DVT.runs || []).length ? `No DVT run${where} yet - choose another CureBox above.`
+      : `No DVT result has been uploaded yet. In the DVT tool (DVT/web/dvt-tool.html) open the <b>Cloud</b> box,
+         paste this portal's web-app URL and the DVT key, choose the unit's <b>CureBox</b>, and press <b>Sync all</b>.`}</p></div>`;
+  if (DVT.catalog && DVT.catalog.phases) return dvtCatalogCard(all, picker, where);
+  const units = [...new Set(all.map(r => r.unit))].sort();
+  if (DVT_UNIT !== 'all' && !units.includes(DVT_UNIT)) DVT_UNIT = 'all';
+  const q = SEARCH.trim().toLowerCase();
+  const runs = all
+    .filter(r => DVT_UNIT === 'all' || r.unit === DVT_UNIT)
+    .filter(r => !q || [r.unit, r.testId, r.variant, r.verdict, r.operator, r.note].some(v => (v || '').toLowerCase().includes(q)))
+    .sort((a, b) => dvtWhen(b) - dvtWhen(a));
+  const count = (list, v) => list.filter(r => (r.verdict || '').toLowerCase() === v).length;
+  const summary = units.map(u => {
+    const mine = all.filter(r => r.unit === u);
+    const tests = new Set(mine.map(r => r.testId)).size;
+    const last = Math.max(...mine.map(dvtWhen));
+    return `<tr><td><b>${u}</b></td><td>${tests}</td><td>${mine.length}</td>
+      <td><span class="pill on">${count(mine, 'pass')} pass</span></td>
+      <td><span class="pill ${count(mine, 'fail') ? 'off' : ''}">${count(mine, 'fail')} fail</span></td>
+      <td class="mut">${fmtWhen(last)}</td></tr>`;
+  }).join('');
+  const chips = `<div class="row" style="margin:.4rem 0 .8rem">
+      <span class="mut" style="font-size:.85rem">Unit:</span>
+      <button class="${DVT_UNIT === 'all' ? 'primary' : ''}" data-dvt-unit="all">All</button>
+      ${units.map(u => `<button class="${DVT_UNIT === u ? 'primary' : ''}" data-dvt-unit="${u}">${u}</button>`).join('')}
+    </div>`;
+  const rows = runs.map(r => {
+    const open = DVT_OPEN.has(r.runId);
+    const vals = Object.entries(r.values || {});
+    const detail = !open ? '' : `<tr><td colspan=8 style="background:var(--inset)">
+        ${vals.length ? `<table>${vals.map(([k, v]) => `<tr><td class="mut">${k}</td><td><b>${String(v).replace(/</g, '&lt;')}</b></td></tr>`).join('')}</table>`
+                      : '<span class="mut">No values recorded</span>'}
+        ${(r.files || []).length ? `<p style="margin:.5rem 0 0">${r.files.map(f =>
+            `<a href="${window.scureDvtFileHref ? window.scureDvtFileHref(DVT.fileUrl, f.id) : '#'}" target="_blank">${f.name}</a>
+             <span class="mut">(${f.kind || 'file'}, ${fmtBytes(f.size)})</span>`).join(' &middot; ')}</p>` : ''}
+        ${r.note ? `<p class="mut" style="margin:.5rem 0 0">${r.note.replace(/</g, '&lt;')}</p>` : ''}
+      </td></tr>`;
+    return `<tr data-dvt-run="${r.runId}" style="cursor:pointer">
+        <td>${open ? '▾' : '▸'} <b>${r.testId}</b></td><td>${r.variant || '—'}</td><td>r${r.rep}</td>
+        <td>${r.unit}</td><td>${r.machine || '<span class="mut">—</span>'}</td><td><span class="pill ${dvtClass(r.verdict)}">${r.verdict || '—'}</span></td>
+        <td>${r.operator || '—'}</td><td class="mut">${fmtWhen(dvtWhen(r))}</td></tr>${detail}`;
+  }).join('');
+  return `<div class="card"><h2>DVT campaign${where}
+      <span class="mut" style="font-weight:400;text-transform:none">${all.length} runs uploaded</span></h2>
+    <div class="row" style="margin-bottom:.8rem">${picker}</div>
+    <table><tr><th>Unit</th><th>Tests</th><th>Runs</th><th>Pass</th><th>Fail</th><th>Last</th></tr>${summary}</table>
+    ${chips}
+    <table><tr><th>Test</th><th>Variant</th><th>Rep</th><th>Unit</th><th>CureBox</th><th>Verdict</th><th>Operator</th><th>Recorded</th></tr>
+      ${rows || '<tr><td colspan=8 class="mut">Nothing matches the search</td></tr>'}</table></div>`;
+}
+
+// ---- Overview: the whole DVT campaign at a glance - KPIs, the machines with their integrators, and the Gantt chart ----
+// (the DVT spec, user 2026-10-22). Completion = valid finished runs / runs the catalog owes; the pass rate counts only
+// finished runs; INVALID (a run without a usable result) is neither finished nor passed.
+const GANTT_OPEN = new Set();
+const OV_COL = { PASS: '#16a34a', FAIL: '#dc2626', BLOCKED: '#d97706', WAIVED: '#6b7280', INVALID: '#9333ea', RUNNING: '#2563eb', open: '#d4d4d8' };
+const OV_DEFAULT_MIN = 10;     // a test without a duration estimate is drawn as this many minutes
+const ovHours = min => min >= 60 ? `${(min / 60).toFixed(min >= 600 ? 0 : 1)} h` : `${Math.round(min)} min`;
+const ovToday = () => new Date().toISOString().slice(0, 10);
+
+/** Everything the Overview shows about one unit: its tests in catalog order, the run counters, status, remaining time. */
+function dvtUnitModel(u, cat, runs, reg, requests) {
+  const byId = {};
+  runs.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+  const activeTests = new Set((requests || []).filter(q => q.unit === u && DVT_ACTIVE_ST.includes(q.status)).map(q => q.testId));
+  const tests = [];
+  (cat.phases || []).forEach(p => (p.tests || []).forEach(tid => {
+    const t = cat.tests[tid];
+    if (!t || !(t.units || []).includes(u)) return;
+    const owed = (t.runs && t.runs.length ? t.runs : ['|1']).map(k => `${tid}|${u}|${k}`);
+    const minutes = Number(t.minutes) > 0 ? Number(t.minutes) : OV_DEFAULT_MIN;
+    tests.push({ tid, title: t.title, phase: p.name, safety: !!t.safety, owed, minutes, per: minutes / owed.length,
+                 verdict: dvtTestVerdict(owed, byId), running: activeTests.has(tid) });
+  }));
+  const c = { total: 0, PASS: 0, FAIL: 0, BLOCKED: 0, WAIVED: 0, INVALID: 0, open: 0, doneMin: 0, totalMin: 0, safetyFails: 0 };
+  tests.forEach(x => x.owed.forEach(id => {
+    const v = String((byId[id] || {}).verdict || '').toUpperCase();
+    c.total++; c.totalMin += x.per;
+    if (v in c) c[v]++; else c.open++;
+    if (['PASS', 'FAIL', 'WAIVED'].includes(v)) c.doneMin += x.per;
+    if (v === 'FAIL' && x.safety) c.safetyFails++;
+  }));
+  const finished = c.PASS + c.FAIL + c.WAIVED;
+  const complete = c.total > 0 && finished === c.total;
+  let status = 'Not started';
+  if (complete) status = 'Complete';
+  else if (c.FAIL) status = 'Failures';
+  else if (c.BLOCKED || c.INVALID) status = 'Blocked';
+  else if (activeTests.size || finished) status = 'In progress';
+  const late = !complete && !!(reg.planEnd && ovToday() > reg.planEnd);
+  const ranBy = runs.filter(r => r.unit === u && r.machine).sort((a, b) => dvtWhen(b) - dvtWhen(a))[0];
+  const runnerOf = ((DVT && DVT.runners) || []).find(x => x.unit === u);
+  const machine = reg.machine || (ranBy && ranBy.machine) || (runnerOf && runnerOf.machine) || '';
+  return { u, reg, tests, c, finished, complete, status, late, machine, active: activeTests.size > 0,
+           remainingMin: Math.max(0, c.totalMin - c.doneMin),
+           completion: c.total ? finished / c.total * 100 : 0,
+           passRate: c.PASS + c.FAIL ? c.PASS / (c.PASS + c.FAIL) * 100 : null,
+           weighted: c.totalMin ? c.doneMin / c.totalMin * 100 : 0 };
+}
+
+const OV_STATUS_CLASS = { 'Complete': 'on', 'In progress': '', 'Failures': 'off', 'Blocked': 'warn', 'Not started': '' };
+
+/** The Gantt: a row per unit (its tests laid end to end by their estimated minutes), click a row for its tests. */
+function ganttSvg(models) {
+  const W = 1000, L = 96, R = 16, TOP = 24, ROW = 26, SUB = 15;
+  const maxMin = Math.max(60, ...models.map(m => m.tests.reduce((n, x) => n + x.minutes, 0)));
+  const scale = (W - L - R) / maxMin;
+  let y = TOP, body = '';
+  models.forEach(m => {
+    const open = GANTT_OPEN.has(m.u);
+    let x = L;
+    body += `<g class="gantt-row" data-gantt="${escH(m.u)}" style="cursor:pointer"><text x="6" y="${y + 17}" font-size="12" font-weight="700" fill="currentColor">${open ? '▾' : '▸'} ${escH(m.u)}</text>`;
+    m.tests.forEach(t => {
+      const w = Math.max(1.5, t.minutes * scale);
+      const col = t.running ? OV_COL.RUNNING : OV_COL[t.verdict] || OV_COL.open;
+      const part = t.verdict === 'progress' ? 0.5 : 1;
+      body += `<rect x="${x.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="${ROW - 8}" fill="${col}" opacity="${t.verdict === 'open' && !t.running ? 0.55 : 1}" stroke="var(--panel)" stroke-width="0.6"><title>${escH(t.tid)} ${escH(t.title)} - ${ovHours(t.minutes)} - ${t.running ? 'running' : escH(t.verdict)}</title></rect>`;
+      if (part < 1) body += `<rect x="${x.toFixed(1)}" y="${y + ROW - 7}" width="${(w * part).toFixed(1)}" height="2" fill="${OV_COL.RUNNING}"/>`;
+      x += t.minutes * scale;
+    });
+    body += '</g>';
+    y += ROW;
+    if (open) m.tests.forEach(t => {
+      body += `<text x="14" y="${y + 11}" font-size="10" fill="currentColor" opacity="0.8">${escH(t.tid)}</text>`;
+      const off = m.tests.slice(0, m.tests.indexOf(t)).reduce((n, q) => n + q.minutes, 0);
+      const col = t.running ? OV_COL.RUNNING : OV_COL[t.verdict] || OV_COL.open;
+      body += `<rect x="${(L + off * scale).toFixed(1)}" y="${y + 2}" width="${Math.max(1.5, t.minutes * scale).toFixed(1)}" height="${SUB - 5}" fill="${col}" opacity="${t.verdict === 'open' && !t.running ? 0.55 : 1}"><title>${escH(t.tid)} ${escH(t.title)} - ${ovHours(t.minutes)}</title></rect>`;
+      y += SUB;
+    });
+  });
+  // the time axis: whole hours (or minutes on a short chart), the width being the longest unit
+  const step = maxMin > 1200 ? 240 : maxMin > 480 ? 120 : maxMin > 120 ? 60 : 30;
+  let axis = '';
+  for (let mn = 0; mn <= maxMin; mn += step) {
+    const gx = L + mn * scale;
+    axis += `<line x1="${gx.toFixed(1)}" y1="${TOP - 6}" x2="${gx.toFixed(1)}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${gx.toFixed(1)}" y="12" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.7">${mn >= 60 ? mn / 60 + ' h' : mn + ' min'}</text>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${y + 8}" style="width:100%;height:auto;color:var(--text)" role="img" aria-label="DVT Gantt chart">${axis}${body}</svg>`;
+}
+
+function overviewCard() {
+  if (!DVT || !DVT.catalog) return `<div class="card"><h2>Overview</h2><p class="mut">${DVT ? 'No DVT catalog has reached the portal yet - open the DVT tool once with the cloud connected.' : 'Loading…'}</p></div>`;
+  const cat = DVT.catalog, runs = DVT.runs || [];
+  const regOf = {};
+  (DVT.units || []).forEach(x => { regOf[x.unit] = x; });
+  const unitNames = [...new Set([...Object.values(cat.tests).flatMap(t => t.units || []), ...(DVT.units || []).map(x => x.unit)])].sort();
+  const models = unitNames.map(u => dvtUnitModel(u, cat, runs, regOf[u] || { unit: u }, DVT.requests));
+  const sum = k => models.reduce((n, m) => n + m.c[k], 0);
+  const total = sum('total'), finished = models.reduce((n, m) => n + m.finished, 0);
+  const pass = sum('PASS'), fail = sum('FAIL'), blocked = sum('BLOCKED'), invalid = sum('INVALID'), waived = sum('WAIVED');
+  const totalMin = models.reduce((n, m) => n + m.c.totalMin, 0), doneMin = models.reduce((n, m) => n + m.c.doneMin, 0);
+  const remaining = Math.max(0, totalMin - doneMin);
+  const slowest = Math.max(0, ...models.map(m => m.remainingMin));
+  const critical = sum('safetyFails') + blocked;
+  const tile = (num, label, cls) => `<div class="dvt-tile"><div class="num ${cls || ''}">${num}</div><div class="mut">${label}</div></div>`;
+  const pct = (a, b) => !b ? '—' : a / b * 100 < 10 && a ? `${(a / b * 100).toFixed(1)} %` : `${Math.round(a / b * 100)} %`;
+  const active = models.filter(m => m.status === 'In progress' || m.active).length;
+  const stale = DVT.build && DVT.build !== PORTAL_BUILD
+    ? `<div class="dvt-prompt" style="margin-bottom:.8rem"><b>This page is out of date</b> - the portal was updated since it was opened.
+       <button class="primary" onclick="location.reload()" style="margin-left:.6rem">Reload</button></div>` : '';
+  const online = name => { const m = MACHINES.find(x => x.name === name); return m ? (m.online ? ' ●' : ' ○') : ''; };
+  const inp = (u, f, v, ph, type) => `<input data-ov-unit="${escH(u)}" data-ov-field="${f}" type="${type || 'text'}" value="${escH(v || '')}" placeholder="${ph}" style="width:${type === 'date' ? '9.5' : '8'}rem">`;
+  const rows = models.map(m => `<tr>
+      <td><b>${escH(m.u)}</b><br><span class="mut">${escH(m.machine) || 'no machine yet'}${online(m.machine)}</span></td>
+      <td data-l="Integrator">${inp(m.u, 'integrator', m.reg.integrator, 'Integrator')}</td>
+      <td data-l="Revisions">${inp(m.u, 'hwRev', m.reg.hwRev, 'HW rev')}<br>${inp(m.u, 'fwVersion', m.reg.fwVersion, 'Firmware')}</td>
+      <td data-l="Plan">${inp(m.u, 'planStart', m.reg.planStart, 'Start', 'date')}<br>${inp(m.u, 'planEnd', m.reg.planEnd, 'Planned end', 'date')}</td>
+      <td data-l="Progress" style="min-width:9rem"><div class="dvt-bar" style="margin:.2rem 0"><div style="height:100%;width:${m.completion.toFixed(0)}%;background:${OV_COL.PASS}"></div></div>
+        ${m.completion > 0 && m.completion < 10 ? m.completion.toFixed(1) : Math.round(m.completion)} % · ${m.finished}/${m.c.total} runs<br><span class="mut">${m.weighted > 0 && m.weighted < 10 ? m.weighted.toFixed(1) : Math.round(m.weighted)} % by time</span></td>
+      <td data-l="Status"><span class="pill ${OV_STATUS_CLASS[m.status] || ''}">${m.status}</span>${m.late ? ' <span class="pill off">Delayed</span>' : ''}<br>
+        <span class="mut">${m.c.PASS} pass · ${m.c.FAIL} fail${m.c.BLOCKED ? ' · ' + m.c.BLOCKED + ' blocked' : ''}${m.c.INVALID ? ' · ' + m.c.INVALID + ' invalid' : ''}</span></td>
+      <td data-l="Remaining">${m.complete ? '—' : '≈ ' + ovHours(m.remainingMin)}</td></tr>`).join('');
+  return stale + `<div class="card"><h2>DVT overview <span class="mut" style="font-weight:400;text-transform:none">catalog ${escH(cat.version || '')} · ${models.length} units</span></h2>
+    <div class="dvt-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem;margin-bottom:1rem">
+      ${tile(models.length, 'Machines (units)')}${tile(active, 'Active')}${tile(total, 'Runs planned')}${tile(finished, 'Runs finished')}
+      ${tile(pct(finished, total), 'Completion', 'ok')}${tile(pass, 'Passed', 'ok')}${tile(fail, 'Failed', fail ? 'err' : '')}
+      ${tile(blocked, 'Blocked', blocked ? 'warn' : '')}${tile(invalid, 'Invalid', invalid ? 'warn' : '')}${tile(waived, 'Waived')}
+      ${tile(pct(pass, pass + fail), 'Pass rate')}${tile(pct(doneMin, totalMin), 'Progress by time')}
+      ${tile(ovHours(remaining), 'Test time left')}${tile(ovHours(slowest), 'Until the slowest unit is done')}${tile(critical, 'Critical issues', critical ? 'err' : '')}
+    </div>
+    <p class="mut" style="margin:.2rem 0 .8rem">Completion counts valid finished runs (pass, fail, waived) of the runs the catalog owes. The pass rate counts only finished runs.
+      Time is the catalog's estimate for what is still open; units run in parallel, so the last column is the one to plan by.
+      Critical issues = failed safety tests + blocked runs.</p></div>
+    <div class="card"><h2>Machines and integrators</h2>
+      <div style="overflow-x:auto"><table class="ov-units"><tr><th>Unit</th><th>Integrator</th><th>Revisions</th><th>Plan</th><th>Progress</th><th>Status</th><th>Remaining</th></tr>${rows}</table></div>
+      <p class="mut" style="margin:.5rem 0 0">Changes are saved when you leave a field.</p></div>
+    <div class="card"><h2>Gantt <span class="mut" style="font-weight:400;text-transform:none">each unit's tests end to end by their estimated duration · click a unit for its tests</span></h2>
+      ${ganttSvg(models)}
+      <div class="row" style="gap:.9rem;margin-top:.4rem;flex-wrap:wrap">${['PASS', 'FAIL', 'BLOCKED', 'WAIVED', 'INVALID', 'RUNNING', 'open'].map(k =>
+        `<span class="mut" style="font-size:.8rem"><span style="display:inline-block;width:.8rem;height:.8rem;border-radius:2px;background:${OV_COL[k]};vertical-align:-1px"></span> ${k === 'open' ? 'not run' : k.toLowerCase()}</span>`).join('')}</div></div>`;
+}
+
+function overviewWire() {
+  [...document.querySelectorAll('[data-gantt]')].forEach(g => g.onclick = () => {
+    const u = g.dataset.gantt;
+    if (GANTT_OPEN.has(u)) GANTT_OPEN.delete(u); else GANTT_OPEN.add(u);
+    render();
+  });
+  [...document.querySelectorAll('[data-ov-unit]')].forEach(i => i.onchange = async () => {
+    i.style.outline = '';
+    try {
+      const r = await api('/api/dvt/unit', { method: 'POST', body: JSON.stringify({ unit: i.dataset.ovUnit, fields: { [i.dataset.ovField]: i.value } }) });
+      if (!r.ok) { i.style.outline = '2px solid var(--err)'; i.title = r.message || 'not saved'; return; }
+      i.title = 'saved';
+      await loadDvt();
+    } catch { i.style.outline = '2px solid var(--err)'; }
+  });
+}
+
+// ---- Compare: the recorded results of one test side by side, and the measured curves laid over each other ----
+// How it works (user, 2026-10-22: "build a system to compare the data"): every run records its values (numbers, yes/no
+// checks, text) and its raw sample files. A comparison needs a fixed test and variant; then the columns are either the UNITS
+// (is every machine the same?) or the RUNS of one unit (is it repeatable, did it drift after a change?). A number is compared with
+// a reference column and flagged when it is off by more than the tolerance; a yes/no check is flagged when the columns disagree.
+const CMP = { mode: 'units', test: '', variant: null, unit: '', basis: 'latest', ref: '', tol: 10, kind: '', col: '', texts: {}, loading: false, err: '' };
+const CMP_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#4b5563'];
+const cmpIsStamp = k => /(^|_)(timestamp|time_stamp)$|^timestamp/i.test(k);
+const cmpNum = v => typeof v === 'number' && isFinite(v);
+const cmpFmt = v => cmpNum(v) ? (Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 100 ? v.toFixed(1) : String(Math.round(v * 1000) / 1000)) : v === true ? 'yes' : v === false ? 'no' : v == null ? '—' : String(v);
+
+/** Runs that recorded something, with their values. */
+const cmpRuns = () => ((DVT && DVT.runs) || []).filter(r => r.values && Object.keys(r.values).length);
+
+/** The columns of the comparison: one per unit (latest run, or the mean of its repetitions) or one per run of a unit. */
+function cmpColumns(runs) {
+  const sel = runs.filter(r => r.testId === CMP.test && (CMP.variant === null || r.variant === CMP.variant));
+  if (CMP.mode === 'runs') {
+    return sel.filter(r => r.unit === CMP.unit).sort((a, b) => dvtWhen(a) - dvtWhen(b)).map(r => ({
+      label: `r${r.rep}${r.variant ? ' ' + r.variant : ''}`, sub: fmtWhen(dvtWhen(r)), unit: r.unit, runs: [r], values: r.values, verdict: String(r.verdict || '').toUpperCase() }));
+  }
+  const byUnit = {};
+  sel.forEach(r => { (byUnit[r.unit] = byUnit[r.unit] || []).push(r); });
+  const owedBy = ((DVT.catalog.tests[CMP.test] || {}).units || []);
+  return [...new Set([...owedBy, ...Object.keys(byUnit)])].sort().map(u => {
+    if (!byUnit[u]) return { label: u, sub: 'no results yet', unit: u, runs: [], values: {}, verdict: '', empty: true };
+    const rs = byUnit[u].sort((a, b) => dvtWhen(a) - dvtWhen(b));
+    const last = rs[rs.length - 1];
+    let values = last.values;
+    if (CMP.basis === 'mean' && rs.length > 1) {
+      values = {};
+      const keys = [...new Set(rs.flatMap(r => Object.keys(r.values)))];
+      keys.forEach(k => {
+        const nums = rs.map(r => r.values[k]).filter(cmpNum);
+        values[k] = nums.length === rs.filter(r => r.values[k] != null).length && nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : last.values[k];
+      });
+    }
+    return { label: u, sub: rs.length > 1 ? `${rs.length} runs (${CMP.basis === 'mean' ? 'mean' : 'latest'})` : fmtWhen(dvtWhen(last)), unit: u, runs: rs, values, verdict: String(last.verdict || '').toUpperCase() };
+  });
+}
+
+/** One row per recorded field: kind (number / check / text), the cells, and what stands out. */
+function cmpRows(cols, tol, refIdx) {
+  const keys = [];
+  cols.forEach(c => Object.keys(c.values).forEach(k => { if (!keys.includes(k)) keys.push(k); }));
+  const rows = keys.map(k => {
+    const vals = cols.map(c => c.values[k]);
+    const present = vals.filter(v => v != null);
+    const kind = cmpIsStamp(k) ? 'stamp' : present.length && present.every(cmpNum) ? 'num' : present.length && present.every(v => typeof v === 'boolean') ? 'bool' : 'text';
+    const row = { k, vals, kind, flag: 0, cells: vals.map(() => 0) };
+    if (kind === 'num') {
+      const ns = present;
+      row.min = Math.min(...ns); row.max = Math.max(...ns); row.mean = ns.reduce((a, b) => a + b, 0) / ns.length;
+      row.spread = row.max - row.min;
+      row.spreadPct = row.mean ? row.spread / Math.abs(row.mean) * 100 : null;
+      const ref = vals[refIdx];
+      row.dev = vals.map((v, i) => !cmpNum(v) || !cmpNum(ref) || i === refIdx ? null : ref ? (v - ref) / Math.abs(ref) * 100 : (v - ref));
+      row.dev.forEach((d, i) => { if (d == null) return; const a = Math.abs(d); row.cells[i] = a > 2 * tol ? 2 : a > tol ? 1 : 0; });
+    } else if (kind === 'bool' || kind === 'text') {
+      const first = vals[refIdx];
+      vals.forEach((v, i) => { if (i !== refIdx && v != null && first != null && String(v) !== String(first)) row.cells[i] = kind === 'bool' ? 2 : 1; });
+    }
+    row.flag = Math.max(0, ...row.cells);
+    return row;
+  });
+  const order = { num: 0, bool: 1, text: 2, stamp: 3 };
+  return rows.sort((a, b) => order[a.kind] - order[b.kind]);
+}
+
+/** CSV text -> {header, rows} with numbers parsed (quote-aware, the tool's csvText). */
+function cmpParseCsv(text) {
+  const lines = String(text || '').split(/\r?\n/).filter(l => l.length);
+  const split = l => {
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < l.length; i++) {
+      const ch = l[i];
+      if (q) { if (ch === '"' && l[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+      else if (ch === '"') q = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  };
+  if (!lines.length) return { header: [], rows: [] };
+  const header = split(lines[0]);
+  const rows = lines.slice(1).map(l => split(l).map(v => (v !== '' && isFinite(Number(v)) ? Number(v) : v === '' ? null : v)));
+  return { header, rows };
+}
+
+/** The sample files of the compared runs, by kind: {kind: [{id, name, col (column label), run}]}. */
+function cmpFiles(cols) {
+  const out = {};
+  cols.forEach(c => c.runs.forEach(r => (r.files || []).forEach(f => {
+    if (!/\.csv$/i.test(f.name)) return;
+    (out[f.kind] = out[f.kind] || []).push({ id: f.id, name: f.name, label: CMP.mode === 'runs' ? `r${r.rep} ${fmtWhen(dvtWhen(r))}` : `${c.unit}${r.rep > 1 ? ' r' + r.rep : ''}`, run: r });
+  })));
+  return out;
+}
+
+async function cmpLoadFiles(list) {
+  const need = list.filter(f => !(f.id in CMP.texts)).map(f => f.id).slice(0, 8);
+  if (!need.length || CMP.loading) return;
+  CMP.loading = true; CMP.err = '';
+  if (VIEW === 'compare') render();
+  try {
+    const r = await api('/api/dvt/files', { method: 'POST', body: JSON.stringify({ ids: need }) });
+    if (r && r.files) need.forEach(id => { CMP.texts[id] = r.files[id] ? cmpParseCsv(r.files[id].text) : { header: [], rows: [] }; });
+    else CMP.err = (r && r.message) || 'the files could not be loaded';
+  } catch { CMP.err = 'the files could not be loaded'; }
+  CMP.loading = false;
+  if (VIEW === 'compare') render();
+}
+
+/** The curves of the chosen column, one line per file, on shared axes. */
+function cmpChart(series, xName, yName) {
+  const W = 1000, H = 340, L = 56, R = 16, T = 12, B = 34;
+  const pts = series.flatMap(s => s.pts);
+  if (!pts.length) return '<p class="mut">No numeric samples in this column.</p>';
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (x1 === x0) x1 = x0 + 1;
+  if (y1 === y0) { y1 += 1; y0 -= 1; }
+  const pad = (y1 - y0) * 0.06; y0 -= pad; y1 += pad;
+  const sx = x => L + (x - x0) / (x1 - x0) * (W - L - R), sy = y => T + (1 - (y - y0) / (y1 - y0)) * (H - T - B);
+  let g = '';
+  for (let i = 0; i <= 5; i++) {
+    const yv = y0 + (y1 - y0) * i / 5, xv = x0 + (x1 - x0) * i / 5;
+    g += `<line x1="${L}" y1="${sy(yv).toFixed(1)}" x2="${W - R}" y2="${sy(yv).toFixed(1)}" stroke="var(--line)"/><text x="${L - 6}" y="${(sy(yv) + 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity="0.7">${cmpFmt(Math.round(yv * 100) / 100)}</text>`;
+    g += `<text x="${sx(xv).toFixed(1)}" y="${H - 18}" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.7">${cmpFmt(Math.round(xv * 10) / 10)}</text>`;
+  }
+  const lines = series.map((s, i) => `<polyline fill="none" stroke="${CMP_COLORS[i % CMP_COLORS.length]}" stroke-width="1.6" points="${s.pts.map(p => sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join(' ')}"><title>${escH(s.label)}</title></polyline>`).join('');
+  const legend = series.map((s, i) => `<span style="font-size:.8rem"><span style="display:inline-block;width:.9rem;height:3px;background:${CMP_COLORS[i % CMP_COLORS.length]};vertical-align:middle"></span> ${escH(s.label)}</span>`).join(' &nbsp; ');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--text)" role="img" aria-label="Curve comparison">${g}${lines}
+    <text x="${(L + W - R) / 2}" y="${H - 4}" font-size="11" text-anchor="middle" fill="currentColor">${escH(xName)}</text>
+    <text x="12" y="${H / 2}" font-size="11" text-anchor="middle" fill="currentColor" transform="rotate(-90 12 ${H / 2})">${escH(yName)}</text></svg>
+    <div class="row" style="gap:.4rem;flex-wrap:wrap;margin-top:.3rem">${legend}</div>`;
+}
+
+
+/** Every test against every unit of the campaign: who has run what, and where the units disagree. */
+function cmpMatrix() {
+  const cat = DVT.catalog, runs = DVT.runs || [];
+  const regOf = {};
+  (DVT.units || []).forEach(x => { regOf[x.unit] = x; });
+  const unitNames = [...new Set(Object.values(cat.tests).flatMap(t => t.units || []))].sort();
+  const models = unitNames.map(u => dvtUnitModel(u, cat, runs, regOf[u] || { unit: u }, DVT.requests));
+  const head = models.map(m => `<th style="text-align:center">${escH(m.u)}<br><span class="mut" style="font-weight:400">${Math.round(m.completion)} % done</span></th>`).join('');
+  let flagged = 0;
+  const body = (cat.phases || []).map(p => {
+    const rows = (p.tests || []).filter(tid => cat.tests[tid]).map(tid => {
+      const cells = models.map(m => { const t = m.tests.find(x => x.tid === tid); return t ? (t.running ? 'RUNNING' : t.verdict) : null; });
+      const done = cells.filter(v => ['PASS', 'FAIL', 'WAIVED'].includes(v));
+      const differs = new Set(done).size > 1;
+      if (differs) flagged++;
+      const pill = v => v === null ? '<span class="mut">n/a</span>' : v === 'open' ? '<span class="mut">not run</span>' : v === 'progress' ? '<span class="pill">partly</span>' : v === 'RUNNING' ? '<span class="pill">running</span>' : `<span class="pill ${dvtClass(v)}">${escH(v)}</span>`;
+      return `<tr class="cmp-mrow" data-test="${escH(tid)}" data-flag="${differs ? 1 : 0}" style="cursor:pointer;${differs ? 'background:rgba(220,38,38,.07)' : ''}">
+        <td><b>${escH(tid)}</b> <span class="mut">${escH(cat.tests[tid].title)}</span>${differs ? ' <span class="pill off">units differ</span>' : ''}</td>${cells.map(v => `<td style="text-align:center">${pill(v)}</td>`).join('')}</tr>`;
+    }).join('');
+    return rows ? `<tr><td colspan="${models.length + 1}" class="mut" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;padding-top:.8rem">${escH(p.name)}</td></tr>${rows}` : '';
+  }).join('');
+  return `<p class="mut" style="margin:.2rem 0 .8rem">${flagged ? flagged + ' test(s) have finished with a different result on different units.' : 'No test has finished with different results on different units.'}
+      Click a test to compare its values.</p>
+    <div style="overflow-x:auto"><table class="cmp-table"><tr><th>Test</th>${head}</tr>${body}</table></div>`;
+}
+
+function compareCard() {
+  if (!DVT || !DVT.catalog) return `<div class="card"><h2>Compare</h2><p class="mut">${DVT ? 'No DVT catalog has reached the portal yet.' : 'Loading…'}</p></div>`;
+  const runs = cmpRuns(), cat = DVT.catalog;
+  const testIds = [...new Set(runs.map(r => r.testId))].sort();
+  if (CMP.mode === 'matrix') return `<div class="card"><h2>Compare results <span class="mut" style="font-weight:400;text-transform:none">all units, all tests</span></h2>
+    <div class="row" style="gap:1rem;align-items:flex-end;margin-bottom:.8rem">${cmpModeSelect()}</div>${cmpMatrix()}</div>`;
+  if (!testIds.length) return `<div class="card"><h2>Compare</h2><div class="row" style="margin-bottom:.8rem">${cmpModeSelect()}</div><p class="mut">No run has recorded values yet. Once tests have results on the units, they can be compared here.</p></div>`;
+  if (!testIds.includes(CMP.test)) { CMP.test = testIds[0]; CMP.variant = null; }
+  const ofTest = runs.filter(r => r.testId === CMP.test);
+  const variants = [...new Set(ofTest.map(r => r.variant))];
+  if (CMP.variant === null || !variants.includes(CMP.variant)) CMP.variant = variants[0];
+  const units = [...new Set(ofTest.map(r => r.unit))].sort();
+  if (!units.includes(CMP.unit)) CMP.unit = units[0];
+  const cols = cmpColumns(runs);
+  const withData = cols.filter(c => !c.empty);
+  if (!withData.some(c => c.unit === CMP.ref) || CMP.mode === 'runs') CMP.ref = withData[0] ? withData[0].unit : '';
+  const refIdx = CMP.mode === 'runs' ? 0 : Math.max(0, cols.findIndex(c => c.unit === CMP.ref));
+  const rows = cmpRows(cols, CMP.tol, refIdx);
+  const title = t => `${t}${cat.tests[t] ? ' - ' + cat.tests[t].title : ''}`;
+  const sel = (id, opts, cur, label) => `<label class="mut" style="font-size:.8rem">${label}<br><select id="${id}">${opts.map(([v, t, off]) => `<option value="${escH(v)}" ${off ? 'disabled' : ''} ${String(v) === String(cur) ? 'selected' : ''}>${escH(t)}</option>`).join('')}</select></label>`;
+  const controls = `<div class="row cmp-controls" style="gap:1rem;align-items:flex-end;margin-bottom:.8rem;flex-wrap:wrap">
+      ${sel('cmp-test', testIds.map(t => [t, title(t)]), CMP.test, 'Test')}
+      ${variants.length > 1 || variants[0] ? sel('cmp-variant', variants.map(v => [v, v || '—']), CMP.variant, 'Variant') : ''}
+      ${cmpModeSelect()}
+      ${CMP.mode === 'runs' ? sel('cmp-unit', units.map(u => [u, u]), CMP.unit, 'Unit')
+        : sel('cmp-ref', cols.map(c => [c.unit, c.empty ? c.unit + ' (no results)' : c.unit, c.empty]), CMP.ref, 'Reference unit') + sel('cmp-basis', [['latest', 'Latest run'], ['mean', 'Mean of repetitions']], CMP.basis, 'Value of a unit')}
+      <label class="mut" style="font-size:.8rem">Tolerance<br><input id="cmp-tol" type="number" min="0.1" step="0.5" value="${CMP.tol}" style="width:5rem"> %</label></div>`;
+  let table;
+  if (!cols.length) table = '<p class="mut">No recorded run for this selection.</p>';
+  else {
+    const head = cols.map((c, i) => `<th style="text-align:right${c.empty ? ';opacity:.55' : ''}">${escH(c.label)}${i === refIdx ? ' <span class="badge">ref</span>' : ''}<br><span class="mut" style="font-weight:400">${escH(c.sub)}</span></th>`).join('');
+    const showStats = withData.length > 1;
+    const verdictCells = cols.map(c => `<td style="text-align:right">${c.empty ? '<span class="mut">—</span>' : `<span class="pill ${dvtClass(c.verdict)}">${escH(c.verdict) || 'open'}</span>`}</td>`).join('');
+    const tint = f => f === 2 ? 'background:rgba(220,38,38,.14);font-weight:700' : f === 1 ? 'background:rgba(217,119,6,.16)' : '';
+    const body = rows.map(r => {
+      const cells = r.vals.map((v, i) => {
+        const dev = r.dev && r.dev[i] != null ? `<br><span class="mut" style="font-size:.75rem">${r.dev[i] > 0 ? '+' : ''}${r.dev[i].toFixed(1)} %</span>` : '';
+        return `<td style="text-align:right;${tint(r.cells[i])}">${r.kind === 'text' || r.kind === 'stamp' ? `<span class="mut" style="font-size:.8rem">${escH(cmpFmt(v))}</span>` : escH(cmpFmt(v))}${dev}</td>`;
+      }).join('');
+      const stats = !showStats ? '' : r.kind === 'num'
+        ? `<td class="mut" style="text-align:right">${cmpFmt(r.min)} .. ${cmpFmt(r.max)}</td><td style="text-align:right;${r.spreadPct != null && r.spreadPct > CMP.tol ? 'font-weight:700' : ''}">${r.spreadPct == null ? cmpFmt(r.spread) : r.spreadPct.toFixed(1) + ' %'}</td>`
+        : `<td></td><td style="text-align:right">${r.flag ? 'differs' : ''}</td>`;
+      return `<tr class="cmp-row" data-flag="${r.flag}"><td><b>${escH(r.k)}</b></td>${cells}${stats}</tr>`;
+    }).join('');
+    const flagged = rows.filter(r => r.flag).length;
+    table = `<div style="overflow-x:auto"><table class="cmp-table"><tr><th>Field</th>${head}${showStats ? '<th style="text-align:right">Range</th><th style="text-align:right">Spread</th>' : ''}</tr>
+        <tr><td><b>Result</b></td>${verdictCells}${showStats ? '<td></td><td></td>' : ''}</tr>${body}</table></div>
+      <p class="mut" style="margin:.5rem 0 0">${withData.length < 2 ? (CMP.mode === 'runs' ? 'Only one run of this unit recorded this test - nothing to compare yet.' : `Only one unit has results for this test - nothing to compare yet${cols.some(c => c.empty) ? ' (no results yet on ' + cols.filter(c => c.empty).map(c => c.unit).join(', ') + ')' : ''}.`)
+        : `${flagged ? flagged + ' of ' + rows.length + ' fields stand out' : 'No field stands out'}: amber = off the reference by more than ${CMP.tol} % (or a text that differs), red = by more than ${2 * CMP.tol} % (or a yes / no check that differs).
+          Spread = (max - min) / mean. The reference is the ${CMP.mode === 'runs' ? 'first run' : 'chosen unit'}.`}</p>`;
+  }
+  // the curves
+  const files = cmpFiles(cols), kinds = Object.keys(files).sort();
+  let curves = '';
+  if (kinds.length) {
+    if (!kinds.includes(CMP.kind)) { CMP.kind = kinds[0]; CMP.col = ''; }
+    const list = files[CMP.kind];
+    const loaded = list.filter(f => CMP.texts[f.id] && CMP.texts[f.id].header.length);
+    const header = loaded.length ? CMP.texts[loaded[0].id].header : [];
+    const numCols = header.filter((h, i) => i > 0 && loaded.some(f => CMP.texts[f.id].rows.some(r => cmpNum(r[i]))));
+    if (!numCols.includes(CMP.col)) CMP.col = numCols[0] || '';
+    let chart = '';
+    if (CMP.err) chart = `<p class="pill off">${escH(CMP.err)}</p>`;
+    else if (CMP.loading) chart = '<p class="mut">Loading the files…</p>';
+    else if (list.some(f => !(f.id in CMP.texts))) chart = `<p class="mut">${list.filter(f => !(f.id in CMP.texts)).length} file(s) not loaded yet.</p>`;
+    else if (CMP.col) {
+      const xi = 0, yi = header.indexOf(CMP.col);
+      const series = loaded.map(f => {
+        const d = CMP.texts[f.id], step = Math.max(1, Math.floor(d.rows.length / 800));
+        return { label: f.label, pts: d.rows.filter((r, i) => i % step === 0 && cmpNum(r[xi]) && cmpNum(r[d.header.indexOf(CMP.col)])).map(r => [r[xi], r[d.header.indexOf(CMP.col)]]) };
+      }).filter(s => s.pts.length);
+      chart = yi < 0 ? '' : series.length ? cmpChart(series, header[0], CMP.col) : '<p class="mut">No numeric samples in this column.</p>';
+    } else chart = '<p class="mut">These files have no numeric column to plot.</p>';
+    curves = `<div class="card"><h2>Curves <span class="mut" style="font-weight:400;text-transform:none">${list.length} file(s) of the compared ${CMP.mode === 'runs' ? 'runs' : 'units'}, laid on one chart</span></h2>
+      <div class="row" style="gap:1rem;align-items:flex-end;margin-bottom:.6rem;flex-wrap:wrap">
+        ${sel('cmp-kind', kinds.map(k => [k, k.replace(/_/g, ' ') + ' (' + files[k].length + ')']), CMP.kind, 'Measurement')}
+        ${numCols.length ? sel('cmp-col', numCols.map(c => [c, c]), CMP.col, 'Column') : ''}
+        <button id="cmp-load" ${CMP.loading ? 'disabled' : ''}>${loaded.length === list.length ? 'Reload' : 'Load the curves'}</button></div>${chart}</div>`;
+  }
+  return `<div class="card"><h2>Compare results <span class="mut" style="font-weight:400;text-transform:none">${escH(title(CMP.test))}</span></h2>${controls}${table}</div>${curves}`;
+}
+
+const cmpModeSelect = () => `<label class="mut" style="font-size:.8rem">Compare<br><select id="cmp-mode">${[['units', 'Across units'], ['runs', 'Across runs of one unit'], ['matrix', 'All units, all tests']]
+  .map(([v, t]) => `<option value="${v}" ${v === CMP.mode ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
+
+function compareWire() {
+  [...document.querySelectorAll('.cmp-mrow')].forEach(r => r.onclick = () => { CMP.test = r.dataset.test; CMP.variant = null; CMP.mode = 'units'; CMP.kind = ''; CMP.col = ''; render(); });
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onchange = () => { CMP.err = ''; fn(el.value); render(); }; };
+  on('cmp-test', v => { CMP.test = v; CMP.variant = null; CMP.kind = ''; CMP.col = ''; });
+  on('cmp-variant', v => { CMP.variant = v; CMP.kind = ''; });
+  on('cmp-mode', v => { CMP.mode = v; CMP.kind = ''; });
+  on('cmp-unit', v => { CMP.unit = v; CMP.kind = ''; });
+  on('cmp-ref', v => { CMP.ref = v; });
+  on('cmp-basis', v => { CMP.basis = v; });
+  on('cmp-tol', v => { const n = Number(v); if (n > 0) CMP.tol = n; });
+  on('cmp-kind', v => { CMP.kind = v; CMP.col = ''; });
+  on('cmp-col', v => { CMP.col = v; });
+  const load = document.getElementById('cmp-load');
+  if (load) load.onclick = () => {
+    const cols = cmpColumns(cmpRuns()), list = (cmpFiles(cols)[CMP.kind] || []);
+    list.forEach(f => { delete CMP.texts[f.id]; });
+    CMP.err = '';
+    cmpLoadFiles(list);
+  };
+  // the curves of the chosen measurement load by themselves (a few files at a time) unless the last try failed
+  const cols = cmpColumns(cmpRuns()), list = (cmpFiles(cols)[CMP.kind] || []);
+  if (list.some(f => !(f.id in CMP.texts)) && !CMP.loading && !CMP.err) cmpLoadFiles(list);
+}
+
+// ---- Race: every machine runs its DVT against the clock, the fastest one wins (user, 2026-10-23) ----
+// The clock of a unit runs from the start of the race (or, when nobody pressed Start, from the unit's first recorded activity) to the
+// moment its last owed run is finished. Per test: how long it took (the request's start -> finish when the run was started from the
+// site, else the gap since the previous result, marked with "~"), set against the catalog's estimate. Pace = estimated minutes of
+// finished work per hour of the clock, so units that owe different tests can still be compared.
+const RACE_OPEN = new Set();
+let RACE_PICK = false;          // the "who is in the race" list is open
+const RACE_MEDAL = ['🥇', '🥈', '🥉'];
+const raceNow = () => Date.now() / 1000 + ((DVT && DVT.skew) || 0);
+const fmtClock = s => {
+  s = Math.max(0, Math.floor(s));
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60, p2 = n => String(n).padStart(2, '0');
+  return d ? `${d} d ${h} h ${p2(m)} min` : h ? `${h} h ${p2(m)} min ${p2(x)} s` : `${m} min ${p2(x)} s`;
+};
+const fmtMin = m => m == null ? '—' : m >= 2880 ? `${(m / 1440).toFixed(1)} d` : m >= 120 ? `${(m / 60).toFixed(1)} h` : `${Math.round(m)} min`;
+
+function raceModel() {
+  const cat = DVT.catalog, runs = DVT.runs || [], race = DVT.race || { start: 0, units: [] };
+  const regOf = {};
+  (DVT.units || []).forEach(x => { regOf[x.unit] = x; });
+  const every = [...new Set(Object.values(cat.tests).flatMap(t => t.units || []))].sort();
+  const taking = race.units && race.units.length ? every.filter(u => race.units.includes(u)) : every;
+  const start = race.start || 0;
+  const rows = taking.map(u => {
+    const m = dvtUnitModel(u, cat, runs, regOf[u] || { unit: u }, DVT.requests);
+    const byId = {};
+    runs.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+    const reqs = (DVT.requests || []).filter(q => q.unit === u);
+    let total = 0, finished = 0, doneMin = 0;
+    const tests = m.tests.map(t => {
+      let fin = 0, end = 0;
+      t.owed.forEach(id => {
+        total++;
+        const r = byId[id], v = r ? String(r.verdict || '').toUpperCase() : '';
+        if (r && ['PASS', 'FAIL', 'WAIVED'].includes(v) && (!start || dvtWhen(r) >= start)) { fin++; finished++; doneMin += t.per; end = Math.max(end, dvtWhen(r)); }
+      });
+      const done = fin === t.owed.length && t.owed.length > 0;
+      const exact = reqs.filter(q => q.testId === t.tid && q.status === 'done' && q.started && q.finished && (!start || q.started >= start));
+      return { tid: t.tid, title: t.title, minutes: t.minutes, done, end: done ? end : 0, took: exact.length ? exact.reduce((n, q) => n + (q.finished - q.started), 0) / 60 : null, approx: false };
+    });
+    const times = [...runs.filter(r => r.unit === u && (!start || dvtWhen(r) >= start)).map(dvtWhen), ...reqs.filter(q => q.started && (!start || q.started >= start)).map(q => q.started)].filter(Boolean);
+    const begin = start || (times.length ? Math.min(...times) : 0);
+    const complete = total > 0 && finished === total;
+    const finish = complete ? Math.max(...tests.map(t => t.end)) : 0;
+    // the tests that were not started from the site: the gap since the previous result
+    let prev = begin;
+    tests.filter(t => t.done).sort((a, b) => a.end - b.end).forEach(t => { if (t.took == null && prev) { t.took = Math.max(0, (t.end - prev) / 60); t.approx = true; } prev = t.end; });
+    const elapsed = begin ? (finish || raceNow()) - begin : 0;
+    const pace = elapsed > 0 ? doneMin / (elapsed / 3600) : 0;
+    const left = Math.max(0, m.c.totalMin - doneMin);
+    return { u, m, reg: m.reg, tests, total, finished, doneMin, begin, complete, finish, elapsed, pace, left,
+             eta: !complete && pace > 0 && finished / total >= 0.05 ? left / pace * 3600 : 0,   pct: total ? finished / total * 100 : 0, started: !!begin };
+  });
+  // the ranking: finished units by their time, then the units still running by what they have done, then those that have not begun
+  rows.sort((a, b) => (b.complete - a.complete) || (a.complete && b.complete ? a.elapsed - b.elapsed : 0) || (b.started - a.started) || (b.pct - a.pct) || (b.pace - a.pace));
+  const done = rows.filter(r => r.complete);
+  return { rows, start, everyone: rows.length > 0 && done.length === rows.length, winner: rows.length && done.length === rows.length ? done[0] : null, every, taking };
+}
+
+/** The fastest unit per test: only tests at least two units have finished. */
+function raceChampions(model) {
+  const out = [];
+  const tids = [...new Set(model.rows.flatMap(r => r.tests.map(t => t.tid)))];
+  tids.forEach(tid => {
+    const c = model.rows.map(r => ({ u: r.u, t: r.tests.find(x => x.tid === tid) })).filter(x => x.t && x.t.done && x.t.took != null);
+    if (c.length < 2) return;
+    c.sort((a, b) => a.t.took - b.t.took);
+    out.push({ tid, title: c[0].t.title, best: c[0], second: c[1] });
+  });
+  return out;
+}
+
+function raceCard() {
+  if (!DVT || !DVT.catalog) return `<div class="card"><h2>Race</h2><p class="mut">${DVT ? 'No DVT catalog has reached the portal yet.' : 'Loading…'}</p></div>`;
+  const model = raceModel(), race = DVT.race || { start: 0, units: [] };
+  const startTxt = race.start ? new Date(race.start * 1000).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const banner = model.winner
+    ? `<div class="race-win">🏆 <b>${escH(model.winner.u)}</b> wins${model.winner.reg.integrator ? ' · ' + escH(model.winner.reg.integrator) : ''} - the whole DVT in <b>${fmtClock(model.winner.elapsed)}</b></div>`
+    : model.rows.length && model.rows[0].started
+      ? `<div class="race-lead">${model.rows.filter(r => r.complete).length} of ${model.rows.length} finished · in front: <b>${escH(model.rows[0].u)}</b> (${Math.round(model.rows[0].pct)} %)</div>` : '';
+  const controls = `<div class="row" style="gap:.6rem;margin-bottom:.8rem">
+      ${race.start ? `<span class="mut">Race started ${escH(startTxt)} · <span data-clock="${race.start}" data-end="">${fmtClock(raceNow() - race.start)}</span></span>
+         <button id="race-reset" style="margin-left:auto">Reset the race</button>`
+        : `<span class="mut">No official start yet - every unit's clock runs from its first recorded run.</span>
+         <button class="primary" id="race-start" style="margin-left:auto">🏁 Start the race</button>`}</div>`;
+  const lane = (r, i) => {
+    const open = RACE_OPEN.has(r.u);
+    const medal = r.complete ? (RACE_MEDAL[i] || String(i + 1)) : r.started ? '🏃' : '⏳';
+    const clock = r.started ? `<span class="race-clock" data-clock="${r.begin}" data-end="${r.finish || ''}">${fmtClock(r.elapsed)}</span>` : '<span class="mut">not started</span>';
+    const sub = r.complete ? `finished · ${fmtMin(r.doneMin)} of tests · pace ${Math.round(r.pace)} min/h`
+      : r.started ? `${r.finished}/${r.total} runs${r.pace ? ` · pace ${Math.round(r.pace)} min/h` : ''}${r.eta ? ` · about ${fmtMin(r.eta / 60)} to go` : ''}` : `${r.total} runs to do`;
+    const testRows = r.tests.map(t => {
+      const delta = t.took != null && t.minutes ? t.took - t.minutes : null;
+      return `<tr><td>${escH(t.tid)} <span class="mut">${escH(t.title)}</span></td><td data-l="Took">${t.done ? (t.took != null ? (t.approx ? '~' : '') + fmtMin(t.took) : '—') : '<span class="mut">open</span>'}</td>
+        <td data-l="Estimate">${fmtMin(t.minutes)}</td><td data-l="vs estimate">${delta == null ? '' : `<span class="${delta <= 0 ? 'ok-t' : 'err-t'}">${delta <= 0 ? '' : '+'}${Math.round(delta)} min</span>`}</td></tr>`;
+    }).join('');
+    return `<div class="race-card ${r.complete && i === 0 && model.everyone ? 'champ' : ''}" data-race="${escH(r.u)}">
+        <div class="race-rank">${medal}</div>
+        <div class="race-main"><b>${escH(r.u)}</b> <span class="mut">${escH(r.reg.integrator || '')}${r.m.machine ? ' · ' + escH(r.m.machine) : ''}</span>
+          <div class="dvt-bar" style="margin:.35rem 0 .2rem"><div style="width:${r.pct.toFixed(0)}%"></div></div>
+          <span class="mut" style="font-size:.85rem">${sub}</span></div>
+        <div class="race-time">${clock}</div>
+      </div>${open ? `<div style="overflow-x:auto;margin:-.3rem 0 .8rem"><table class="cards"><tr><th>Test</th><th>Took</th><th>Estimate</th><th>vs</th></tr>${testRows}</table></div>` : ''}`;
+  };
+  const champs = raceChampions(model);
+  const champRows = champs.map(c => `<tr><td>${escH(c.tid)} <span class="mut">${escH(c.title)}</span></td><td data-l="Fastest"><b>${escH(c.best.u)}</b> ${fmtMin(c.best.t.took)}</td>
+      <td data-l="Next">${escH(c.second.u)} ${fmtMin(c.second.t.took)}</td></tr>`).join('');
+  const picker = model.every.length > 1 ? `<details id="race-pick" ${RACE_PICK ? 'open' : ''} style="margin-top:.8rem"><summary class="mut" style="cursor:pointer">Who is in the race (${model.taking.length} of ${model.every.length})</summary>
+      <div class="row" style="gap:.8rem;margin-top:.5rem;flex-wrap:wrap">${model.every.map(u => `<label><input type="checkbox" data-race-unit="${escH(u)}" ${model.taking.includes(u) ? 'checked' : ''}> ${escH(u)}</label>`).join('')}</div></details>` : '';
+  return `<div class="card"><h2>DVT race <span class="mut" style="font-weight:400;text-transform:none">who finishes the whole DVT first</span></h2>
+      ${banner}${controls}${model.rows.map(lane).join('') || '<p class="mut">No unit in the race.</p>'}${picker}
+      <p class="mut" style="margin:.6rem 0 0;font-size:.85rem">The clock of a unit stops when its last owed run is finished (pass, fail or waived). Pace = estimated minutes of finished tests per hour of the clock, so units that owe different tests can be compared. Tap a unit for its tests.</p></div>
+    ${champRows ? `<div class="card"><h2>Test champions <span class="mut" style="font-weight:400;text-transform:none">fastest unit per test</span></h2><table class="cards"><tr><th>Test</th><th>Fastest</th><th>Next</th></tr>${champRows}</table></div>` : ''}`;
+}
+
+async function raceSet(d) {
+  try { await api('/api/dvt/race', { method: 'POST', body: JSON.stringify(d) }); } catch { return; }
+  await loadDvt();
+  if (VIEW === 'race') render();          // also when a checkbox still has the focus (loadDvt leaves a field being used alone)
+}
+
+function raceWire() {
+  [...document.querySelectorAll('[data-race]')].forEach(c => c.onclick = () => {
+    const u = c.dataset.race;
+    if (RACE_OPEN.has(u)) RACE_OPEN.delete(u); else RACE_OPEN.add(u);
+    render();
+  });
+  const pick = document.getElementById('race-pick');
+  if (pick) pick.ontoggle = () => { RACE_PICK = pick.open; };
+  const st = document.getElementById('race-start');
+  if (st) st.onclick = () => { if (confirm('Start the race now? Every unit\'s clock starts together; only runs finished from now on count.')) raceSet({ start: 'now' }); };
+  const rs = document.getElementById('race-reset');
+  if (rs) rs.onclick = () => { if (confirm('Reset the race? The clocks go back to each unit\'s first recorded run.')) raceSet({ start: 0 }); };
+  [...document.querySelectorAll('[data-race-unit]')].forEach(cb => cb.onchange = () => {
+    const picked = [...document.querySelectorAll('[data-race-unit]')].filter(x => x.checked).map(x => x.dataset.raceUnit);
+    raceSet({ units: picked });
+  });
+}
+
+// the clocks tick every second without redrawing the page
+setInterval(() => {
+  document.querySelectorAll('[data-clock]').forEach(el => {
+    const s = Number(el.dataset.clock), e = Number(el.dataset.end);
+    el.textContent = fmtClock((e || raceNow()) - s);
+  });
+}, 1000);
+
+function render() {
+  if (!MACHINES.length && VIEW !== 'dvt' && VIEW !== 'overview' && VIEW !== 'compare' && VIEW !== 'race' && !(DVT && (DVT.runs || []).length)) {
+    // no machine yet - the DVT campaign can still have results, so keep its tab reachable
+    $('#app').innerHTML = `<div class="row" style="margin-bottom:1rem">
+        <button data-view="dvt">🧪 DVT</button></div>
+      <div class="card"><h2>Machines</h2>
+      <p class="mut">No machine has synced yet. Give the machine this portal's URL and its machine key
+      (machine API: <code>POST /api/cloud/config</code> with url, key and name).</p></div>`;
+    const d0 = document.querySelector('[data-view="dvt"]');
+    if (d0) d0.onclick = () => { VIEW = 'dvt'; render(); loadDvt(); };
+    return;
+  }
+  // a CureBox known only from DVT runs (assigned before it ever synced) is still a valid selection in the DVT tab
+  const known = n => MACHINES.some(m => m.name === n) || (VIEW === 'dvt' && (n === DVT_NONE || dvtMachines().includes(n)));
+  if (VIEW === 'dvt' && SELECTED === 'all' && MACHINES.length === 1 && localStorage.getItem('scure-curebox') === null) SELECTED = MACHINES[0].name;
+  if (SELECTED !== 'all' && !known(SELECTED)) SELECTED = 'all';
+  // the sections on top (Overview is the whole campaign; Machine / DVT / Errors are about one CureBox or all of them), and
+  // the CureBox chooser under them - only where a CureBox matters, so the Overview does not look like part of CureBox-1
+  const sections = `<div class="row sections" style="margin-bottom:.8rem;gap:0;border-bottom:1px solid var(--line)">
+       <button class="subtab ${VIEW==='overview'?'active':''}" data-view="overview">📊 Overview</button>
+       <button class="subtab ${VIEW==='machines'?'active':''}" data-view="machines">🖥️ Machine</button>
+       <button class="subtab ${VIEW==='dvt'?'active':''}" data-view="dvt">🧪 DVT</button>
+       <button class="subtab ${VIEW==='race'?'active':''}" data-view="race">🏁 Race</button>
+       <button class="subtab ${VIEW==='compare'?'active':''}" data-view="compare">⚖️ Compare</button>
+       <button class="subtab ${VIEW==='errors'?'active':''}" data-view="errors">⚠ Errors today</button>
+     </div>`;
+  const chooser = VIEW === 'overview' || VIEW === 'compare' || VIEW === 'race' ? '' : `<div class="row" style="margin-bottom:1rem">
+       <span class="mut" style="font-size:.85rem">CureBox:</span>
+       <button class="${SELECTED==='all'?'primary':''}" data-tab="all">All</button>
+       ${MACHINES.map(m => `<button class="${SELECTED===m.name?'primary':''}"
+          data-tab="${m.name}">${m.name} ${m.online?'●':'○'}</button>`).join('')}
+       <input id="search" placeholder="${VIEW==='dvt'?'Search unit / test / operator...':VIEW==='errors'?'Search errors / codes...':'Search programs / prints...'}" value="${SEARCH.replace(/"/g,'&quot;')}"
+              style="margin-left:auto;min-width:220px">
+     </div>`;
+  const tabs = sections + chooser;
+  const shown = SELECTED === 'all' || SELECTED === DVT_NONE ? MACHINES : MACHINES.filter(m => m.name === SELECTED);
+  if (VIEW === 'errors') {
+    $('#app').innerHTML = tabs + errorsCard();
+  } else if (VIEW === 'overview') {
+    $('#app').innerHTML = tabs + overviewCard();
+    overviewWire();
+  } else if (VIEW === 'race') {
+    $('#app').innerHTML = tabs + raceCard();
+    raceWire();
+  } else if (VIEW === 'compare') {
+    $('#app').innerHTML = tabs + compareCard();
+    compareWire();
+  } else if (VIEW === 'dvt') {
+    $('#app').innerHTML = tabs + dvtCard();
+  } else {
+    $('#app').innerHTML = tabs + shown.map(m => machineCard(m, MACHINES.indexOf(m))).join('');
+    shown.forEach(m => wireCard(m, MACHINES.indexOf(m)));
+  }
+  const pick = name => {                       // the chips and the DVT tab's list choose the same CureBox
+    SELECTED = name;
+    if (VIEW === 'errors') VIEW = 'machines';  // the DVT tab stays on DVT for the CureBox just chosen
+    localStorage.setItem('scure-curebox', SELECTED);
+    render();
+  };
+  [...document.querySelectorAll('[data-tab]')].forEach(b => b.onclick = () => pick(b.dataset.tab));
+  const dsel = $('#dvt-machine');
+  if (dsel) dsel.onchange = e => pick(e.target.value);
+  const ev = document.querySelector('[data-view="errors"]');
+  if (ev) ev.onclick = () => { VIEW = 'errors'; SELECTED = 'all'; render(); loadErrors(); };
+  const ov = document.querySelector('[data-view="overview"]');
+  if (ov) ov.onclick = () => { VIEW = 'overview'; render(); loadDvt(); };
+  const rv = document.querySelector('[data-view="race"]');
+  if (rv) rv.onclick = () => { VIEW = 'race'; render(); loadDvt(); };
+  const cv = document.querySelector('[data-view="compare"]');
+  if (cv) cv.onclick = () => { VIEW = 'compare'; render(); loadDvt(); };
+  const mv = document.querySelector('[data-view="machines"]');
+  if (mv) mv.onclick = () => { VIEW = 'machines'; render(); };
+  const dv = document.querySelector('[data-view="dvt"]');
+  if (dv) dv.onclick = () => { VIEW = 'dvt'; render(); loadDvt(); dvtLongPoll(); };
+  [...document.querySelectorAll('[data-dvt-unit]')].forEach(b => b.onclick = () => {
+    DVT_UNIT = b.dataset.dvtUnit;
+    localStorage.setItem('scure-dvt-unit', DVT_UNIT);
+    render();
+  });
+  [...document.querySelectorAll('[data-dvt-run-card]')].forEach(b => b.onclick = () => {
+    const tid = b.dataset.dvtRunCard;
+    dvtGuide(tid, dvtTitleOf(tid));
+  });
+  [...document.querySelectorAll('[data-dvt-run-test]')].forEach(b => b.onclick = ev => {
+    ev.stopPropagation();                                   // the row itself opens the test's runs
+    const tid = b.dataset.dvtRunTest;
+    dvtGuide(tid, dvtTitleOf(tid));
+  });
+  const ra = document.querySelector('[data-dvt-run-all]');
+  if (ra) ra.onclick = () => {
+    const ids = [...document.querySelectorAll('[data-dvt-run-test]')].map(b => b.dataset.dvtRunTest);
+    if (!ids.length || !confirm(`Queue ${ids.length} test(s) on ${SELECTED}? Each one waits for Start at the machine.`)) return;
+    ra.disabled = true;
+    ra.textContent = `Queuing ${ids.length} test(s)…`;
+    dvtSend('/api/dvt/request', { machine: SELECTED, unit: DVT_UNIT, testIds: ids });
+  };
+  [...document.querySelectorAll('[data-dvt-cancel]')].forEach(b => b.onclick = () => {
+    b.disabled = true;
+    b.textContent = 'Cancelling…';
+    dvtSend('/api/dvt/cancel', { id: Number(b.dataset.dvtCancel) });
+  });
+  [...document.querySelectorAll('[data-dvt-answer]')].forEach(b => b.onclick = () => {
+    b.disabled = true;
+    dvtSend('/api/dvt/answer', { id: Number(b.dataset.dvtAnswer), value: JSON.parse(b.dataset.v) });
+  });
+  [...document.querySelectorAll('[data-dvt-answer-input]')].forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.dvtAnswerInput), el = document.getElementById('dvt-in-' + id);
+    if (!el || el.value === '') return;
+    b.disabled = true;
+    dvtSend('/api/dvt/answer', { id, value: el.value });
+  });
+  [...document.querySelectorAll('[data-dvt-phase]')].forEach(h => h.onclick = () => {
+    const id = Number(h.dataset.dvtPhase);
+    if (!DVT_PHASES_TOUCHED) { ((DVT && DVT.catalog && DVT.catalog.phases) || []).forEach(p => DVT_PHASE_OPEN.add(p.id)); DVT_PHASES_TOUCHED = true; }
+    if (DVT_PHASE_OPEN.has(id)) DVT_PHASE_OPEN.delete(id); else DVT_PHASE_OPEN.add(id);
+    render();
+  });
+  [...document.querySelectorAll('[data-dvt-test]')].forEach(d => d.onclick = () => {
+    const id = d.dataset.dvtTest;
+    if (DVT_TEST_OPEN.has(id)) DVT_TEST_OPEN.delete(id); else DVT_TEST_OPEN.add(id);
+    render();
+  });
+  [...document.querySelectorAll('[data-dvt-run]')].forEach(tr => tr.onclick = () => {
+    const id = tr.dataset.dvtRun;
+    if (DVT_OPEN.has(id)) DVT_OPEN.delete(id); else DVT_OPEN.add(id);
+    render();
+  });
+  // Re-render on every keystroke, keeping focus + caret in the search box.
+  const searchBox = $('#search');          // not on the Overview
+  if (searchBox) searchBox.oninput = e => {
+    SEARCH = e.target.value;
+    render();
+    const s = $('#search');
+    s.focus();
+    s.setSelectionRange(s.value.length, s.value.length);
+  };
+  dvtGuideRefresh();
+}
+
+/** NetBird's view of the CureBox (read from the NetBird API by the portal): on the mesh or not, and since when.
+ *  Synced here but off NetBird = the machine runs, remote access (SSH, screen) is down; off both = no power or no network. */
+function netbirdPill(m) {
+  const nb = m.netbird;
+  if (!nb) return '';
+  if (nb.error) return `<span class="pill" title="${String(nb.error).replace(/"/g, '&quot;')}">NetBird ?</span>`;
+  if (nb.missing) return `<span class="pill off" title="no NetBird peer named ${nb.peer}">NetBird: not enrolled</span>`;
+  const why = nb.connected ? `NetBird ${nb.ip}` + (nb.stale ? ` · ${nb.stale} stale registration(s) of ${nb.peer} in the dashboard` : '')
+    : m.online ? 'the CureBox runs and syncs, but its NetBird client is down - remote access (SSH, screen) is unavailable'
+               : 'off NetBird and not syncing - no power or no network';
+  return `<span class="pill ${nb.connected ? 'on' : 'off'}" title="${why}">NetBird ${nb.connected ? 'connected' : 'offline · seen ' + fmtWhen(nb.lastSeen)}</span>`;
+}
+
+function machineCard(m, i) {
+  const st = m.state || {};
+  const c = st.counters || {};
+  const q = SEARCH.trim().toLowerCase();
+  const progRows = (m.programs||[])
+    .filter(p => !q || (p.name||'').toLowerCase().includes(q))
+    .map(p => `
+    <tr><td>${p.name}</td><td data-l="Steps">${(p.steps||[]).length} steps</td>
+        <td data-l="Duration">${p.totalDuration ?? '–'} min</td>
+        <td class="act"><button data-edit="${i}:${p.id}">Edit</button>
+            <button class="danger" data-del="${i}:${p.id}">Delete</button></td></tr>`).join('');
+  const printRows = (m.prints||[])
+    .filter(p => !q || [p.printName, p.materialName, p.printerName, p.status]
+                       .some(v => (v||'').toLowerCase().includes(q)))
+    .slice(0,5).map(p => `
+    <tr><td>${p.printName||''}</td><td data-l="Material">${p.materialName||''}</td>
+        <td data-l="Printer">${p.printerName||''}</td><td data-l="Status">${p.status||''}</td></tr>`).join('');
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">${m.name}
+        <span class="pill ${m.online?'on':'off'}">${m.online?'online':'offline'}</span>
+        <span class="mut" style="font-weight:400;text-transform:none">last sync ${fmtAgo(m.lastSeen)}${m.pending?` · ${m.pending} pending`:''}</span>
+        ${netbirdPill(m)}
+      </h2>
+      <div>
+        <span class="stat"><b>${st.chamberTemp != null ? (+st.chamberTemp).toFixed(1) : '–'}°C</b><span>chamber</span></span>
+        <span class="stat"><b>${c.led405 ?? '–'}h</b><span>LED 405</span></span>
+        <span class="stat"><b>${c.heater ?? '–'}h</b><span>heater</span></span>
+      </div>
+    </div>
+
+    <h2>Work Programs</h2>
+    <table class="cards"><tr><th>Name</th><th>Steps</th><th>Duration</th><th></th></tr>${progRows||'<tr><td colspan=4 class="mut">none</td></tr>'}</table>
+    <p><button class="primary" data-new="${i}">+ New Program</button></p>
+    <div id="editor-${i}"></div>
+
+    <h2>Send Simulated Print</h2>
+    <div class="row sendrow">
+      <input id="job-${i}" placeholder="Job name (e.g. Job 2 - Penrose)" style="flex:2">
+      <input id="printer-${i}" placeholder="Printer (e.g. TZ)" style="flex:1">
+      <select id="mat-${i}">${(m.programs||[]).map(p=>`<option>${p.name}</option>`).join('')}</select>
+      <button class="primary" data-send="${i}">Send to machine</button>
+    </div>
+    <p class="msg" id="msg-${i}"></p>
+
+    <h2>Recent Prints On Machine</h2>
+    <table class="cards"><tr><th>Job</th><th>Material</th><th>Printer</th><th>Status</th></tr>${printRows||'<tr><td colspan=4 class="mut">none</td></tr>'}</table>
+
+    <h2>Cure Runs &amp; Reports</h2>
+    <table class="cards"><tr><th>Program</th><th>Started</th><th>Duration</th><th>Status</th><th>Report</th></tr>${cureRows(m)||'<tr><td colspan=5 class="mut">none</td></tr>'}</table>
+  </div>`;
+}
+
+// Cure runs the machine reported (last 10). A report can be opened / downloaded once the machine has uploaded it
+// (sCure Cloud on Google keeps them; window.scureReportHref is defined by its page shim).
+function cureRows(m) {
+  const q = SEARCH.trim().toLowerCase();
+  const have = new Set(m.reports || []);
+  const dur = s => s == null ? '–' : `${Math.floor(s/60)}m ${Math.round(s%60)}s`;
+  return (m.cures||[])
+    .filter(c => !q || [c.materialName, c.status].some(v => (v||'').toLowerCase().includes(q)))
+    .map(c => {
+      const can = have.has(c.id) && typeof window.scureReportHref === 'function';
+      const rep = can
+        ? `<a href="${window.scureReportHref(m, c.id, false)}" target="_blank" rel="noopener">View</a>
+           &nbsp;<a href="${window.scureReportHref(m, c.id, true)}" target="_blank" rel="noopener">Download</a>`
+        : `<span class="mut">${c.status === 'running' ? 'after the run' : 'not uploaded yet'}</span>`;
+      return `<tr><td>${c.materialName||''}</td><td data-l="Started">${(c.startedAt||'').replace('T',' ')}</td>
+        <td data-l="Duration">${dur(c.duration)}</td><td data-l="Status">${c.status||''}</td><td class="act">${rep}</td></tr>`;
+    }).join('');
+}
+
+// Per-process field rules — mirror the machine UI's step editor (StepModal):
+//   Drying/Heating   temp 30-80°C, time 1-120 min
+//   Cure/Bleacher    temp 30-80°C, time 1-120 (Bleaching 1-720), UV 10-100%,
+//                    timer start + UV start modes
+//   Cooling          target temp 30-75°C, cooling mode; no time
+//   Nitrogen         no fields (auto purge)
+const PROCESSES = ['Drying','Heating','Cure','Bleacher','Cooling','Nitrogen'];
+const PROC_LABEL = {Cure:'Cure (405nm)', Bleacher:'Bleaching (450nm)'};
+function stepRow(s, j) {
+  const p = s.process;
+  const uvish = p === 'Cure' || p === 'Bleacher';
+  const temp = p === 'Nitrogen' ? '<span class="mut">–</span>'
+    : `<input class="st" type="number" min="30" max="${p==='Cooling'?75:80}"
+         value="${s.temperature ?? (p==='Cooling'?30:40)}" placeholder="°C">`;
+  const time = (p === 'Cooling' || p === 'Nitrogen') ? '<span class="mut">–</span>'
+    : `<input class="sm" type="number" min="1" max="${p==='Bleacher'?720:120}"
+         value="${s.time ?? 10}" placeholder="min">`;
+  const uv = uvish
+    ? `<input class="su" type="number" min="10" max="100" value="${s.uvIntensity ?? 30}" placeholder="%">`
+    : '<span class="mut">–</span>';
+  const opts = p === 'Cooling'
+    ? `<select class="sc">${['fast','medium','slow'].map(m =>
+        `<option value="${m}" ${m===(s.coolingMode||'medium')?'selected':''}>${m[0].toUpperCase()+m.slice(1)} cooling</option>`).join('')}</select>`
+    : uvish
+    ? `<select class="stm" title="Timer start">
+         <option value="on-target" ${((s.timerMode||'on-target')==='on-target')?'selected':''}>Timer: at temperature</option>
+         <option value="on-ramp" ${s.timerMode==='on-ramp'?'selected':''}>Timer: on ramp start</option>
+       </select>
+       <select class="ssm" title="UV start" style="margin-top:.25rem">
+         <option value="at-target" ${((s.uvStartMode||'at-target')==='at-target')?'selected':''}>UV: at temperature</option>
+         <option value="at-start" ${s.uvStartMode==='at-start'?'selected':''}>UV: on ramp start</option>
+       </select>`
+    : p === 'Nitrogen' ? '<span class="mut">auto purge</span>'
+    : '<span class="mut">–</span>';
+  return `<tr>
+    <td>${j+1}</td>
+    <td><select class="sp">${PROCESSES.map(q =>
+      `<option value="${q}" ${q===p?'selected':''}>${PROC_LABEL[q]||q}</option>`).join('')}</select></td>
+    <td data-l="Temp °C">${temp}</td><td data-l="Time min">${time}</td><td data-l="UV %">${uv}</td><td data-l="Options">${opts}</td>
+    <td class="act"><button class="danger sx">✕ Remove step</button></td></tr>`;
+}
+
+// Read a step row back into a step object (no validation — see stepErrors).
+// Field lookups are null-safe: on a process switch the row still holds the
+// PREVIOUS process's inputs, so the new process's fields may not exist yet.
+function readRow(r, j) {
+  const num = c => { const el = r.querySelector(c);
+                     return el && el.value !== '' ? +el.value : null; };
+  const sel = (c, d) => { const el = r.querySelector(c); return el ? el.value : d; };
+  const p = r.querySelector('.sp').value;
+  const st = { step: j+1, process: p, temperature: null, intensity: null, time: 0 };
+  if (p !== 'Nitrogen') st.temperature = num('.st');
+  if (p !== 'Cooling' && p !== 'Nitrogen') st.time = num('.sm');
+  if (p === 'Cooling') st.coolingMode = sel('.sc', 'medium');
+  if (p === 'Cure' || p === 'Bleacher') {
+    st.uvIntensity = num('.su');
+    st.timerMode = sel('.stm', 'on-target');
+    st.uvStartMode = sel('.ssm', 'at-target');
+  }
+  return st;
+}
+
+// Same limits + sequence rules the machine UI enforces (MaterialContext).
+function stepErrors(steps) {
+  const errs = [];
+  let n2 = 0, needsVent = false, lastTemp = null;
+  steps.forEach((s, i) => {
+    const n = i + 1, prev = i > 0 ? steps[i-1] : null;
+    if (s.process !== 'Nitrogen') {
+      const [tMin, tMax] = s.process === 'Cooling' ? [30, 75] : [30, 80];
+      if (s.temperature == null || s.temperature < tMin || s.temperature > tMax)
+        errs.push(`Step ${n}: temperature must be ${tMin}-${tMax}°C`);
+    }
+    if (s.process !== 'Cooling' && s.process !== 'Nitrogen') {
+      const tMax = s.process === 'Bleacher' ? 720 : 120;
+      if (!s.time || s.time < 1 || s.time > tMax)
+        errs.push(`Step ${n}: time must be 1-${tMax} min`);
+    }
+    if (s.process === 'Cure' || s.process === 'Bleacher') {
+      if (s.uvIntensity == null || s.uvIntensity < 10 || s.uvIntensity > 100)
+        errs.push(`Step ${n}: UV intensity must be 10-100% (LEDs stay dark below 10%)`);
+    }
+    if (s.process === 'Nitrogen' && ++n2 > 2)
+      errs.push(`Step ${n}: a maximum of 2 nitrogen purge steps is allowed`);
+    if (prev && prev.process === 'Nitrogen' &&
+        s.process !== 'Cure' && s.process !== 'Bleacher')
+      errs.push(`Step ${n}: after nitrogen, only Cure or Bleaching is allowed`);
+    if (prev && (prev.process === 'Cure' || prev.process === 'Bleacher') &&
+        i > 1 && steps[i-2].process === 'Nitrogen' && s.process !== 'Cooling')
+      errs.push(`Step ${n}: only Cooling is allowed after the Cure/Bleaching step that follows the N₂ purge`);
+    if (s.process === 'Nitrogen') needsVent = true;
+    if (needsVent && s.process === 'Cooling') needsVent = false;
+    if (s.process !== 'Cooling' && s.process !== 'Nitrogen' && s.temperature != null) {
+      if (lastTemp !== null && s.temperature < lastTemp)
+        errs.push(`Step ${n}: temperature (${s.temperature}°C) cannot be lower than the previous step (${lastTemp}°C) without a Cooling step`);
+      lastTemp = s.temperature;
+    }
+    if (s.process === 'Cooling') {
+      if (lastTemp !== null && s.temperature != null && s.temperature > lastTemp - 5)
+        errs.push(`Step ${n}: cooling target (${s.temperature}°C) must be at least 5°C below the previous step (${lastTemp}°C)`);
+      lastTemp = null;
+    }
+  });
+  if (needsVent) errs.push('Nitrogen must be vented — add a Cooling step after the N₂ purge');
+  if (steps.some(s => s.process === 'Nitrogen')) {
+    let after = false, ok = false;
+    for (const s of steps) {
+      if (s.process === 'Nitrogen') after = true;
+      if (after && (s.process === 'Cure' || s.process === 'Bleacher')) { ok = true; break; }
+    }
+    if (!ok) errs.push('Add a Cure or Bleaching step after the N₂ purge');
+  }
+  return errs;
+}
+
+function openEditor(i, prog) {
+  editing = true;
+  const el = $('#editor-' + i);
+  const steps = prog ? JSON.parse(JSON.stringify(prog.steps||[])) : [{process:'Drying',temperature:45,time:10}];
+  el.dataset.progId = prog ? prog.id : '';
+  el.innerHTML = `<div class="card" style="background:var(--inset)">
+    <div class="row"><input id="pname-${i}" placeholder="Program name" value="${prog?prog.name:''}" style="flex:1"></div>
+    <table class="steps cards" id="ptable-${i}" style="margin:.6rem 0">
+      <tr><th>#</th><th>Process</th><th>Temp °C</th><th>Time min</th><th>UV %</th><th>Options</th><th></th></tr>
+      ${steps.map(stepRow).join('')}
+    </table>
+    <div class="row">
+      <button id="padd-${i}">+ Step</button>
+      <button class="primary" id="psave-${i}">Save to machine</button>
+      <button id="pcancel-${i}">Cancel</button>
+      <span class="msg" id="pmsg-${i}"></span>
+    </div></div>`;
+  $('#padd-'+i).onclick = () => {
+    $('#ptable-'+i).insertAdjacentHTML('beforeend',
+      stepRow({process:'Cure'}, $('#ptable-'+i).rows.length-1));
+    wireStepRows(i);
+  };
+  $('#pcancel-'+i).onclick = () => { el.innerHTML=''; editing = false; };
+  $('#psave-'+i).onclick = () => saveProgram(i, prog);
+  wireStepRows(i);
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('#pname-'+i).focus();
+}
+function wireStepRows(i) {
+  const rows = [...document.querySelectorAll(`#ptable-${i} tr`)].slice(1);
+  rows.forEach(r => {
+    r.querySelector('.sx').onclick = () => {
+      r.remove();
+      renumberSteps(i);
+    };
+    // Switching the process swaps the row to that process's field set,
+    // carrying the temperature over like the machine UI does.
+    r.querySelector('.sp').onchange = e => {
+      const j = r.rowIndex - 1;   // header row is 0
+      const cur = readRow(r, j);
+      cur.process = e.target.value;
+      if (cur.process !== 'Cooling' && cur.process !== 'Nitrogen' && !cur.time) cur.time = 10;
+      r.outerHTML = stepRow(cur, j);
+      wireStepRows(i);
+    };
+  });
+}
+function renumberSteps(i) {
+  [...document.querySelectorAll(`#ptable-${i} tr`)].slice(1)
+    .forEach((r, j) => { r.cells[0].textContent = j + 1; });
+}
+
+async function saveProgram(i, prog) {
+  const name = $('#pname-'+i).value.trim();
+  if (!name) { $('#pmsg-'+i).textContent = 'Name required'; return; }
+  const rows = [...document.querySelectorAll(`#ptable-${i} tr`)].slice(1);
+  if (!rows.length) { $('#pmsg-'+i).textContent = 'Add at least one step'; return; }
+  const steps = rows.map(readRow);
+  const errs = stepErrors(steps);
+  const msg = $('#pmsg-'+i);
+  if (errs.length) {
+    msg.classList.add('err');
+    msg.innerHTML = errs.slice(0, 4).join('<br>') +
+      (errs.length > 4 ? `<br>…and ${errs.length - 4} more` : '');
+    return;
+  }
+  msg.classList.remove('err');
+  const total = steps.reduce((a, s) => a + (s.time||0), 0);
+  const payload = { id: prog ? prog.id : 'cloud-' + Date.now(), name, steps,
+                    totalDuration: total, createdAt: new Date().toISOString(), isPreset: false };
+  await api(`/api/machines/${MACHINES[i].name}/commands`,
+            {method:'POST', body: JSON.stringify({type:'upsert_program', payload})});
+  $('#pmsg-'+i).textContent = 'Saved — the machine applies it on its next sync (≤10 s)';
+  setTimeout(() => { const el = $('#editor-'+i); if (el) el.innerHTML = '';
+                     editing = false; load(true); }, 1600);
+}
+
+function wireCard(m, i) {
+  [...document.querySelectorAll(`[data-edit^="${i}:"]`)].forEach(b => b.onclick = () => {
+    const id = b.dataset.edit.split(':').slice(1).join(':');
+    openEditor(i, (m.programs||[]).find(p => String(p.id) === id));
+  });
+  [...document.querySelectorAll(`[data-del^="${i}:"]`)].forEach(b => b.onclick = async () => {
+    const id = b.dataset.del.split(':').slice(1).join(':');
+    await api(`/api/machines/${m.name}/commands`,
+              {method:'POST', body: JSON.stringify({type:'delete_program', payload:{id}})});
+    load();
+  });
+  const nb = document.querySelector(`[data-new="${i}"]`);
+  if (nb) nb.onclick = () => openEditor(i, null);
+  const sb = document.querySelector(`[data-send="${i}"]`);
+  if (sb) sb.onclick = async () => {
+    const payload = {
+      printName: $('#job-'+i).value || 'Job',
+      printerName: $('#printer-'+i).value || 'CLOUD',
+      materialName: $('#mat-'+i).value,
+    };
+    await api(`/api/machines/${m.name}/commands`,
+              {method:'POST', body: JSON.stringify({type:'send_print', payload})});
+    $('#job-'+i).value = '';
+    $('#printer-'+i).value = '';
+    $('#msg-'+i).textContent = 'Print sent — it appears on the machine within ~10 s';
+  };
+}
+
+// While the DVT tab is open the page holds a request to the server that answers the moment anything on the tab changed (a
+// runner update, a queued request, a new result): the change shows within a second or two, not at the next timer tick.
+let DVT_VER = '';
+let LONGPOLL_ON = false;
+async function dvtLongPoll() {
+  if (LONGPOLL_ON) return;
+  LONGPOLL_ON = true;
+  try {
+    while (VIEW === 'dvt') {
+      try {
+        const r = await api('/api/dvt/wait?since=' + encodeURIComponent(DVT_VER) + '&wait=15');
+        if (VIEW !== 'dvt') break;
+        if (String(r.ver) !== DVT_VER) { DVT_VER = String(r.ver); await loadDvt(); }
+      } catch { await new Promise(res => setTimeout(res, 3000)); }   // not signed in / offline: try again shortly
+    }
+  } finally { LONGPOLL_ON = false; }
+}
+
+// How often the page looks again: 10 s normally; on the DVT tab 4 s, and 2 s while a requested test is queued / waiting /
+// running (the machine's runner then polls every 1.5 s too, so Run, Cancel and answers go through in a couple of seconds).
+let LAST_FULL = Date.now();
+const dvtActive = () => !!(DVT && (DVT.requests || []).some(r => DVT_ACTIVE_ST.includes(r.status)));
+async function refreshLoop() {
+  try {
+    if (VIEW === 'dvt' && Date.now() - LAST_FULL < 9000) await loadDvt();   // the DVT data alone; everything else every 10 s
+    else { LAST_FULL = Date.now(); await load(); }
+  } catch { /* the next round tries again */ }
+  setTimeout(refreshLoop, VIEW === 'dvt' ? 8000 : 10000);   // on the DVT tab the long poll does the quick work; this is the safety net
+}
+load();
+setTimeout(refreshLoop, 4000);
+if (VIEW === 'dvt') dvtLongPoll();
+</script></body></html>
