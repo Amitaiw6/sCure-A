@@ -46,20 +46,109 @@ class Catalog:
     phases: list[dict]
     thresholds: dict = field(default_factory=dict)
     path: Path | None = None
+    lang: str = "en"                                   # language of the prose after load()
+    labels: dict = field(default_factory=dict)         # {"subsystems"|"methods"|"roles"|"rules": {key: label}}
+
+    # text fields an overlay may translate (SRS-DVT-194); everything else is an identifier
+    OVERLAY_TEXT = ("title", "purpose", "sample_rationale")
+    OVERLAY_LISTS = ("safety_plan", "preconditions")
 
     # ---------------- loading ----------------
     @classmethod
-    def load(cls, path: str | Path) -> "Catalog":
+    def load(cls, path: str | Path, lang: str = "en") -> "Catalog":
+        """Load + validate the catalog. With `lang` other than 'en' the sibling
+        overlay `<stem>.<lang>.yaml` is applied when it exists, so every piece of
+        prose the operator reads (titles, purposes, steps, preconditions, plans,
+        phase names) is in the console's language. Identifiers never change."""
         p = Path(path)
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
         cat = cls(version=str(data.get("catalog_version", "0")),
                   tests={t["test_id"]: t for t in data.get("tests", [])},
                   units=list(data.get("units", [])),
                   phases=list(data.get("phases", [])),
-                  thresholds={"led_temperature_thresholds": data.get("led_temperature_thresholds", {})},
+                  thresholds={"led_temperature_thresholds": data.get("led_temperature_thresholds", {}),
+                              "heater_thresholds": data.get("heater_thresholds", {}),
+                              "nitrogen_thresholds": data.get("nitrogen_thresholds", {})},
                   path=p)
         cat.validate()
+        if lang and lang != "en":
+            ov = cls.overlay_path(p, lang)
+            if ov.exists():
+                cat.apply_overlay(yaml.safe_load(ov.read_text(encoding="utf-8")) or {}, lang)
         return cat
+
+    @staticmethod
+    def overlay_path(path: str | Path, lang: str) -> Path:
+        p = Path(path)
+        return p.with_name(f"{p.stem}.{lang}{p.suffix}")
+
+    def apply_overlay(self, ov: dict, lang: str) -> None:
+        """Replace display prose with the translation in `ov`. Lists are positional
+        and must match the source length — a step added in English without its
+        translated line is refused here, at start-up, not discovered on the bench.
+        Equipment keeps `name` (the calibration key) and gains `label`."""
+        problems: list[str] = []
+        if ov.get("catalog_version") is not None and str(ov["catalog_version"]) != self.version:
+            problems.append(f"overlay catalog_version {ov['catalog_version']} != catalog {self.version}")
+        self.labels = {k: dict(ov.get(k) or {}) for k in ("subsystems", "methods", "roles", "rules")}
+        for p in self.phases:
+            o = (ov.get("phases") or {}).get(p["id"]) or {}
+            for k in ("name", "gate"):
+                if o.get(k):
+                    p[k] = o[k]
+        for u in self.units:
+            o = (ov.get("units") or {}).get(u["id"]) or {}
+            if o.get("notes"):
+                u["notes"] = o["notes"]
+            if u.get("role") in self.labels["roles"]:
+                u["role_label"] = self.labels["roles"][u["role"]]
+
+        def positional(tid: str, key: str, src: list | None, dst: list | None, assign) -> None:
+            if not dst:
+                return
+            src = src or []
+            if len(src) != len(dst):
+                problems.append(f"{tid}: {key} has {len(src)} entries in the catalog but {len(dst)} in the overlay")
+                return
+            for s, txt in zip(src, dst):
+                assign(s, txt)
+
+        for tid, o in (ov.get("tests") or {}).items():
+            t = self.tests.get(tid)
+            if t is None:
+                problems.append(f"{tid}: not in the catalog")
+                continue
+            for k in self.OVERLAY_TEXT:
+                if o.get(k):
+                    t[k] = o[k]
+            for k in self.OVERLAY_LISTS:
+                if o.get(k):
+                    if len(t.get(k) or []) != len(o[k]):
+                        problems.append(f"{tid}: {k} has {len(t.get(k) or [])} entries in the catalog but {len(o[k])} in the overlay")
+                    else:
+                        t[k] = list(o[k])
+            positional(tid, "procedure_steps", t.get("procedure_steps"), o.get("procedure_steps"), lambda s, txt: s.__setitem__("step", txt))
+            positional(tid, "equipment", t.get("equipment"), o.get("equipment"), lambda e, txt: e.__setitem__("label", txt))
+            positional(tid, "case_matrix", t.get("case_matrix"), o.get("case_matrix"), lambda c, txt: c.__setitem__("description", txt))
+            fm = self.field_map(tid)
+            for name, note in (o.get("field_notes") or {}).items():
+                if name in fm:
+                    fm[name]["note"] = note
+                else:
+                    problems.append(f"{tid}: field_notes names unknown field {name}")
+        if problems:
+            raise CatalogError(f"{lang} overlay invalid:\n  " + "\n  ".join(problems))
+        self.lang = lang
+
+    def label(self, kind: str, key: str | None) -> str:
+        """Display label for a subsystem / method / role / applicability rule (falls back to the key)."""
+        if key is None:
+            return ""
+        return self.labels.get(kind, {}).get(key, key)
+
+    @staticmethod
+    def equipment_label(e: dict) -> str:
+        return e.get("label") or e["name"]
 
     def validate(self) -> None:
         problems = []
@@ -95,6 +184,8 @@ class Catalog:
                     problems.append(f"{tid}: field {f.get('name')} has bad type {f.get('type')}")
                 if f.get("type") == "enum" and not f.get("values"):
                     problems.append(f"{tid}: enum field {f.get('name')} has no values")
+                if f.get("type") == "enum" and any(isinstance(v, bool) for v in f.get("values") or []):
+                    problems.append(f"{tid}: enum field {f.get('name')} has a YAML boolean value - quote 'on' / 'off' / 'yes' / 'no'")
                 names.add(f["name"])
             for s in t.get("procedure_steps") or []:
                 for c in s.get("capture") or []:

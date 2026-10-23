@@ -8,7 +8,7 @@
 # the wizard order and the report from it. Do not edit pass_criteria of a
 # baselined test without bumping catalog_version.
 
-catalog_version: 0.9
+catalog_version: "0.25"   # quoted so YAML keeps it a string (0.10 would read as the float 0.1)
 
 # LED back-face temperature ladder. All values are measured on the aluminium
 # MCPCB back face, 2 mm behind the LED — never at the junction or the solder
@@ -22,6 +22,38 @@ led_temperature_thresholds:
                              # overshoot measured in DVT-SAF-019
   absolute_max_tj: 100       # SST-10-UV datasheet PDS-002674 Rev 05
 
+# Heater-body limits — type-K thermocouple bonded to the heater body (the
+# DVT-SAF-013 bond, logged by the PicoLog TC-08). Tests reference these
+# names rather than repeating numbers.
+# Nitrogen purge (DVT-GAS-001). The machine has no oxygen sensor — the purge
+# is a fixed time (Settings, default 120 s) — so these are the numbers the
+# programmed time has to be checked against. 95 % N2 <-> O2 <= 4.8 % on the
+# analyser (air replaced by N2: N2 = 100 - 21.9 x O2 / 20.9).
+nitrogen_thresholds:
+  o2_at_95_n2: 4.8              # % O2 equivalent to 95 % N2 (derived, see DVT-GAS-001)
+  purge_time_max_s: null        # CONFIRM — longest acceptable time to 95 % N2; the programmed purge
+                                # time must exceed the measured time with margin on every unit
+  hold_time_min_s: null         # CONFIRM — how long the chamber must stay above 95 % N2 with the
+                                # valve closed: at least the longest UV cure that follows a purge
+  # --- supply / valve / room (DVT-GAS-002…007). The machine opens one
+  # solenoid (GPIO13) for a preset duration: no flow control, no line-pressure
+  # sensor on the board (n2LinePressure = null), no O2 sensor.
+  min_inlet_pressure_bar: 6        # the Settings enable guard (SRS §7 / §11)
+  max_inlet_pressure_bar: null     # CONFIRM — solenoid / fitting / tubing rating (GAS-002 sweep base)
+  chamber_pressure_limit_mbar: null  # CONFIRM — door seal / enclosure limit with the valve open
+  purge_duration_s: 120            # nitrogenDuration default
+  room_o2_min_pct: 19.5            # breathing-zone O2 floor (OSHA 1910.146 / EIGA)
+  coil_temp_limit_c: null          # CONFIRM — solenoid coil insulation class
+
+heater_thresholds:
+  body_ceiling: 250                       # CONFIRM — manual mains abort ceiling on the heater-body
+                                           # thermocouple (DVT-SAF-013, DVT-THM-004), from the heater
+                                           # and insulation ratings
+  selector_mismatch_fuse_open_max: null    # CONFIRM — DVT-THM-004: longest acceptable time the heater may
+                                           # be over-driven at 230 V with the 110 V selector before the
+                                           # branch fuse opens (0BLF005.T time-current curve at the
+                                           # measured branch current vs the heater rating)
+
 # Units under test. The tool derives which runs each unit owes from each
 # test's `applicability`.
 units:
@@ -29,7 +61,7 @@ units:
   - {id: UUT-02, role: standard}
   - {id: UUT-03, role: standard}
   - {id: UUT-04, role: standard}
-  - {id: UUT-05, role: destructive, notes: "SAF-001 / SAF-002 — last"}
+  - {id: UUT-05, role: destructive, notes: "THM-004 / SAF-001 / SAF-002 — last"}
 
 # Phase order and gates (SRS-DVT-SW Rev B §4.1). Tests are assigned to a
 # phase by prefix/explicit list; a phase opens for a unit only when the
@@ -37,10 +69,10 @@ units:
 phases:
   - {id: 0, name: Incoming and configuration, tests: [], gate: "Configuration frozen and signed; equipment calibrations valid"}
   - {id: 1, name: Electrical safety, tests: [DVT-ELE-001, DVT-ELE-002, DVT-ELE-003, DVT-ELE-004, DVT-ELE-005], gate: "All ELE tests PASS"}
-  - {id: 2, name: Protective functions, tests: [DVT-SAF-012, DVT-SAF-013, DVT-SAF-014, DVT-SAF-004, DVT-SAF-005, DVT-SAF-003, DVT-SAF-007, DVT-SAF-006, DVT-SAF-008, DVT-SAF-009, DVT-SAF-015, DVT-SAF-016, DVT-SAF-017, DVT-SAF-011, DVT-SAF-018, DVT-SAF-019, DVT-SAF-010], gate: "All protective functions PASS or approved disposition"}
-  - {id: 3, name: Performance, tests: [DVT-THM-001, DVT-THM-002, DVT-THM-003], gate: "Data complete"}
+  - {id: 2, name: Protective functions, tests: [DVT-SAF-012, DVT-SAF-013, DVT-SAF-014, DVT-SAF-004, DVT-SAF-005, DVT-SAF-003, DVT-SAF-007, DVT-SAF-008, DVT-SAF-009, DVT-SAF-015, DVT-SAF-016, DVT-SAF-017, DVT-SAF-011, DVT-SAF-021, DVT-SAF-018, DVT-SAF-019, DVT-SAF-020, DVT-GAS-002, DVT-GAS-003, DVT-GAS-004, DVT-GAS-005, DVT-GAS-006, DVT-GAS-007, DVT-SAF-010], gate: "All protective functions PASS or approved disposition"}
+  - {id: 3, name: Performance, tests: [DVT-THM-001, DVT-THM-002, DVT-THM-003, DVT-THM-005, DVT-GAS-001, DVT-NFC-001, DVT-OPT-001, DVT-OPT-002], gate: "Data complete"}
   - {id: 4, name: Transport, tests: [DVT-ENV-001], gate: "Post-shipment functional test PASS"}
-  - {id: 5, name: Destructive, tests: [DVT-SAF-001, DVT-SAF-002], gate: null}
+  - {id: 5, name: Destructive, tests: [DVT-THM-004, DVT-SAF-001, DVT-SAF-002], gate: null}
 
 tests:
 
@@ -191,44 +223,82 @@ tests:
   purpose: >
     Verify that loss of the heater circulation fan is detected and the software
     disables the heater within the required response time, issues a shutdown
-    command, and raises an operator alarm identifying the fan.
+    command, and raises an operator alarm identifying the fan. The moment
+    heater power is removed is read from the thermocouple bonded to the heater
+    body (PicoLog TC-08), not from the software: the instant its temperature
+    turns from rising to falling is the de-energisation, and the time from the
+    fan disconnection to that turn is heater_off_time.
   applicability:
     rule: ALL
   sample_rationale: null
   equipment:
-    - name: Thermocouple logger on the heater element and heater duct
+    - name: PicoLog TC-08 thermocouple logger
       calibration_id: null
-    - name: Stopwatch or logged system timestamps
+    - name: Type-K thermocouple bonded to the heater body (the same bond as
+        DVT-SAF-013), logged at 1 Hz
+      calibration_id: null
+    - name: Type-K thermocouple in the heater duct downstream of the element
+      calibration_id: null
+    - name: Inline break-out on the circulation fan supply with a switch
   preconditions:
-    - Chamber in HEAT mode, setpoint 80 C, steady operation reached
-    - Fan failure injected by disconnecting the fan supply
+    - Heater-body and duct thermocouples bonded and logging on the TC-08 at
+      1 Hz; the TC-08 clock is the time base for the whole run
+    - Chamber heating towards 80 C from ambient with the heater at FULL output
+      (heat-up phase, not steady state) — the heater body must be rising when
+      the fan is disconnected, so the removal of power shows as an
+      unmistakable turn from rising to falling on the trace
+    - Fan failure injected by opening the fan supply at the break-out
       # CONFIRM: detection means. If the fan has no tach feedback and no current
       # sensing, disconnection is not observable in software and this test cannot pass.
   procedure_steps:
-    - step: Bring the chamber to steady state at the setpoint
-    - step: Disconnect the circulation fan supply and start the timer
-    - step: Record the time from disconnection to heater SSR de-energisation
-      capture: [detection_time, heater_off_time]
+    - step: With the heater body rising on the TC-08 trace, open the
+        circulation fan supply and note the TC-08 timestamp of the
+        disconnection (marker or clock reading)
+      capture: [disconnect_timestamp, heater_temp_at_disconnect]
+    - step: From the machine log, record the time from the disconnection to
+        the fan-failure detection (alarm timestamp)
+      capture: [detection_time]
+    - step: From the heater-body trace, find the instant the temperature stops
+        rising and starts to fall — that is the heater de-energisation. Record
+        heater_off_time as the time from the disconnection to that turn, and
+        the peak the body reached without airflow
+      capture: [heater_body_drop_observed, heater_off_time, heater_temp_peak]
     - step: Record the alarm text and error code presented to the operator
       capture: [alarm_raised, alarm_identifies_fan, error_code]
-    - step: Record the peak heater element temperature after the event
-      capture: [peak_heater_temp]
-    - step: Reconnect the fan and verify the alarm clears only after operator acknowledgement
+    - step: Reconnect the fan and verify the alarm clears only after operator
+        acknowledgement; the heater-body trace must keep falling until then
       capture: [recovery_requires_ack]
+    - step: Attach the TC-08 log of the run
+      capture: [raw_log_attached]
   data_fields:
-    - {name: detection_time, unit: s, type: float}
-    - {name: heater_off_time, unit: s, type: float}
+    - {name: disconnect_timestamp, type: string, note: TC-08 clock}
+    - {name: heater_temp_at_disconnect, unit: C, type: float}
+    - {name: detection_time, unit: s, type: float, note: disconnection to the alarm in the machine log}
+    - {name: heater_body_drop_observed, type: bool, note: a clear rise-to-fall turn is visible on the heater-body trace}
+    - {name: heater_off_time, unit: s, type: float, note: disconnection to the rise-to-fall turn on the heater-body thermocouple}
+    - {name: heater_temp_peak, unit: C, type: float}
     - {name: alarm_raised, type: bool}
     - {name: alarm_identifies_fan, type: bool}
     - {name: error_code, type: string}
-    - {name: peak_heater_temp, unit: C, type: float}
     - {name: recovery_requires_ack, type: bool}
+    - {name: raw_log_attached, type: bool}
   pass_criteria: >
-    heater_off_time <= 5 AND alarm_raised == true AND alarm_identifies_fan == true
+    heater_body_drop_observed == true AND heater_off_time <= 80
+    AND alarm_raised == true AND alarm_identifies_fan == true
     AND recovery_requires_ack == true
+  # heater_off_time is the rise-to-fall turn of the heater-BODY thermocouple. The heat already in the
+  # element takes about 70 s to clear before the body visibly falls (user, 2026-10-01), so the 5 s limit
+  # was unreachable on the body trace - 80 s, the same as DVT-SAF-004.
   # CONFIRM: 5 s limit. The LED overtemp path is specified at 2 s; the heater has
   # more thermal mass but the element itself does not.
-  repetitions: 3
+  # NOTE on the method: the thermocouple bond and the element's thermal mass
+  # add a lag of their own, so the time read from the trace is LONGER than the
+  # electrical de-energisation — the measurement is conservative. A run that
+  # passes the 5 s limit on the trace certainly passes electrically; a run
+  # that fails on the trace should be cross-checked at the SSR output / heater
+  # terminal voltage before it is recorded as a FAIL. The same heater-body
+  # thermocouple serves DVT-SAF-004, -005, -013, -014 and -015.
+  repetitions: 1   # one run (user, 2026-10-01) - was 3
   duration_est_min: 60
   dependencies: []
 
@@ -239,129 +309,196 @@ tests:
   method: Test
   purpose: >
     Verify that an open-circuit heater temperature sensor is detected, heating
-    is disabled, and the operator is instructed to reconnect the sensor.
+    is disabled, and the operator is instructed to reconnect the sensor. The
+    moment heater power is removed is read from the thermocouple bonded to the
+    heater body (PicoLog TC-08): the instant its temperature turns from rising
+    to falling is the de-energisation, and the time from the disconnection to
+    that turn is heater_off_time.
   applicability:
     rule: ALL
   sample_rationale: null
   equipment:
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the heater body (the same bond as
+        DVT-SAF-013), logged at 1 Hz
+      calibration_id: null
     - name: Access to the sensor connector without opening live compartments
   preconditions:
-    - Chamber in HEAT mode at setpoint, steady state
+    - Heater-body thermocouple bonded and logging on the TC-08 at 1 Hz; the
+      TC-08 clock is the time base for the whole run
+    - Chamber heating towards 80 C from ambient with the heater at FULL output
+      (heat-up phase, not steady state) — the heater body must be rising when
+      the sensor is pulled, so the removal of power shows as an unmistakable
+      turn from rising to falling on the trace
   procedure_steps:
-    - step: Disconnect the heater control sensor and start the timer
-    - step: Record the time to heater de-energisation
-      capture: [heater_off_time]
+    - step: Automatic on the machine - press Start. The DVT bench process on the
+        machine takes the TC-08 (thermocouple at the heater body on CH1), heats
+        the chamber towards 80 C and waits until the heater body is rising;
+        then it asks you to DISCONNECT the heater thermistor. The machine's own
+        sensor state gives the instant of the disconnection; the bench times
+        the heater-body turn, records the alarm and its text, tries a heat
+        command (must be refused, body must keep falling), asks you to
+        RECONNECT, and checks heating does not resume by itself. The only
+        manual actions are the two plugs. The trace (5 Hz) and the graph go to
+        the results folder
+      capture: [disconnect_timestamp, heater_temp_at_disconnect]
+      tool: bench
+    - step: From the heater-body trace, find the instant the temperature stops
+        rising and starts to fall — that is the heater de-energisation. Record
+        heater_off_time as the time from the disconnection to that turn, and
+        the peak the body reached
+      capture: [heater_body_drop_observed, heater_off_time, heater_temp_peak]
     - step: Record the alarm text and error code
       capture: [alarm_raised, alarm_text_instructs_reconnect, error_code]
-    - step: Attempt to command HEAT mode again while the sensor is disconnected
+    - step: Attempt to command HEAT mode again while the sensor is disconnected;
+        the heater-body trace must keep falling
       capture: [heat_start_inhibited]
     - step: Reconnect and verify normal operation resumes only after acknowledgement
       capture: [recovery_requires_ack]
+    - step: Attach the TC-08 log of the run
+      capture: [raw_log_attached]
   data_fields:
-    - {name: heater_off_time, unit: s, type: float}
+    - {name: disconnect_timestamp, type: string, note: TC-08 clock}
+    - {name: heater_temp_at_disconnect, unit: C, type: float}
+    - {name: heater_body_drop_observed, type: bool, note: a clear rise-to-fall turn is visible on the heater-body trace}
+    - {name: heater_off_time, unit: s, type: float, note: disconnection to the rise-to-fall turn on the heater-body thermocouple}
+    - {name: heater_temp_peak, unit: C, type: float}
     - {name: alarm_raised, type: bool}
     - {name: alarm_text_instructs_reconnect, type: bool}
     - {name: error_code, type: string}
     - {name: heat_start_inhibited, type: bool}
     - {name: recovery_requires_ack, type: bool}
+    - {name: raw_log_attached, type: bool}
   pass_criteria: >
-    heater_off_time <= 2 AND alarm_raised == true
+    heater_body_drop_observed == true AND heater_off_time <= 80 AND alarm_raised == true
     AND alarm_text_instructs_reconnect == true AND heat_start_inhibited == true
-  repetitions: 3
+  # heater_off_time is the rise-to-fall turn of the heater-BODY thermocouple, counted from the disconnect.
+  # On this machine the drive is cut at once (the trace shows the heating command falling in the same
+  # sample as the sensor going open) and the body still climbs ~25 C for about a minute on the element's
+  # stored heat - so the 2 s limit was physically unreachable. 80 s from the disconnect (user, 2026-10-01).
+  # NOTE on the method: the thermocouple bond and the element's thermal mass
+  # add a lag of their own, so the time read from the trace is LONGER than the
+  # electrical de-energisation — the measurement is conservative. A run that
+  # passes the 2 s limit on the trace certainly passes electrically; a run
+  # that fails on the trace should be cross-checked at the SSR output / heater
+  # terminal voltage before it is recorded as a FAIL. The same heater-body
+  # thermocouple serves DVT-SAF-013.
+  repetitions: 1   # one run (user, 2026-10-01) - was 3
   duration_est_min: 45
   dependencies: []
 
 - test_id: DVT-SAF-005
-  title: Heater temperature sensor shorted — low-reading failure mode
+  title: Heater temperature sensor replaced by a fixed 5 kOhm resistor — frozen plausible reading
   subsystem: Safety
   requirement_ids: []
   method: Test
   purpose: >
-    Verify detection of a shorted sensor. An open sensor is the benign failure;
-    a shorted NTC reads a false low temperature and drives the heater to full
-    output, so this is the failure mode that produces thermal runaway. Verify
-    that the plausibility check and the independent thermal cutout stop heating.
+    Verify detection of a temperature reading that is plausible but frozen. A
+    fixed 5 kOhm resistor in place of the heater control NTC (10 kOhm at
+    25 C, beta 3934) reads a constant 41.5 C whatever the chamber does — no
+    range check can catch it, and it drives the heater to full output for as
+    long as heating is allowed. With HEAT commanded, the controller must
+    recognise within 3 minutes that the reading does not respond to full
+    heater output, raise an error to the user naming the temperature reading,
+    switch the heater off immediately, and refuse every further HEAT command
+    until the sensor is fixed and the alarm acknowledged. The independent
+    thermal cutout (DVT-SAF-013) is the backstop, not the detection.
   applicability:
     rule: ALL
   sample_rationale: null
-  # ADDED: not in the original list. Recommended — an open-circuit-only test
-  # leaves the dangerous failure mode unverified.
+  # Replaces the earlier "shorted sensor" variant: a short reads far below any
+  # plausible temperature and is caught by a range check; the fixed resistor is
+  # the harder case (a stuck, detached or drifted sensor looks exactly like
+  # this) and the one that actually produces thermal runaway.
+  # CONFIRM the detection rule with the firmware team. Proposed: heater demand
+  # >= 90% for 180 s with the control reading changing by less than 1 C ->
+  # "temperature reading not responding" alarm, heater off, HEAT inhibited. In
+  # normal operation the chamber gains ~2 C/min at full output (EVT: 80 C in
+  # 27-33 min), i.e. ~6 C in 3 minutes, so the rule cannot false-trigger on a
+  # healthy machine. The same rule detects a tripped thermal cutout
+  # (DVT-SAF-013) and gross under-power (DVT-SAF-011).
   equipment:
-    - name: Shorting link across the sensor terminals
-    - name: Independent reference thermocouple in the chamber
+    - name: Fixed 5 kOhm resistor, 1%, fitted in a plug compatible with the
+        heater control sensor connector
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Independent reference thermocouple in the chamber, adjacent to the
+        control sensor position
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the heater body (the DVT-SAF-013
+        bond) — to timestamp the heater switching off
       calibration_id: null
   preconditions:
-    - Chamber in HEAT mode at setpoint, steady state
-    - Independent reference thermocouple logging chamber temperature
+    - Unit de-energised; heater control NTC unplugged and the fixed 5 kOhm
+      resistor plugged in its place; connection photographed
+    - Reference thermocouple (chamber) and heater-body thermocouple logging
+      on the TC-08 at 1 Hz; the TC-08 clock is the time base
+    - Unit at ambient, chamber empty, door closed
+    - Independent thermal cutout intact and untouched (backstop only)
   procedure_steps:
-    - step: Short the heater control sensor terminals and start the timer
-    - step: Record whether the software detects an implausible reading and the time to detection
-      capture: [detection_time, plausibility_detected]
-    - step: If software does not detect, record the temperature at which the
-        independent thermal cutout opens
-      capture: [cutout_trip_temp, max_chamber_temp]
-    - step: Record the alarm and error code
-      capture: [alarm_raised, error_code]
+    - step: Power up. Record the temperature the controller displays with the
+        fixed resistor fitted (expected about 41.5 C) and the true chamber
+        temperature from the reference thermocouple
+      capture: [displayed_temp_fixed, reference_temp_start]
+    - step: Command HEAT to 80 C and start the timer on the TC-08 clock
+      capture: [heat_command_timestamp]
+    - step: Every 30 s note the displayed reading, the heater output and the
+        reference temperature. Record whether the displayed reading changed at
+        all while the reference climbed
+      capture: [displayed_reading_changed, reference_temp_at_3min]
+    - step: Record the alarm — time from the HEAT command to the alarm, the
+        alarm text (it must say the temperature reading is the problem) and
+        the error code
+      capture: [alarm_raised, time_to_alarm, alarm_names_temperature_reading, error_code]
+    - step: From the heater-body trace, confirm the heater went off AT the
+        alarm — record the time from the alarm to the rise-to-fall turn of the
+        heater-body thermocouple
+      capture: [heater_off_at_alarm, heater_off_delay]
+    - step: Record the maximum true chamber temperature reached (reference
+        thermocouple) and whether the thermal cutout had to act
+      capture: [max_chamber_temp, cutout_tripped]
+    - step: With the fixed resistor still fitted, acknowledge the alarm and
+        command HEAT again — heating must be refused and the fault must be
+        reported again
+      capture: [heat_start_inhibited, alarm_persists_until_fixed]
+    - step: De-energise, refit the NTC, acknowledge, and verify a normal
+        heat-up to 80 C
+      capture: [post_test_functional_pass]
+    - step: Attach the TC-08 log and the machine log of the run
+      capture: [raw_log_attached]
   data_fields:
-    - {name: detection_time, unit: s, type: float}
-    - {name: plausibility_detected, type: bool}
-    - {name: cutout_trip_temp, unit: C, type: float}
-    - {name: max_chamber_temp, unit: C, type: float}
+    - {name: displayed_temp_fixed, unit: C, type: float, note: what the controller shows with 5 kOhm fitted — about 41.5 C}
+    - {name: reference_temp_start, unit: C, type: float}
+    - {name: heat_command_timestamp, type: string, note: TC-08 clock}
+    - {name: displayed_reading_changed, type: bool}
+    - {name: reference_temp_at_3min, unit: C, type: float}
     - {name: alarm_raised, type: bool}
+    - {name: time_to_alarm, unit: s, type: float, note: from the HEAT command}
+    - {name: alarm_names_temperature_reading, type: bool}
     - {name: error_code, type: string}
+    - {name: heater_off_at_alarm, type: bool, note: rise-to-fall turn on the heater-body thermocouple at the alarm}
+    - {name: heater_off_delay, unit: s, type: float, note: alarm to the heater-body turn}
+    - {name: max_chamber_temp, unit: C, type: float, note: reference thermocouple}
+    - {name: cutout_tripped, type: bool}
+    - {name: heat_start_inhibited, type: bool}
+    - {name: alarm_persists_until_fixed, type: bool}
+    - {name: post_test_functional_pass, type: bool}
+    - {name: raw_log_attached, type: bool}
   pass_criteria: >
-    max_chamber_temp <= 95 AND alarm_raised == true
-  # CONFIRM: 95 C ceiling — set from the material and enclosure limits, not the setpoint.
-  repetitions: 3
-  duration_est_min: 90
-  dependencies: [DVT-SAF-004]
-
-- test_id: DVT-SAF-006
-  title: LED thermistor detached from the MCPCB
-  subsystem: Safety
-  requirement_ids: []
-  method: Test
-  purpose: >
-    Verify that a thermistor that is electrically connected but no longer
-    thermally coupled to the LED MCPCB is detected and an alarm is raised
-    identifying the affected sensor.
-  applicability:
-    rule: ALL
-  sample_rationale: null
-  equipment:
-    - name: Reference thermocouple bonded to the MCPCB 2 mm behind the LED
-      calibration_id: null
-  preconditions:
-    - One LED panel thermistor mechanically detached from the MCPCB but left
-      connected, hanging in free air inside the chamber
-    - Reference thermocouple installed on the same panel
-  # CONFIRM: a simple range check cannot detect this — the sensor reads a valid
-  # ambient value. Detection requires a plausibility rule, e.g. LED drive above
-  # a threshold for N seconds with no corresponding rate of rise, or a
-  # cross-check against the other panel sensors. If that logic does not exist,
-  # this test is a requirement on the software, not something to verify yet.
-  procedure_steps:
-    - step: Start CURE mode at the normal working point (405 nm, 0.75 A)
-    - step: Log both the detached thermistor and the reference thermocouple
-      capture: [thermistor_reading_at_5min, reference_reading_at_5min]
-    - step: Record whether an alarm is raised and how long it took
-      capture: [alarm_raised, detection_time, alarm_identifies_sensor, error_code]
-    - step: Verify that LED drive is inhibited or reduced on detection
-      capture: [led_drive_inhibited]
-  data_fields:
-    - {name: thermistor_reading_at_5min, unit: C, type: float}
-    - {name: reference_reading_at_5min, unit: C, type: float}
-    - {name: alarm_raised, type: bool}
-    - {name: detection_time, unit: s, type: float}
-    - {name: alarm_identifies_sensor, type: bool}
-    - {name: error_code, type: string}
-    - {name: led_drive_inhibited, type: bool}
-  pass_criteria: >
-    alarm_raised == true AND alarm_identifies_sensor == true
-    AND led_drive_inhibited == true AND detection_time <= 120
-  repetitions: 1
+    alarm_raised == true AND time_to_alarm <= 180
+    AND alarm_names_temperature_reading == true
+    AND heater_off_at_alarm == true AND heater_off_delay <= 2
+    AND heat_start_inhibited == true AND alarm_persists_until_fixed == true
+    AND cutout_tripped == false AND max_chamber_temp <= 95
+    AND post_test_functional_pass == true
+  # cutout_tripped == false: if the cutout had to act, the software detection
+  # did not do its job — that is a FAIL of this test even though the machine
+  # was ultimately protected. CONFIRM the 95 C ceiling (material and enclosure
+  # limits, not the setpoint).
+  repetitions: 1   # one run (user, 2026-10-01) - was 3
   duration_est_min: 60
-  dependencies: []
+  dependencies: [DVT-SAF-004]
 
 - test_id: DVT-SAF-007
   title: LED thermistor disconnected — open circuit
@@ -370,35 +507,58 @@ tests:
   method: Test
   purpose: >
     Verify that an open-circuit LED thermistor is detected, LED drive is
-    inhibited, and the alarm identifies which sensor is missing.
+    inhibited, and the alarm identifies which sensor is missing - for each of
+    the four LED thermistors in turn (right, left, back, door), in one run,
+    each disconnection raising its own alarm that names that sensor.
   applicability:
     rule: ALL
   sample_rationale: null
+  equipment:
+    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300-UV)
+      calibration_id: null     # CONFIRM
+    - name: Sensor fixture holding the head at the door opening, facing the LEDs
   preconditions:
-    - Unit ready for CURE mode
+    - Unit ready for CURE mode, no alarm active
+    - Ophir StarBright on the machine's USB with the UV head positioned at the
+      door opening, facing the LEDs, door closed
+    - The four LED thermistor connectors reachable with the door closed and the
+      LEDs on (extension leads if needed), so one can be pulled mid-cure
   procedure_steps:
-    - step: Disconnect one LED thermistor (repeat separately for R, L, Back, Door)
-      capture: [sensor_position]
-    - step: Attempt to start CURE mode
+    - step: The runner walks the four LED thermistors in turn - right, left,
+        back, door. For each it asks you to disconnect that one sensor only,
+        waits until the machine reports it missing and checks that the other
+        three still read
+      capture: [positions_tested]
+    - step: With that sensor out, the runner tries to start a cure - it must be
+        refused
       capture: [cure_start_inhibited]
-    - step: Disconnect during an active cure and record the time to LED shutdown
+    - step: Instrumented — the runner asks you to reconnect, drives the LEDs to
+        maximum, waits for a stable StarBright reading, asks you to pull the
+        same connector, and times the irradiance falling below 10 % of the
+        plateau. led_off_time is the slowest of the four
       capture: [led_off_time]
-    - step: Record the alarm text and error code
-      capture: [alarm_raised, alarm_identifies_sensor, error_code]
+      tool: led_off_timing
+    - step: The machine's alarm for each disconnection is read and must name
+        that sensor - four sensors, four matching alarms. The runner waits for
+        each alarm to clear (acknowledge it on the screen if asked) before the
+        next sensor, so one sensor's alarm is never credited to another
+      capture: [alarm_raised, alarm_identifies_sensor, error_right, error_left, error_back, error_door]
   data_fields:
-    - {name: sensor_position, type: enum, values: [right, left, back, door]}
-    - {name: cure_start_inhibited, type: bool}
-    - {name: led_off_time, unit: s, type: float}
-    - {name: alarm_raised, type: bool}
-    - {name: alarm_identifies_sensor, type: bool}
-    - {name: error_code, type: string}
+    - {name: positions_tested, type: string, note: "the sensors walked in this run, in order - right, left, back, door"}
+    - {name: cure_start_inhibited, type: bool, note: "true only if the cure was refused with EACH of the four sensors out"}
+    - {name: led_off_time, unit: s, type: float, note: "the slowest of the four - disconnection to irradiance below 10 % of plateau on the StarBright"}
+    - {name: alarm_raised, type: bool, note: "an alarm for EACH of the four disconnections"}
+    - {name: alarm_identifies_sensor, type: bool, note: "each alarm named the sensor that was actually disconnected"}
+    - {name: error_right, type: string, note: "the error the machine raised with the RIGHT thermistor out - code and text"}
+    - {name: error_left, type: string, note: "the error the machine raised with the LEFT thermistor out - code and text"}
+    - {name: error_back, type: string, note: "the error the machine raised with the BACK thermistor out - code and text"}
+    - {name: error_door, type: string, note: "the error the machine raised with the DOOR thermistor out - code and text"}
   pass_criteria: >
     cure_start_inhibited == true AND led_off_time <= 2
     AND alarm_raised == true AND alarm_identifies_sensor == true
-  repetitions: 4    # once per sensor position
+  repetitions: 1    # one run walks all four positions (user, 2026-10-01) - was 4, one run per position
   duration_est_min: 60
   dependencies: []
-
 - test_id: DVT-SAF-008
   title: LED cooling fan failure — job start inhibit and fan identification
   subsystem: Safety
@@ -406,43 +566,55 @@ tests:
   method: Test
   purpose: >
     Verify that a non-functioning LED cooling fan prevents a job from starting,
-    stops an active job, and produces an error naming the specific fan.
+    stops an active job, and produces an error naming the specific fan - for
+    each of the four LED fans in turn (right, left, back, door), in one guided
+    run: the runner asks for one fan to be disconnected, checks the machine
+    refuses the job and names that fan, has it reconnected, then repeats with
+    the fan pulled while the LEDs are on, and moves on to the next fan.
   applicability:
     rule: ALL
   sample_rationale: null
   preconditions:
-    - Unit ready for CURE mode, all fans functional at start
-    # CONFIRM: detection means per fan — tach, current sense, or PWM feedback.
-    # Also confirm whether "not working" includes a stalled fan (blocked rotor)
-    # as well as a disconnected one; these are electrically different.
+    - Unit ready for CURE mode, all fans functional at start, no alarm active
+    - The four LED fan connectors reachable with the door closed and the LEDs on
+    # CONFIRM: a stalled fan (blocked rotor) is electrically different from a
+    # disconnected one; this run covers disconnection only (user, 2026-10-01).
   procedure_steps:
-    - step: Disable one LED cooling fan (repeat separately for each fan position)
-      capture: [fan_position, failure_mode]
-    - step: Attempt to start a cure job
+    - step: The runner walks the four LED fans in turn - right, left, back,
+        door. For each it asks you to disconnect that one fan only
+      capture: [positions_tested, failure_mode]
+    - step: With that fan out, the runner tries to start a cure - it must be
+        refused
       capture: [job_start_inhibited]
-    - step: Record the error message and confirm it names the correct fan
-      capture: [alarm_raised, alarm_identifies_correct_fan, error_code]
-    - step: Restore the fan and repeat with the failure injected mid-job
+    - step: The machine's alarm for that fan is read and must name it - one
+        error per fan, recorded per side. You reconnect the fan and acknowledge
+        the alarm; the runner waits for it to clear before going on
+      capture: [alarm_raised, alarm_identifies_correct_fan, error_right, error_left, error_back, error_door]
+    - step: The LEDs go to maximum, you pull the same fan again, and the runner
+        times the LEDs going off. led_off_time_midjob is the slowest of the four
       capture: [led_off_time_midjob]
-    - step: Confirm that the LED temperature did not exceed the shutdown threshold
+    - step: The four panel temperatures are logged throughout and shown live;
+        max_led_temp is the hottest any panel got
       capture: [max_led_temp]
   data_fields:
-    - {name: fan_position, type: enum, values: [right, left, back, door]}
+    - {name: positions_tested, type: string, note: "the fans walked in this run, in order - right, left, back, door"}
     - {name: failure_mode, type: enum, values: [disconnected, blocked_rotor]}
-    - {name: job_start_inhibited, type: bool}
-    - {name: alarm_raised, type: bool}
-    - {name: alarm_identifies_correct_fan, type: bool}
-    - {name: error_code, type: string}
-    - {name: led_off_time_midjob, unit: s, type: float}
-    - {name: max_led_temp, unit: C, type: float}
+    - {name: job_start_inhibited, type: bool, note: "true only if the cure was refused with EACH of the four fans out"}
+    - {name: alarm_raised, type: bool, note: "an alarm for EACH of the four fans"}
+    - {name: alarm_identifies_correct_fan, type: bool, note: "each alarm named the fan that was actually disconnected"}
+    - {name: error_right, type: string, note: "the error the machine raised with the RIGHT fan out - code and text"}
+    - {name: error_left, type: string, note: "the error the machine raised with the LEFT fan out - code and text"}
+    - {name: error_back, type: string, note: "the error the machine raised with the BACK fan out - code and text"}
+    - {name: error_door, type: string, note: "the error the machine raised with the DOOR fan out - code and text"}
+    - {name: led_off_time_midjob, unit: s, type: float, note: "the slowest of the four - fan pulled to LEDs off"}
+    - {name: max_led_temp, unit: C, type: float, note: "the hottest any LED panel got during the run"}
   pass_criteria: >
     job_start_inhibited == true AND alarm_raised == true
     AND alarm_identifies_correct_fan == true AND led_off_time_midjob <= 2
     AND max_led_temp <= 50
-  repetitions: 8    # 4 positions x 2 failure modes
-  duration_est_min: 180
+  repetitions: 1    # one guided run walks all four fans (user, 2026-10-01) - was 8 (4 positions x 2 failure modes)
+  duration_est_min: 60
   dependencies: [DVT-SAF-007]
-
 - test_id: DVT-SAF-009
   title: Chamber cooling fan failure — job start inhibit and fan identification
   subsystem: Safety
@@ -459,7 +631,8 @@ tests:
   procedure_steps:
     - step: Disable the chamber cooling fan (disconnected, then blocked rotor)
       capture: [failure_mode]
-    - step: Attempt to start a job
+    - step: Attempt to start a drying job - the machine checks the chamber cooling fan before every
+        drying and cooling step (not before heating or UV), so this is the start that must be refused
       capture: [job_start_inhibited]
     - step: Record the error message and confirm it names the correct fan
       capture: [alarm_raised, alarm_identifies_correct_fan, error_code]
@@ -467,16 +640,17 @@ tests:
       capture: [response_time, max_chamber_temp]
   data_fields:
     - {name: failure_mode, type: enum, values: [disconnected, blocked_rotor]}
-    - {name: job_start_inhibited, type: bool}
+    - {name: job_start_inhibited, type: bool, note: "a drying job was refused with the chamber cooling fan failed"}
     - {name: alarm_raised, type: bool}
     - {name: alarm_identifies_correct_fan, type: bool}
     - {name: error_code, type: string}
+    - {name: alarm_text, type: string, note: "the alarm text the machine raised - why a FAIL failed, from the record"}
     - {name: response_time, unit: s, type: float}
     - {name: max_chamber_temp, unit: C, type: float}
   pass_criteria: >
     job_start_inhibited == true AND alarm_raised == true
     AND alarm_identifies_correct_fan == true AND response_time <= 5
-  repetitions: 2
+  repetitions: 1    # one run per unit (user, 2026-10-01) - was 2
   duration_est_min: 90
   dependencies: []
 
@@ -515,7 +689,7 @@ tests:
     AND messages_state_recovery AND all_logged
   repetitions: 1
   duration_est_min: 120
-  dependencies: [DVT-SAF-003, DVT-SAF-004, DVT-SAF-006, DVT-SAF-007, DVT-SAF-008, DVT-SAF-009]
+  dependencies: [DVT-SAF-003, DVT-SAF-004, DVT-SAF-007, DVT-SAF-008, DVT-SAF-009]
 
 - test_id: DVT-SAF-011
   title: Voltage selector mismatch — 220 V selector on 110 V mains (under-power)
@@ -608,6 +782,124 @@ tests:
   duration_est_min: 120
   dependencies: []
 
+- test_id: DVT-SAF-021
+  title: Voltage selector in the mid position — open circuit, heater receives no power
+  subsystem: Safety
+  requirement_ids: []       # CONFIRM: link to the mains-configuration requirement
+  method: Test
+  purpose: >
+    The 110 / 230 V selector has a mid position between its two detents. There
+    it is open: the heater branch receives nothing, so the chamber never
+    heats. Nothing is damaged and no protective device operates — the failure
+    is a silent "does not heat". Verify that the system detects the absence
+    of heating within a bounded time, raises an alarm that says the heater
+    receives no power, and instructs the customer to set the selector to the
+    position matching the mains of the country they are in. The proof that
+    the heater really received no power is the thermocouple bonded to the
+    heater body (PicoLog TC-08): its trace stays flat while HEAT is commanded.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # Non-destructive — the open selector simply isolates the heater. Run on
+  # every unit: it is cheap, and the selector detent feel that lets a customer
+  # leave the switch half-way is a per-unit mechanical property worth a note.
+  # Detection: the selector position is not readable in software and there
+  # is no mains sensing, so the machine detects the missing heat - Err 9007
+  # (sCureBox 1.0.64, user 2026-10-01): two minutes of drive at >= 50 %
+  # without 0.5 C chamber rise -> heater off, the alert names the voltage
+  # selector and the heater fuse.
+  equipment:
+    - name: Programmable AC source or variac set to 220 V
+      calibration_id: null
+    - name: True-RMS meter at the inlet
+      calibration_id: null
+    - name: Clamp meter on the heater branch
+      calibration_id: null
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the heater body (the same bond as
+        DVT-SAF-013), logged at 1 Hz
+      calibration_id: null
+  preconditions:
+    - Unit at ambient, chamber empty, door closed
+    - Voltage selector set to the MIDDLE position between the 110 V and 230 V
+      detents - the runner instructs it and records it as set
+    - Mains input at 220 V - the runner instructs it and records it as set
+    - Heater-body thermocouple bonded and logging on the TC-08 at 1 Hz; the
+      TC-08 clock is the time base for the whole run
+    - Inlet and heater branch fuses verified intact before the run
+  procedure_steps:
+    - step: The runner instructs - set the voltage selector to the MIDDLE and the
+        mains input to 220 V - and records both as set (nothing is asked)
+      capture: [selector_position, applied_voltage]
+    - step: Energise and confirm the unit powers up normally — the controller
+        and the UI are fed independently of the selector
+      capture: [unit_powers_up]
+    - step: Command HEAT to 80 C and start the timer on the TC-08 clock
+      capture: [setpoint, heat_command_timestamp]
+    - step: Record the heater branch current with HEAT commanded — it must
+        read zero
+      capture: [heater_branch_current]
+    - step: Log the chamber and the heater-body trace until the alarm (up to 5
+        minutes); record the total rise of each. The machine's rule (Err 9007) -
+        the heater driving for two minutes without the chamber rising
+      capture: [chamber_rise, heater_body_rise]
+    - step: Record whether an alarm is raised, when, and what it says — it
+        must be Err 9007, state that the heater receives no power / is not
+        heating, and name both causes to check - the voltage selector not in
+        its position and a blown heater fuse
+      capture: [alarm_raised, time_to_alarm, alarm_states_no_heating, alarm_instructs_selector, alarm_names_fuse, error_code, alarm_text]
+    - step: Record what the system does after the alarm — heating must not be
+        left commanded indefinitely without the operator's decision
+      capture: [heat_stopped_or_operator_prompted]
+    - step: Confirm no protective device operated and no damage occurred
+      capture: [fuse_opened, visible_damage]
+    - step: Set the selector to the correct detent for the applied mains and
+        verify a normal heat-up
+      capture: [post_test_functional_pass]
+    - step: Attach the TC-08 log and the machine log of the run
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: selector_position, type: string, note: "mid (between detents)"}
+    - {name: applied_voltage, unit: V, type: float}
+    - {name: unit_powers_up, type: bool}
+    - {name: setpoint, unit: C, type: float}
+    - {name: heat_command_timestamp, type: string, note: TC-08 clock}
+    - {name: heater_branch_current, unit: A, type: float, note: expected 0 A}
+    - {name: chamber_rise, unit: C, type: float}
+    - {name: heater_body_rise, unit: C, type: float, note: total rise on the heater-body thermocouple while HEAT was commanded}
+    - {name: alarm_raised, type: bool}
+    - {name: time_to_alarm, unit: min, type: float}
+    - {name: alarm_states_no_heating, type: bool, note: the message says the heater receives no power / the chamber is not heating}
+    - {name: alarm_instructs_selector, type: bool, note: the guidance tells the customer to set the voltage selector to the position matching their country's mains}
+    - {name: alarm_names_fuse, type: bool, note: "the alarm also names the heater fuse as the cause to check"}
+    - {name: error_code, type: string, note: "expected 9007 (heater not heating)"}
+    - {name: alarm_text, type: string}
+    - {name: heat_stopped_or_operator_prompted, type: bool}
+    - {name: fuse_opened, type: bool}
+    - {name: visible_damage, type: bool}
+    - {name: post_test_functional_pass, type: bool}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    heater_branch_current <= 0.1 AND heater_body_rise <= 2 AND chamber_rise <= 3
+    AND alarm_raised == true AND time_to_alarm <= 2.5
+    AND alarm_states_no_heating == true AND alarm_instructs_selector == true
+    AND alarm_names_fuse == true
+    AND heat_stopped_or_operator_prompted == true
+    AND fuse_opened == false AND visible_damage == false
+    AND post_test_functional_pass == true
+  # heater_body_rise <= 2 is the physical proof of the open circuit: with the
+  # heater at 100 % duty a powered element rises tens of degrees in the first
+  # minute (SAF-013), so a flat trace means no power at all - which is what
+  # separates this case from SAF-011, where quarter power still gives a slow
+  # rise. time_to_alarm <= 2.5 min: the machine's no-heat rule (Err 9007,
+  # sCureBox 1.0.64, user 2026-10-01) fires after two minutes of drive without
+  # 0.5 C chamber rise; measured 2026-10-01 with the selector in the middle:
+  # 15 min at PWM 100 %, chamber 35.0 -> 28.3 C, NO alarm before the rule.
+  repetitions: 1
+  duration_est_min: 15
+  dependencies: [DVT-SAF-011]
+
 # =============================================================
 # THERMAL — chamber temperature uniformity vs mains voltage
 # =============================================================
@@ -645,6 +937,14 @@ tests:
       - {setpoint: 80, mains_voltage: 110}
       - {setpoint: 30, mains_voltage: 240}
       - {setpoint: 80, mains_voltage: 240}
+      # Low line on the 110 V selector position (added 2026-09-06): 100 V is
+      # -9 % of nominal, the worst case a 110/115 V customer sees. Heater power
+      # is (100/110)^2 = 83 % of the 110 V figure, so the 80 C row here is the
+      # longest heat-up in the whole campaign and the hardest REQ-48 point; the
+      # 30 C row shows whether the controller still holds the low setpoint at
+      # the lowest loop gain.
+      - {setpoint: 30, mains_voltage: 100}
+      - {setpoint: 80, mains_voltage: 100}
     unit: {setpoint: C, mains_voltage: V}
   # The reduced matrix is deliberate. A full 6 x 3 cross is 18 runs per unit,
   # 90 across the campaign, for information that is largely redundant: at
@@ -653,8 +953,11 @@ tests:
   # genuinely changes with voltage is heat-up time and loop gain, and both are
   # bounded by the extremes. If the extreme runs show uniformity differing
   # materially from the 230 V curve, fill in the middle then — not before.
-  # CONFIRM: low line is still absent. 99 V and 207 V are where heat-up time is
-  # worst and where REQ-48 is most at risk.
+  # Low line on the 110 V side is now covered by the 100 V rows. CONFIRM: low
+  # line on the 230 V side (207 V, -10 %) is still absent; add {30, 207} and
+  # {80, 207} rows if the 100 V heat-up comes out anywhere near the REQ-48
+  # limit, because the 230 V selector position sees the same -10 % in the
+  # field.
   equipment:
     - name: PicoLog TC-08 x2 (16 thermocouple channels)
       calibration_id: null
@@ -662,7 +965,7 @@ tests:
       calibration_id: null
     - name: Reference thermocouple adjacent to the control sensor
       calibration_id: null
-    - name: Programmable AC source or variac, 110 / 230 / 240 V
+    - name: Programmable AC source or variac, 100 / 110 / 230 / 240 V
       calibration_id: null
     - name: Ambient temperature and humidity logger
       calibration_id: null
@@ -764,6 +1067,146 @@ tests:
   #   requirement currently stands. Resolve the requirement before running them.
   repetitions: 1      # per matrix row (10 rows)
   duration_est_min: 150
+  dependencies: []
+
+# =============================================================
+# ENVIRONMENTAL — transport
+# =============================================================
+
+# =============================================================
+# PROCESS — nitrogen purge (inert atmosphere for the cure)
+# =============================================================
+
+- test_id: DVT-GAS-001
+  title: Nitrogen purge — time to 95 % N2 and how long the chamber holds it
+  subsystem: Process
+  requirement_ids: []          # CONFIRM: link to the inert-atmosphere / oxygen-level cure requirement
+  method: Test
+  purpose: >
+    Measure, on every unit, how long the N2 purge takes to bring the chamber
+    atmosphere to 95 % nitrogen (oxygen at or below 4.8 %), and — once the
+    valve closes — how long the chamber stays above 95 % N2 before air leaks
+    back in. The machine has no oxygen sensor: the purge is a fixed time
+    (Settings, nitrogen duration, default 120 s) that runs after drying, the
+    valve then closes and the UV cure runs on whatever atmosphere is left. So
+    the programmed purge time must cover the measured time to 95 % with margin
+    on every unit, and the hold time must cover the longest cure that follows.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  # Purge time depends on chamber volume, N2 flow and mixing; hold time on the
+  # door seal, the damper seat and every panel joint — assembly workmanship,
+  # therefore unit-to-unit variables. Two chamber conditions: ambient (the
+  # atmosphere as filled) and 80 C (a warm chamber breathes — gas expansion,
+  # seals at temperature — and it is the real cure condition).
+  # 95 % N2 <-> O2 <= 4.8 %: purging replaces air (20.9 % O2, 78.1 % N2, ~1 %
+  # Ar) with N2, so N2 = 100 - 21.9 x (O2 / 20.9); N2 = 95 % at O2 = 4.77 %.
+  # The oxygen analyser is the measurement; the N2 figure is derived from it.
+  case_matrix:
+    - {case: ambient_empty, description: "Chamber at ambient, empty — the atmosphere as filled"}
+    - {case: hot_80_empty, description: "Chamber at 80 C, empty — the cure condition: gas expansion and the seals at temperature"}
+  equipment:
+    - name: Oxygen analyser, 0-25 % O2, T90 <= 10 s, logging at 1 Hz, probe at the chamber centre
+      calibration_id: null
+    - name: Second oxygen probe / analyser at the worst-case corner (lowest point, away from the N2 inlet)
+      calibration_id: null
+    - name: N2 regulator with gauge and a flow meter on the supply line
+      calibration_id: null
+    - name: Machine log for the valve open / close timestamps (nitrogenActive), or the analyser clock
+  preconditions:
+    - N2 supply connected at the specified regulator pressure and flow (CONFIRM
+      the values — record them); enough gas for the whole run
+    - Oxygen analyser zeroed with N2 (0 %) and spanned in ambient air (20.9 %)
+      before the run; both probes inside the chamber, sample lines sealed at
+      the pass-through so the probes themselves do not leak
+    - Chamber door closed and latched, damper closed, extraction (BOFA) off,
+      fans in their cure state — the normal cure configuration
+    - Machine nitrogen mode enabled; the configured purge duration read from
+      Settings and recorded before the run
+    - For the hot case — chamber at 80 C and thermally settled before the
+      valve opens
+  procedure_steps:
+    - step: Record the case, the N2 regulator pressure and flow, the chamber
+        volume, the analyser readings in air (span check) and the chamber
+        temperature
+      capture: [n2_pressure, n2_flow, chamber_volume, o2_reading_air, chamber_temp]
+    - step: Record the machine's configured nitrogen purge duration and that
+        nitrogen mode is enabled
+      capture: [program_purge_time_s, nitrogen_mode_enabled]
+    - step: Open the N2 valve — start the cure program at the nitrogen step, or
+        POST /api/cure/nitrogen?on=1 — and start the timer; log both O2 probes
+        at 1 Hz. Confirm the damper stays closed and extraction stays off
+      capture: [purge_start_timestamp, damper_closed, extraction_off]
+    - step: Record the time at which the centre probe first reads O2 <= 4.8 %
+        (95 % N2), and the same for the corner probe. If either never gets
+        there within 15 minutes, record that — it is the result
+      capture: [n2_95_reached, time_to_95_n2, time_to_95_n2_corner]
+    - step: Keep purging 60 s past the 95 % point; record the lowest O2 reached
+        and the total purge duration
+      capture: [o2_min_during_purge, purge_duration]
+    - step: Close the valve (end of the program step, or ?on=0); confirm it is
+        closed — flow meter at 0, nitrogenActive false — and start the hold
+        timer
+      capture: [valve_closed_confirmed, hold_start_timestamp]
+    - step: With the valve closed, log O2 until the centre probe rises above
+        4.8 % or 60 minutes have passed. Record the hold time above 95 % N2,
+        the O2 rise rate over the hold and the O2 at the end
+      capture: [hold_time_above_95, o2_rise_rate, o2_at_hold_end]
+    - step: Compute the N2 consumed by the purge (flow x purge duration) and the
+        margin of the programmed purge time over the measured time to 95 %
+      capture: [n2_consumed_l, purge_time_margin]
+    - step: Record the longest cure program that runs after a purge on this
+        machine (sum of the UV steps after the nitrogen step) and whether the
+        measured hold covers it
+      capture: [longest_cure_after_purge_s, hold_covers_cure]
+    - step: Attach the analyser log and the machine log
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: case, type: enum, values: [ambient_empty, hot_80_empty]}
+    - {name: n2_pressure, unit: bar, type: float}
+    - {name: n2_flow, unit: L/min, type: float}
+    - {name: chamber_volume, unit: L, type: float, note: CONFIRM from the mechanical design}
+    - {name: o2_reading_air, unit: '%', type: float, note: span check, expect 20.9}
+    - {name: chamber_temp, unit: C, type: float}
+    - {name: program_purge_time_s, unit: s, type: float, note: Settings — nitrogen duration (default 120)}
+    - {name: nitrogen_mode_enabled, type: bool}
+    - {name: purge_start_timestamp, type: string}
+    - {name: damper_closed, type: bool}
+    - {name: extraction_off, type: bool}
+    - {name: n2_95_reached, type: bool}
+    - {name: time_to_95_n2, unit: s, type: float, note: centre probe, valve open to O2 <= 4.8 %}
+    - {name: time_to_95_n2_corner, unit: s, type: float}
+    - {name: o2_min_during_purge, unit: '%', type: float}
+    - {name: purge_duration, unit: s, type: float}
+    - {name: valve_closed_confirmed, type: bool}
+    - {name: hold_start_timestamp, type: string}
+    - {name: hold_time_above_95, unit: s, type: float, note: valve closed to O2 > 4.8 % at the centre probe}
+    - {name: o2_rise_rate, unit: '%/min', type: float}
+    - {name: o2_at_hold_end, unit: '%', type: float}
+    - {name: n2_consumed_l, unit: L, type: float}
+    - {name: purge_time_margin, type: float, note: program_purge_time_s / time_to_95_n2}
+    - {name: longest_cure_after_purge_s, unit: s, type: float}
+    - {name: hold_covers_cure, type: bool}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    n2_95_reached == true AND valve_closed_confirmed == true
+    AND damper_closed == true AND extraction_off == true
+    AND time_to_95_n2 <= nitrogen_thresholds.purge_time_max_s
+    AND purge_time_margin >= 1.2
+    AND hold_time_above_95 >= nitrogen_thresholds.hold_time_min_s
+    AND hold_covers_cure == true
+  # While purge_time_max_s / hold_time_min_s are null the verdict is BLOCKED —
+  # the numbers are measured and recorded, the judgement waits for the
+  # decision. purge_time_margin >= 1.2: the programmed purge must exceed the
+  # measured time to 95 % by 20 % on THIS unit; the campaign-wide setting is
+  # the worst unit's time x 1.2 (see the temperature-style comparison in the
+  # statistics). hold_covers_cure is the requirement behind the hold
+  # measurement: after the purge the valve is closed for the whole UV cure, so
+  # a hold shorter than the cure means the part cures in a rising-oxygen
+  # atmosphere — the fix is a longer hold (seals), a top-up flow during the
+  # cure, or an oxygen sensor closing the loop.
+  repetitions: 1   # one run (user, 2026-10-23) - was 2
+  duration_est_min: 90
   dependencies: []
 
 # =============================================================
@@ -1050,43 +1493,92 @@ tests:
   dependencies: [DVT-ELE-001]
 
 - test_id: DVT-ELE-005
-  title: Rated input current, input power and inrush current
+  title: Rated input current, input power per operating mode, and inrush current
   subsystem: Electrical
   requirement_ids: []
   method: Test
   purpose: >
-    Verify that measured input current and power agree with the rating label,
-    and that inrush current does not open the 15 A time-lag inlet fuse or trip
-    a typical installation circuit breaker.
+    Verify that measured input current and power agree with the rating label at
+    every rated mains voltage, record the real input power of each operating
+    mode separately — heater only (HEAT), LEDs only (CURE without heating) and
+    the whole machine working (heater at full output plus all four LED drivers)
+    — and verify that inrush current does not open the 15 A time-lag inlet fuse
+    or trip a typical installation circuit breaker.
   applicability:
     rule: ALL
   sample_rationale: null
+  sweep:
+    parameters: [mains_voltage]
+    matrix:
+      - {mains_voltage: 100}     # low line on the 110 V selector position (Japan nominal)
+      - {mains_voltage: 110}
+      - {mains_voltage: 230}
+      - {mains_voltage: 240}
+    unit: {mains_voltage: V}
+  # One run per mains voltage. The per-mode power figures are the power budget
+  # of the machine as built — heater alone, LEDs alone, everything together —
+  # and are what the rating label, the PSU sizing and the SAF-011 under-power
+  # detection have to be checked against. 100 V is the low-line point on the
+  # 110 V selector position: heater power scales with V^2, so at 100 V the
+  # heater delivers ~83% of its 110 V power while the LED drivers (constant
+  # power) draw ~10% more current — the worst case for input CURRENT is at
+  # 100 V, the worst case for input POWER at 240 V. Both must be on the label.
+  # CONFIRM: whether 100 V is a rated market voltage (to appear on the label)
+  # or only the low-line verification point. The 99 V / 207 V low-line points
+  # of THM-001 remain open.
   equipment:
     - name: Power analyser with inrush capture
       calibration_id: null
-    - name: Programmable AC source, 110 / 230 / 240 V
+    - name: Programmable AC source, 100 / 110 / 230 / 240 V
       calibration_id: null
   preconditions:
-    - Voltage selector matched to the applied voltage for every run
+    - Voltage selector matched to the applied voltage for every run (110 V
+      position for 100 and 110 V; 220 V position for 230 and 240 V)
     - Unit at ambient at the start of each inrush measurement
+    - Chamber empty, door closed; LED working point 405 nm at 0.75 A for the
+      CURE measurements
   procedure_steps:
-    - step: Measure steady-state input current, real power and power factor in
-        the worst-case operating mode (heater at full output plus all four LED
-        drivers at the working point), at each mains voltage
-      capture: [mains_voltage, input_current_rms, input_power, power_factor]
-    - step: Capture peak inrush current and its duration at switch-on, from cold,
-        at each mains voltage, worst-case switch-on phase angle
-      capture: [inrush_peak, inrush_duration, i2t]
-    - step: Compare against the inlet fuse I2t rating and against a type B and
-        type C 16 A breaker characteristic
+    - step: Set the AC source to the row's mains voltage; record the voltage
+        measured at the inlet and the selector position
+      capture: [selector_position, applied_voltage]
+    - step: Power up and let the machine settle in standby; record the idle
+        input power
+      capture: [input_power_idle]
+    - step: HEAT only — command HEAT to 80 C from ambient and, while the heater
+        is at full output, record input current, real power and power factor
+      capture: [input_current_heat, input_power_heat, power_factor_heat]
+    - step: CURE only, no heating — chamber at ambient with the heater off, all
+        four LED drivers at the working point; record input current, real
+        power and power factor
+      capture: [input_current_cure, input_power_cure, power_factor_cure]
+    - step: Whole machine working — heater at full output plus all four LED
+        drivers at the working point, all fans running; record the worst-case
+        input current, real power and power factor
+      capture: [input_current_all, input_power_all, power_factor_all]
+    - step: Inrush — from cold, switch on at least three times at the
+        worst-case phase angle, capturing peak inrush current, its duration
+        and I2t; record the worst of the switch-ons
+      capture: [inrush_switch_ons, inrush_peak, inrush_duration, i2t]
+    - step: Compare the I2t against the inlet fuse rating and against a type B
+        and type C 16 A breaker characteristic
       capture: [fuse_margin_ok, breaker_type_b_ok, breaker_type_c_ok]
-    - step: Compare measured values against the rating label
+    - step: Compare the whole-machine current and power against the rating label
       capture: [label_agreement]
   data_fields:
     - {name: mains_voltage, unit: V, type: float}
-    - {name: input_current_rms, unit: A, type: float}
-    - {name: input_power, unit: W, type: float}
-    - {name: power_factor, type: float}
+    - {name: selector_position, type: enum, values: [110V, 220V]}
+    - {name: applied_voltage, unit: V, type: float}
+    - {name: input_power_idle, unit: W, type: float, note: standby, nothing commanded}
+    - {name: input_current_heat, unit: A, type: float}
+    - {name: input_power_heat, unit: W, type: float, note: heater at full output, LEDs off}
+    - {name: power_factor_heat, type: float}
+    - {name: input_current_cure, unit: A, type: float}
+    - {name: input_power_cure, unit: W, type: float, note: all four LED drivers at the working point, heater off}
+    - {name: power_factor_cure, type: float}
+    - {name: input_current_all, unit: A, type: float}
+    - {name: input_power_all, unit: W, type: float, note: heater at full output plus all four LED drivers — the rating-label figure}
+    - {name: power_factor_all, type: float}
+    - {name: inrush_switch_ons, type: int, range: [1, 20]}
     - {name: inrush_peak, unit: A, type: float}
     - {name: inrush_duration, unit: ms, type: float}
     - {name: i2t, unit: A2s, type: float}
@@ -1096,12 +1588,18 @@ tests:
     - {name: label_agreement, type: bool}
   pass_criteria: >
     fuse_margin_ok == true AND breaker_type_c_ok == true AND label_agreement == true
+    AND inrush_switch_ons >= 3
+    AND input_power_all >= input_power_heat AND input_power_all >= input_power_cure
+  # The last two terms are a plausibility check on the recording, not a limit:
+  # the whole-machine figure cannot be below either single-mode figure. If it
+  # is, a mode was mis-recorded (heater duty-cycling instead of at full output)
+  # and the run is repeated.
   # NOTE: four LED drivers plus a 120 W PSU switching on together is a
   # meaningful inrush source. The prior finding that measured LED driver AC
   # currents differ from the datasheet makes this measurement, rather than the
   # calculated power budget, the number to trust.
-  repetitions: 3
-  duration_est_min: 150
+  repetitions: 1      # per matrix row (4 voltages); inrush is repeated inside the run (>= 3 switch-ons)
+  duration_est_min: 60
   dependencies: [DVT-ELE-001]
 
 # =============================================================
@@ -1120,28 +1618,78 @@ tests:
   applicability:
     rule: ALL
   sample_rationale: null
+  equipment:
+    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300-UV)
+      calibration_id: null     # CONFIRM
+    - name: Sensor fixture holding the head at the door opening, facing the LEDs
+  safety_plan:
+    - UV-protective eyewear for everyone near the door opening during step 1 -
+      if the interlock fails the LEDs light with the door open (the attempt is
+      at 30 % and is commanded off the moment UV is seen)
   preconditions:
-    - Unit ready for CURE mode
-    - UV radiometer positioned at the door opening
+    - Unit ready for CURE mode, no process running
+    - Ophir StarBright on the machine's USB for step 1 (on the DVT console,
+      StarLab USB or serial, for step 2) with the UV head positioned at the door
+      opening, facing the LEDs
   procedure_steps:
-    - step: With the door open, attempt to start a cure
-      capture: [cure_start_inhibited]
-    - step: Start a cure with the door closed, then open the door and measure
-        the time to UV removal and the residual irradiance at the opening
-      capture: [uv_off_time, residual_irradiance]
-    - step: Verify the magnetic lock engages during cure and that the door
-        cannot be opened while UV is on without first breaking the interlock
+    - step: Automatic - press Start, then open the door when asked. The machine
+        sees the door open on its own sensor, the StarBright takes a dark
+        reading, then the machine tries to start a cure twice with the door
+        open - as the operator would (a 405 nm program at 30 %) and as a direct
+        UV command - while the StarBright watches the door opening for 5 s. UV
+        seen by the sensor (more than 0.5 mW/cm2 above the dark reading), or a
+        start the machine accepts, fails the step; the LEDs are commanded off
+        at once. The door must stay open throughout, or the run is repeated
+      capture: [door_open_detected, cure_start_refused, uv_command_refused, uv_detected, uv_peak_above_dark, cure_start_inhibited]
+      tool: door_open_cure
+    - step: Automatic, StarBright on the machine - press Start. The machine
+        takes a dark reading and runs a real 405 nm cure program at 100 % until
+        the StarBright is stable; then open the door yourself with the UV on
+        (the machine sends no open-door command - that command switches the UV
+        off first). The machine samples the door sensor and the StarBright at
+        20 Hz on its own clock until the reading is back at zero (the dark
+        level) and keeps watching 15 s for the alarm; UV still above 10 % 12 s
+        after the door opened is switched off by the run and fails the step. uv_off_time =
+        door open to the reading below 10 % of the plateau; uv_zero_time = door
+        open to zero. The irradiance-vs-time graph (door open at t = 0) and the
+        raw CSV are saved to the results folder. (The DVT console measures the
+        same with the meter on the PC.)
+      capture: [uv_off_time, uv_zero_time, residual_irradiance]
+      tool: uv_off_timing
+    - step: Automatic - press Start. The machine runs a 405 nm cure at 30 % with
+        the door closed and locked; when the UV is on, pull the door firmly for
+        10 s as asked. lock_engaged = the door sensor never reported the door
+        open while the UV was on (UV eyewear)
       capture: [lock_engaged]
-    - step: Attempt defeat with a hand-held magnet applied to the door sensor
+      tool: door_lock_check
+    - step: Automatic - press Start. The machine releases the door; open it and
+        keep it open, then hold the hand magnet against the door sensor from
+        outside for 10 s as asked. defeat_by_magnet_possible = the door sensor
+        reported the door closed while it was open with the magnet applied. No
+        UV is attempted in this step
       capture: [defeat_by_magnet_possible]
-    - step: Verify DOOR_STATUS on GPIO27 reflects the true door state and
-        cannot be driven by software
+      tool: door_magnet_defeat
+    - step: Automatic - press Start and follow the prompts (close, open, close,
+        hold the door closed). The page checks that DOOR_STATUS (GPIO27) follows
+        each real door movement, and that the machine's only door actuator - the
+        lock release - does not change the reading while the door is held shut
       capture: [door_status_read_only_confirmed]
-    - step: Verify the alarm and error code raised
+      tool: door_status_check
+    - step: Automatic - press Read after step 2. The alarm and the error code
+        come from what the machine reported when the door opened during the
+        step 2 cure - the program's end state and code, new machine alerts,
+        the screen's alerts and the door-abort latch (6016)
       capture: [alarm_raised, error_code]
+      tool: door_alarm_check
   data_fields:
-    - {name: cure_start_inhibited, type: bool}
+    - {name: door_open_detected, type: bool, note: "the machine's door sensor reported the door open before the attempt and still open after it"}
+    - {name: cure_start_refused, type: bool, note: "the machine refused to start a 405 nm program with the door open (the operator's way)"}
+    - {name: uv_command_refused, type: bool, note: "the machine refused a direct UV-on command with the door open"}
+    - {name: uv_detected, type: bool, note: "the StarBright read more than 0.5 mW/cm2 above the dark reading during the attempt (threshold CONFIRM)"}
+    - {name: uv_peak_above_dark, unit: mW/cm2, type: float, note: "highest StarBright reading during the attempt minus the dark reading"}
+    - {name: cure_start_inhibited, type: bool, note: "door open detected AND both starts refused AND no UV seen"}
     - {name: uv_off_time, unit: s, type: float}
+    - {name: uv_zero_time, unit: s, type: float, note: "door open to the StarBright back at the dark level (dark + max(0.5 % of the lit level, 3 sd of the dark noise, 0.01 mW/cm2)) for 0.5 s"}
     - {name: residual_irradiance, unit: mW/cm2, type: float}
     - {name: lock_engaged, type: bool}
     - {name: defeat_by_magnet_possible, type: bool}
@@ -1156,57 +1704,98 @@ tests:
   # door magnet is defeatable with a magnet from outside unless the design uses
   # a coded sensor. If it is defeatable, that is a design finding, not a
   # test failure to be waived.
-  repetitions: 3
+  repetitions: 1   # one run (user, 2026-09-27) - was 3
   duration_est_min: 90
   dependencies: []
 
 - test_id: DVT-SAF-013
-  title: Independent thermal cutout — trip verification
+  title: Independent thermal cutout — trip temperature and time under continuous, unlimited heating
   subsystem: Safety
   requirement_ids: []
   method: Test
+  external_heat: true          # the heater is fed from outside: the machine reports no heating while the body is genuinely hot
+
   purpose: >
     Verify the hardware thermal cutout, which is independent of the controller,
-    opens at its rated temperature and removes heater power regardless of
-    software state.
+    under the condition it exists for: the heater driven continuously with
+    nothing but the cutout able to stop it. The heater is fed from an external
+    supply for the whole run - the machine cannot drive it without a setpoint
+    and none of its software limits are changed - and the TC-08 on the heater
+    body records the run. Three numbers come out of that trace: how long the
+    body climbed before the cutout opened, the temperature it opened at, and
+    the temperature it closed again at. The trace itself is the fourth
+    deliverable.
   applicability:
     rule: ALL
   sample_rationale: null
+  safety_plan:
+    - The heater body is deliberately driven past its normal range with
+      nothing but the cutout to stop it. Fire watch for the whole run,
+      extinguisher in reach, nobody leaves the bench while the supply is on
+    - Manual abort ceiling — a human limit — if the heater-body thermocouple
+      passes 250 C (CONFIRM from the heater and insulation ratings) and the
+      cutout has not opened, cut the supply at the contactor. That is a FAIL
+      of the cutout and is recorded as such
+    - Do not open the door until the chamber is below 60 C; hot surfaces
+      inside — gloves for any contact with the heater duct
   equipment:
-    - name: Reference thermocouple at the cutout body
+    - name: PicoLog TC-08 thermocouple logger
       calibration_id: null
-    - name: Continuity monitoring across the cutout contacts
+    - name: Type-K thermocouple bonded to the heater body at the thermal cutout
+        (high-temperature adhesive or clamp, in thermal contact next to the
+        cutout — not on the element)
+      calibration_id: null
+    - name: External heater supply with a remotely operated mains contactor
+        (drives the heater for the whole run; the contactor is the manual abort)
   preconditions:
-    - Software temperature limits temporarily raised or the control sensor
-      substituted so that the cutout is the first device to act
-      # CONFIRM: how the cutout is exercised without defeating other protections.
+    - The heater is driven from an external supply for the whole run. The
+      machine commands no heat and every one of its software limits stays in
+      place — it cannot drive the heater without a setpoint, and nothing in it
+      is changed for this test. The cutout must be the ONLY device able to
+      stop the heating
+    - Door interlock and LED protections left intact; UV off for the whole run
+    - Thermocouple bonded to the heater body at the cutout, on TC-08 CH1;
+      position photographed
+    - Unit at ambient, chamber empty, door closed — and the recording started
+      BEFORE the heater, so the trace holds the whole climb
+    - Heater fan running for the whole run — the page switches it on before
+      the recording starts and refuses to start if it does not turn
   procedure_steps:
-    - step: Drive the chamber above the software setpoint until the cutout opens
-      capture: [cutout_trip_temp, chamber_temp_at_trip]
-    - step: Verify heater power is removed at the SSR and at the element
-      capture: [heater_power_removed]
-    - step: Verify the cutout is non-self-resetting, or if self-resetting,
-        record the reset temperature and confirm the system does not resume
-        heating without operator acknowledgement
-      capture: [self_resetting, reset_temp, resume_requires_ack]
-    - step: Verify the alarm and error code
-      capture: [alarm_raised, error_code]
+    - step: Read the cutout's rated trip temperature from its marking /
+        datasheet and bond the thermocouple at the cutout on CH1 (photograph)
+      capture: [rated_trip_temp]
+    - step: Connect the TC-08 to the machine's USB. The page checks that the
+        machine sees the TC-08 and a trustworthy CH1 reading — a probe far
+        above the TC-08's own cold junction with nothing running is open, not
+        hot — switches the heater fan on, and enables Start. Press Start with
+        the body still at ambient, BEFORE the heater — the machine logs CH1,
+        the chamber and its own heater command for the whole run
+      tool: tc08_record
+    - step: Drive the heater on continuously from the external supply. The
+        machine cannot do this — its heat commands all take a setpoint and stop
+        at 80 C — and its software limits stay untouched. Do not interrupt or
+        throttle the supply until the cutout opens
+    - step: Leave the supply on. The recording ends by itself as soon as the
+        body climbs a second time after the trip (the cutout closed again), or
+        20 minutes after the trip if it never does; the page then reads the
+        trace — time to trip, trip temperature, reset temperature — draws the
+        graph and records the verdict
+      capture: [time_to_trip, cutout_trip_temp, reset_temp, graph_attached]
   data_fields:
-    - {name: cutout_trip_temp, unit: C, type: float}
-    - {name: chamber_temp_at_trip, unit: C, type: float}
-    - {name: heater_power_removed, type: bool}
-    - {name: self_resetting, type: bool}
-    - {name: reset_temp, unit: C, type: float}
-    - {name: resume_requires_ack, type: bool}
-    - {name: alarm_raised, type: bool}
-    - {name: error_code, type: string}
+    - {name: rated_trip_temp, unit: C, type: float, note: "from the cutout marking / datasheet - the one value typed in, the reference the trip is judged against"}
+    - {name: time_to_trip, unit: min, type: float, note: "from the body starting to climb to the cutout opening, read from the CH1 trace"}
+    - {name: cutout_trip_temp, unit: C, type: float, note: "heater body at the cutout at the instant it opened, TC-08"}
+    - {name: reset_temp, unit: C, type: float, note: "heater body when the cutout closed again and the body began a second climb; empty if it did not within the recording"}
+    - {name: graph_attached, type: bool, note: "the CH1 and chamber trace with the trip and the reset marked - drawn on the page, saved as CSV"}
   pass_criteria: >
-    heater_power_removed == true AND resume_requires_ack == true
-    AND alarm_raised == true
-  repetitions: 1
-  duration_est_min: 120
-  dependencies: [DVT-SAF-005]
-
+    cutout_trip_temp <= rated_trip_temp * 1.1
+    AND time_to_trip > 0 AND graph_attached == true
+  # The heater body may not pass the cutout's rated trip temperature by more than
+  # 10 % (user, 2026-09-27). One-sided on purpose: a cutout that opens early is
+  # the safe direction and is not a failure. reset_temp is recorded, not judged:
+  # a cutout that does not close again within the recording is not a failure either.
+  # Trimmed 2026-09-27 at the user's request to the three numbers the graph
+  # gives plus the graph; the removed fields live in the run's stored trace.
 - test_id: DVT-SAF-014
   title: Controller watchdog and heartbeat loss
   subsystem: Safety
@@ -1215,89 +1804,127 @@ tests:
   purpose: >
     Verify that loss of the controller heartbeat de-energises the SSRs through
     hardware, independently of software, covering controller hang, process
-    crash and loss of the control application.
-  applicability:
-    rule: ALL
-  sample_rationale: null
-  preconditions:
-    - Unit operating in HEAT and separately in CURE
-    - Access to the heartbeat signal and to the SSR drive for monitoring
-  procedure_steps:
-    - step: With the heater active, stop the heartbeat and measure the time to
-        SSR de-energisation
-      capture: [operating_mode, heartbeat_stop_method, ssr_off_time]
-    - step: Repeat with UV active
-      capture: [ssr_off_time_uv]
-    - step: Repeat by killing the control process rather than stopping the
-        heartbeat directly
-      capture: [ssr_off_time_process_kill]
-    - step: Verify recovery requires an explicit restart, not an automatic one
-      capture: [auto_restart_prevented]
-    - step: Verify the event is logged with a distinct error code
-      capture: [logged, error_code]
-  data_fields:
-    - {name: operating_mode, type: enum, values: [heat, cure]}
-    - {name: heartbeat_stop_method, type: string}
-    - {name: ssr_off_time, unit: s, type: float}
-    - {name: ssr_off_time_uv, unit: s, type: float}
-    - {name: ssr_off_time_process_kill, unit: s, type: float}
-    - {name: auto_restart_prevented, type: bool}
-    - {name: logged, type: bool}
-    - {name: error_code, type: string}
-  pass_criteria: >
-    ssr_off_time <= 2 AND ssr_off_time_uv <= 2
-    AND ssr_off_time_process_kill <= 2 AND auto_restart_prevented == true
-  repetitions: 3
-  duration_est_min: 90
-  dependencies: []
-
-- test_id: DVT-SAF-015
-  title: Mains interruption and restoration during operation
-  subsystem: Safety
-  requirement_ids: []
-  method: Test
-  purpose: >
-    Verify the unit enters a safe state on loss of mains and does not resume
-    heating or UV emission automatically when mains returns.
+    crash and loss of the control application. The proof that power was
+    really removed comes from the outputs, not from the controller: the
+    heater-body thermocouple (PicoLog TC-08) turning from rising to falling
+    for the heater SSR, and the Ophir StarBright irradiance trace collapsing
+    for the LED SSRs.
   applicability:
     rule: ALL
   sample_rationale: null
   equipment:
-    - name: Programmable AC source able to produce defined dropouts and dips
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the heater body (the same bond as
+        DVT-SAF-013), logged at 1 Hz
+      calibration_id: null
+    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300-UV)
+      calibration_id: null     # CONFIRM
+    - name: Means of stopping the heartbeat and of killing the control process
+  preconditions:
+    - Heater-body thermocouple logging on the TC-08 at 1 Hz and the Ophir
+      head at the door opening, facing the LEDs; the TC-08 clock is the time
+      base for the whole run
+    - Heater at FULL output (heat-up phase) for the heat cases, so the body is
+      rising when the heartbeat stops; UV at maximum for the cure cases
+    - Access to the heartbeat signal and to the SSR drive for monitoring
+  procedure_steps:
+    - step: With the heater body rising on the TC-08 trace, stop the heartbeat
+        and note the TC-08 timestamp; from the trace find the instant the
+        temperature stops rising and starts to fall — that is the heater SSR
+        de-energisation. ssr_off_time is the time from the stop to that turn
+      capture: [operating_mode, heartbeat_stop_method, heater_body_drop_observed, ssr_off_time]
+    - step: Repeat with UV at maximum; ssr_off_time_uv is the time from the
+        heartbeat stop to the Ophir reading falling below 10 % of its plateau
+      capture: [uv_drop_observed, ssr_off_time_uv]
+    - step: Repeat by killing the control process rather than stopping the
+        heartbeat directly, reading the same traces
+      capture: [ssr_off_time_process_kill]
+    - step: Verify recovery requires an explicit restart, not an automatic one;
+        the heater-body trace must keep falling until then
+      capture: [auto_restart_prevented]
+    - step: Verify the event is logged with a distinct error code
+      capture: [logged, error_code]
+    - step: Attach the TC-08 log and the Ophir trace of the run
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: operating_mode, type: enum, values: [heat, cure]}
+    - {name: heartbeat_stop_method, type: string}
+    - {name: heater_body_drop_observed, type: bool, note: a clear rise-to-fall turn is visible on the heater-body trace}
+    - {name: ssr_off_time, unit: s, type: float, note: heartbeat stop to the rise-to-fall turn on the heater-body thermocouple}
+    - {name: uv_drop_observed, type: bool, note: the Ophir trace collapses}
+    - {name: ssr_off_time_uv, unit: s, type: float, note: heartbeat stop to irradiance below 10 % of plateau on the Ophir trace}
+    - {name: ssr_off_time_process_kill, unit: s, type: float}
+    - {name: auto_restart_prevented, type: bool}
+    - {name: logged, type: bool}
+    - {name: error_code, type: string}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    heater_body_drop_observed == true AND ssr_off_time <= 2
+    AND uv_drop_observed == true AND ssr_off_time_uv <= 2
+    AND ssr_off_time_process_kill <= 2 AND auto_restart_prevented == true
+  # NOTE on the method: the heater-body trace lags the electrical
+  # de-energisation (bond + element thermal mass), so the times read from it
+  # are conservative; a FAIL on the trace is cross-checked at the SSR output
+  # before it is recorded. The Ophir trace has no such lag.
+  repetitions: 1   # one run (user, 2026-10-23) - was 3
+  duration_est_min: 90
+  dependencies: []
+
+- test_id: DVT-SAF-015
+  title: Controller link lost during heating (CM5 40-pin cable) and restored
+  subsystem: Safety
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that the heater SSR switches off when the CM5 loses its link to the
+    IO board while heating, and that heating and UV emission do not resume by
+    themselves when the link returns. One run (user, 2026-10-01).
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the heater body (the same bond as
+        DVT-SAF-013), logged at 1 Hz
       calibration_id: null
   preconditions:
-    - Unit operating at temperature with UV active
+    - Unit idle, no alarm active; heater-body thermocouple on TC-08 CH1
+    - The CM5's 40-pin flat cable to the IO board reachable with the unit running
   procedure_steps:
-    - step: Interrupt mains for 20 ms, 200 ms, 2 s and 60 s in separate runs
-      capture: [interruption_duration]
-    - step: On restoration, record whether heating or UV resumes without
-        operator action
-      capture: [auto_resume_heat, auto_resume_uv]
-    - step: Verify the door lock state on power loss — the door must not be
-        left locked with the operator unable to open it
-      capture: [door_releasable_on_power_loss]
-    - step: Verify the interrupted job is recorded as aborted, not as complete
-      capture: [job_marked_aborted]
-    - step: Verify filesystem and configuration integrity after an uncontrolled
-        power cut during a write
+    - step: The runner switches heating on (50 C) and waits until the heater body is
+        clearly rising on the thermocouple
+      capture: []
+    - step: Disconnect the 40-pin flat cable of the CM5 when asked; the runner times
+        the heater body turning from rising to falling from that moment
+      capture: [heater_off_time, heater_temp_peak]
+    - step: Answer whether the heater SSR switched off
+      capture: [heater_ssr_switched_off]
+    - step: Reconnect the cable when asked; once the machine answers again the runner
+        watches for 2.5 minutes - heating and UV must not resume by themselves and
+        the heater body must keep falling (no new rise)
+      capture: [auto_resume_heat, auto_resume_uv, heater_body_stays_falling]
+    - step: The runner checks the configuration and the machine log survived
       capture: [config_intact, log_intact]
   data_fields:
-    - {name: interruption_duration, unit: ms, type: float}
+    - {name: heater_ssr_switched_off, type: bool, note: "the operator's answer - did the heater SSR switch off after the cable was pulled"}
+    - {name: heater_off_time, unit: s, type: float, note: "measured: cable pulled to the heater body turning from rising to falling (TC-08 CH1)"}
+    - {name: heater_temp_peak, unit: C, type: float, note: "the heater body peak after the cable was pulled"}
     - {name: auto_resume_heat, type: bool}
     - {name: auto_resume_uv, type: bool}
-    - {name: door_releasable_on_power_loss, type: bool}
-    - {name: job_marked_aborted, type: bool}
+    - {name: heater_body_stays_falling, type: bool, note: no new rise on the heater-body thermocouple for 2 min after the link returns}
     - {name: config_intact, type: bool}
     - {name: log_intact, type: bool}
   pass_criteria: >
-    auto_resume_uv == false AND door_releasable_on_power_loss == true
-    AND job_marked_aborted == true AND config_intact == true
-  # NOTE: a job silently marked complete after a power cut is a process-quality
-  # failure, not only a software one — the part would ship under-cured.
-  repetitions: 4
-  duration_est_min: 120
+    heater_ssr_switched_off == true AND heater_off_time <= 80
+    AND auto_resume_heat == false AND auto_resume_uv == false
+    AND heater_body_stays_falling == true AND config_intact == true
+  # heater_off_time <= 80 s: the same limit as DVT-SAF-003 / 004 (body thermal lag included) - CONFIRM.
+  # Was a mains-interruption test (programmable AC source, 20 ms / 200 ms / 2 s / 60 s, 4 runs) until 2026-10-01.
+  repetitions: 1
+  duration_est_min: 30
   dependencies: []
-
 - test_id: DVT-SAF-016
   title: UV emission outside the enclosure
   subsystem: Safety
@@ -1312,30 +1939,45 @@ tests:
   # Light leakage depends on door seal compression and panel fit, which vary
   # unit to unit.
   equipment:
-    - name: Calibrated UV radiometer, spectrally matched to 385-405 nm
+    - name: Ophir StarBright UV meter on the machine's USB, set to 405 nm by the runner
       calibration_id: null
   preconditions:
-    - All four LED panels at maximum drive, door closed and latched
-    - Room darkened to avoid ambient contribution
+    - LEDs at maximum drive at 405 nm, door closed and latched
+    - Room darkened to avoid ambient contribution (the runner reads the dark room first)
   procedure_steps:
-    - step: Scan the door seam, hinge line, damper, vents, cable entries and
-        every panel joint at 10 cm, recording the maximum
+    # 405 nm only (user decision 2026-10-01); every number is read from the
+    # StarBright by the runner, none is typed in
+    - step: With the LEDs at maximum at 405 nm, scan the door seam, hinge line,
+        damper, vents, cable entries and every panel joint with the meter head
+        flush against the light source; the runner samples the meter at 4 Hz and keeps the maximum
       capture: [leak_location, max_irradiance_10cm]
-    - step: Measure at the operator position at the front of the machine
+    - step: Hold the meter head at the operator position at the front of the
+        machine; the runner averages the meter for 10 s
       capture: [irradiance_operator_position]
     - step: Compute the permitted daily exposure duration at the measured level
-      capture: [permitted_exposure_hours]
+        against the UV-A eye limit of IEC 62471 / EN 62471 clause 4.3.5
+      capture: [permitted_exposure_hours, exposure_limit_standard]
   data_fields:
     - {name: leak_location, type: string}
     - {name: max_irradiance_10cm, unit: mW/cm2, type: float}
     - {name: irradiance_operator_position, unit: mW/cm2, type: float}
     - {name: permitted_exposure_hours, unit: h, type: float}
-  pass_criteria: "permitted_exposure_hours >= 8"
-  # CONFIRM against EN 62471. For UV-A the continuous exposure limit used for
-  # durations beyond about 1000 s is 10 W/m2, i.e. 1 mW/cm2. Confirm the
-  # applicable limit and the weighting for the actual emission spectrum with
-  # the compliance lab, since 405 nm sits at the boundary between UV-A and
-  # visible blue light and the two limits are derived differently.
+    - {name: exposure_limit_standard, type: string}
+  pass_criteria: "irradiance_operator_position <= 1 AND permitted_exposure_hours >= 8"
+  # Limit source (user decision 2026-10-01): IEC 62471:2006 / EN 62471:2008
+  # "Photobiological safety of lamps and lamp systems", clause 4.3.5, UV-A
+  # hazard exposure limit for the eye (315-400 nm, unweighted):
+  #   E_UVA <= 10 W/m2 = 1 mW/cm2 for exposures longer than 1000 s,
+  #   E_UVA x t <= 10 000 J/m2 = 1000 mJ/cm2 for exposures up to 1000 s.
+  # At <= 1 mW/cm2 at the operator position a full 8 h day is permitted;
+  # above it the permitted time is 1000 mJ/cm2 / E (< 1000 s). The StarBright
+  # reads the whole 405 nm LED emission, so applying the UV-A limit to it is
+  # conservative (the LED's tail below 400 nm is a small part of it). The
+  # 405 nm peak itself is visible blue light - the blue-light hazard limit
+  # (clause 4.3.3 / 4.3.4, B(lambda)-weighted radiance) needs a radiance
+  # measurement this meter does not make; confirm with the compliance lab.
+  # Earlier text used 3 mJ/cm2, the actinic UV limit (200-315 nm, clause
+  # 4.3.1), whose S(lambda) weighting is zero above 400 nm - not applicable.
   repetitions: 1
   duration_est_min: 120
   dependencies: []
@@ -1408,7 +2050,7 @@ tests:
   # dual-channel antivalent interlock with cross-monitoring, or a coded
   # magnetic sensor. Route the result to the risk register and to the
   # functional safety assessment of the UV and heater hazards.
-  repetitions: 3
+  repetitions: 1   # one run (user, 2026-10-23) - was 3
   duration_est_min: 60
   dependencies: [DVT-SAF-012]
 
@@ -1450,8 +2092,8 @@ tests:
       capture: [auto_resume, logged, error_code]
   data_fields:
     - {name: failure_mode, type: enum, values: [ui_kill, api_kill, daemon_kill, daemon_hang, os_freeze, storage_loss, i2c_loss]}
-    - {name: heater_state, type: enum, values: [off, on, unknown]}
-    - {name: uv_state, type: enum, values: [off, on, unknown]}
+    - {name: heater_state, type: enum, values: ['off', 'on', unknown]}   # quoted: bare off/on are YAML booleans
+    - {name: uv_state, type: enum, values: ['off', 'on', unknown]}
     - {name: response_time, unit: s, type: float}
     - {name: display_state, type: string}
     - {name: auto_resume, type: bool}
@@ -1731,6 +2373,793 @@ tests:
   duration_est_min: 120
   dependencies: [DVT-THM-002, DVT-SAF-008]
 
+- test_id: DVT-SAF-020
+  title: LED panel electrically disconnected — detection at switch-on and panel identification
+  subsystem: Safety
+  requirement_ids: []          # CONFIRM: link to the LED-output monitoring / cure-quality requirement
+  method: Test
+  purpose: >
+    Verify that when one LED panel is electrically disconnected and the LEDs
+    are switched on, the system detects that the panel is not emitting, raises
+    an alarm stating that an LED panel is not working, names the CORRECT panel,
+    instructs the operator to check the LED, and does not run the job with a
+    dark panel. A cure that runs with one of four panels dark under-cures the
+    part on that side without any visible sign to the operator.
+  applicability:
+    rule: ALL
+  sample_rationale: >
+    Panel connectors and the driver-to-panel harness are assembly workmanship,
+    so a bad crimp or a half-seated connector is a unit-to-unit variable. The
+    detection logic itself is a design property, but the injection is cheap
+    and the failure mode is a real field fault, so every unit runs it.
+  # Two electrically different faults produce the same symptom — a dark panel —
+  # and a detection method may catch one and miss the other:
+  #
+  #   led_string_open       -> the driver output is opened (panel connector
+  #                            unplugged). The driver sees no load, goes to its
+  #                            open-load / OVP state and draws little input
+  #                            current. Input-side current sense may still
+  #                            read a plausible idle current.
+  #   driver_supply_removed -> the driver's supply is opened. The driver is
+  #                            dead; the panel and its thermistor read normal
+  #                            at ambient, so a thermistor-based check sees
+  #                            nothing wrong.
+  #
+  # CONFIRM — detection means. The controller has no per-panel electrical
+  # feedback today: `led_fault` only covers the SSR / wavelength-routing GPIO
+  # read-back. What the fitted hardware CAN see, per panel:
+  #
+  #   a) the panel thermistor (TEMP_RIGHT / TEMP_LEFT / TEMP_BACK_ORIGIN /
+  #      TEMP_DOOR_ORIGIN). A working panel self-heats within seconds of
+  #      switch-on; a dark panel tracks the chamber. A rise-rate plausibility
+  #      rule against the other three panels catches BOTH disconnect points
+  #      with no new hardware, at the cost of a detection time in the tens of
+  #      seconds and a weaker signal at 80 C chamber.
+  #   b) the two analog light sensors (LIGHT1, LIGHT2 on ADS1115 U10) with a
+  #      one-panel-at-a-time switch-on sequence at job start, each response
+  #      compared with a stored healthy baseline. Fast, no new hardware, but
+  #      only at start unless re-run periodically, and it depends on both
+  #      sensors seeing all four panels.
+  #   c) per-panel current sense on the driver output — a shunt into the six
+  #      spare ADS1115 inputs (AIN2, AIN3, SENSOR1/2 on U8). Immediate,
+  #      continuous, and the only option that tells led_string_open from
+  #      driver_supply_removed. Needs a PCB / harness change.
+  #
+  # Also CONFIRM whether the LED driver has a status / fault output that
+  # could be wired in. Record the chosen means here before Phase 2; if none
+  # is implemented, this test cannot pass and the disposition is a design
+  # change, not a waiver.
+  sweep:
+    matrix:
+      - {panel: right, disconnect_point: led_string_open}
+      - {panel: left,  disconnect_point: led_string_open}
+      - {panel: back,  disconnect_point: led_string_open}
+      - {panel: door,  disconnect_point: led_string_open}
+      - {panel: right, disconnect_point: driver_supply_removed}
+      - {panel: left,  disconnect_point: driver_supply_removed}
+      - {panel: back,  disconnect_point: driver_supply_removed}
+      - {panel: door,  disconnect_point: driver_supply_removed}
+  safety_plan:
+    - 405 / 450 nm emission is only ever observed through the closed door
+      or a UV-rated viewing window; UV-blocking eyewear for everyone at the bench
+    - The disconnection is made with the unit de-energised and the LED SSRs
+      confirmed off, then the unit is re-energised; no live work on the
+      driver output
+    - Break-out lead routed so the door interlock is not defeated (SAF-012 /
+      SAF-017 must remain valid during this test)
+  equipment:
+    - name: Inline break-out lead for the panel connector (driver output) with
+        a switch or remote contactor, one per panel connector type
+    - name: Inline break-out for the driver supply, one per driver
+    - name: DMM / current clamp on the driver output to confirm the string
+        is really open (0 A) or the driver really dead
+      calibration_id: null
+    - name: UV irradiance meter or UV-sensitive card at the chamber centre,
+        to confirm the panel is dark and the other three are emitting
+      calibration_id: null
+    - name: Stopwatch or logged timestamps from the machine log
+  preconditions:
+    - All four panels verified functional immediately before the test — LED
+      self-test PASS and each panel seen emitting
+    - Unit at ambient, chamber empty, door closed, no active alarms
+    - Firmware protection thresholds at production values
+  procedure_steps:
+    - step: Record the panel and the disconnect point; photograph the opened
+        connector / break-out position
+      capture: [panel, disconnect_point]
+    - step: Open the connection with the unit de-energised, re-energise, and
+        confirm with the DMM / current clamp that the panel string is open or
+        the driver is unpowered
+      capture: [panel_confirmed_dark]
+    - step: Start a cure job (or the LED self-test) so the LEDs switch on;
+        start the timer at the switch-on command
+      capture: [alarm_raised, time_to_alarm, alarm_text, error_code]
+    - step: Confirm the alarm states that an LED panel is not working, names
+        the CORRECT panel, and its action text tells the operator to check
+        the LED / panel
+      capture: [alarm_identifies_correct_panel, alarm_action_says_check_led]
+    - step: Confirm the job did not start or run with the dark panel
+      capture: [job_start_inhibited]
+    - step: Confirm the other three panels are emitting and raise no alarm
+      capture: [false_alarm_on_other_panels]
+    - step: Restore the connection, acknowledge, start a cure, and open the
+        same connection again while the LEDs are on; record the time to the
+        alarm and whether the job is stopped
+      capture: [midjob_alarm_raised, midjob_time_to_alarm, midjob_job_stopped]
+    - step: Restore the connection and verify the alarm clears only after
+        operator acknowledgement
+      capture: [recovery_requires_ack]
+    - step: Run the LED self-test and confirm the panel emits again — no
+        collateral damage to the driver from the open-load condition
+      capture: [post_test_panel_functional]
+  data_fields:
+    - {name: panel, type: enum, values: [right, left, back, door]}
+    - {name: disconnect_point, type: enum, values: [led_string_open, driver_supply_removed]}
+    - {name: panel_confirmed_dark, type: bool}
+    - {name: alarm_raised, type: bool}
+    - {name: time_to_alarm, unit: s, type: float}
+    - {name: alarm_text, type: string}
+    - {name: error_code, type: string}
+    - {name: alarm_identifies_correct_panel, type: bool}
+    - {name: alarm_action_says_check_led, type: bool}
+    - {name: job_start_inhibited, type: bool}
+    - {name: false_alarm_on_other_panels, type: bool}
+    - {name: midjob_alarm_raised, type: bool}
+    - {name: midjob_time_to_alarm, unit: s, type: float}
+    - {name: midjob_job_stopped, type: bool}
+    - {name: recovery_requires_ack, type: bool}
+    - {name: post_test_panel_functional, type: bool}
+  pass_criteria: >
+    panel_confirmed_dark == true AND alarm_raised == true
+    AND alarm_identifies_correct_panel == true AND alarm_action_says_check_led == true
+    AND job_start_inhibited == true AND false_alarm_on_other_panels == false
+    AND midjob_alarm_raised == true AND midjob_job_stopped == true
+    AND recovery_requires_ack == true AND post_test_panel_functional == true
+  # `panel_confirmed_dark` is in the criterion on purpose: an alarm with the
+  # panel still lit means the injection failed, not that detection works.
+  # CONFIRM: time_to_alarm limit. It is captured but not enforced — the LED
+  # protection paths use 2 s (SAF-007), but a light-sensor sequence at job
+  # start may legitimately take longer. Set the limit once the detection
+  # means is decided, then add `time_to_alarm <= N` here.
+  # CONFIRM: job_start_inhibited — kept consistent with SAF-007 / SAF-008,
+  # where an LED fault inhibits the job. If product decides a dark panel is a
+  # warning rather than an inhibit, drop that term and record the decision.
+  repetitions: 1      # per matrix row (4 panels x 2 disconnect points = 8 rows)
+  duration_est_min: 160
+  dependencies: [DVT-SAF-007]
+
+
+# =============================================================
+# NITROGEN (Process) — supply over-pressure, valve, venting, operator safety — GAS-002…007 after GAS-001
+# =============================================================
+# What the machine has: one normally-closed solenoid valve on GPIO13, opened
+# for a preset duration; N2 enters the chamber and leaves through the vent /
+# damper path. No flow control, no line-pressure sensor on the board, no O2
+# sensor. Everything the software "knows" about nitrogen is the valve command.
+
+- test_id: DVT-GAS-002
+  title: Nitrogen inlet over-pressure — supply above the rated maximum, valve closed and open
+  subsystem: Process
+  requirement_ids: []          # CONFIRM: link to the nitrogen supply requirement
+  method: Test
+  purpose: >
+    Verify that a nitrogen supply above the rated maximum inlet pressure is
+    contained: with the valve closed no nitrogen reaches the chamber and no
+    fitting leaks; with the valve commanded open the chamber pressure stays
+    within its limit, the door and seal hold, the flow stops when the valve
+    closes, and the valve is still leak-tight afterwards. A solenoid whose
+    seat is pushed open by excess inlet pressure, or a push-in fitting that
+    lets go, fills the chamber (and the room) with nitrogen without any
+    command — that is what this test looks for.
+  applicability:
+    rule: ALL
+  sample_rationale: >
+    The fittings and tubing are assembly workmanship and the valve seat is a
+    per-part property, so every unit is exposed to the over-pressure.
+  sweep:
+    matrix:
+      - {overpressure_factor: 1.0}
+      - {overpressure_factor: 1.5}
+      - {overpressure_factor: 2.0}
+  # The 1.0 row is the rated-maximum reference the higher rows are read
+  # against. CONFIRM: max_inlet_pressure_bar (nitrogen_thresholds) — from the
+  # solenoid, tubing and fitting ratings; the test is BLOCKED until it is set.
+  safety_plan:
+    - Nitrogen displaces air — O2 monitor at the operator's breathing zone,
+      alarm at 19.5 %, room ventilated, never work alone
+    - Supply through a regulator with a relief valve; pressure raised in
+      steps; hands and face away from fittings while pressurised
+    - Tubing and fittings inspected before each step; a burst fitting at 2x
+      rated pressure is a projectile hazard — eye protection
+  equipment:
+    - name: Regulated nitrogen supply with calibrated gauge to at least 2x the
+        rated maximum inlet pressure
+      calibration_id: null
+    - name: Inline flow meter at the nitrogen inlet (0 to full purge flow)
+      calibration_id: null
+    - name: O2 analyzer with probe inside the chamber, logging at 1 Hz
+      calibration_id: null
+    - name: Chamber pressure manometer at a sealed port (0 to 100 mbar)
+      calibration_id: null
+    - name: Leak-detection solution for fittings
+  preconditions:
+    - Unit idle, chamber empty, door closed, nitrogen mode enabled
+    - O2 probe in the chamber reading ambient (20.9 %), flow meter inline,
+      manometer at the chamber port
+    - Supply regulated to overpressure_factor x max_inlet_pressure_bar,
+      measured and recorded
+  procedure_steps:
+    - step: Record the applied inlet pressure and the factor
+      capture: [applied_pressure]
+    - step: Valve CLOSED (no purge commanded) — hold 10 minutes; record the
+        inlet flow (must be zero), the chamber O2, and bubble-test every
+        fitting from the inlet to the valve
+      capture: [closed_valve_flow, o2_closed_valve, fitting_leak]
+    - step: Command a purge (valve open) with the chamber closed; record the
+        flow, the peak chamber pressure, whether the door or seal lifted, and
+        any alarm
+      capture: [purge_flow, peak_chamber_pressure, door_lifted, alarm_raised, error_code]
+    - step: At the end of the preset purge the valve must close — record the
+        time for the flow to reach zero and the O2 in the chamber
+      capture: [valve_closes_after_purge, flow_stop_time, o2_after_purge]
+    - step: Return the supply to the rated maximum; valve closed 10 minutes —
+        the valve must still be leak-tight (flow zero, O2 unchanged)
+      capture: [post_test_flow_closed]
+    - step: Run a normal purge and inspect tubing, fittings and the valve for
+        damage or deformation
+      capture: [post_test_functional_pass, damage]
+  data_fields:
+    - {name: overpressure_factor, type: float, note: x max_inlet_pressure_bar}
+    - {name: applied_pressure, unit: bar, type: float}
+    - {name: closed_valve_flow, unit: L/min, type: float, note: expected 0}
+    - {name: o2_closed_valve, unit: "%", type: float}
+    - {name: fitting_leak, type: bool}
+    - {name: purge_flow, unit: L/min, type: float}
+    - {name: peak_chamber_pressure, unit: mbar, type: float}
+    - {name: door_lifted, type: bool}
+    - {name: alarm_raised, type: bool}
+    - {name: error_code, type: string}
+    - {name: valve_closes_after_purge, type: bool}
+    - {name: flow_stop_time, unit: s, type: float}
+    - {name: o2_after_purge, unit: "%", type: float}
+    - {name: post_test_flow_closed, unit: L/min, type: float, note: expected 0}
+    - {name: post_test_functional_pass, type: bool}
+    - {name: damage, type: bool}
+  pass_criteria: >
+    closed_valve_flow <= 0.05 AND o2_closed_valve >= 20.5 AND fitting_leak == false
+    AND peak_chamber_pressure <= nitrogen_thresholds.chamber_pressure_limit_mbar
+    AND door_lifted == false AND valve_closes_after_purge == true AND flow_stop_time <= 2
+    AND post_test_flow_closed <= 0.05 AND post_test_functional_pass == true AND damage == false
+  # No alarm is expected: the board has no pressure sensor, so the software
+  # cannot see an over-pressure. alarm_raised is recorded for the SAF-010
+  # coverage review, not judged here.
+  repetitions: 1      # per matrix row (3 pressures)
+  duration_est_min: 60
+  dependencies: []
+
+- test_id: DVT-GAS-003
+  title: Nitrogen supply low or lost — enable guard, pre-cure check, mid-purge and mid-cure loss
+  subsystem: Process
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify what the system does when the nitrogen is not there: enabling
+    nitrogen mode without supply, starting a nitrogen program below the
+    6 bar minimum, losing the supply during the purge, and losing it during
+    a cure under nitrogen. The operator must be told the nitrogen line is the
+    problem, and a cure must not silently run in air as if it were inert.
+  applicability:
+    rule: SINGLE
+    unit: UUT-01
+  sample_rationale: >
+    The response is software behaviour, identical on every unit — one unit,
+    the software-stack reference.
+  case_matrix:
+    - {case: A_no_supply_enable, description: "Case A: line disconnected, then enable nitrogen mode in Settings"}
+    - {case: B_low_pressure_start, description: "Case B: supply at 4 bar (below the 6 bar minimum), start a nitrogen program"}
+    - {case: C_lost_mid_purge, description: "Case C: supply closed 30 s into the purge"}
+    - {case: D_lost_mid_cure, description: "Case D: supply closed during the cure under nitrogen (after the purge)"}
+  # CONFIRM — detection means. The board has NO line-pressure sensor
+  # (io_bridge reports n2LinePressure = null), so cases A, B and C are not
+  # observable in software today. Worse: the Settings guard compares the
+  # missing value with 6 bar (null < 6 is true), so on real hardware nitrogen
+  # mode cannot be enabled at all — expect case A to show that. Either fit a
+  # pressure switch / transducer on the inlet (one spare ADS1115 input is
+  # enough) or remove the guard and rely on the O2 result. Until decided,
+  # this test fails by design — a software finding, not a waiver.
+  equipment:
+    - name: Regulated nitrogen supply with calibrated gauge
+      calibration_id: null
+    - name: Inline flow meter at the nitrogen inlet (0 to full purge flow)
+      calibration_id: null
+    - name: O2 analyzer with probe inside the chamber, logging at 1 Hz
+      calibration_id: null
+  preconditions:
+    - Unit ready for a nitrogen program; O2 probe in the chamber
+    - Supply valve within reach of the operator for the mid-run cases
+  procedure_steps:
+    - step: Record the case and the supply state applied
+      capture: [case, supply_state]
+    - step: Case A — with the line disconnected, try to enable nitrogen mode;
+        record whether it is refused, what the screen shows for N2 pressure,
+        and the message
+      capture: [enable_refused, pressure_display, message_text]
+    - step: Case B — at 4 bar, start a program with an N2 step; record
+        whether the pre-cure check refuses it, the error code, and whether
+        the message names the nitrogen line
+      capture: [precure_refused, error_code, alarm_names_n2_line]
+    - step: Cases C and D — close the supply; record whether the loss is
+        detected, how long it takes, what the job does (continue / abort /
+        prompt) and the O2 at the end of the cure step
+      capture: [loss_detected, detection_time, job_handling, o2_at_end_of_cure]
+    - step: Verdict for this case — did the system respond as the case
+        requires (A refused the enable, B refused the start, C/D detected the
+        loss and did not carry on), was the operator told the nitrogen line
+        is the problem, and did a cure run in air as if it were inert
+      capture: [detected_and_handled, operator_told_n2_line, cure_ran_in_air]
+    - step: Attach the O2 and flow logs
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: case, type: enum, values: [A_no_supply_enable, B_low_pressure_start, C_lost_mid_purge, D_lost_mid_cure]}
+    - {name: supply_state, type: string}
+    - {name: enable_refused, type: bool}
+    - {name: pressure_display, type: string, note: what Settings shows for N2 pressure}
+    - {name: message_text, type: string}
+    - {name: precure_refused, type: bool}
+    - {name: error_code, type: string}
+    - {name: alarm_names_n2_line, type: bool}
+    - {name: loss_detected, type: bool}
+    - {name: detection_time, unit: s, type: float}
+    - {name: job_handling, type: enum, values: [continued_in_air, aborted, operator_prompted, not_applicable]}
+    - {name: o2_at_end_of_cure, unit: "%", type: float}
+    - {name: detected_and_handled, type: bool, note: the response the case requires happened}
+    - {name: operator_told_n2_line, type: bool, note: the message / alarm names the nitrogen line}
+    - {name: cure_ran_in_air, type: bool, note: a cure step ran with the nitrogen gone, without abort or prompt}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    detected_and_handled == true AND operator_told_n2_line == true AND cure_ran_in_air == false
+  # The per-case detail (enable_refused, precure_refused, loss_detected,
+  # job_handling) is recorded for the report; the three verdict fields are
+  # what the case is judged on, so every case evaluates on the same terms.
+  repetitions: 1      # per case (4 cases)
+  duration_est_min: 90
+  dependencies: []
+
+- test_id: DVT-GAS-004
+  title: Nitrogen valve fail-safe — closed without power, closed on power loss, door and abort
+  subsystem: Process
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that nitrogen only flows while the software holds the valve open:
+    no flow with the machine off and the line pressurised for 24 hours, and
+    flow stops within 2 s when mains is cut during a purge, when the door is
+    opened during a purge, and when the operator aborts. A valve that stays
+    open without a command fills the chamber and the room.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  safety_plan:
+    - O2 monitor at the operator's breathing zone, alarm at 19.5 %, room
+      ventilated
+  equipment:
+    - name: Inline flow meter at the nitrogen inlet (0 to full purge flow)
+      calibration_id: null
+    - name: O2 analyzer with probe inside the chamber, logging at 1 Hz
+      calibration_id: null
+    - name: Remotely operated mains contactor
+    - name: Logic probe or scope on the valve drive (GPIO13 / driver output)
+  preconditions:
+    - Supply at the rated inlet pressure
+    - Flow meter inline, O2 probe in the chamber, probe on the valve drive
+  procedure_steps:
+    - step: Machine OFF, line pressurised — hold 24 h; record the flow meter
+        total and the chamber O2 at the end
+      capture: [flow_off_24h, o2_off_24h]
+    - step: Start a purge; cut mains 30 s in; record the time from the cut to
+        zero flow and the valve drive level
+      capture: [flow_stop_time_power_loss, drive_low_after_power_loss]
+    - step: Start a purge; open the door 30 s in; record the time from the
+        door opening to zero flow and the error code
+      capture: [flow_stop_time_door, error_code]
+    - step: Start a purge; abort from the UI 30 s in; record the time to zero
+        flow
+      capture: [flow_stop_time_abort]
+    - step: After each case confirm the valve is closed on the drive probe
+        and that the O2 in the chamber stops falling
+      capture: [valve_closed_all_cases]
+  data_fields:
+    - {name: flow_off_24h, unit: L, type: float, note: expected 0}
+    - {name: o2_off_24h, unit: "%", type: float}
+    - {name: flow_stop_time_power_loss, unit: s, type: float}
+    - {name: drive_low_after_power_loss, type: bool}
+    - {name: flow_stop_time_door, unit: s, type: float}
+    - {name: error_code, type: string}
+    - {name: flow_stop_time_abort, unit: s, type: float}
+    - {name: valve_closed_all_cases, type: bool}
+  pass_criteria: >
+    flow_off_24h <= 0.5 AND o2_off_24h >= 20.5
+    AND flow_stop_time_power_loss <= 2 AND drive_low_after_power_loss == true
+    AND flow_stop_time_door <= 2 AND flow_stop_time_abort <= 2
+    AND valve_closed_all_cases == true
+  repetitions: 1
+  duration_est_min: 90      # plus the 24 h soak
+  dependencies: []
+
+- test_id: DVT-GAS-005
+  title: Venting after a cure under nitrogen — O2 safe before the job completes and the door is released
+  subsystem: Process
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Verify that the chamber is breathable before the operator is invited to
+    open it: a program whose nitrogen cure is not followed by a Cooling
+    (vent) step is refused, and after the vent the chamber O2 is back to
+    19.5 % or more before the job reports complete and the door is released.
+    A door released on a nitrogen-filled chamber puts a face in an inert
+    atmosphere.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  equipment:
+    - name: O2 analyzer with probe inside the chamber, logging at 1 Hz
+      calibration_id: null
+    - name: O2 analyzer at the door opening, breathing height
+      calibration_id: null
+  preconditions:
+    - Supply at the rated inlet pressure; O2 probes in the chamber and at the
+      door opening
+  procedure_steps:
+    - step: Import a program with N2 purge and cure but no Cooling step;
+        record whether it is refused and the error code
+      capture: [program_without_vent_refused, error_code]
+    - step: Run a program with N2 purge, cure and the Cooling vent; record
+        the chamber O2 when the job reports complete and the time from the
+        end of the cure to O2 reaching 19.5 %
+      capture: [o2_at_job_complete, time_to_o2_safe]
+    - step: Record whether the door was released (magnet) before the chamber
+        O2 reached 19.5 %, and the O2 at the door opening when the operator
+        opens it
+      capture: [door_released_before_safe, o2_at_door_opening]
+    - step: Attach the O2 logs
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: program_without_vent_refused, type: bool}
+    - {name: error_code, type: string, note: expected 6003 N2_SEQUENCE_INVALID}
+    - {name: o2_at_job_complete, unit: "%", type: float}
+    - {name: time_to_o2_safe, unit: s, type: float}
+    - {name: door_released_before_safe, type: bool}
+    - {name: o2_at_door_opening, unit: "%", type: float}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    program_without_vent_refused == true AND o2_at_job_complete >= nitrogen_thresholds.room_o2_min_pct
+    AND door_released_before_safe == false AND o2_at_door_opening >= nitrogen_thresholds.room_o2_min_pct
+  repetitions: 1
+  duration_est_min: 60
+  dependencies: [DVT-GAS-001]
+
+- test_id: DVT-GAS-006
+  title: Room O2 depletion at the operator position — worst-case purging in the smallest permitted room
+  subsystem: Process
+  requirement_ids: []
+  method: Test
+  purpose: >
+    Every litre of nitrogen that enters the chamber leaves it into the room.
+    Verify that the worst case the software allows — two purges back to
+    back, the vent into the room, no extraction — keeps the O2 at the
+    operator's breathing zone above 19.5 % in the smallest room the manual
+    permits. If it does not, the manual needs a minimum room volume or a
+    ventilation requirement, and the design a ducted exhaust.
+  applicability:
+    rule: SINGLE
+    unit: UUT-01
+  sample_rationale: >
+    A design property of the purge volume and the room, not of the unit.
+  # CONFIRM: the minimum room volume / ventilation the manual will state
+  # (e.g. 15 m3 without forced ventilation).
+  safety_plan:
+    - Two O2 monitors (one at the operator, one at the door of the room),
+      alarm at 19.5 %; test aborted and room ventilated on the first alarm
+    - Second person outside the room in visual contact throughout
+  equipment:
+    - name: O2 monitor at the operator's breathing height (1.5 m, 0.5 m from
+        the door), logging at 1 Hz
+      calibration_id: null
+    - name: Room volume measurement (tape) and air-change record
+  preconditions:
+    - Room volume measured and recorded; doors and windows closed, forced
+      ventilation off, for the test duration
+    - Supply at the rated inlet pressure
+  procedure_steps:
+    - step: Record the room volume and the ventilation state
+      capture: [room_volume, ventilation_state]
+    - step: Run the longest nitrogen program the software allows (two purge
+        steps) twice back to back, venting into the room; log O2 for 60 min
+        from the first purge
+      capture: [n2_released, o2_min_breathing_zone, time_of_min]
+    - step: Record the O2 60 minutes after the last purge
+      capture: [o2_after_60min]
+  data_fields:
+    - {name: room_volume, unit: m3, type: float}
+    - {name: ventilation_state, type: string}
+    - {name: n2_released, unit: L, type: float}
+    - {name: o2_min_breathing_zone, unit: "%", type: float}
+    - {name: time_of_min, unit: min, type: float}
+    - {name: o2_after_60min, unit: "%", type: float}
+  pass_criteria: >
+    o2_min_breathing_zone >= nitrogen_thresholds.room_o2_min_pct
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: [DVT-GAS-001]
+
+- test_id: DVT-GAS-007
+  title: Nitrogen solenoid coil temperature — longest purge and a stuck-open command
+  subsystem: Process
+  requirement_ids: []
+  method: Test
+  purpose: >
+    The valve coil is energised for the whole purge and, if the software
+    hangs with the valve open (SAF-014 territory), indefinitely. Verify with a
+    thermocouple on the coil body that the coil stays within its insulation
+    class over two maximum-length purges back to back and over 60 minutes
+    continuously energised, and that the valve still operates afterwards.
+  applicability:
+    rule: SINGLE
+    unit: UUT-01
+  sample_rationale: >
+    A property of the valve part, identical on every unit.
+  # CONFIRM: coil_temp_limit_c from the valve datasheet (insulation class).
+  equipment:
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the solenoid coil body
+      calibration_id: null
+    - name: Inline flow meter at the nitrogen inlet (0 to full purge flow)
+      calibration_id: null
+  preconditions:
+    - Thermocouple bonded to the coil and logging on the TC-08 at 1 Hz;
+      ambient recorded
+    - Supply at the rated inlet pressure
+  procedure_steps:
+    - step: Run two maximum-length purges back to back; record the coil
+        temperature rise and peak
+      capture: [ambient_temp, coil_temp_peak_purges]
+    - step: Hold the valve energised for 60 minutes (service command);
+        record the coil temperature every 10 minutes and the final value
+      capture: [coil_temp_max, coil_temp_settled]
+    - step: De-energise; after cool-down run a normal purge and confirm the
+        flow is as before
+      capture: [valve_operates_after, flow_after]
+    - step: Attach the TC-08 log
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: ambient_temp, unit: C, type: float}
+    - {name: coil_temp_peak_purges, unit: C, type: float}
+    - {name: coil_temp_max, unit: C, type: float}
+    - {name: coil_temp_settled, type: bool, note: the trace is flat over the last 10 min}
+    - {name: valve_operates_after, type: bool}
+    - {name: flow_after, unit: L/min, type: float}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    coil_temp_max <= nitrogen_thresholds.coil_temp_limit_c AND coil_temp_settled == true
+    AND valve_operates_after == true
+  repetitions: 1
+  duration_est_min: 120
+  dependencies: []
+
+
+# =============================================================
+# PROCESS — build-head identification (NFC)
+# =============================================================
+# The build head (BH) is a consumable that carries an NFC tag; the machine has
+# an NFC reader (reset line NFC_RESET on the TCA6424A expander) and the print
+# record binds build head + tray membrane per print (print_hardware). Today
+# the software exposes only "NFC enabled" and a top-bar indicator — no tag
+# data in /api/state and no error code for a missing or unknown tag.
+
+- test_id: DVT-NFC-001
+  title: Build-head NFC identification — tag read on insertion, correct build head bound, no tag / wrong tag handled
+  subsystem: Process
+  requirement_ids: []          # CONFIRM: link to the build-head identification / print-hardware binding requirement
+  method: Test
+  purpose: >
+    Verify that when a build head carrying an NFC tag is inserted into the
+    chamber the reader identifies it: the tag is read within the required
+    time, the build head shown and bound to the print is the one actually
+    inserted (serial from the tag), swapping build heads changes the
+    identification, and a build head without a tag, an unregistered tag or a
+    disabled reader are reported to the operator instead of passing silently.
+    The reader antenna, its distance to the tag and the seating of the build
+    head are assembly properties, so every unit is measured.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  case_matrix:
+    - {case: A_registered_bh, description: "Case A: registered build head with its tag, seated normally — read and bound"}
+    - {case: B_swap, description: "Case B: second registered build head replaces the first — identification follows the tag"}
+    - {case: C_no_tag, description: "Case C: build head without a tag (tag masked with foil) — reported, not silently accepted"}
+    - {case: D_unknown_tag, description: "Case D: tag not registered to any build head — reported as unknown"}
+    - {case: E_partial_seat, description: "Case E: build head seated 5 mm short of its stop — read or a clear 'not detected'"}
+    - {case: F_reader_disabled, description: "Case F: NFC disabled in Settings — no read, the operator is told the reader is off"}
+  # CONFIRM: detection time limit (proposed 3 s from the build head reaching
+  # its stop with the door closed) and whether a print may start without an
+  # identified build head. CONFIRM: how the tag serial reaches the operator
+  # and the print record — today /api/state has no NFC tag field; until it
+  # does, the read can only be observed in the machine log, and cases C, D
+  # and F have no message to judge — a software finding, not a waiver.
+  equipment:
+    - name: Two registered build heads with NFC tags (serials recorded)
+    - name: Aluminium foil to mask a tag (case C) and one blank / foreign NFC tag (case D)
+    - name: Stopwatch or logged system timestamps
+    - name: Vernier caliper for the seating offset (case E)
+  preconditions:
+    - Unit idle, chamber at ambient, NFC enabled in Settings (except case F)
+    - Both build heads registered on the machine / organisation with their tag
+      serials; serials recorded before the run
+    - Machine log open (or the UI's NFC indicator visible) to time the read
+  procedure_steps:
+    - step: Record the case, the build head used and the serial on its tag
+      capture: [case, bh_serial_expected]
+    - step: Insert the build head to its stop (case E — 5 mm short, measured),
+        close the door and start the timer
+      capture: [seating_offset_mm]
+    - step: Record whether a tag was read, how long it took, and the serial
+        the machine reports
+      capture: [tag_read, detection_time, bh_serial_read]
+    - step: Record what the operator sees — indicator, build head shown, or
+        the message for a missing / unknown tag / disabled reader
+      capture: [operator_shown_identity, message_text, error_code]
+    - step: Start (or attempt) a print step and record whether the print
+        record binds this build head serial, or whether the start is refused
+        with a reason (cases C, D, F)
+      capture: [bound_to_print, start_refused_with_reason]
+    - step: Remove the build head and confirm the identification clears
+      capture: [identity_cleared_on_removal]
+    - step: Attach the machine log of the run
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: case, type: enum, values: [A_registered_bh, B_swap, C_no_tag, D_unknown_tag, E_partial_seat, F_reader_disabled]}
+    - {name: bh_serial_expected, type: string, note: from the tag / registration; blank for C, foreign serial for D}
+    - {name: seating_offset_mm, unit: mm, type: float}
+    - {name: tag_read, type: bool}
+    - {name: detection_time, unit: s, type: float}
+    - {name: bh_serial_read, type: string}
+    - {name: operator_shown_identity, type: bool, note: the UI shows which build head is in the chamber}
+    - {name: message_text, type: string}
+    - {name: error_code, type: string}
+    - {name: bound_to_print, type: bool}
+    - {name: start_refused_with_reason, type: bool}
+    - {name: identity_cleared_on_removal, type: bool}
+    - {name: response_correct, type: bool, note: "A/B/E-seated: read = expected serial, shown, bound; C/D/F: reported to the operator, no silent bind"}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    response_correct == true AND identity_cleared_on_removal == true
+    AND (tag_read == false OR bh_serial_read == bh_serial_expected)
+  # The last term is the one that catches a reader that reads the PREVIOUS
+  # build head (cached UID) after a swap — case B exists for it. Judge
+  # response_correct per case as the field note says; detection_time is
+  # recorded and compared with the CONFIRM limit once it is set.
+  repetitions: 1      # per case (6 cases)
+  duration_est_min: 40
+  dependencies: []
+
+
+- test_id: DVT-THM-005
+  title: LED settled temperature against LED-cooling fan duty — 100 / 90 / 80 / 70 % PWM, LEDs at maximum
+  subsystem: Thermal
+  requirement_ids: []          # CONFIRM: link to the LED temperature / lifetime requirement
+  method: Test
+  purpose: >
+    Find how far the LED-cooling airflow can be reduced. With the LEDs at
+    maximum in the worst-case chamber condition, the four LED-cooling fans are
+    held at 100, 90, 80 and 70 % PWM in turn and the back-face temperature of
+    every panel is left to settle at each duty. The result is the settled
+    temperature per panel per duty, its margin to the 75 C working limit, and
+    therefore the lowest duty the design can afford — the input for a quieter,
+    longer-lived fan setting and for the degraded-cooling thresholds of
+    DVT-SAF-019.
+  applicability:
+    rule: ALL
+  sample_rationale: >
+    Airflow through a panel depends on fan, duct and panel assembly; the
+    margin at reduced duty is a unit-to-unit variable, so all five units are
+    measured and the production setting is taken from the WORST unit.
+  sweep:
+    matrix:
+      - {fan_duty: 100}
+      - {fan_duty: 90}
+      - {fan_duty: 80}
+      - {fan_duty: 70}
+    unit: {fan_duty: "%"}
+  # Rows run in this order, hot to less cooling, on the same heat: each row
+  # starts from the previous row's settled state so the whole sweep is one
+  # continuous cure. Stop the sweep early if any panel reaches the working
+  # limit — the row is recorded as "not settled, limit reached" and the lower
+  # duties are not attempted on that unit.
+  equipment:
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouples bonded to the four LED panels next to the
+        built-in thermistors (the DVT-THM-002 bonds)
+      calibration_id: null
+    - name: Ambient temperature and humidity logger
+      calibration_id: null
+    - name: Anemometer at the panel inlets (optional — airflow versus duty)
+      calibration_id: null
+  preconditions:
+    - DVT-THM-002 complete on this unit (bonds in place, healthy baseline
+      at 100 % known)
+    - Chamber at 80 C and thermally settled (the worst case for the LEDs);
+      door closed; ambient 25 +/- 1 C, logged
+    - Fan duty commanded through the machine API (POST /api/fans/led_cooling)
+      or the DVT console's DUT Control; tach readback logged from telemetry
+    - Firmware LED protection at production values — an abort by the
+      protection is a result of this test, not a fault of it
+  procedure_steps:
+    - step: Automatic — press "Run the fan-duty sweep automatically". The
+        console sets the LED-cooling fans to each duty in turn, switches the
+        LEDs on at maximum, logs the four built-in thermistors until every
+        panel has settled or one reaches the 75 C limit, then switches the
+        LEDs off and the fans back to 100 %. It fills the fields of all four
+        duty rows of this unit, commits the other rows, and attaches the CSV
+        and the temperature-vs-time graph. Record the ambient and the chamber
+        temperature it read
+      capture: [fan_duty, ambient_temp, chamber_temp]
+      tool: led_fan_sweep
+    - step: Tach reading at this duty (from telemetry) and, if an anemometer
+        is fitted, the airflow at the panel inlet
+      capture: [tach_rpm, airflow]
+    - step: Log all four panel thermocouples and the built-in thermistors at
+        1 Hz until every panel has settled — rise below 0.1 C/min over
+        5 minutes — or until any panel reaches the 75 C working limit,
+        whichever first
+      capture: [settled, time_to_settle, limit_reached]
+    - step: Record the settled (or peak) back-face temperature of each panel
+        and the hottest panel
+      capture: [settled_temp_right, settled_temp_left, settled_temp_back, settled_temp_door, max_settled_temp, hottest_panel]
+    - step: Record the margin of the hottest panel to the working limit, and
+        the built-in thermistor reading of that panel for the same instant
+      capture: [margin_to_working_limit, thermistor_hottest_panel]
+    - step: Record whether the firmware raised an alarm or reduced the LEDs
+        during the row
+      capture: [alarm_raised, error_code]
+    - step: Attach the TC-08 log of the row
+      capture: [raw_log_attached]
+  data_fields:
+    - {name: fan_duty, unit: "%", type: int}
+    - {name: ambient_temp, unit: C, type: float}
+    - {name: chamber_temp, unit: C, type: float}
+    - {name: tach_rpm, unit: rpm, type: float}
+    - {name: airflow, unit: m/s, type: float, note: optional}
+    - {name: settled, type: bool, note: rise below 0.1 C/min over 5 min on every panel}
+    - {name: time_to_settle, unit: min, type: float}
+    - {name: limit_reached, type: bool, note: a panel reached 75 C before settling — row stopped}
+    - {name: settled_temp_right, unit: C, type: float}
+    - {name: settled_temp_left, unit: C, type: float}
+    - {name: settled_temp_back, unit: C, type: float}
+    - {name: settled_temp_door, unit: C, type: float}
+    - {name: max_settled_temp, unit: C, type: float}
+    - {name: hottest_panel, type: enum, values: [right, left, back, door]}
+    - {name: margin_to_working_limit, unit: C, type: float, note: 75 C minus max_settled_temp}
+    - {name: thermistor_hottest_panel, unit: C, type: float, note: what the machine's own sensor read at that instant}
+    - {name: alarm_raised, type: bool}
+    - {name: error_code, type: string}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    settled == true AND max_settled_temp <= led_temperature_thresholds.working_limit
+  # Every row is judged against the working limit: a row that settles above
+  # 75 C, or never settles, FAILS — that is the information, not a defect of
+  # the unit. The 100 % row must PASS on every unit (it is the THM-002
+  # condition). The lowest duty whose row PASSES on ALL FIVE units, minus a
+  # margin (CONFIRM — proposed 5 C, i.e. the row must settle at or below
+  # 70 C), is the candidate production fan setting; SAF-019's degraded-cooling
+  # thresholds are then set from the same curves. thermistor_hottest_panel
+  # against the bonded thermocouple also gives the sensor offset the firmware
+  # protection must allow for.
+  repetitions: 1      # per matrix row (4 duties)
+  duration_est_min: 45
+  dependencies: [DVT-THM-002]
+
 # =============================================================
 # THERMAL — cool-down
 # =============================================================
@@ -1882,3 +3311,275 @@ tests:
   repetitions: 1      # per sweep row (3 rows)
   duration_est_min: 30   # incremental only — the heat-up is charged to DVT-THM-001
   dependencies: [DVT-THM-001]
+
+- test_id: DVT-THM-004
+  title: Heater over-drive on 230 V mains with the selector at 110 V — time to heater shutdown on the heater-body thermocouple
+  subsystem: Thermal
+  requirement_ids: []          # CONFIRM: link to the mains-configuration safety requirement
+  method: Test
+  purpose: >
+    Measure how long the heater stays energised when the unit is fed 230 V
+    with the voltage selector at 110 V — the heater then runs far above its
+    rating until the heater branch fuse opens. The shutdown instant is read
+    from the thermocouple bonded to the heater body (PicoLog TC-08): with the
+    heater over-driven the body climbs steeply, and the moment it turns from
+    rising to falling is the fuse opening. heater_off_time is the time from
+    the HEAT command to that turn. DVT-SAF-001 proves the fault is contained;
+    this test puts a number on how long the heater is over-driven before it
+    is, how hot the body gets meanwhile, and what the software reports.
+  applicability:
+    rule: SINGLE
+    unit: UUT-05
+  sample_rationale: >
+    Consumes the heater branch fuse and drives the heater far above its rating
+    — a destructive fault injection like DVT-SAF-001, run on the unit
+    designated for destructive testing. It may be taken in the same
+    energisation as DVT-SAF-001; the TC-08 trace then serves both tests.
+  safety_plan:
+    - Test performed with the unit inside a fire-rated enclosure or on a
+      non-combustible bench, extinguisher within reach, no personnel within 2 m
+    - Mains applied through a remotely operated contactor; no one touches the
+      unit while energised
+    - Thermal camera and video recording running for the full duration
+    - Arc-flash rated PPE for the operator applying power
+    - Manual mains abort ceiling on the heater-body thermocouple — CONFIRM 250 C
+      (heater_thresholds.body_ceiling, the same ceiling as DVT-SAF-013). If the
+      body reaches it and the fuse has not opened, cut the mains at the source;
+      that is a FAIL of the branch protection and is recorded as such
+  equipment:
+    - name: Isolation transformer / programmable AC source, 230 V, >=3 kVA
+      calibration_id: null     # CONFIRM
+    - name: PicoLog TC-08 thermocouple logger
+      calibration_id: null
+    - name: Type-K thermocouple bonded to the heater body (the same bond as
+        DVT-SAF-013), logged at the fastest rate the channel count allows
+        (single channel 5 Hz; never below 1 Hz)
+      calibration_id: null
+    - name: Thermal camera
+      calibration_id: null
+    - name: Spare fuses — 0BLF005.T (5 A branch), 0215015.MXP (15 A inlet)
+  preconditions:
+    - Unit at ambient temperature, chamber empty, door closed; the heater body
+      flat at ambient on the TC-08 trace
+    - Voltage selector set to 110 V, verified visually and photographed; mains
+      source set to 230 V nominal
+    - New, verified fuses fitted in both the inlet holder and the heater
+      branch, part numbers recorded
+    - Heater-body thermocouple logging on the TC-08; the TC-08 clock is the
+      time base for the whole run and a marker (or clock reading) is taken at
+      the HEAT command
+  procedure_steps:
+    - step: Record the fuse part numbers and the selector position (photograph
+        both) and the heater-body temperature at rest
+      capture: [selector_position_verified, heater_temp_at_start]
+    - step: Energise the unit remotely and let the software come up WITHOUT
+        commanding heat; the heater body must stay flat — nothing may be
+        energised before HEAT
+      capture: [body_rising_before_heat]
+    - step: Command HEAT to 80 C and note the TC-08 timestamp of the command
+      capture: [heat_command_timestamp]
+    - step: Watch the heater-body trace — it climbs steeply while the heater is
+        over-driven; the instant it turns from rising to falling is the fuse
+        opening. heater_off_time is the HEAT command to that turn; record the
+        body temperature at the turn and its peak. If the body reaches the
+        ceiling first, cut the mains at the source and record the manual abort
+      capture: [heater_body_drop_observed, heater_off_time, heater_temp_at_fuse_open, heater_temp_peak, manual_abort_used]
+    - step: Record what the software reported while the heater was over-driven
+        and after the fuse opened — alarm, error code, and the time from the
+        fuse opening to the alarm (blank if it never alarmed)
+      capture: [software_alarm_raised, software_alarm_time, error_code]
+    - step: De-energise, isolate, allow to cool; identify which fuse opened
+      capture: [fuse_opened, which_fuse_opened]
+    - step: Replace the opened fuse, set the selector to 230 V, run a functional
+        heat-up to confirm no collateral damage, and attach the TC-08 log
+      capture: [post_test_functional_pass, raw_log_attached]
+  data_fields:
+    - {name: selector_position_verified, type: bool}
+    - {name: heater_temp_at_start, unit: C, type: float}
+    - {name: body_rising_before_heat, type: bool, note: the heater body must be flat before HEAT is commanded}
+    - {name: heat_command_timestamp, type: string, note: TC-08 clock}
+    - {name: heater_body_drop_observed, type: bool, note: a clear rise-to-fall turn is visible on the heater-body trace}
+    - {name: heater_off_time, unit: s, type: float, range: [0, 600], note: HEAT command to the rise-to-fall turn on the heater-body thermocouple = the fuse opening}
+    - {name: heater_temp_at_fuse_open, unit: C, type: float}
+    - {name: heater_temp_peak, unit: C, type: float}
+    - {name: manual_abort_used, type: bool, note: mains cut at the source because the body reached the ceiling — a FAIL}
+    - {name: software_alarm_raised, type: bool}
+    - {name: software_alarm_time, unit: s, type: float, note: fuse opening to the software alarm}
+    - {name: error_code, type: string}
+    - {name: fuse_opened, type: bool}
+    - {name: which_fuse_opened, type: enum, values: [heater_branch_5A, inlet_15A, both, none]}
+    - {name: post_test_functional_pass, type: bool}
+    - {name: raw_log_attached, type: bool}
+  pass_criteria: >
+    body_rising_before_heat == false AND heater_body_drop_observed == true
+    AND fuse_opened == true AND which_fuse_opened == 'heater_branch_5A'
+    AND manual_abort_used == false
+    AND heater_off_time <= heater_thresholds.selector_mismatch_fuse_open_max
+    AND heater_temp_peak <= heater_thresholds.body_ceiling
+    AND post_test_functional_pass == true
+  # NOTE: heater_thresholds.selector_mismatch_fuse_open_max is null until the
+  # acceptable over-drive time is decided (from the 0BLF005.T time-current
+  # curve at the measured branch current and the heater rating) — the verdict
+  # is BLOCKED, never PASS, until then. The trace method is conservative (the
+  # bond and the element's thermal mass lag the electrical event), the same
+  # caveat as DVT-SAF-004. The software's reaction is recorded, not judged:
+  # on the machine as built there is no heater-response watchdog, so no alarm
+  # is the expected finding.
+  repetitions: 1
+  duration_est_min: 90
+  dependencies: []
+  safety_critical: true
+
+- test_id: DVT-OPT-001
+  title: UV irradiance against commanded LED power — 405 nm, StarBright on the machine's USB
+  subsystem: Optical
+  requirement_ids: []          # CONFIRM: link to the UV output / dose requirement
+  method: Test
+  purpose: >
+    Measure the irradiance the chamber actually delivers at each commanded LED
+    power at 405 nm — 30 to 100 % in 10 % steps — with the Ophir StarBright
+    connected directly to the machine, and plot measured irradiance against
+    the command. The software treats the command as calibrated system power;
+    this is the curve that says whether it is, on every unit: monotonic, how
+    linear, and how the mW/cm2 per % falls towards 100 % as the LEDs warm up.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  uv_wavelength_nm: 405
+  equipment:
+    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300RM-8W) and its USB cable
+      verify: live_meter       # no certificate needed — the console checks through the machine that the meter is connected and delivering readings
+    - name: Sensor fixture holding the head at the chamber centre, facing the LEDs
+      verify: none             # a fixture: nothing to calibrate
+  preconditions:
+    - StarBright USB cable plugged into a free USB port of the MACHINE (not the
+      console PC), meter switched on
+    - Meter set to 405 nm on the meter itself (Setup → Wavelength)
+    - UV head at the chamber centre on the build platform, facing up at the
+      LEDs, cable through the door seal; door closed and latched
+    - Chamber at ambient, LEDs cold (no cure in the last 15 minutes); all four
+      LED calibration factors at their production values
+  procedure_steps:
+    - step: Run the test. The console first checks the StarBright through the
+        machine — connected, delivering a reading, set to 405 nm (the run stays
+        locked until it is) — then the machine takes a dark reading, steps the
+        LEDs 30, 40, 50, 60, 70, 80, 90, 100 % at 405 nm, 10 s per step, reading
+        the meter at 5 Hz, and switches them off. Every value, the log (CSV) and
+        the irradiance-vs-command graph are recorded automatically; nothing is
+        typed in
+      capture: [meter_detected, meter_head, meter_wavelength_nm, meter_wavelength_verified, dark_mw_cm2, irradiance_30, irradiance_40, irradiance_50, irradiance_60, irradiance_70, irradiance_80, irradiance_90, irradiance_100, all_steps_measured, slope_mw_per_pct, intercept_mw_cm2, r2, max_dev_pct, gain_30, gain_100, monotonic, led_max_c, graph_attached]
+      tool: uv_linearity
+      auto: true
+  data_fields:
+    - {name: meter_detected, type: bool, note: the machine sees the StarBright on its USB}
+    - {name: meter_head, type: string, note: head model and serial as reported by the meter}
+    - {name: meter_wavelength_nm, unit: nm, type: int, note: what the meter is SET to, read back by the machine}
+    - {name: meter_wavelength_verified, type: bool, note: meter setting == 405 nm before the sweep}
+    - {name: dark_mw_cm2, unit: mW/cm2, type: float, note: LEDs off}
+    - {name: irradiance_30, unit: mW/cm2, type: float}
+    - {name: irradiance_40, unit: mW/cm2, type: float}
+    - {name: irradiance_50, unit: mW/cm2, type: float}
+    - {name: irradiance_60, unit: mW/cm2, type: float}
+    - {name: irradiance_70, unit: mW/cm2, type: float}
+    - {name: irradiance_80, unit: mW/cm2, type: float}
+    - {name: irradiance_90, unit: mW/cm2, type: float}
+    - {name: irradiance_100, unit: mW/cm2, type: float}
+    - {name: all_steps_measured, type: bool, note: every step has a settled value}
+    - {name: slope_mw_per_pct, unit: mW/cm2 per %, type: float}
+    - {name: intercept_mw_cm2, unit: mW/cm2, type: float}
+    - {name: r2, type: float, range: [0, 1]}
+    - {name: max_dev_pct, unit: '%', type: float, note: largest deviation from the fit, as % of the fitted value at 100 %}
+    - {name: gain_30, unit: mW/cm2 per %, type: float, note: irradiance / command at 30 %}
+    - {name: gain_100, unit: mW/cm2 per %, type: float, note: irradiance / command at 100 % — lower than gain_30 when the curve bends over}
+    - {name: monotonic, type: bool, note: every step reads higher than the one before}
+    - {name: led_max_c, unit: C, type: float, note: hottest LED thermistor at the end of the 100 % step}
+    - {name: graph_attached, type: bool}
+  pass_criteria: >
+    meter_detected == true AND meter_wavelength_verified == true
+    AND all_steps_measured == true AND monotonic == true AND graph_attached == true
+  # NOTE: linearity (R², max_dev_pct) and the absolute output at 100 % are
+  # recorded, not judged — their limits are CONFIRM (from the resin dose
+  # requirement and the LED datasheet). The bench run of 2026-09-14 at 450 nm
+  # gave 0.299 mW/cm2 per %, R² 0.993, gain falling from 0.40 to 0.33 —
+  # the curve bends over as the LEDs warm; that is why the sweep is short
+  # (15 s per step) and starts cold.
+  repetitions: 1
+  duration_est_min: 15
+  dependencies: []
+
+- test_id: DVT-OPT-002
+  title: UV irradiance against commanded LED power — 450 nm, StarBright on the machine's USB
+  subsystem: Optical
+  requirement_ids: []          # CONFIRM: link to the UV output / dose requirement
+  method: Test
+  purpose: >
+    Measure the irradiance the chamber actually delivers at each commanded LED
+    power at 450 nm — 30 to 100 % in 10 % steps — with the Ophir StarBright
+    connected directly to the machine, and plot measured irradiance against
+    the command. The software treats the command as calibrated system power;
+    this is the curve that says whether it is, on every unit: monotonic, how
+    linear, and how the mW/cm2 per % falls towards 100 % as the LEDs warm up.
+  applicability:
+    rule: ALL
+  sample_rationale: null
+  uv_wavelength_nm: 450
+  equipment:
+    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300RM-8W) and its USB cable
+      verify: live_meter       # no certificate needed — the console checks through the machine that the meter is connected and delivering readings
+    - name: Sensor fixture holding the head at the chamber centre, facing the LEDs
+      verify: none             # a fixture: nothing to calibrate
+  preconditions:
+    - StarBright USB cable plugged into a free USB port of the MACHINE (not the
+      console PC), meter switched on
+    - Meter set to 450 nm on the meter itself (Setup → Wavelength)
+    - UV head at the chamber centre on the build platform, facing up at the
+      LEDs, cable through the door seal; door closed and latched
+    - Chamber at ambient, LEDs cold (no cure in the last 15 minutes); all four
+      LED calibration factors at their production values
+  procedure_steps:
+    - step: Run the test. The console first checks the StarBright through the
+        machine — connected, delivering a reading, set to 450 nm (the run stays
+        locked until it is) — then the machine takes a dark reading, steps the
+        LEDs 30, 40, 50, 60, 70, 80, 90, 100 % at 450 nm, 10 s per step, reading
+        the meter at 5 Hz, and switches them off. Every value, the log (CSV) and
+        the irradiance-vs-command graph are recorded automatically; nothing is
+        typed in
+      capture: [meter_detected, meter_head, meter_wavelength_nm, meter_wavelength_verified, dark_mw_cm2, irradiance_30, irradiance_40, irradiance_50, irradiance_60, irradiance_70, irradiance_80, irradiance_90, irradiance_100, all_steps_measured, slope_mw_per_pct, intercept_mw_cm2, r2, max_dev_pct, gain_30, gain_100, monotonic, led_max_c, graph_attached]
+      tool: uv_linearity
+      auto: true
+  data_fields:
+    - {name: meter_detected, type: bool, note: the machine sees the StarBright on its USB}
+    - {name: meter_head, type: string, note: head model and serial as reported by the meter}
+    - {name: meter_wavelength_nm, unit: nm, type: int, note: what the meter is SET to, read back by the machine}
+    - {name: meter_wavelength_verified, type: bool, note: meter setting == 450 nm before the sweep}
+    - {name: dark_mw_cm2, unit: mW/cm2, type: float, note: LEDs off}
+    - {name: irradiance_30, unit: mW/cm2, type: float}
+    - {name: irradiance_40, unit: mW/cm2, type: float}
+    - {name: irradiance_50, unit: mW/cm2, type: float}
+    - {name: irradiance_60, unit: mW/cm2, type: float}
+    - {name: irradiance_70, unit: mW/cm2, type: float}
+    - {name: irradiance_80, unit: mW/cm2, type: float}
+    - {name: irradiance_90, unit: mW/cm2, type: float}
+    - {name: irradiance_100, unit: mW/cm2, type: float}
+    - {name: all_steps_measured, type: bool, note: every step has a settled value}
+    - {name: slope_mw_per_pct, unit: mW/cm2 per %, type: float}
+    - {name: intercept_mw_cm2, unit: mW/cm2, type: float}
+    - {name: r2, type: float, range: [0, 1]}
+    - {name: max_dev_pct, unit: '%', type: float, note: largest deviation from the fit, as % of the fitted value at 100 %}
+    - {name: gain_30, unit: mW/cm2 per %, type: float, note: irradiance / command at 30 %}
+    - {name: gain_100, unit: mW/cm2 per %, type: float, note: irradiance / command at 100 % — lower than gain_30 when the curve bends over}
+    - {name: monotonic, type: bool, note: every step reads higher than the one before}
+    - {name: led_max_c, unit: C, type: float, note: hottest LED thermistor at the end of the 100 % step}
+    - {name: graph_attached, type: bool}
+  pass_criteria: >
+    meter_detected == true AND meter_wavelength_verified == true
+    AND all_steps_measured == true AND monotonic == true AND graph_attached == true
+  # NOTE: linearity (R², max_dev_pct) and the absolute output at 100 % are
+  # recorded, not judged — their limits are CONFIRM (from the resin dose
+  # requirement and the LED datasheet). The bench run of 2026-09-14 at 450 nm
+  # gave 0.299 mW/cm2 per %, R² 0.993, gain falling from 0.40 to 0.33 —
+  # the curve bends over as the LEDs warm; that is why the sweep is short
+  # (15 s per step) and starts cold.
+  repetitions: 1
+  duration_est_min: 15
+  dependencies: []

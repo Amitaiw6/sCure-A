@@ -5,3 +5,7 @@ google-api-python-client>=2
 google-auth-oauthlib>=1
 google-auth-httplib2>=0.2
 pytest>=8
+pyserial>=3.5
+# optional, for the Ophir StarLab COM backend (with StarLab installed): pywin32>=306
+matplotlib>=3.8
+python-docx>=1.1

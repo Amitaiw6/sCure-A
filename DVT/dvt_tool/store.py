@@ -53,7 +53,7 @@ class Store:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(self.path), check_same_thread=False)
+        self.db = sqlite3.connect(str(self.path), check_same_thread=False, timeout=30)   # wait for the sync worker / a second console instead of "database is locked"
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self.db.commit()
@@ -81,12 +81,28 @@ class Store:
         self.log("Configuration frozen", by, None, {"unit": unit_id, "serial": serial}); self.db.commit()
 
     # ---------------- runs ----------------
-    def ensure_runs(self, specs: Iterable, catalog_version: str) -> None:
+    def ensure_runs(self, specs: Iterable, catalog_version: str) -> dict:
+        """Make the stored run set match the catalog's. New runs are added; runs the
+        catalog no longer defines (a test re-shaped — e.g. ELE-005 gaining a mains-voltage
+        sweep) are removed when they were never started, and kept but reported when
+        they hold data, so nothing recorded on the bench is ever deleted here.
+        Returns {"added": n, "retired": n, "orphaned": [run_id…]}."""
+        specs = list(specs); wanted = {s.run_id for s in specs}
+        before = {r["run_id"] for r in self.db.execute("SELECT run_id FROM runs WHERE supplementary=0")}
         for s in specs:
             self.db.execute("INSERT OR IGNORE INTO runs (run_id, test_id, unit_id, variant, repetition, supplementary, catalog_version) "
                             "VALUES (?,?,?,?,?,?,?)", (s.run_id, s.test_id, s.unit_id, json.dumps(s.variant, sort_keys=True),
                                                        s.repetition, 1 if s.supplementary else 0, catalog_version))
+        stale = [dict(r) for r in self.db.execute("SELECT run_id, status FROM runs WHERE supplementary=0") if r["run_id"] not in wanted]
+        retired = [r["run_id"] for r in stale if r["status"] == "NOT_STARTED"]
+        orphaned = [r["run_id"] for r in stale if r["status"] != "NOT_STARTED"]
+        if retired:
+            self.db.executemany("DELETE FROM runs WHERE run_id=? AND status='NOT_STARTED'", [(rid,) for rid in retired])
+        if retired or orphaned:
+            self.log("Catalog changed — run set reconciled", None, None,
+                     {"catalog_version": catalog_version, "retired_not_started": len(retired), "kept_with_data": orphaned})
         self.db.commit()
+        return {"added": len(wanted - before), "retired": len(retired), "orphaned": orphaned}
 
     def run(self, run_id: str) -> dict | None:
         r = self.db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
@@ -147,6 +163,32 @@ class Store:
             self.queue("run", a)
         self.db.commit()
         return affected
+
+    def reset_unit(self, unit_id: str, reason: str, by: str) -> dict:
+        """Restart one unit under test: every run of that unit goes back to NOT_STARTED with no operator, values,
+        verdict, witness or steps; its redlines, NCRs, waivers, attachments and phase sign-offs are removed, its
+        supplementary runs dropped and its configuration un-frozen. Irreversible; journaled, so every console
+        applies the same erase. Returns what was removed (counts + attachment paths, for the caller to delete)."""
+        rids = [r["run_id"] for r in self.db.execute("SELECT run_id FROM runs WHERE unit_id=?", (unit_id,))]
+        removed = {"unit_id": unit_id, "runs": len(rids), "attachment_paths": []}
+        if rids:
+            q = ",".join("?" * len(rids))
+            removed["attachment_paths"] = [r["path"] for r in self.db.execute(f"SELECT path FROM attachments WHERE run_id IN ({q})", rids)]
+            for table in ("run_values", "redlines", "ncrs", "waivers", "attachments"):
+                removed[table] = self.db.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE run_id IN ({q})", rids).fetchone()["n"]
+                self.db.execute(f"DELETE FROM {table} WHERE run_id IN ({q})", rids)
+            self.db.execute("DELETE FROM runs WHERE unit_id=? AND supplementary=1", (unit_id,))
+            self.db.execute("UPDATE runs SET status='NOT_STARTED', verdict=NULL, verdict_detail=NULL, operator=NULL, witness=NULL, started_at=NULL, "
+                            "finished_at=NULL, current_step=0, preconditions_confirmed=0, safety_confirmed=0, parent_run_id=NULL, reject_reason=NULL, notes=NULL "
+                            "WHERE unit_id=?", (unit_id,))
+        removed["phase_signoffs"] = self.db.execute("SELECT COUNT(*) AS n FROM phase_signoff WHERE unit_id=?", (unit_id,)).fetchone()["n"]
+        self.db.execute("DELETE FROM phase_signoff WHERE unit_id=?", (unit_id,))
+        self.db.execute("UPDATE units SET config_frozen=0, config_frozen_by=NULL, config_frozen_at=NULL, serial=NULL WHERE unit_id=?", (unit_id,))
+        self.log("Unit reset — its data erased", by, None, {"unit_id": unit_id, "reason": reason, **{k: v for k, v in removed.items() if k != "attachment_paths"}})
+        for rid in rids:
+            self.queue("run", rid)
+        self.db.commit()
+        return removed
 
     def link_parent(self, child_run_id: str, parent_run_id: str) -> None:
         self.db.execute("UPDATE runs SET parent_run_id=? WHERE run_id=?", (parent_run_id, child_run_id)); self.db.commit()

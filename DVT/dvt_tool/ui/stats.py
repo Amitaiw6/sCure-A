@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QTa
 
 from . import theme as T
 from .widgets import Card, label
-from .i18n import tr
+from .i18n import tr, trf
 
 UNIT_COLORS = ["#2f6fdb", "#e8461f", "#1f9d61", "#7c5cbf", "#d68a0c", "#0aa3b5"]
 
@@ -60,12 +60,66 @@ class LineChart(QWidget):
         p.setPen(QColor(T.MUTED)); p.setFont(QFont("Segoe UI", 8)); p.save(); p.translate(14, plot.center().y()); p.rotate(-90); p.drawText(QRectF(-80, -8, 160, 16), Qt.AlignCenter, self.ylabel); p.restore()
 
 
+class ErrorBarChart(QWidget):
+    """Mean ± std per machine for one temperature field; outlier machines in red (SRS-DVT-195)."""
+
+    def __init__(self):
+        super().__init__(); self.units: list[str] = []; self.means: dict[str, float] = {}; self.stds: dict[str, float] = {}
+        self.outliers: set[str] = set(); self.title = ""; self.grand = None
+        self.setMinimumHeight(240); self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def set(self, units, means, stds, outliers, title, grand=None):
+        self.units, self.means, self.stds, self.outliers, self.title, self.grand = units, means, stds, set(outliers), title, grand; self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height(); L, R, Tm, B = 56, 24, 28, 36
+        plot = QRectF(L, Tm, w - L - R, h - Tm - B)
+        p.fillRect(self.rect(), QColor(T.CARD))
+        if not self.means:
+            p.setPen(QColor(T.MUTED)); p.drawText(self.rect(), Qt.AlignCenter, tr("No recorded temperatures yet — select a row above")); return
+        lo = min(self.means[u] - self.stds.get(u, 0) for u in self.means); hi = max(self.means[u] + self.stds.get(u, 0) for u in self.means)
+        if self.grand is not None: lo, hi = min(lo, self.grand), max(hi, self.grand)
+        if hi == lo: hi = lo + 1
+        pad = (hi - lo) * 0.15; lo -= pad; hi += pad
+        n = max(len(self.units), 1)
+        def X(i): return plot.left() + plot.width() * (i + 0.5) / n
+        def Y(v): return plot.bottom() - plot.height() * (v - lo) / (hi - lo)
+        p.setPen(QPen(QColor(T.LINE), 1)); p.setFont(QFont("Segoe UI", 8))
+        for k in range(5):
+            y = plot.top() + plot.height() * k / 4; p.setPen(QPen(QColor(T.LINE), 1)); p.drawLine(int(plot.left()), int(y), int(plot.right()), int(y))
+            p.setPen(QColor(T.MUTED)); p.drawText(QRectF(0, y - 8, L - 8, 16), Qt.AlignRight | Qt.AlignVCenter, f"{hi - (hi - lo) * k / 4:.1f}")
+        if self.grand is not None:
+            p.setPen(QPen(QColor(T.MUTED), 1, Qt.DashLine)); p.drawLine(int(plot.left()), int(Y(self.grand)), int(plot.right()), int(Y(self.grand)))
+        for i, u in enumerate(self.units):
+            p.setPen(QColor(T.MUTED)); p.drawText(QRectF(X(i) - 50, plot.bottom() + 6, 100, 16), Qt.AlignCenter, u)
+            if u not in self.means: continue
+            m, s = self.means[u], self.stds.get(u, 0.0); col = QColor(T.BAD if u in self.outliers else UNIT_COLORS[0])
+            if s > 0:
+                p.setPen(QPen(QColor(T.LINE_2), 1.5)); p.drawLine(QPointF(X(i), Y(m - s)), QPointF(X(i), Y(m + s)))
+                p.drawLine(QPointF(X(i) - 6, Y(m - s)), QPointF(X(i) + 6, Y(m - s))); p.drawLine(QPointF(X(i) - 6, Y(m + s)), QPointF(X(i) + 6, Y(m + s)))
+            p.setPen(Qt.NoPen); p.setBrush(col); p.drawEllipse(QPointF(X(i), Y(m)), 5.5, 5.5)
+            p.setPen(col); p.setFont(QFont("Segoe UI", 8, QFont.Bold)); p.drawText(QRectF(X(i) - 50, Y(m) - 24, 100, 14), Qt.AlignCenter, f"{m:.1f}" + (f" ± {s:.1f}" if s > 0 else ""))
+        p.setPen(QColor(T.INK)); p.setFont(QFont("Segoe UI", 9, QFont.Bold)); p.drawText(QRectF(plot.left(), 4, plot.width(), 18), Qt.AlignLeft | Qt.AlignVCenter, self.title)
+
+
 class StatisticsPage(QWidget):
     def __init__(self, engine):
         super().__init__(); self.engine, self.cat, self.store = engine, engine.cat, engine.store
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(16)
         cm = Card(tr("All machines — verdict per test"), hint=tr("rolled-up verdict of each test on each unit · N/A = not applicable to that unit"))
         self.matrix = QTableWidget(0, 0); self.matrix.verticalHeader().hide(); self.matrix.setMinimumHeight(220); cm.body.addWidget(self.matrix, 1); root.addWidget(cm, 2)
+        # ---- temperature by component, per machine (SRS-DVT-195)
+        ct = Card(tr("Temperature by component — machine comparison"),
+                  hint=tr("mean ± std per machine for every recorded temperature · between-unit std and spread · a machine further from the median of the machines than 3× MAD / 2× pooled std (≥ 2 °C) is an outlier"))
+        row = QHBoxLayout(); row.addWidget(label(tr("Component"), "muted")); self.cb_comp = QComboBox(); self.cb_comp.setMinimumWidth(220); row.addWidget(self.cb_comp)
+        self.lbl_comp_summary = label("", "muted", wrap=True); row.addWidget(self.lbl_comp_summary, 1); ct.body.addLayout(row)
+        split = QHBoxLayout(); split.setSpacing(12)
+        self.tbl_temp = QTableWidget(0, 0); self.tbl_temp.verticalHeader().hide(); self.tbl_temp.setSelectionBehavior(QTableWidget.SelectRows); self.tbl_temp.setSelectionMode(QTableWidget.SingleSelection)
+        split.addWidget(self.tbl_temp, 3); self.temp_chart = ErrorBarChart(); split.addWidget(self.temp_chart, 2); ct.body.addLayout(split, 1)
+        root.addWidget(ct, 3)
+        self._temp_stats = []
+        self.cb_comp.currentIndexChanged.connect(self._fill_temp_table); self.tbl_temp.currentCellChanged.connect(lambda r, *_: self._show_temp_row(r))
         c = Card(tr("Comparison across units"), hint=tr("SRS-DVT-095 — one curve per unit, x = sweep value (or repetition)"))
         row = QHBoxLayout(); row.addWidget(label(tr("Test"), "muted")); self.cb_test = QComboBox(); self.cb_test.setMinimumWidth(420)
         for tid in self.cat.ordered_test_ids(): self.cb_test.addItem(f"{tid} — {self.cat.tests[tid]['title']}", tid)
@@ -83,10 +137,10 @@ class StatisticsPage(QWidget):
 
     def refresh_matrix(self):
         m = self.engine.unit_matrix(); units = m["units"]
-        self.matrix.clear(); self.matrix.setColumnCount(len(units) + 2); self.matrix.setHorizontalHeaderLabels([tr("Test"), "Subsystem"] + units); self.matrix.setRowCount(len(m["rows"]))
+        self.matrix.clear(); self.matrix.setColumnCount(len(units) + 2); self.matrix.setHorizontalHeaderLabels([tr("Test"), tr("Subsystem")] + units); self.matrix.setRowCount(len(m["rows"]))
         for i, r in enumerate(m["rows"]):
             self.matrix.setItem(i, 0, QTableWidgetItem(f"{r['testId']}  {r['title'][:40]}"))
-            sub = QTableWidgetItem(r["subsystem"]); sub.setForeground(QColor(T.SUBSYSTEM.get(r["subsystem"], T.INK))); self.matrix.setItem(i, 1, sub)
+            sub = QTableWidgetItem(self.cat.label("subsystems", r["subsystem"])); sub.setForeground(QColor(T.SUBSYSTEM.get(r["subsystem"], T.INK))); self.matrix.setItem(i, 1, sub)
             for j, u in enumerate(units):
                 v = r["cells"][u]; it = QTableWidgetItem(v); it.setTextAlignment(Qt.AlignCenter)
                 col = T.VERDICT.get(v); it.setForeground(QColor(col if col else (T.LINE_2 if v == "N/A" else T.MUTED)))
@@ -96,8 +150,62 @@ class StatisticsPage(QWidget):
         self.matrix.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         for j in range(1, len(units) + 2): self.matrix.horizontalHeader().setSectionResizeMode(j, QHeaderView.ResizeToContents)
 
+    # ---- temperature by component (SRS-DVT-195)
+    def refresh_temps(self):
+        from .. import tempstats
+        self._temp_stats = tempstats.collect(self.cat, self.store)
+        present = [c for c, _ in tempstats.COMPONENTS if any(fs.component == c for fs in self._temp_stats)]
+        cur = self.cb_comp.currentData()
+        self.cb_comp.blockSignals(True); self.cb_comp.clear(); self.cb_comp.addItem(tr("All components"), "")
+        for c in present: self.cb_comp.addItem(tr(tempstats.COMPONENT_LABEL[c]), c)
+        idx = self.cb_comp.findData(cur) if cur else 0
+        self.cb_comp.setCurrentIndex(max(idx, 0)); self.cb_comp.blockSignals(False)
+        self._fill_temp_table()
+
+    def _fill_temp_table(self):
+        from .. import tempstats
+        comp = self.cb_comp.currentData() or ""
+        stats = [fs for fs in self._temp_stats if not comp or fs.component == comp]
+        units = self.cat.unit_ids()
+        self._temp_rows = stats
+        self.tbl_temp.blockSignals(True); self.tbl_temp.clear()
+        hdr = [tr("Component"), tr("Test"), tr("Field")] + units + [tr("Between-unit std"), tr("Spread"), tr("Outlier")]
+        self.tbl_temp.setColumnCount(len(hdr)); self.tbl_temp.setHorizontalHeaderLabels(hdr); self.tbl_temp.setRowCount(len(stats))
+        for i, fs in enumerate(stats):
+            cells = [tr(tempstats.COMPONENT_LABEL.get(fs.component, fs.component)), fs.test_id, fs.field]
+            for u in units:
+                s = fs.per_unit.get(u); cells.append(f"{s.mean:.1f} ± {s.std:.1f}  (n={s.n})" if s else "—")
+            cells += [f"{fs.between_std:.2f}", f"{fs.spread:.1f}", ", ".join(fs.outliers) or "—"]
+            for j, txt in enumerate(cells):
+                it = QTableWidgetItem(txt)
+                if 3 <= j < 3 + len(units) and units[j - 3] in fs.outliers: it.setForeground(QColor(T.BAD)); f = it.font(); f.setBold(True); it.setFont(f)
+                if j == len(cells) - 1 and fs.outliers: it.setForeground(QColor(T.BAD))
+                self.tbl_temp.setItem(i, j, it)
+        self.tbl_temp.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents); self.tbl_temp.blockSignals(False)
+        summ = tempstats.component_summary(self._temp_stats)
+        if comp and comp in summ:
+            s = summ[comp]
+            flagged = ", ".join(f"{u} ×{n}" for u, n in sorted(s["outliers"].items()))
+            self.lbl_comp_summary.setText(trf("{n} fields · worst between-unit std {std} °C · max spread {spread} °C · outliers: {out}",
+                                              n=s["fields"], std=f"{s['worst_between_std']:.2f}", spread=f"{s['spread_max']:.1f}", out=flagged or tr("none")))
+        else:
+            flagged = {}
+            for s in summ.values():
+                for u, n in s["outliers"].items(): flagged[u] = flagged.get(u, 0) + n
+            self.lbl_comp_summary.setText(trf("{n} temperature fields across {c} components · machines standing out: {out}",
+                                              n=len(self._temp_stats), c=len(summ), out=", ".join(f"{u} ×{n}" for u, n in sorted(flagged.items())) or tr("none")))
+        if stats: self.tbl_temp.selectRow(0); self._show_temp_row(0)
+        else: self.temp_chart.set([], {}, {}, [], "")
+
+    def _show_temp_row(self, r):
+        if r is None or r < 0 or r >= len(getattr(self, "_temp_rows", [])): return
+        from .. import tempstats
+        fs = self._temp_rows[r]; units = self.cat.unit_ids()
+        self.temp_chart.set(units, {u: s.mean for u, s in fs.per_unit.items()}, {u: s.std for u, s in fs.per_unit.items()}, fs.outliers,
+                            f"{tr(tempstats.COMPONENT_LABEL.get(fs.component, fs.component))} · {fs.test_id} · {fs.field} [°C]", fs.grand_mean)
+
     def refresh(self):
-        self.refresh_matrix()
+        self.refresh_matrix(); self.refresh_temps()
         tid = self.cb_test.currentData(); field = self.cb_field.currentData()
         if not tid or not field: self.chart.set({}, [], ""); return
         runs = [r for r in self.store.runs(tid) if r["status"] == "DONE"]

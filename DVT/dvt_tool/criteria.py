@@ -19,6 +19,7 @@ BLOCKED = a referenced field is missing or a referenced threshold is null
 from __future__ import annotations
 
 import ast
+import operator
 import re
 from typing import Any, Mapping
 
@@ -34,6 +35,9 @@ class _Missing(Exception):
 
 
 _ALLOWED_FUNCS = {"abs": abs, "max": max, "min": min}
+# only the requested operator runs: == between a bool and a string is FAIL, not a TypeError from an unused <
+_COMPARE = {ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
+            ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge}
 
 
 def _normalise(expr: str) -> str:
@@ -84,11 +88,10 @@ class _Evaluator(ast.NodeVisitor):
         left = self.visit(n.left)
         for op, comp in zip(n.ops, n.comparators):
             right = self.visit(comp)
-            ok = {ast.Eq: left == right, ast.NotEq: left != right, ast.Lt: left < right,
-                  ast.LtE: left <= right, ast.Gt: left > right, ast.GtE: left >= right}.get(type(op))
-            if ok is None:
+            fn = _COMPARE.get(type(op))
+            if fn is None:
                 raise CriteriaError("unsupported comparison")
-            if not ok:
+            if not fn(left, right):
                 return False
             left = right
         return True

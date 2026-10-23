@@ -34,7 +34,7 @@ Legend: **Met** — implemented and exercised by a test or the smoke run · **Pa
 | Req | Requirement | Status | Where / evidence |
 |---|---|---|---|
 | SRS-DVT-094 | `sweep` parameter → run set = tests × units × sweep values | **Met** | `Catalog.runs` (matrix rows and case matrices); THM-001 = 10 × 5 = 50 runs (tested) |
-| SRS-DVT-095 | Comparison view grouped by sweep parameter (curve per unit) | **Open** | Data is there (XLSX sheet per test with variant columns) but the app has no chart/comparison page. Proposed: *Statistics* page — per test, x = sweep value, one line per unit, for any numeric field |
+| SRS-DVT-095 | Comparison view grouped by sweep parameter (curve per unit) | **Met** | *Statistics* page: per test and numeric field, x = sweep value / repetition, one curve per unit, pass limit drawn; plus the tests × machines verdict matrix and the temperature-by-component comparison (SRS-DVT-195 below) |
 | SRS-DVT-096 | Verdict per sweep value + rolled-up verdict, PASS only if every value passes | **Met** | `Engine.test_verdict` (per test / per unit); dashboard "Result" column; `test_sweep_rollup_and_reject_rescinds_children` |
 
 ## 5.4 Co-executed runs
@@ -77,11 +77,20 @@ Legend: **Met** — implemented and exercised by a test or the smoke run · **Pa
 | 12 | Calibration traceability | **Met** — records + blocker; `calibration_id` in the catalog is still null everywhere (data, not software) |
 | 14 | Closure report lists unverified requirements | **Met** — report section "Not yet verified" |
 
+## SRS-DVT-Tool additions (Rev 1)
+
+| Req | Requirement | Status | Where / evidence |
+|---|---|---|---|
+| SRS-DVT-194 | Whole console in the selected language, catalog prose included; identifiers untouched | **Met** | `Catalog.load(path, lang)` + `catalog/DVT_test_catalog.he.yaml` (all 29 tests, phases, roles, subsystems, methods); engine / wizard / dashboard messages via `i18n.trf`; `tests/test_dvt_tool.py::test_hebrew_overlay_covers_every_test_and_keeps_identifiers`, `::test_overlay_refuses_mismatch_and_unknown_tests`, `::test_engine_messages_follow_console_language`. Exports (XLSX / Markdown / CSV) use whatever language the console ran in. |
+| SRS-DVT-195 | Temperature per component, per machine — mean / std / n, between-machine std, spread, outliers; exported as CSV + XLSX sheet + report section + PNG charts | **Met** | `dvt_tool/tempstats.py` (pure: `component_of`, `summarise`, `collect`, `component_summary`, `render_png`); *Statistics* page card "Temperature by component — machine comparison" (`ErrorBarChart`); `Exporter.export_temp_stats` → `temperature_by_component.csv`, `charts/temp_<component>.png`, sheet `TempStats`, report section; *Reports* → "Temperature graphs →"; `tests/test_dvt_tool.py::test_tempstats_component_mapping_and_outliers`, `::test_tempstats_collect_and_export` |
+| SRS-DVT-196 | Bench order — tests using the same instrument run one after the other; next action keeps the current setup and says what changes; Test Plans grouped by instrument | **Met** | `dvt_tool/bench.py` (`instrument_key`, `instruments_of`, `bench_order`, `bench_groups`, `setup_change`); `Engine.next_action` (bench order + last-finished-test preference, `NextAction.setup`); Test Console shows the 🔧 setup line; Test Plans tree: phase → instrument group → tests; `tests/test_dvt_tool.py::test_bench_order_groups_instruments_and_respects_dependencies`, `::test_next_action_keeps_the_bench_setup` |
+| SRS-DVT-197 | One campaign document (HTML → PDF) with everything: catalog in bench order with figures, thresholds, status, results, open CONFIRM items | **Met** | `dvt_tool/docgen.py` (`DocBuilder`, `confirm_items`, `find_browser`; `python -m dvt_tool.docgen --lang he`); Reports → *Campaign document (PDF)* writes `<campaign>.document.pdf` (+ `.html`) to the export folder and opens it; `tests/test_dvt_tool.py::test_campaign_document_html_and_pdf` |
+
 ## Open (need a decision or the missing input)
 
 1. **Rev A requirements SRS-DVT-001…075** — the text is not in the repo; Rev B says they "stand unchanged". They cannot be checked until the Rev A document is added under `DVT/docs/`. (SRS-DVT-012 and -053 are referenced by Rev B and are implemented as described there.)
 2. **VCRM** (`requirement_ids`) — only REQ-29 and REQ-48 are linked; the other 66 MVP requirements must be entered in the catalog before baseline (framework item 4).
-3. **Catalog CONFIRM items** — ENV-001 unit (currently null → 0 runs), LED thresholds `warning` / `protective_shutdown` (SAF-019 evaluates as BLOCKED until set), all "CONFIRM" limits.
+3. **Catalog CONFIRM items** — ENV-001 unit (currently null → 0 runs), LED thresholds `warning` / `protective_shutdown` (SAF-019 evaluates as BLOCKED until set), SAF-020 detection means (per-panel current sense or light-sensor sequence — none exists today) and its `time_to_alarm` limit, all "CONFIRM" limits.
 4. Comparison / statistics view (095) and archive export (093) — proposed above; not blocking execution.
 
 Gaps marked **Partial** that are pure software (086 report redlines, 093 archive, 097 auto-chaining, 100 UI) are tracked as the next increments of `dvt_tool`.

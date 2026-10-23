@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QByteArray
+from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLineEdit,
                                QComboBox, QCheckBox, QScrollArea, QFrame, QInputDialog, QMessageBox, QFileDialog,
                                QDialog, QDialogButtonBox, QFormLayout, QTextEdit)
@@ -23,14 +24,41 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridL
 from . import theme as T
 from .widgets import Card, Pill, Stepper, FadeStack, PulseDot, label
 from .dut import FIELD_MAP
-from .i18n import tr
+from ..instruments.uvoff import TOOL_TRIGGERS
+from .. import figures
+from .i18n import tr, trf
+
+
+class FigureWidget(QSvgWidget):
+    """The process figure, scaled to the available width at its own aspect ratio."""
+
+    def __init__(self, svg: str, max_width: int = 860):
+        super().__init__()
+        self.load(QByteArray(svg.encode("utf-8")))
+        self.setMaximumWidth(max_width); self.setMinimumHeight(int(360 * figures.H / figures.W))
+        self.setStyleSheet(f"background: {T.PAPER}; border: 1px solid {T.LINE}; border-radius: 6px;")
+
+    def hasHeightForWidth(self): return True
+
+    def heightForWidth(self, w): return int(w * figures.H / figures.W)
+
+
+def figure_card(test_id: str, step: int | None = None, caption: bool = True, max_width: int = 860, title: str | None = None, rev: str | None = None) -> QWidget | None:
+    """Card with the test's engineering sheet (step highlights when a step is given), or None if the test has no figure.
+    The drawing is English in every console language — only the card title is translated."""
+    if not figures.has_figure(test_id):
+        return None
+    c = Card(tr("Process figure")); c.body.addWidget(FigureWidget(figures.figure_svg(test_id, step, title, rev=rev), max_width), 0, Qt.AlignLeft)
+    if caption and figures.figure_caption(test_id):
+        c.body.addWidget(label(figures.figure_caption(test_id), "muted", wrap=True))
+    return c
 
 
 class WaiverDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(parent); self.setWindowTitle("Waive this run (SRS-DVT-087)")
+        super().__init__(parent); self.setWindowTitle(tr("Waive this run (SRS-DVT-087)"))
         f = QFormLayout(self); self.approver = QLineEdit(); self.rationale = QTextEdit()
-        f.addRow("Approver (name, role)", self.approver); f.addRow("Rationale", self.rationale)
+        f.addRow(tr("Approver (name, role)"), self.approver); f.addRow(tr("Rationale"), self.rationale)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); bb.accepted.connect(self.accept); bb.rejected.connect(self.reject); f.addRow(bb)
 
 
@@ -72,7 +100,7 @@ class RunWizard(QWidget):
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(12)
         head = Card(kind="raised"); hl = QHBoxLayout(); head.body.addLayout(hl)
         v = QVBoxLayout(); hl.addLayout(v, 1)
-        v.addWidget(label(f"{self.run['test_id']} · {self.run['unit_id']} · {self._variant()} · rep {self.run['repetition']}", "eyebrow"))
+        v.addWidget(label(f"{self.run['test_id']} · {self.run['unit_id']} · {self._variant()} · {tr('rep')} {self.run['repetition']}", "eyebrow"))
         v.addWidget(label(self.test["title"], "h2"))
         right = QVBoxLayout(); hl.addLayout(right)
         r1 = QHBoxLayout(); self.dot = PulseDot(T.WARN); r1.addWidget(self.dot); self.lbl_timer = label("00:00", "mono", size=16, bold=True); r1.addWidget(self.lbl_timer); right.addLayout(r1)
@@ -80,6 +108,7 @@ class RunWizard(QWidget):
         root.addWidget(head)
         self.stepper = Stepper([t for _, t in self.stages]); root.addWidget(self.stepper)
         self.stack = FadeStack(); root.addWidget(self.stack, 1)
+        self.tool_panels = {}            # step index -> inline tool panel (UV sweep runs on the step itself)
         for key, _ in self.stages:
             self.stack.addWidget(self._page(key))
         foot = QHBoxLayout()
@@ -88,13 +117,13 @@ class RunWizard(QWidget):
         self.btn_attach = QPushButton(tr("Attach file…")); self.btn_attach.setProperty("kind", "ghost"); self.btn_attach.clicked.connect(self.attach); foot.addWidget(self.btn_attach)
         foot.addStretch()
         self.lbl_err = label("", color=T.BAD, bold=True); foot.addWidget(self.lbl_err)
-        self.btn_back = QPushButton(tr("← Back")); self.btn_back.setProperty("kind", "ghost"); self.btn_back.clicked.connect(lambda: self.go(self.index - 1, forward=False)); foot.addWidget(self.btn_back)
+        self.btn_back = QPushButton(tr("← Back")); self.btn_back.setProperty("kind", "ghost"); self.btn_back.clicked.connect(self._back); foot.addWidget(self.btn_back)
         self.btn_next = QPushButton(tr("Next →")); self.btn_next.setProperty("kind", "big"); self.btn_next.clicked.connect(self.next); foot.addWidget(self.btn_next)
         root.addLayout(foot)
         self._t = QTimer(self); self._t.timeout.connect(self._tick); self._t.start(1000)
 
     def _variant(self):
-        return ", ".join(f"{k}={v}" for k, v in self.run["variant"].items()) or "single"
+        return ", ".join(f"{k}={v}" for k, v in self.run["variant"].items()) or tr("single")
 
     def _scroll(self, inner: QWidget) -> QScrollArea:
         # reading column: keep the instruction and fields at a comfortable width, centred on wide screens
@@ -108,35 +137,51 @@ class RunWizard(QWidget):
         if key == "overview":
             l.addWidget(label(tr("What this run verifies"), "h1"))
             l.addWidget(label(t.get("purpose", "").strip(), "instruction", wrap=True))
+            fc = figure_card(self.run["test_id"], title=self.test["title"], rev=self.cat.version)
+            if fc: l.addWidget(fc)
             c = Card(tr("Run")); g = QGridLayout(); c.body.addLayout(g)
-            rows = [(tr("Method"), t["method"]), (tr("Phase"), str(self.cat.phase_of(self.run["test_id"])["id"])),
-                    (tr("Applicability"), t["applicability"]["rule"] + (f" ({t['applicability'].get('unit')})" if t["applicability"]["rule"] == "SINGLE" else "")),
-                    (tr("Variant"), self._variant()), (tr("Repetition"), str(self.run["repetition"])), (tr("Estimated"), f"{t.get('duration_est_min')} min"),
-                    (tr("Requirements"), ", ".join(f"REQ-{r}" for r in t.get("requirement_ids") or []) or "— (VCRM pending)"),
+            rule = t["applicability"]["rule"]
+            rows = [(tr("Method"), self.cat.label("methods", t["method"])), (tr("Phase"), str(self.cat.phase_of(self.run["test_id"])["id"])),
+                    (tr("Applicability"), self.cat.label("rules", rule) + (f" ({t['applicability'].get('unit')})" if rule == "SINGLE" else "")),
+                    (tr("Variant"), self._variant()), (tr("Repetition"), str(self.run["repetition"])),
+                    (tr("Estimated"), f"{t.get('duration_est_min')} {tr('min')}" if t.get("duration_est_min") is not None else "—"),
+                    (tr("Requirements"), ", ".join(f"REQ-{r}" for r in t.get("requirement_ids") or []) or tr("— (VCRM pending)")),
                     (tr("Dependencies"), ", ".join(t.get("dependencies") or []) or tr("none"))]
             for i, (k, v) in enumerate(rows):
                 g.addWidget(label(k, "muted"), i, 0); g.addWidget(label(v, wrap=True), i, 1)
             l.addWidget(c)
             if t.get("sample_rationale"):
-                l.addWidget(label("Why this sample: " + t["sample_rationale"].strip(), "muted", wrap=True))
+                l.addWidget(label(tr("Why this sample: ") + t["sample_rationale"].strip(), "muted", wrap=True))
             l.addWidget(label(tr("Press Next to begin. The wizard will tell you what to do at every stage; nothing is submitted until the verdict page."), "banner-info", wrap=True))
         elif key == "safety":
             l.addWidget(label(tr("Safety plan — read before touching the unit"), "h1"))
-            for s in t.get("safety_plan") or ["Safety-critical test"]:
+            for s in t.get("safety_plan") or [tr("Safety-critical test")]:
                 l.addWidget(label("⚠  " + str(s), "banner-warn", wrap=True))
             self.cb_safety = QCheckBox(tr("I have read the safety plan; the area, PPE and remote controls are prepared")); self.cb_safety.setChecked(bool(self.run["safety_confirmed"]))
             l.addWidget(self.cb_safety)
         elif key == "equipment":
             l.addWidget(label(tr("Equipment and calibration"), "h1"))
             l.addWidget(label(tr("Put these instruments on the bench. A missing or expired calibration record blocks the run (SRS-DVT-085)."), "muted", wrap=True))
-            c = Card(); g = QGridLayout(); c.body.addLayout(g); self.eq_ok = True
+            c = Card(); g = QGridLayout(); c.body.addLayout(g); self.eq_ok = True; self.live_pills = {}
             for i, e in enumerate(t["equipment"]):
-                cal = self.store.calibration(e["name"]); ok = bool(cal and cal["valid_until"])
-                self.eq_ok &= ok
-                g.addWidget(label(e["name"], wrap=True), i, 0)
-                g.addWidget(Pill(f"cal {cal['calibration_id']} → {cal['valid_until']}" if ok else tr("NO CALIBRATION RECORD"), T.OK if ok else T.WARN), i, 1)
-                b = QPushButton(tr("Record calibration…")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda _, n=e["name"]: self._calibrate(n)); g.addWidget(b, i, 2)
+                g.addWidget(label(self.cat.equipment_label(e), wrap=True), i, 0)
+                verify = e.get("verify")
+                from .. import bench
+                if verify == "none" or bench.instrument_key(e["name"]) is None:      # fixture / consumable / access note
+                    g.addWidget(Pill(tr("no calibration needed"), T.MUTED), i, 1)
+                elif verify == "live_meter":
+                    # verified by the DVT itself: the machine must see the meter and get readings from it — no certificate
+                    pill = Pill(tr("checking…"), T.MUTED); g.addWidget(pill, i, 1); self.live_pills[e["name"]] = pill
+                    b = QPushButton(tr("Check the meter now")); b.setProperty("kind", "ghost"); b.clicked.connect(self._check_live_meter); g.addWidget(b, i, 2)
+                else:
+                    cal = self.store.calibration(e["name"]); ok = bool(cal and cal["valid_until"])
+                    self.eq_ok &= ok
+                    g.addWidget(Pill(trf("cal {id} → {until}", id=cal["calibration_id"], until=cal["valid_until"]) if ok else tr("NO CALIBRATION RECORD"), T.OK if ok else T.WARN), i, 1)
+                    b = QPushButton(tr("Record calibration…")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda _, n=e["name"]: self._calibrate(n)); g.addWidget(b, i, 2)
             l.addWidget(c)
+            if self.live_pills:
+                self.lbl_live = label("", "banner-info", wrap=True); l.addWidget(self.lbl_live)
+                self.live_ok = False; self._check_live_meter()
         elif key == "pre":
             l.addWidget(label(tr("Preconditions — confirm each one"), "h1"))
             l.addWidget(label(tr("The data fields stay locked until every precondition is ticked (SRS-DVT-083). Use DUT Control to bring the machine to the required state."), "muted", wrap=True))
@@ -150,8 +195,13 @@ class RunWizard(QWidget):
             i = int(key.split(":")[1]); s = t["procedure_steps"][i]
             l.addWidget(label(f"{tr('Step')} {i + 1} / {len(t['procedure_steps'])}", "eyebrow"))
             l.addWidget(label(str(s["step"]), "instruction", wrap=True))
+            fc = figure_card(self.run["test_id"], i, caption=False, max_width=720, title=self.test["title"], rev=self.cat.version)   # the step text is the caption
+            if fc: l.addWidget(fc)
             caps = s.get("capture") or []
-            if caps:
+            if caps and s.get("auto"):
+                # the tool records every value itself — nothing to type; the fields still exist for the review page and the criteria
+                l.addWidget(label(tr("Recorded automatically by the test — nothing to type on this step."), "banner-info", wrap=True))
+            elif caps:
                 c = Card(tr("Record now")); g = QGridLayout(); g.setHorizontalSpacing(12); g.setVerticalSpacing(8); c.body.addLayout(g)
                 for r, name in enumerate(caps):
                     f = self.fields[name]
@@ -159,11 +209,23 @@ class RunWizard(QWidget):
                     w_ = self._field_widget(f, name); g.addWidget(w_, r, 1); self.field_widgets[name] = w_
                     if f.get("note"): g.addWidget(label(f["note"], "muted", wrap=True), r, 3)
                     if name in FIELD_MAP and name not in self.run["variant"]:
-                        b = QPushButton(tr("⇩ from DUT")); b.setProperty("kind", "ghost"); b.setToolTip(f"insert live {FIELD_MAP[name]} from the connected machine")
+                        b = QPushButton(tr("⇩ from DUT")); b.setProperty("kind", "ghost"); b.setToolTip(trf("insert live {metric} from the connected machine", metric=FIELD_MAP[name]))
                         b.clicked.connect(lambda _, n=name: self._from_dut(n)); g.addWidget(b, r, 2)
                 l.addWidget(c)
             else:
                 l.addWidget(label(tr("No data to record for this step — perform it, then press Next."), "muted"))
+            if s.get("tool") in TOOL_TRIGGERS:
+                # instrumented step (DVT-SAF-012 door / DVT-SAF-007 thermistor): the console drives the machine and reads the Ophir meter
+                b = QPushButton(tr("Measure with the Ophir meter…")); b.setProperty("kind", "big"); b.clicked.connect(lambda _, tool=s["tool"]: self._uvoff_tool(tool)); l.addWidget(b, 0, Qt.AlignLeft)
+            if s.get("tool") == "uv_linearity":
+                # DVT-OPT-001/002: the sweep runs INLINE on this step (no dialog) — progress here, abort here, and when
+                # it finishes the values are written to the run and the wizard moves on to the next step by itself
+                from .uvsweep_panel import UvSweepPanel
+                panel = UvSweepPanel(self.app, self.run, int(t.get("uv_wavelength_nm") or 405)); self.tool_panels[i] = panel
+                panel.applied.connect(lambda vals, files, step=i: self._uvsweep_finished(vals, files, step)); l.addWidget(panel)
+            if s.get("tool") == "led_fan_sweep":
+                # automatic step (DVT-THM-005): the console drives the fans and the LEDs, waits for settling, hands back the answer and the graph
+                b = QPushButton(tr("Run the fan-duty sweep automatically…")); b.setProperty("kind", "big"); b.clicked.connect(self._fansweep_tool); l.addWidget(b, 0, Qt.AlignLeft)
             self._redline_box(l, i)
         elif key == "review":
             l.addWidget(label(tr("Review and verdict"), "h1"))
@@ -188,17 +250,17 @@ class RunWizard(QWidget):
         rls = [x for x in self.store.redlines(self.run["run_id"]) if x["step_index"] == i]
         if rls:
             for x in rls:
-                l.addWidget(label(f"Redlined by {x['by_whom']}: {x['as_run']} — {x['reason']}", "banner-warn", wrap=True))
+                l.addWidget(label(trf("Redlined by {who}: {as_run} — {reason}", who=x["by_whom"], as_run=x["as_run"], reason=x["reason"]), "banner-warn", wrap=True))
 
     def _field_widget(self, f, name):
         fixed = self.run["variant"].get(name); v = self.values.get(name)
         if fixed is not None:
-            w = QLineEdit(str(fixed)); w.setReadOnly(True); w.setToolTip("set by the sweep / case matrix"); return w
+            w = QLineEdit(str(fixed)); w.setReadOnly(True); w.setToolTip(tr("set by the sweep / case matrix")); return w
         if f["type"] == "bool":
-            w = QComboBox(); w.addItems(["", "yes / true", "no / false"]); w.setCurrentIndex(0 if v is None else (1 if v else 2)); return w
+            w = QComboBox(); w.addItems(["", tr("yes / true"), tr("no / false")]); w.setCurrentIndex(0 if v is None else (1 if v else 2)); return w
         if f["type"] == "enum":
             w = QComboBox(); w.addItems([""] + [str(x) for x in f["values"]]); w.setCurrentText("" if v is None else str(v)); return w
-        w = QLineEdit("" if v is None else str(v)); w.setPlaceholderText({"float": "number", "int": "integer"}.get(f["type"], "text") + (f" · {f['range'][0]}–{f['range'][1]}" if f.get("range") else ""))
+        w = QLineEdit("" if v is None else str(v)); w.setPlaceholderText(tr({"float": "number", "int": "integer"}.get(f["type"], "text")) + (f" · {f['range'][0]}–{f['range'][1]}" if f.get("range") else ""))
         return w
 
     # ------------------------------------------------------------------ navigation
@@ -213,14 +275,24 @@ class RunWizard(QWidget):
         else: self.stack.setCurrentIndex(i)
         self.stepper.set_current(i); self.lbl_err.setText("")
         k = self.key(i); is_step = k.startswith("step:")
-        self.btn_back.setEnabled(i > 0 and k != "done"); self.btn_redline.setVisible(is_step); self.btn_attach.setVisible(is_step or k == "review")
+        # on the done page the run is committed: Back cannot re-open a stage, so it leaves the wizard (back to the console)
+        self.btn_back.setEnabled(i > 0); self.btn_back.setText(tr("← Back to console") if k == "done" else tr("← Back"))
+        self.btn_redline.setVisible(is_step); self.btn_attach.setVisible(is_step or k == "review")
         self.btn_next.setVisible(k not in ("review", "done")); self.btn_leave.setVisible(k != "done")
         if is_step:
             self.store.set_step(self.run["run_id"], int(k.split(":")[1])); self.step_started = time.monotonic()
+            panel = self.tool_panels.get(int(k.split(":")[1]))
+            if panel is not None: panel.on_shown()          # one live meter check when the step becomes visible
         if k == "pre":
             self.dut_hint.setText(self._dut_hint())
         if k == "review":
             self._fill_review(); self.evaluate()
+
+    def _back(self):
+        if self.key() == "done":
+            self.left.emit()           # the app closes the wizard and shows the console with the next action
+        else:
+            self.go(self.index - 1, forward=False)
 
     def next(self):
         k = self.key()
@@ -228,7 +300,9 @@ class RunWizard(QWidget):
             if not self.cb_safety.isChecked(): self.lbl_err.setText(tr("Acknowledge the safety plan to continue.")); return
             self.store.confirm_safety(self.run["run_id"], self.app.operator)
         elif k == "equipment":
-            if not self.eq_ok and QMessageBox.question(self, "Calibration", "An instrument has no valid calibration record (SRS-DVT-085).\nRecord it now, or continue with a supervisor override (logged)?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            if getattr(self, "live_pills", None) and not self._check_live_meter():
+                self.lbl_err.setText(tr("The machine does not see the StarBright, or it gives no reading — connect it to the machine's USB, switch it on, press 'Check the meter now'.")); return
+            if not self.eq_ok and QMessageBox.question(self, tr("Calibration"), tr("An instrument has no valid calibration record (SRS-DVT-085).\nRecord it now, or continue with a supervisor override (logged)?"), QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
                 return
             if not self.eq_ok: self.store.log("Blocker override", self.app.operator, self.run["run_id"], {"blockers": ["calibration"], "reason": "operator override in wizard"})
         elif k == "pre":
@@ -253,7 +327,7 @@ class RunWizard(QWidget):
             if isinstance(w, QComboBox):
                 s = w.currentText()
                 if not s: continue
-                out[name] = s.startswith("yes") if f["type"] == "bool" else s
+                out[name] = (w.currentIndex() == 1) if f["type"] == "bool" else s      # index, not text: the labels are translated
             else:
                 s = w.text().strip(); w.setProperty("state", "")
                 if not s: continue
@@ -261,11 +335,11 @@ class RunWizard(QWidget):
                     out[name] = float(s) if f["type"] == "float" else int(float(s)) if f["type"] == "int" else s
                 except ValueError:
                     w.setProperty("state", "error"); w.style().unpolish(w); w.style().polish(w)
-                    raise ValueError(f"{name}: enter a {'number' if f['type'] == 'float' else 'whole number'}")
+                    raise ValueError(trf("{name}: enter a {kind}", name=name, kind=tr("number" if f["type"] == "float" else "whole number")))
                 rng = f.get("range")
                 if rng and not (rng[0] <= out[name] <= rng[1]):
                     w.setProperty("state", "error"); w.style().unpolish(w); w.style().polish(w)
-                    raise ValueError(f"{name}: {out[name]} is outside the plausible range {rng[0]}–{rng[1]}")
+                    raise ValueError(trf("{name}: {value} is outside the plausible range {lo}–{hi}", name=name, value=out[name], lo=rng[0], hi=rng[1]))
                 w.style().unpolish(w); w.style().polish(w)
         return out
 
@@ -275,17 +349,74 @@ class RunWizard(QWidget):
             self.lbl_err.setText(tr("No machine connected — set the DUT address in the header.")); return
         v = st.metrics.get(FIELD_MAP[name])
         if v is None:
-            self.lbl_err.setText(f"The machine does not report {FIELD_MAP[name]} right now."); return
+            self.lbl_err.setText(trf("The machine does not report {metric} right now.", metric=FIELD_MAP[name])); return
         w = self.field_widgets[name]
         if isinstance(w, QLineEdit):
             w.setText(f"{v:.2f}" if isinstance(v, float) else str(v)); w.setProperty("state", "fromdut"); w.style().unpolish(w); w.style().polish(w)
             self.store.log("Value captured from DUT", self.app.operator, self.run["run_id"], {"field": name, "metric": FIELD_MAP[name], "value": v, "url": st.url})
 
+    def _uvsweep_finished(self, vals: dict, files: list, step: int):
+        """The inline sweep wrote the run: fill the fields on every page, then move to the next step."""
+        self._uvoff_applied(vals, files)
+        self.app.toast(tr("Sweep finished — moving to the next step"), T.OK)
+        if self.key() == f"step:{step}":
+            QTimer.singleShot(1200, lambda: self.key() == f"step:{step}" and self.go(self.index + 1))
+
+    def _uvsweep_tool(self):
+        from .uvsweep_dialog import UvSweepDialog
+        dlg = UvSweepDialog(self.app, self.run, self, wavelength=int(self.test.get("uv_wavelength_nm") or 405))
+        dlg.applied.connect(self._uvoff_applied)
+        dlg.exec()
+
+    def _fansweep_tool(self):
+        from .fansweep_dialog import FanSweepDialog
+        dlg = FanSweepDialog(self.app, self.run, self)
+        dlg.applied.connect(self._fansweep_applied)
+        dlg.exec()
+
+    def _fansweep_applied(self, by_run: dict):
+        """The sweep wrote every duty row of this unit; this run's values come back into the wizard fields."""
+        vals = by_run.get(self.run["run_id"], {})
+        for name, v in vals.items():
+            w = self.field_widgets.get(name)
+            if isinstance(w, QLineEdit):
+                w.setText(f"{v:.2f}" if isinstance(v, float) else str(v)); w.setProperty("state", "fromdut"); w.style().unpolish(w); w.style().polish(w)
+            elif isinstance(w, QComboBox) and self.fields[name]["type"] == "bool":
+                w.setCurrentIndex(1 if v else 2)
+            elif isinstance(w, QComboBox):
+                w.setCurrentText(str(v))
+        self.values.update(vals)
+        others = [r for r in by_run if r != self.run["run_id"]]
+        self.app.toast(trf("Fan sweep applied: this row filled, {n} other duty rows completed automatically", n=len(others)), T.OK)
+        self.app.refresh_all()
+
+    def _uvoff_tool(self, tool: str = "uv_off_timing"):
+        from .uvoff_dialog import UvOffDialog
+        try: defaults = self._collect()          # e.g. sensor_position already recorded on step 1 of SAF-007
+        except Exception: defaults = {}  # noqa: BLE001
+        dlg = UvOffDialog(self.app, self.run, self, trigger=TOOL_TRIGGERS.get(tool, "door"), defaults=defaults)
+        dlg.applied.connect(self._uvoff_applied)
+        dlg.exec()
+
+    def _uvoff_applied(self, vals: dict, files: list):
+        """Values measured by the Ophir sequence: fill the widgets (any step — all pages exist) and remember them."""
+        for name, v in vals.items():
+            w = self.field_widgets.get(name)
+            if isinstance(w, QLineEdit):
+                w.setText(f"{v:.3f}" if isinstance(v, float) else str(v)); w.setProperty("state", "fromdut"); w.style().unpolish(w); w.style().polish(w)
+            elif isinstance(w, QComboBox) and self.fields[name]["type"] == "bool":
+                w.setCurrentIndex(1 if v else 2)
+            elif isinstance(w, QComboBox):
+                w.setCurrentText(str(v))
+        self.values.update(vals)
+        self.app.toast(trf("Ophir measurement applied: {names}", names=", ".join(vals) or "—") + (f" · {len(files)} " + tr("files attached") if files else ""), T.OK)
+
     def _dut_hint(self):
         st = self.app.dut_state
-        if not st.online: return "Machine: not connected. Connect it in the header to capture values and drive it from DUT Control."
+        if not st.online: return tr("Machine: not connected. Connect it in the header to capture values and drive it from DUT Control.")
         m = st.metrics
-        return f"Machine {st.url}: {st.mode} · chamber {m.get('chamberTemp')} °C · LED max {m.get('ledTempMax')} °C · door {'OPEN' if st.flags.get('doorOpen') else 'closed'} — use DUT Control if the preconditions need a different state."
+        return trf("Machine {url}: {mode} · chamber {chamber} °C · LED max {led} °C · door {door} — use DUT Control if the preconditions need a different state.",
+                   url=st.url, mode=tr(st.mode), chamber=m.get("chamberTemp"), led=m.get("ledTempMax"), door=tr("OPEN" if st.flags.get("doorOpen") else "closed"))
 
     def _fill_review(self):
         while self.review_grid.count():
@@ -330,22 +461,22 @@ class RunWizard(QWidget):
             self.store.waive(self.run["run_id"], dlg.approver.text(), dlg.rationale.toPlainText(), self.app.operator)
         except ValueError as e:
             self.lbl_err.setText(str(e)); return
-        self._done("WAIVED", f"approved by {dlg.approver.text()}")
+        self._done("WAIVED", trf("approved by {who}", who=dlg.approver.text()))
 
     def reject(self):
-        reason, ok = QInputDialog.getText(self, "Reject run", "Reason (ambient drift, warm start, instrumentation fault…):")
+        reason, ok = QInputDialog.getText(self, tr("Reject run"), tr("Reason (ambient drift, warm start, instrumentation fault…):"))
         if not ok or not reason.strip(): return
         n = self.store.reject_run(self.run["run_id"], reason, self.app.operator)
         self.app.kick_sync(); self.finished.emit(self.run["run_id"], "REJECTED")
-        self.app.toast(f"Run rejected ({len(n)} run(s) affected)", T.WARN)
+        self.app.toast(trf("Run rejected ({n} run(s) affected)", n=len(n)), T.WARN)
 
     def _done(self, verdict, detail):
         col = T.VERDICT.get(verdict, T.WARN)
         self.done_title.setText(tr(f"Run finished — {verdict}")); self.done_title.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {col};")
         self.done_body.setText({"PASS": tr("All pass criteria met. The result is committed and exported."),
                                 "FAIL": tr("Pass criteria not met. An NCR was opened automatically — describe the anomaly in the NCR list."),
-                                "BLOCKED": f"The criterion could not be evaluated: {detail}. The run is recorded as BLOCKED, not as a pass.",
-                                "WAIVED": f"Waived ({detail}). Counted separately from PASS in every view."}.get(verdict, detail))
+                                "BLOCKED": trf("The criterion could not be evaluated: {detail}. The run is recorded as BLOCKED, not as a pass.", detail=detail),
+                                "WAIVED": trf("Waived ({detail}). Counted separately from PASS in every view.", detail=detail)}.get(verdict, detail))
         na = self.engine.next_action(self.run["unit_id"])
         self.done_next.setText(tr("Next for this unit: ") + na.message)
         self.dot.set_color(col); self._t.stop()
@@ -356,26 +487,50 @@ class RunWizard(QWidget):
         k = self.key()
         if not k.startswith("step:"): return
         i = int(k.split(":")[1])
-        as_run, ok = QInputDialog.getMultiLineText(self, f"Redline step {i + 1}", "How was the step actually performed?")
+        as_run, ok = QInputDialog.getMultiLineText(self, trf("Redline step {n}", n=i + 1), tr("How was the step actually performed?"))
         if not ok or not as_run.strip(): return
-        reason, ok = QInputDialog.getText(self, "Redline", "Reason:")
+        reason, ok = QInputDialog.getText(self, tr("Redline"), tr("Reason:"))
         if not ok or not reason.strip(): return
-        self.store.add_redline(self.run["run_id"], i, as_run, reason, self.app.operator); self.app.toast("Redline recorded", T.WARN)
+        self.store.add_redline(self.run["run_id"], i, as_run, reason, self.app.operator); self.app.toast(tr("Redline recorded"), T.WARN)
 
     def attach(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Attach file (log, capture, photo)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Attach file (log, capture, photo)"))
         if not path: return
         import hashlib, shutil
         from pathlib import Path
         src = Path(path); dst_dir = self.app.data / "export" / "attachments" / self.run["run_id"].replace("|", "_"); dst_dir.mkdir(parents=True, exist_ok=True)
         dst = dst_dir / src.name; shutil.copy2(src, dst)
         self.store.add_attachment(self.run["run_id"], src.name, str(dst), src.suffix.lstrip("."), hashlib.sha256(dst.read_bytes()).hexdigest())
-        self.app.kick_sync(); self.app.toast(f"Attached {src.name}", T.OK)
+        self.app.kick_sync(); self.app.toast(trf("Attached {name}", name=src.name), T.OK)
+
+    def _check_live_meter(self) -> bool:
+        """Equipment `verify: live_meter`: ask the machine whether the StarBright is on its USB and delivering readings."""
+        st = self.app.dut_state
+        if not st.online:
+            info, ok, text = {}, False, tr("machine offline")
+        else:
+            try:
+                from .dut import make_client
+                info = make_client(self.app.machine_url, timeout=8.0).meter() or {}
+            except Exception as e:  # noqa: BLE001
+                info = {"present": False, "message": str(e)}
+            reading = info.get("reading_mw_cm2")
+            ok = bool(info.get("present")) and isinstance(reading, (int, float))
+            text = (trf("connected · {head} · {reading} mW/cm²", head=(info.get("head") or "").split()[2] if len((info.get("head") or "").split()) > 2 else (info.get("head") or "?"), reading=f"{reading:.3f}") if ok
+                    else (tr("connected, no reading") if info.get("present") else tr("NOT DETECTED")))
+        for pill in self.live_pills.values():
+            pill.set(text, T.OK if ok else T.BAD)
+        self.live_ok = ok
+        if hasattr(self, "lbl_live"):
+            self.lbl_live.setText(tr("Verified by the DVT through the machine: the meter is connected and delivering readings — no calibration certificate is required for this test.") if ok
+                                  else tr("The DVT verifies the meter itself: plug the StarBright's USB cable into the machine, switch it on and press 'Check the meter now'. Next stays locked until the machine reports a reading.") + (f" ({info.get('message')})" if info.get("message") else ""))
+        self.store.log("Live meter check", self.app.operator, self.run["run_id"], {"ok": ok, "info": {k: info.get(k) for k in ("present", "head", "wavelength_nm", "reading_mw_cm2", "message")}})
+        return ok
 
     def _calibrate(self, instrument):
-        cid, ok = QInputDialog.getText(self, "Calibration record", f"{instrument}\nCertificate id:")
+        cid, ok = QInputDialog.getText(self, tr("Calibration record"), f"{instrument}\n{tr('Certificate id:')}")
         if not ok: return
-        until, ok = QInputDialog.getText(self, "Calibration record", "Valid until (YYYY-MM-DD):")
+        until, ok = QInputDialog.getText(self, tr("Calibration record"), tr("Valid until (YYYY-MM-DD):"))
         if not ok: return
         self.store.set_calibration(instrument, cid, until)
         idx = self.index; self.stack.removeWidget(self.stack.widget(idx)); self.stack.insertWidget(idx, self._page("equipment")); self.stack.setCurrentIndex(idx)

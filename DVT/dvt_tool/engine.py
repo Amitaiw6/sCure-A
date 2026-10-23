@@ -13,6 +13,7 @@ from datetime import date
 from .catalog import Catalog, RunSpec
 from .store import Store
 from . import criteria
+from .ui.i18n import tr, trf          # pure strings module (no Qt) — messages follow the console language
 
 ROLLUP_ORDER = ["FAIL", "BLOCKED", "WAIVED", "PASS"]
 
@@ -30,6 +31,7 @@ class NextAction:
     run: dict | None            # store run row (NOT_STARTED / IN_PROGRESS)
     blockers: list[Blocker]
     message: str
+    setup: str = ""             # bench-setup note: same instruments as the last test, or what to add / remove (SRS-DVT-196)
 
 
 class Engine:
@@ -85,31 +87,40 @@ class Engine:
         unit = run["unit_id"]
         u = next((x for x in self.store.units() if x["unit_id"] == unit), None)
         if not (u and u["config_frozen"]):
-            b.append(Blocker("CONFIG", f"{unit}: configuration not frozen (Phase 0)"))
+            b.append(Blocker("CONFIG", trf("{unit}: configuration not frozen (Phase 0)", unit=unit)))
         phase = self.cat.phase_of(run["test_id"])
         for p in sorted(self.cat.phases, key=lambda p: p["id"]):
             if p["id"] >= phase["id"] or p["id"] == 0:
                 continue
             if not self.phase_closed(p, unit):
-                b.append(Blocker("PHASE", f"phase {p['id']} ({p['name']}) not closed for {unit}"))
+                b.append(Blocker("PHASE", trf("phase {phase} ({name}) not closed for {unit}", phase=p["id"], name=p["name"], unit=unit)))
         if not self.store.phase_signed(unit, phase["id"]):
-            b.append(Blocker("TRR", f"readiness checklist for phase {phase['id']} not signed for {unit}"))
+            b.append(Blocker("TRR", trf("readiness checklist for phase {phase} not signed for {unit}", phase=phase["id"], unit=unit)))
         # earth before power, destructive last, hipot once
         if run["test_id"] != "DVT-ELE-001" and self.test_verdict("DVT-ELE-001", unit) != "PASS" and "DVT-ELE-001" in self.cat.tests:
-            b.append(Blocker("EARTH", "protective earth bonding (ELE-001) not PASS on this unit"))
+            b.append(Blocker("EARTH", tr("protective earth bonding (ELE-001) not PASS on this unit")))
         for d in t.get("dependencies") or []:
             dep_units = self.cat.applicable_units(d)
             check_unit = unit if unit in dep_units else (dep_units[0] if dep_units else None)
             if check_unit and self.test_verdict(d, check_unit) not in ("PASS", "WAIVED"):
-                b.append(Blocker("DEP", f"dependency {d} not PASS/WAIVED"))
+                b.append(Blocker("DEP", trf("dependency {dep} not PASS/WAIVED", dep=d)))
         if phase["id"] != 5 and self._destructive_done(unit):
-            b.append(Blocker("DESTRUCTIVE", f"{unit} has already been through destructive testing — a different article"))
+            b.append(Blocker("DESTRUCTIVE", trf("{unit} has already been through destructive testing — a different article", unit=unit)))
         today = date.today().isoformat()
         for e in t.get("equipment") or []:
+            from . import bench
+            if e.get("verify") in ("live_meter", "none") or bench.instrument_key(e["name"]) is None:   # live-checked / fixture, consumable, access note: nothing to calibrate
+                continue
             c = self.store.calibration(e["name"])
             if c is None or not c["valid_until"] or c["valid_until"] < today:
-                b.append(Blocker("CAL", f"no valid calibration record for: {e['name']}"))
+                b.append(Blocker("CAL", trf("no valid calibration record for: {name}", name=self.cat.equipment_label(e))))
         return b
+
+    def pending_run(self, test_id: str, unit_id: str) -> dict | None:
+        """The run to open when the operator picks a test directly: the IN_PROGRESS run of that test on
+        that unit if there is one (resume), else its first NOT_STARTED run (catalog order), else None."""
+        runs = [r for r in self.store.runs(test_id, unit_id) if r["status"] in ("NOT_STARTED", "IN_PROGRESS")]
+        return next((r for r in runs if r["status"] == "IN_PROGRESS"), runs[0] if runs else None)
 
     def _destructive_done(self, unit: str) -> bool:
         for p in self.cat.phases:
@@ -122,26 +133,53 @@ class Engine:
         in_progress = [r for r in self.store.runs(unit_id=unit_id) if r["status"] == "IN_PROGRESS"]
         if in_progress:
             r = in_progress[0]
-            return NextAction(unit_id, self.cat.phase_of(r["test_id"]), r, [], f"Resume {r['test_id']} at step {r['current_step'] + 1}")
+            return NextAction(unit_id, self.cat.phase_of(r["test_id"]), r, [], trf("Resume {test} at step {step}", test=r["test_id"], step=r["current_step"] + 1))
         phase = self.current_phase(unit_id)
         if phase is None:
-            return NextAction(unit_id, None, None, [], f"{unit_id}: all phases complete")
+            return NextAction(unit_id, None, None, [], trf("{unit}: all phases complete", unit=unit_id))
         if phase["id"] == 0:
-            return NextAction(unit_id, phase, None, [Blocker("CONFIG", "freeze the unit configuration")],
-                              "Phase 0 — record and freeze the configuration")
-        for tid in phase["tests"]:
+            return NextAction(unit_id, phase, None, [Blocker("CONFIG", tr("freeze the unit configuration"))],
+                              tr("Phase 0 — record and freeze the configuration"))
+        # Bench order (SRS-DVT-196): tests sharing an instrument run one after the other. Inside the phase the
+        # candidates are the not-started runs; keep the setup already on the bench for this unit — most shared
+        # instruments with the unit's last finished test — then the phase's bench order. A candidate whose
+        # in-phase dependency is not done never wins over one that is runnable.
+        from . import bench
+        order = bench.bench_order(self.cat, phase); rank = {t: i for i, t in enumerate(order)}
+        last = self.store.get_meta(f"last_test:{unit_id}")
+        if not last:
+            done = [r for r in self.store.runs(unit_id=unit_id) if r["status"] == "DONE" and r.get("finished_at")]
+            last = max(done, key=lambda r: r["finished_at"])["test_id"] if done else None
+        last_instr = bench.instruments_of(self.cat.tests[last]) if last and last in self.cat.tests else frozenset()
+        candidates = []
+        for tid in order:
             if unit_id not in self.cat.applicable_units(tid):
                 continue
-            for r in self.store.runs(tid, unit_id):
-                if r["status"] == "NOT_STARTED":
-                    return NextAction(unit_id, phase, r, self.blockers_for(r),
-                                      f"Next: {tid} — {self.cat.tests[tid]['title']} ({self._variant_text(r)}, rep {r['repetition']})")
-        return NextAction(unit_id, phase, None, [Blocker("GATE", phase.get("gate") or "phase gate")],
-                          f"Phase {phase['id']} runs are done but the gate is not met: {phase.get('gate')}")
+            r = next((r for r in self.store.runs(tid, unit_id) if r["status"] == "NOT_STARTED"), None)
+            if r is not None:
+                bl = self.blockers_for(r); ins = bench.instruments_of(self.cat.tests[tid])
+                # runnable first; then most instruments kept; among tests that keep something, the fewest new ones;
+                # when nothing on the bench is reused anyway, the phase's bench order decides (not "the test with no instruments")
+                kept = len(ins & last_instr)
+                candidates.append(((any(b.code == "DEP" for b in bl), -kept, len(ins - last_instr) if kept else 0, rank[tid]), tid, r, bl))
+        if candidates:
+            _, tid, r, bl = min(candidates, key=lambda c: c[0])
+            kept, added, removed = bench.setup_change(self.cat, last, tid)
+            if last and not added and not removed and kept:
+                setup = trf("Same bench setup as {prev} — keeps {kept}", prev=last, kept=", ".join(sorted(kept)))
+            elif last and (added or removed):
+                setup = trf("Setup change after {prev}: add {added}; remove {removed}", prev=last, added=", ".join(sorted(added)) or "—", removed=", ".join(sorted(removed)) or "—")
+            else:
+                ins = bench.instruments_of(self.cat.tests[tid])
+                setup = trf("Bench setup: {instruments}", instruments=", ".join(sorted(ins))) if ins else ""
+            return NextAction(unit_id, phase, r, bl,
+                              trf("Next: {test} — {title} ({variant}, rep {rep})", test=tid, title=self.cat.tests[tid]["title"], variant=self._variant_text(r), rep=r["repetition"]), setup)
+        return NextAction(unit_id, phase, None, [Blocker("GATE", phase.get("gate") or tr("phase gate"))],
+                          trf("Phase {phase} runs are done but the gate is not met: {gate}", phase=phase["id"], gate=phase.get("gate")))
 
     @staticmethod
     def _variant_text(run: dict) -> str:
-        return ", ".join(f"{k}={v}" for k, v in run["variant"].items()) or "single"
+        return ", ".join(f"{k}={v}" for k, v in run["variant"].items()) or tr("single")
 
     # ---------------- verdict ----------------
     def evaluate(self, run_id: str) -> tuple[str, str]:
@@ -153,6 +191,9 @@ class Engine:
     def finish(self, run_id: str, by: str, witness: str | None = None) -> tuple[str, str]:
         verdict, detail = self.evaluate(run_id)
         self.store.finish_run(run_id, verdict, detail, by, witness)
+        run = self.store.run(run_id)
+        if run:
+            self.store.set_meta(f"last_test:{run['unit_id']}", run["test_id"])     # bench order: what is on the bench for this unit (SRS-DVT-196)
         if verdict == "FAIL":
             self.store.open_ncr(run_id, f"{run_id}: pass criteria not met", by)
         return verdict, detail
@@ -178,9 +219,10 @@ class Engine:
             status = "Pending"
         t = self.cat.tests[test_id]
         app = t["applicability"]
-        appl = ("ALL" if app["rule"] == "ALL" else
-                f"{len(app.get('units') or [])} units" if app["rule"] == "SUBSET" else (app.get("unit") or "TBD"))
-        return {"testId": test_id, "title": t["title"], "subsystem": t["subsystem"], "method": t["method"],
+        appl = (self.cat.label("rules", "ALL") if app["rule"] == "ALL" else
+                trf("{n} units", n=len(app.get("units") or [])) if app["rule"] == "SUBSET" else (app.get("unit") or tr("TBD")))
+        return {"testId": test_id, "title": t["title"], "subsystem": t["subsystem"], "subsystemLabel": self.cat.label("subsystems", t["subsystem"]),
+                "method": t["method"], "methodLabel": self.cat.label("methods", t["method"]),
                 "applicability": appl, "units": self.cat.applicable_units(test_id),
                 "reps": int(t.get("repetitions") or 1) * len(self.cat.variants(test_id)),
                 "durationMin": t.get("duration_est_min"), "phase": self.cat.phase_of(test_id)["id"],
@@ -202,6 +244,26 @@ class Engine:
             s["rows"].append(row)
         for s in out.values():
             s["percent"] = round(100 * s["runsDone"] / s["runsTotal"]) if s["runsTotal"] else 0
+        return out
+
+    def subsystem_progress(self, unit_id: str | None = None) -> dict:
+        """{subsystem: {runsDone, runsTotal, percent}} + a "__total__" row over every test — for all units or one unit.
+        Committed (DONE) runs over applicable runs; rejected and supplementary runs excluded."""
+        runs = [r for r in self.store.runs() if r["status"] != "REJECTED" and not r.get("supplementary")]
+        if unit_id:
+            runs = [r for r in runs if r["unit_id"] == unit_id]
+        sub_of = {tid: self.cat.tests[tid]["subsystem"] for tid in self.cat.tests}
+        out: dict[str, dict] = {}
+        for tid in self.cat.ordered_test_ids():
+            out.setdefault(sub_of[tid], {"runsDone": 0, "runsTotal": 0})
+        for r in runs:
+            s = out.setdefault(sub_of.get(r["test_id"], "?"), {"runsDone": 0, "runsTotal": 0})
+            s["runsTotal"] += 1
+            if r["status"] == "DONE": s["runsDone"] += 1
+        total = {"runsDone": sum(s["runsDone"] for s in out.values()), "runsTotal": sum(s["runsTotal"] for s in out.values())}
+        for s in [*out.values(), total]:
+            s["percent"] = round(100 * s["runsDone"] / s["runsTotal"]) if s["runsTotal"] else 0
+        out["__total__"] = total
         return out
 
     def remaining(self) -> list[dict]:

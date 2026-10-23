@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridL
 from .ui import theme as T
 from .ui.widgets import Card, Pill, StatTile, label
 from .ui.dut import MetricTile, TILES
-from .ui.i18n import tr
+from .ui.i18n import tr, trf
 
 SUBSYSTEM_COLORS, SUBSYSTEM_ICONS = T.SUBSYSTEM, T.SUBSYSTEM_ICON
 def status_label(status: str) -> str:
@@ -87,8 +87,18 @@ class DashboardPage(QWidget):
         self.legend = QGridLayout(); self.legend.setHorizontalSpacing(18); self.legend.setVerticalSpacing(8); row.addLayout(self.legend, 1)
         centre.addWidget(c)
 
-        c = Card(tr("Progress by subsystem"), hint=tr("% of applicable runs committed")); self.prog_grid = QGridLayout(); self.prog_grid.setHorizontalSpacing(14); self.prog_grid.setVerticalSpacing(6)
+        c = Card(tr("Progress by subsystem"), hint=tr("% of applicable runs committed — all units, or one unit"))
+        from PySide6.QtWidgets import QComboBox
+        sel = QHBoxLayout(); sel.addWidget(label(tr("Unit"), "muted"))
+        self.cb_prog_unit = QComboBox(); self.cb_prog_unit.addItem(tr("All units"), None)
+        for u in self.engine.cat.units:
+            self.cb_prog_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role_label') or u.get('role') or ''}" if (u.get('role_label') or u.get('role')) else ""), u["id"])
+        self.cb_prog_unit.currentIndexChanged.connect(lambda *_: self._fill_progress()); sel.addWidget(self.cb_prog_unit); sel.addStretch(); c.body.addLayout(sel)
+        self.prog_grid = QGridLayout(); self.prog_grid.setHorizontalSpacing(14); self.prog_grid.setVerticalSpacing(6)
         c.body.addLayout(self.prog_grid); self.overall_bar = None; centre.addWidget(c)
+
+        # progress by machine: the data (unit_progress) and the grid are kept for the stats / tests, the card is no longer shown
+        self.unit_grid = QGridLayout(); self.unit_grid.setHorizontalSpacing(14); self.unit_grid.setVerticalSpacing(6)
 
         c = Card(tr("Test matrix — grouped by subsystem")); self.matrix_card = c
         self.matrix_hint = label("", "muted"); c.body.addWidget(self.matrix_hint, 0, Qt.AlignRight)
@@ -126,37 +136,77 @@ class DashboardPage(QWidget):
         self.kpis["tests"].set(total); self.kpis["running"].set(sum(s["running"] for s in self.summary.values()))
         self.kpis["failed"].set(failed, T.BAD if failed else T.INK); self.kpis["complete"].set(sum(s["complete"] for s in self.summary.values()))
         self.kpis["runs"].set(f"{pct}%  ·  {prog['done']}/{prog['total']}")
-        # progress bars: overall + one per subsystem
-        while self.prog_grid.count():
-            w = self.prog_grid.takeAt(0).widget()
+        sub = self.engine.cat.label
+        # progress bars: one per subsystem + the total over all tests, for all units or the selected one
+        self._fill_progress()
+        # progress bars: one per machine (unit under test)
+        while self.unit_grid.count():
+            w = self.unit_grid.takeAt(0).widget()
             if w: w.deleteLater()
-        rows = [(tr("Campaign"), pct, prog["done"], prog["total"], T.ACCENT)] + [(n, s["percent"], s["runsDone"], s["runsTotal"], T.SUBSYSTEM.get(n, T.MUTED)) for n, s in self.summary.items()]
-        for i, (name, p, d, t_, col) in enumerate(rows):
-            nm = label(name, bold=(i == 0)); self.prog_grid.addWidget(nm, i, 0)
-            bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(p); bar.setTextVisible(False); bar.setFixedHeight(10)
+        for i, (uid, u) in enumerate(self.unit_progress().items()):
+            col = T.BAD if u["failed"] else (T.OK if u["percent"] >= 100 else T.INFO)
+            self.unit_grid.addWidget(label(f"{uid}" + (f"  ·  {u['role']}" if u["role"] else ""), bold=True), i, 0)
+            bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(u["percent"]); bar.setTextVisible(False); bar.setFixedHeight(10)
             bar.setStyleSheet(f"QProgressBar {{ background: {T.LINE}; border-radius: 5px; }} QProgressBar::chunk {{ background: {col}; border-radius: 5px; }}")
-            self.prog_grid.addWidget(bar, i, 1); self.prog_grid.addWidget(label(f"{p}%", "mono", bold=True, color=col), i, 2); self.prog_grid.addWidget(label(f"{d}/{t_} runs", "muted"), i, 3)
-        self.prog_grid.setColumnStretch(1, 1)
+            self.unit_grid.addWidget(bar, i, 1); self.unit_grid.addWidget(label(f"{u['percent']}%", "mono", bold=True, color=col), i, 2)
+            self.unit_grid.addWidget(label(trf("{d}/{t} runs", d=u["done"], t=u["total"]) + (f"  ·  {trf('{n} failed', n=u['failed'])}" if u["failed"] else ""), "muted"), i, 3)
+            self.unit_grid.addWidget(Pill(tr("all phases complete") if u["phase"] is None else trf("phase {p}", p=u["phase"]), T.OK if u["phase"] is None else T.INFO), i, 4)
+        self.unit_grid.setColumnStretch(1, 1)
         # what is left
         self.remaining.clear(); left = self.engine.remaining(); est = 0
         for r in left:
             it = QTreeWidgetItem([f"{r['testId']}  {r['title'][:48]}", f"{r['pendingRuns']}  ({', '.join(f'{u} ×{n}' for u, n in r['perUnit'].items())})", str(r["estMin"])])
             it.setData(0, Qt.UserRole, r["testId"]); it.setForeground(0, QColor(T.SUBSYSTEM.get(r["subsystem"], T.INK))); self.remaining.addTopLevelItem(it); est += r["estMin"]
-        self.remaining_hint.setText(f"{len(left)} tests still owe runs · ≈ {est // 60} h {est % 60} min of bench time" if left else tr("Nothing left — every applicable run is committed."))
-        self.donut.set_data([(n, s["tests"], T.SUBSYSTEM.get(n, T.MUTED)) for n, s in self.summary.items()])
+        self.remaining_hint.setText(trf("{n} tests still owe runs · ≈ {h} h {m} min of bench time", n=len(left), h=est // 60, m=est % 60) if left else tr("Nothing left — every applicable run is committed."))
+        self.donut.set_data([(sub("subsystems", n), s["tests"], T.SUBSYSTEM.get(n, T.MUTED)) for n, s in self.summary.items()])
         while self.legend.count():
             w = self.legend.takeAt(0).widget()
             if w: w.deleteLater()
         for i, (name, s) in enumerate(self.summary.items()):
             col = T.SUBSYSTEM.get(name, T.MUTED)
             sw = QLabel("●"); sw.setStyleSheet(f"color: {col}; font-size: 16px;")
-            nm = QPushButton(f"{T.SUBSYSTEM_ICON.get(name, '')}  {name}"); nm.setProperty("kind", "link"); nm.setStyleSheet(f"color: {T.INK}; font-size: 13.5px;")
+            nm = QPushButton(f"{T.SUBSYSTEM_ICON.get(name, '')}  {sub('subsystems', name)}"); nm.setProperty("kind", "link"); nm.setStyleSheet(f"color: {T.INK}; font-size: 13.5px;")
             nm.clicked.connect(lambda _, n=name: self.set_filter("" if self.filter == n else n))
-            cnt = label(f"{s['tests']} tests", "muted"); pct = label(f"{100 * s['tests'] / (total or 1):.0f}%", bold=True, color=col)
+            cnt = label(trf("{n} tests", n=s["tests"]), "muted"); pct = label(f"{100 * s['tests'] / (total or 1):.0f}%", bold=True, color=col)
             st = label(f"✓ {s['complete']}   ▶ {s['running']}   ✗ {s['failed']}   ○ {s['pending'] + s['blocked']}", "mono"); st.setStyleSheet(f"color: {T.MUTED}; font-family: Consolas;")
             for c_, w in enumerate((sw, nm, cnt, pct, st)): self.legend.addWidget(w, i, c_)
         self.legend.setColumnStretch(4, 1)
         self._fill_matrix()
+
+    def progress_unit(self) -> str | None:
+        return self.cb_prog_unit.currentData() if hasattr(self, "cb_prog_unit") else None
+
+    def _fill_progress(self):
+        from PySide6.QtWidgets import QProgressBar
+        while self.prog_grid.count():
+            w = self.prog_grid.takeAt(0).widget()
+            if w: w.deleteLater()
+        sub = self.engine.cat.label
+        prog = self.engine.subsystem_progress(self.progress_unit())
+        total = prog.pop("__total__")
+        rows = [(sub("subsystems", n), s["percent"], s["runsDone"], s["runsTotal"], T.SUBSYSTEM.get(n, T.MUTED), False) for n, s in prog.items()]
+        rows.append((tr("Total — all tests"), total["percent"], total["runsDone"], total["runsTotal"], T.ACCENT, True))
+        for i, (name, p, d, t_, col, bold) in enumerate(rows):
+            self.prog_grid.addWidget(label(name, bold=bold), i, 0)
+            bar = QProgressBar(); bar.setRange(0, 100); bar.setValue(p); bar.setTextVisible(False); bar.setFixedHeight(12 if bold else 10)
+            bar.setStyleSheet(f"QProgressBar {{ background: {T.LINE}; border-radius: 5px; }} QProgressBar::chunk {{ background: {col}; border-radius: 5px; }}")
+            self.prog_grid.addWidget(bar, i, 1); self.prog_grid.addWidget(label(f"{p}%", "mono", bold=True, color=col), i, 2); self.prog_grid.addWidget(label(trf("{d}/{t} runs", d=d, t=t_), "muted", bold=bold), i, 3)
+        self.prog_grid.setColumnStretch(1, 1)
+
+    def unit_progress(self) -> dict:
+        """Per machine: committed runs / applicable runs (rejected excluded), failed count, current phase.
+        Pure data — the bars in refresh() are drawn from this."""
+        runs = [r for r in self.engine.store.runs() if r["status"] != "REJECTED"]
+        out = {}
+        for u in self.engine.cat.units:
+            uid = u["id"]; ur = [r for r in runs if r["unit_id"] == uid]
+            done = [r for r in ur if r["status"] == "DONE"]
+            phase = self.engine.current_phase(uid)
+            out[uid] = {"role": u.get("role_label") or u.get("role") or "", "total": len(ur), "done": len(done),
+                        "percent": round(100 * len(done) / len(ur)) if ur else 0,
+                        "failed": sum(1 for r in done if r["verdict"] == "FAIL"),
+                        "phase": None if phase is None else phase["id"]}
+        return out
 
     def set_filter(self, name: str):
         self.filter = name; self.donut.selected = name; self.donut.update(); self._fill_matrix()
@@ -166,13 +216,14 @@ class DashboardPage(QWidget):
         for name, s in self.summary.items():
             if self.filter and name != self.filter: continue
             col = T.SUBSYSTEM.get(name, T.MUTED)
-            top = QTreeWidgetItem([f"{T.SUBSYSTEM_ICON.get(name, '')}  {name.upper()}", f"{s['tests']} tests · {s['reps']} reps · {s['durationMin']} min", "", "",
-                                   f"{s['complete']} complete · {s['running']} running · {s['failed']} failed · {s['pending'] + s['blocked']} pending", f"{s['pass']} PASS", "", "", ""])
+            shown = self.engine.cat.label("subsystems", name)
+            top = QTreeWidgetItem([f"{T.SUBSYSTEM_ICON.get(name, '')}  {shown.upper()}", trf("{n} tests · {reps} reps · {min} min", n=s["tests"], reps=s["reps"], min=s["durationMin"]), "", "",
+                                   trf("{c} complete · {r} running · {f} failed · {p} pending", c=s["complete"], r=s["running"], f=s["failed"], p=s["pending"] + s["blocked"]), trf("{n} PASS", n=s["pass"]), "", "", ""])
             f = QFont("Segoe UI", 10, QFont.Bold)
             for c in range(9): top.setFont(c, f); top.setForeground(c, QColor(col if c == 0 else T.INK_2)); top.setBackground(c, QColor(T.CARD_2))
             self.tree.addTopLevelItem(top)
             for r in s["rows"]:
-                it = QTreeWidgetItem([r["testId"], r["title"], r["method"], r["applicability"], STATUS_LABEL[r["status"]], r["result"] or "—",
+                it = QTreeWidgetItem([r["testId"], r["title"], r["methodLabel"], r["applicability"], STATUS_LABEL[r["status"]], r["result"] or "—",
                                       f"{r['runsDone']}/{r['runsTotal']}", str(r["reps"]), str(r["durationMin"] or "—")])
                 it.setData(0, Qt.UserRole, r["testId"])
                 it.setForeground(0, QColor(T.INFO)); it.setForeground(4, QColor(T.STATUS[r["status"]])); it.setForeground(5, QColor(T.VERDICT.get(r["result"] or "", T.MUTED)))

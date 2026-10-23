@@ -1,0 +1,36 @@
+12:29:57 sCure at 192.168.154.142, Arduino on COM3, steps [30, 40, 50, 60, 70, 80, 90, 100], dwell 15 s
+12:29:57 writing C:\Users\User\Documents\GitHub\sCure-A\DVT\bench\data\uv_sweep_450nm_ldrA0_20260914.csv
+12:29:57 UV OFF
+12:29:57 baseline (UV off) for 15 s
+12:30:07     baseline     5 s left  NTC   58.3  LDR   67.0  (mean of last 25 samples)  chamber 23.6 C  LED max 25.7 C
+12:30:12   baseline done: NTC   60.0  LDR   68.6  (mean of last 25 samples)
+12:30:12 UV 450 nm @ 30% for 15 s
+12:30:22          30%     5 s left  NTC  980.0  LDR  968.6  (mean of last 25 samples)  chamber 23.6 C  LED max 25.8 C
+12:30:27   30% done: NTC  980.0  LDR  968.5  (mean of last 25 samples)
+12:30:27 UV 450 nm @ 40% for 15 s
+12:30:37          40%     5 s left  NTC  986.2  LDR  974.8  (mean of last 25 samples)  chamber 23.6 C  LED max 26.0 C
+12:30:42   40% done: NTC  986.1  LDR  974.5  (mean of last 25 samples)
+12:30:42 UV 450 nm @ 50% for 15 s
+12:30:52          50%     5 s left  NTC  990.0  LDR  978.1  (mean of last 25 samples)  chamber 23.6 C  LED max 26.3 C
+12:30:57   50% done: NTC  990.0  LDR  978.0  (mean of last 25 samples)
+12:30:57 UV 450 nm @ 60% for 15 s
+12:31:07          60%     5 s left  NTC  993.0  LDR  981.0  (mean of last 25 samples)  chamber 23.6 C  LED max 26.7 C
+12:31:12   60% done: NTC  993.0  LDR  981.0  (mean of last 25 samples)
+12:31:12 UV 450 nm @ 70% for 15 s
+12:31:22          70%     5 s left  NTC  995.0  LDR  983.0  (mean of last 25 samples)  chamber 23.6 C  LED max 27.2 C
+12:31:27   70% done: NTC  994.9  LDR  983.0  (mean of last 25 samples)
+12:31:27 UV 450 nm @ 80% for 15 s
+12:31:37          80%     5 s left  NTC  996.7  LDR  984.4  (mean of last 25 samples)  chamber 23.7 C  LED max 27.9 C
+12:31:42   80% done: NTC  996.6  LDR  984.2  (mean of last 25 samples)
+12:31:43 UV 450 nm @ 90% for 15 s
+12:31:53          90%     5 s left  NTC  998.0  LDR  985.8  (mean of last 25 samples)  chamber 23.7 C  LED max 28.6 C
+12:31:58   90% done: NTC  998.0  LDR  985.8  (mean of last 25 samples)
+12:31:58 UV 450 nm @ 100% for 15 s
+12:32:08         100%     5 s left  NTC  999.0  LDR  986.5  (mean of last 25 samples)  chamber 23.7 C  LED max 29.5 C
+12:32:13   100% done: NTC  999.0  LDR  986.6  (mean of last 25 samples)
+12:32:13 UV OFF
+12:32:13 cool-down (UV off) for 15 s
+12:32:23         tail     5 s left  NTC   40.6  LDR   51.4  (mean of last 25 samples)  chamber 23.7 C  LED max 29.7 C
+12:32:28   tail done: NTC   42.3  LDR   52.8  (mean of last 25 samples)
+12:32:28 UV OFF
+12:32:28 saved C:\Users\User\Documents\GitHub\sCure-A\DVT\bench\data\uv_sweep_450nm_ldrA0_20260914.csv (745 rows)

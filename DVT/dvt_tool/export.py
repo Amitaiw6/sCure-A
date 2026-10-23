@@ -31,8 +31,25 @@ class Exporter:
 
     # ---------------- all ----------------
     def export_all(self) -> list[Path]:
-        files = [self.export_json(), self.export_xlsx(), self.export_report_md()]
+        files = [self.export_json()]
+        files += self.export_temp_stats()             # charts first: the report links to them
+        files += [self.export_xlsx(), self.export_report_md()]
         files += self.export_csvs()
+        # the campaign document (SRS-DVT-197) is built on demand, not on every sync — but once it exists it rides along to Drive
+        files += [p for p in (self.out / f"{self.campaign}.document.pdf", self.out / f"{self.campaign}.document.html") if p.exists()]
+        return files
+
+    # ---------------- temperature per component / per machine (SRS-DVT-195) ----------------
+    def temp_stats(self):
+        from . import tempstats
+        return tempstats.collect(self.cat, self.store)
+
+    def export_temp_stats(self) -> list[Path]:
+        """CSV table + one PNG per component (mean ± std per machine, outliers red)."""
+        from . import tempstats
+        stats = self.temp_stats(); units = self.cat.unit_ids()
+        files = [tempstats.write_csv(stats, units, self.out / "temperature_by_component.csv")]
+        files += tempstats.render_png(stats, units, self.out / "charts", self.campaign)
         return files
 
     # ---------------- JSON snapshot ----------------
@@ -117,6 +134,17 @@ class Exporter:
         for c in n[1]: c.font = bold
         for r in self.store.ncrs():
             n.append([r["ncr_id"], r["run_id"], r["opened_at"], r["opened_by"], r["description"], r["disposition"], r["closed_at"], r["closed_by"]])
+        # temperature per component / per machine — mean, std, n per unit; between-unit std, spread, outliers
+        from . import tempstats
+        ts = wb.create_sheet("TempStats")
+        header, body = tempstats.rows(self.temp_stats(), self.cat.unit_ids())
+        ts.append(header)
+        for c in ts[1]: c.font = bold
+        for row in body:
+            ts.append(row)
+            if row[-1]:
+                ts.cell(row=ts.max_row, column=len(row)).fill = PatternFill("solid", fgColor=VERDICT_FILL["FAIL"])
+        ts.freeze_panes = "D2"
         p = self.out / f"{self.campaign}.xlsx"
         wb.save(p)
         return p
@@ -157,6 +185,34 @@ class Exporter:
             for r, rls in redlined:
                 for x in rls:
                     lines.append(f"| {r['run_id']} | {x['step_index'] + 1} | {x['as_run']} | {x['reason']} | {x['by_whom']} | {x['at']} |")
+        # temperature per component, per machine (SRS-DVT-195): where the machines differ and which one stands out
+        from . import tempstats
+        stats = self.temp_stats(); units = self.cat.unit_ids()
+        if stats:
+            lines += ["", "## Temperature by component — machine comparison", "",
+                      f"Mean ± std per machine for every recorded temperature field; *between-unit std* is the std of the machine means, "
+                      f"*spread* the difference between the highest and lowest machine mean. A machine is flagged as an **outlier** when its mean "
+                      f"sits further from the median of the machines than 3x the scaled MAD, 2x the pooled within-machine std and {tempstats.ABS_MIN:g} °C "
+                      f"(whichever is largest; needs at least 3 machines).", ""]
+            summ = tempstats.component_summary(stats)
+            lines += ["| Component | Fields | Worst between-unit std (°C) | Max spread (°C) | Outlier machines |", "|---|---|---|---|---|"]
+            for comp, _ in tempstats.COMPONENTS:
+                if comp in summ:
+                    s = summ[comp]
+                    lines.append(f"| {s['label']} | {s['fields']} | {s['worst_between_std']:.2f} | {s['spread_max']:.1f} | "
+                                 f"{', '.join(f'{u} ({n})' for u, n in sorted(s['outliers'].items())) or '—'} |")
+            lines += ["", "| Component | Test | Field | " + " | ".join(units) + " | Between-unit std | Spread | Outliers |",
+                      "|---|---|---|" + "---|" * len(units) + "---|---|---|"]
+            for fs in stats:
+                cells = []
+                for u in units:
+                    s = fs.per_unit.get(u)
+                    cells.append(f"{s.mean:.1f} ± {s.std:.1f} (n={s.n})" if s else "—")
+                lines.append(f"| {tempstats.COMPONENT_LABEL.get(fs.component, fs.component)} | {fs.test_id} | {fs.field} | " + " | ".join(cells)
+                             + f" | {fs.between_std:.2f} | {fs.spread:.1f} | {', '.join(fs.outliers) or '—'} |")
+            charts = sorted((self.out / "charts").glob("temp_*.png")) if (self.out / "charts").exists() else []
+            if charts:
+                lines += [""] + [f"![{p.stem}](charts/{p.name})" for p in charts]
         unverified = [tid for tid in self.cat.ordered_test_ids() if eng.test_verdict(tid) not in ("PASS", "WAIVED")]
         lines += ["", "## Not yet verified (SRS-DVT-053)", ""] + [f"- {t}" for t in unverified] if unverified else ["", "All tests verified."]
         p = self.out / f"{self.campaign}.report.md"

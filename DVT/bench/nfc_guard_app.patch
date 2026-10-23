@@ -1,0 +1,155 @@
+--- app.py
++++ app.py
+@@ -520,6 +520,123 @@
+ atexit.register(lambda: counters.flush())
+ 
+ # ============================================================
++# NFC reader (Eccel Pepper C2 on USB): presence detection + enable guard
++# ============================================================
++ERR_NFC_READER_NOT_DETECTED = 9052
++NFC_USB_IDS = {('0483', '5740')}          # STM32 virtual COM port used by the Pepper C2
++NFC_NAME_HINTS = ('eccel', 'pepper')
++
++
++class NfcReader:
++    """Presence of the USB NFC reader + the persisted "NFC enabled" setting.
++
++    Detection is by USB identity (udev by-id name / sysfs vendor+product),
++    NOT by opening the serial port, so it never disturbs a client that is
++    talking to the reader. NFC can only be switched ON while a reader is
++    detected (Err 9052 otherwise); the flag survives reboots in data/nfc.json.
++    Set SCURE_SIM_NFC=1 to simulate a connected reader off-device.
++    """
++    CACHE_SEC = 2.0
++
++    def __init__(self, path):
++        self.path = path
++        self._lock = threading.Lock()
++        self._cache = None
++        self._cache_at = 0.0
++        self._sim = os.environ.get('SCURE_SIM_NFC') == '1'
++        self.enabled = False
++        try:
++            with open(path, encoding='utf-8') as f:
++                self.enabled = bool(json.load(f).get('enabled'))
++        except (OSError, ValueError):
++            pass
++
++    @staticmethod
++    def _read(base, name):
++        try:
++            with open(os.path.join(base, name), encoding='utf-8') as f:
++                return f.read().strip()
++        except OSError:
++            return None
++
++    def _scan(self):
++        none = {'detected': False, 'port': None, 'model': None, 'serial': None, 'usbId': None}
++        if self._sim:
++            return {'detected': True, 'port': '/dev/ttyACM0', 'model': 'Simulated NFC reader',
++                    'serial': 'SIM', 'usbId': '0483:5740'}
++        # 1. udev by-id link: "usb-Eccel_Eccel_C2_Virtual_ComPort_<serial>-if00" -> the tty node
++        try:
++            for name in sorted(os.listdir('/dev/serial/by-id')):
++                if any(h in name.lower() for h in NFC_NAME_HINTS):
++                    m = re.search(r'_([0-9A-Za-z]+)-if\d+$', name)
++                    return {'detected': True,
++                            'port': os.path.realpath(os.path.join('/dev/serial/by-id', name)),
++                            'model': 'Eccel Pepper C2', 'serial': m.group(1) if m else None,
++                            'usbId': '0483:5740'}
++        except OSError:
++            pass
++        # 2. sysfs USB identity (reader present but its tty not up yet)
++        try:
++            for dev in sorted(os.listdir('/sys/bus/usb/devices')):
++                base = os.path.join('/sys/bus/usb/devices', dev)
++                vid, pid = self._read(base, 'idVendor'), self._read(base, 'idProduct')
++                if (vid, pid) not in NFC_USB_IDS:
++                    continue
++                product = self._read(base, 'product') or ''
++                if not any(h in product.lower() for h in NFC_NAME_HINTS):
++                    continue
++                return {'detected': True, 'port': None, 'model': product,
++                        'serial': self._read(base, 'serial'), 'usbId': f'{vid}:{pid}'}
++        except OSError:
++            pass
++        return none
++
++    def status(self):
++        now = time.monotonic()
++        with self._lock:
++            if self._cache is None or now - self._cache_at > self.CACHE_SEC:
++                self._cache = self._scan()
++                self._cache_at = now
++            return dict(self._cache)
++
++    def set_enabled(self, on):
++        """Returns (ok, code, message). Switching ON needs a detected reader."""
++        if on and not self.status()['detected']:
++            return (False, ERR_NFC_READER_NOT_DETECTED,
++                    'No NFC reader detected - connect the reader (data USB cable) and try again')
++        with self._lock:
++            self.enabled = bool(on)
++        try:
++            os.makedirs(os.path.dirname(self.path), exist_ok=True)
++            tmp = self.path + '.tmp'
++            with open(tmp, 'w', encoding='utf-8') as f:
++                json.dump({'enabled': self.enabled}, f)
++            os.replace(tmp, self.path)
++        except OSError as e:
++            print(f"[NFC] could not persist the setting: {e}")
++        return True, None, f'NFC {"enabled" if on else "disabled"}'
++
++    def decorate_state(self, state):
++        """Publish nfcEnabled + nfcReader in /api/state; while NFC is enabled
++        with no reader on USB, keep Err 9052 active on the Alerts screen."""
++        reader = self.status()
++        state['nfcEnabled'] = self.enabled
++        state['nfcReader'] = reader
++        if self.enabled and not reader['detected']:
++            alerts = list(state.get('alerts') or [])
++            if ERR_NFC_READER_NOT_DETECTED not in alerts:
++                alerts.append(ERR_NFC_READER_NOT_DETECTED)
++            state['alerts'] = alerts
++            details = dict(state.get('alertDetails') or {})
++            details[str(ERR_NFC_READER_NOT_DETECTED)] = 'NFC is enabled but no NFC reader is connected on USB'
++            state['alertDetails'] = details
++        return state
++
++
++nfc = NfcReader(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'nfc.json'))
++
++
++# ============================================================
+ # API Endpoints
+ # (Print data, released materials and cure data are managed in PostgreSQL â€” db.py.)
+ # ============================================================
+@@ -530,9 +647,28 @@
+     state = hw.get_state()
+     state['counters'] = counters.hours()
+     state['cloudSync'] = cloud_sync.status()
++    nfc.decorate_state(state)
+     return jsonify(state)
+ 
+ 
++@app.route('/api/nfc', methods=['GET'])
++def nfc_status():
++    """NFC setting + reader presence (USB identity, no port access)."""
++    return jsonify({'ok': True, 'enabled': nfc.enabled, 'reader': nfc.status()})
++
++
++@app.route('/api/nfc', methods=['POST'])
++def set_nfc():
++    """NFC on/off. ?on=1|0 - ON is refused with Err 9052 while no reader is detected."""
++    on = request.args.get('on', '1') not in ('0', 'false', 'off')
++    ok, code, msg = nfc.set_enabled(on)
++    if ok:
++        return jsonify({'ok': True, 'message': msg, 'enabled': nfc.enabled, 'reader': nfc.status()})
++    return jsonify({'ok': False, 'code': code, 'message': msg, 'enabled': nfc.enabled, 'reader': nfc.status()})
++
++
++
++
+ @app.route('/api/network/status', methods=['GET'])
+ def network_status():
+     """Get network info - IP, MAC, gateway, interfaces"""

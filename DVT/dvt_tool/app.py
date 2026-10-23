@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPush
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from dvt_tool.catalog import Catalog  # noqa: E402
-from dvt_tool.store import Store  # noqa: E402
+from dvt_tool.store import Store, now  # noqa: E402
 from dvt_tool.engine import Engine  # noqa: E402
 from dvt_tool.export import Exporter  # noqa: E402
 from dvt_tool.drive import SyncConfig, Syncer, SyncStatus  # noqa: E402
@@ -43,7 +43,27 @@ from dvt_tool.ui.widgets import Card, Pill, StatTile, PulseDot, Toast, FadeStack
 from dvt_tool.ui.dut import DutMonitor, DutPanel, DutState, DutClient, SIM_URL  # noqa: E402
 from dvt_tool.ui.wizard import RunWizard  # noqa: E402
 from dvt_tool.ui.stats import StatisticsPage  # noqa: E402
-from dvt_tool.ui.i18n import tr, set_language, is_rtl, LANGUAGES  # noqa: E402
+from dvt_tool.ui.i18n import tr, trf, set_language, is_rtl, LANGUAGES  # noqa: E402
+from dvt_tool.ui import screen  # noqa: E402
+from dvt_tool.journal import Journal, JOURNAL_PULL_S  # noqa: E402
+from dvt_tool import checkpoint as ckpt  # noqa: E402
+
+
+class CheckpointWorker(QThread):
+    """Export + copy into the repo + git commit/push, off the UI thread (own SQLite connection)."""
+    done = Signal(object)
+
+    def __init__(self, app, label: str, push: bool):
+        super().__init__(); self.app, self.label, self.push = app, label, push
+
+    def run(self):
+        a = self.app
+        try:
+            st = Store(a.store.path); eng = Engine(a.cat, st)
+            exporter = Exporter(a.cat, st, a.data / "export", a.cfg.campaign)
+            self.done.emit(ckpt.make_checkpoint(exporter, eng, self.label, a.operator, a.cfg.campaign, a.cat.version, push=self.push))
+        except Exception as e:  # noqa: BLE001
+            self.done.emit(ckpt.CheckpointResult(error=f"{type(e).__name__}: {e}"))
 
 DEFAULT_MACHINES = ["http://192.168.2.155:3001", "http://testingcm5.local:3001", "http://127.0.0.1:3001", SIM_URL]
 
@@ -89,10 +109,16 @@ class MainWindow(QMainWindow):
         self.machine_url = machine or self.store.get_meta("machine_url", DEFAULT_MACHINES[0])
         self.dut_state = DutState(url=self.machine_url); self.dut_monitor = None
         self.wizard: RunWizard | None = None
+        # shared campaign through the Drive folder: this console's journal + everyone else's replayed here
+        self.journal = Journal.open(self.store, self.data, self._shared_folder(), self.operator, self.cat.version); self.journal.attach(self.store)
         self.setWindowTitle(tr("sCure / CureBox — DVT Qualification & Acceptance Test Console"))
-        self.resize(1500, 920)
+        self.compact = screen.is_compact()          # e.g. 1920x1080 at 150 % = 1280x688 logical px: smaller than the 1500x920 design
+        screen.fit(self, screen.DESIGN_W, screen.DESIGN_H)
+        self.setMinimumSize(960, 560)
         self._build(); self.toast_w = Toast(self)
-        self.set_machine(self.machine_url); self.refresh_all(); self.show_page("dashboard")
+        self.set_machine(self.machine_url); self.journal.push(); self._journal_pull(quiet=True); self.refresh_all(); self.show_page("dashboard")
+        self._jt = QTimer(self); self._jt.timeout.connect(self._journal_pull); self._jt.start(JOURNAL_PULL_S * 1000)
+        QTimer.singleShot(400, self._check_shared_reset)      # after the window is up: was the shared campaign erased since this console last ran?
         last = self.store.get_meta("last_unit")
         if last: self.select_unit(last)
         self._clock = QTimer(self); self._clock.timeout.connect(self._tick_clock); self._clock.start(1000)
@@ -103,8 +129,8 @@ class MainWindow(QMainWindow):
         root = QWidget(); self.setCentralWidget(root)
         v = QVBoxLayout(root); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         # ---- header
-        hdr = QFrame(); hdr.setProperty("card", "header"); hl = QHBoxLayout(hdr); hl.setContentsMargins(18, 10, 18, 10); hl.setSpacing(24)
-        hl.addWidget(label(tr("sCure / CureBox — DVT Qualification & Acceptance Test Console"), size=16, bold=True))
+        hdr = QFrame(); hdr.setProperty("card", "header"); hl = QHBoxLayout(hdr); hl.setContentsMargins(18, 10, 18, 10); hl.setSpacing(14 if self.compact else 24)
+        hl.addWidget(label(tr("sCure DVT") if self.compact else tr("sCure / CureBox — DVT Qualification & Acceptance Test Console"), size=15 if self.compact else 16, bold=True))
         hl.addStretch()
         def block(eyebrow, w):
             b = QVBoxLayout(); b.setSpacing(0); b.addWidget(label(eyebrow, "eyebrow")); b.addWidget(w); hl.addLayout(b)
@@ -114,10 +140,10 @@ class MainWindow(QMainWindow):
         self.cb_machine.activated.connect(lambda _: self.set_machine(self.cb_machine.currentText().strip()))
         block(tr("DUT"), self.cb_machine)
         self.cb_unit = QComboBox(); self.cb_unit.setMinimumWidth(110)
-        for u in self.cat.units: self.cb_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role')}" if u.get("role") else ""), u["id"])
+        for u in self.cat.units: self.cb_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role_label') or u.get('role')}" if u.get("role") else ""), u["id"])
         self.cb_unit.currentIndexChanged.connect(self._unit_from_header)
         block(tr("UNIT UNDER TEST"), self.cb_unit)
-        self.ed_operator = QLineEdit(self.operator); self.ed_operator.setFixedWidth(130); self.ed_operator.textChanged.connect(lambda s: setattr(self, "operator", s.strip()))
+        self.ed_operator = QLineEdit(self.operator); self.ed_operator.setFixedWidth(130); self.ed_operator.textChanged.connect(lambda s: (setattr(self, "operator", s.strip()), setattr(self.journal, "operator", s.strip())))
         block(tr("OPERATOR"), self.ed_operator)
         block(tr("CAMPAIGN"), label(self.cfg.campaign, bold=True)); block(tr("TEST PLAN"), label(f"SRS-DVT-SW Rev B · cat v{self.cat.version}", bold=True))
         sysbox = QHBoxLayout(); self.dot_sys = PulseDot(T.MUTED); sysbox.addWidget(self.dot_sys); self.lbl_sys = label(tr("OFFLINE"), bold=True, size=15, color=T.MUTED); sysbox.addWidget(self.lbl_sys)
@@ -130,14 +156,14 @@ class MainWindow(QMainWindow):
         v.addWidget(self.sim_banner)
         # ---- body
         body = QHBoxLayout(); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0); v.addLayout(body, 1)
-        side = QFrame(); side.setProperty("card", "sidebar"); side.setFixedWidth(230); sl = QVBoxLayout(side); sl.setContentsMargins(10, 14, 10, 14); sl.setSpacing(4)
+        side = QFrame(); side.setProperty("card", "sidebar"); side.setFixedWidth(196 if self.compact else 230); sl = QVBoxLayout(side); sl.setContentsMargins(8 if self.compact else 10, 10 if self.compact else 14, 8 if self.compact else 10, 10 if self.compact else 14); sl.setSpacing(2 if self.compact else 4)
         self.nav_buttons = {}
         for key, icon, text in self.NAV:
             b = QPushButton(f"{icon}   {tr(text)}"); b.setProperty("kind", "nav"); b.setCheckable(True); b.clicked.connect(lambda _, k=key: self.show_page(k)); sl.addWidget(b); self.nav_buttons[key] = b
         sl.addSpacing(10); sl.addWidget(label(tr("TEST SUBSYSTEMS"), "eyebrow-rail"))
         self.nav_sub = {}
         for name in ("Thermal", "Electrical", "Safety", "Environmental"):
-            b = QPushButton(f"{T.SUBSYSTEM_ICON[name]}   {name}"); b.setProperty("kind", "nav"); b.clicked.connect(lambda _, n=name: (self.show_page("dashboard"), self.dashboard.set_filter(n)))
+            b = QPushButton(f"{T.SUBSYSTEM_ICON[name]}   {self.cat.label('subsystems', name)}"); b.setProperty("kind", "nav"); b.clicked.connect(lambda _, n=name: (self.show_page("dashboard"), self.dashboard.set_filter(n)))
             row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.addWidget(b, 1)
             cnt = QLabel("0"); cnt.setStyleSheet(f"background: {T.RAIL_2}; color: {T.SUBSYSTEM[name]}; border-radius: 10px; padding: 2px 9px; font-weight: 700; font-size: 11px;")
             row.addWidget(cnt); w = QWidget(); w.setLayout(row); w.setStyleSheet("background: transparent;"); sl.addWidget(w); self.nav_sub[name] = cnt
@@ -155,11 +181,13 @@ class MainWindow(QMainWindow):
         for key, page in (("dashboard", self._wrap(self.dashboard)), ("plans", self._plans_page()), ("console", self._console_page()),
                           ("dut", self._wrap(DutPanel(self))), ("instruments", self._instruments_page()), ("stats", self._wrap(self.stats)),
                           ("reports", self._reports_page()), ("settings", self._settings_page())):
-            self.page_index[key] = self.pages.count(); self.pages.addWidget(page)
+            # every page scrolls vertically: on a small screen the content is never crushed or cut off
+            self.page_index[key] = self.pages.count(); self.pages.addWidget(page if isinstance(page, QScrollArea) else screen.scrollable(page, margins=(0, 0, 0, 0)))
         self.dut_panel = self.pages.widget(self.page_index["dut"]).findChild(DutPanel)
 
     def _wrap(self, w: QWidget) -> QWidget:
-        outer = QWidget(); l = QVBoxLayout(outer); l.setContentsMargins(18, 16, 18, 16); l.addWidget(w); return outer
+        m = 12 if self.compact else 18
+        return screen.scrollable(w, margins=(m, m - 2, m, m - 2))
 
     def show_page(self, key):
         for k, b in self.nav_buttons.items(): b.setChecked(k == key)
@@ -220,24 +248,58 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ pages: plans
     def _plans_page(self):
         w = QWidget(); l = QHBoxLayout(w); l.setContentsMargins(18, 16, 18, 16); l.setSpacing(14)
-        self.plan_tree = QTreeWidget(); self.plan_tree.setHeaderLabels([tr("Test"), tr("Test name"), tr("Method"), tr("Appl."), tr("Runs")]); self.plan_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.plan_tree.currentItemChanged.connect(lambda it, _: it and it.data(0, Qt.UserRole) and self._show_plan(it.data(0, Qt.UserRole)))
-        l.addWidget(self.plan_tree, 2)
-        self.plan_detail = QPlainTextEdit(); self.plan_detail.setReadOnly(True); l.addWidget(self.plan_detail, 3)
+        self.plan_tree = QTreeWidget(); self.plan_tree.setHeaderLabels([tr("Test"), tr("Test name"), tr("Method"), tr("Appl."), tr("Runs")])
+        hdr = self.plan_tree.header(); hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents); hdr.setSectionResizeMode(1, QHeaderView.Stretch); hdr.setMinimumSectionSize(90)
+        self.plan_tree.setTextElideMode(Qt.ElideNone); self.plan_tree.setWordWrap(True)      # phase / bench-group / test names are shown in full, never "…"
+        self.plan_tree.currentItemChanged.connect(lambda it, _: it and self._show_plan_item(it))
+        l.addWidget(self.plan_tree, 3)
+        right = QVBoxLayout(); right.setSpacing(8); l.addLayout(right, 2)
+        self.plan_title = label(tr("Select a phase, a bench group or a test on the left."), "h2", wrap=True); right.addWidget(self.plan_title)
+        self.plan_subtitle = label("", "muted", wrap=True); right.addWidget(self.plan_subtitle)
+        self.plan_detail = QPlainTextEdit(); self.plan_detail.setReadOnly(True); right.addWidget(self.plan_detail, 1)
         return w
 
     def _fill_plans(self):
         self.plan_tree.clear()
         for p in sorted(self.cat.phases, key=lambda p: p["id"]):
-            top = QTreeWidgetItem([f"Phase {p['id']} — {p['name']}", p.get("gate") or "", "", "", ""]); top.setExpanded(True); self.plan_tree.addTopLevelItem(top)
-            for tid in p.get("tests", []):
-                t = self.cat.tests[tid]; st = self.engine.test_status(tid)
-                it = QTreeWidgetItem([tid, t["title"], t["method"], st["applicability"], f"{st['runsDone']}/{st['runsTotal']}"]); it.setData(0, Qt.UserRole, tid); top.addChild(it)
+            top = QTreeWidgetItem([f"{tr('Phase')} {p['id']} — {p['name']}", p.get("gate") or "", "", "", ""]); top.setExpanded(True); self.plan_tree.addTopLevelItem(top)
+            # bench order (SRS-DVT-196): tests that share an instrument set are grouped and run one after the other
+            from dvt_tool import bench
+            for g in bench.bench_groups(self.cat, p):
+                parent = top
+                if len(p.get("tests", [])) > 1:
+                    ins = ", ".join(sorted(g.instruments)) if g.instruments else tr("No instrument")
+                    parent = QTreeWidgetItem([f"🔧 {ins}", trf("{n} tests — same bench setup", n=len(g.tests)) if len(g.tests) > 1 else "", "", "", ""])
+                    f = parent.font(0); f.setBold(True); parent.setFont(0, f); parent.setForeground(0, Qt.GlobalColor.darkBlue); parent.setExpanded(True); top.addChild(parent)
+                for tid in g.tests:
+                    t = self.cat.tests[tid]; st = self.engine.test_status(tid)
+                    it = QTreeWidgetItem([tid, t["title"], st["methodLabel"], st["applicability"], f"{st['runsDone']}/{st['runsTotal']}"]); it.setData(0, Qt.UserRole, tid); parent.addChild(it)
 
     def _show_plan(self, tid):
         import yaml
         t = self.cat.tests[tid]
+        if hasattr(self, "plan_title"):
+            st = self.engine.test_status(tid)
+            self.plan_title.setText(f"{tid} — {t['title']}")
+            self.plan_subtitle.setText(f"{self.cat.label('subsystems', t['subsystem'])} · {st['methodLabel']} · {st['applicability']} · {trf('{d}/{t} runs', d=st['runsDone'], t=st['runsTotal'])} · {tr('Phase')} {self.cat.phase_of(tid)['id']}")
         self.plan_detail.setPlainText(yaml.safe_dump(t, sort_keys=False, allow_unicode=True, width=100))
+
+    def _show_plan_item(self, it):
+        """Whatever is opened on the left is named on the right: a test (its plan), a phase or a bench group (what it contains)."""
+        tid = it.data(0, Qt.UserRole)
+        if tid:
+            self._show_plan(tid); return
+        tests = []
+        def walk(node):
+            for i in range(node.childCount()):
+                ch = node.child(i); t_ = ch.data(0, Qt.UserRole)
+                if t_: tests.append(t_)
+                walk(ch)
+        walk(it)
+        self.plan_title.setText(it.text(0))
+        self.plan_subtitle.setText((it.text(1) + " · " if it.text(1) else "") + trf("{n} tests", n=len(tests)))
+        lines = [f"{t_}  —  {self.cat.tests[t_]['title']}" for t_ in tests]
+        self.plan_detail.setPlainText("\n".join(lines) if lines else "")
 
     # ------------------------------------------------------------------ pages: console
     def _console_page(self):
@@ -254,6 +316,11 @@ class MainWindow(QMainWindow):
         b = QPushButton(tr("Close selected NCR…")); b.setProperty("kind", "ghost"); b.clicked.connect(self.close_ncr); c.body.addWidget(b); left.addWidget(c)
         c = Card(tr("Search")); self.search = QLineEdit(); self.search.setPlaceholderText(tr("run, value, error code, NCR text…")); self.search.returnPressed.connect(self.do_search); c.body.addWidget(self.search)
         self.search_out = QListWidget(); c.body.addWidget(self.search_out); left.addWidget(c, 1)
+        c = Card(tr("Danger zone"), hint=tr("irreversible"))
+        self.btn_reset_unit = QPushButton(tr("Restart this unit and erase its data…")); self.btn_reset_unit.setProperty("kind", "danger"); self.btn_reset_unit.clicked.connect(self.reset_unit); c.body.addWidget(self.btn_reset_unit)
+        c.body.addWidget(label(tr("The selected unit starts over: every run of it back to NOT_STARTED, its values, verdicts, NCRs, waivers, redlines, attachments and phase sign-offs erased, its configuration un-frozen — on every console. A reason is required and is the only thing kept."), "muted", wrap=True))
+        b = QPushButton(tr("Erase the whole campaign and restart the DVT…")); b.setProperty("kind", "ghost"); b.clicked.connect(self.reset_campaign); c.body.addWidget(b)
+        left.addWidget(c)
         centre = QVBoxLayout(); hl.addLayout(centre, 2)
         self.next_card = Card(tr("Next action"), kind="raised")
         self.lbl_next = label("", "instruction", wrap=True); self.next_card.body.addWidget(self.lbl_next)
@@ -267,6 +334,17 @@ class MainWindow(QMainWindow):
         self.btn_start = QPushButton(tr("Start guided run →")); self.btn_start.setProperty("kind", "big"); self.btn_start.clicked.connect(self.start_run); row.addWidget(self.btn_start)
         self.btn_override = QPushButton(tr("Start anyway (supervisor)")); self.btn_override.setProperty("kind", "danger"); self.btn_override.clicked.connect(lambda: self.start_run(override=True)); row.addWidget(self.btn_override)
         row.addStretch(); self.next_card.body.addLayout(row); centre.addWidget(self.next_card)
+        # pick any test and run it on the selected unit (the guided order stays the default)
+        pc = Card(tr("Pick a test"), hint=tr("any test on the selected unit — blockers are shown, a supervisor can override"))
+        prow = QHBoxLayout(); pc.body.addLayout(prow)
+        self.cb_pick = QComboBox(); self.cb_pick.setMinimumWidth(380); self.cb_pick.addItem(tr("— follow the next action —"), None)
+        for tid, tt in sorted(self.cat.tests.items(), key=lambda kv: (self.cat.phase_of(kv[0])["id"], kv[0])):
+            self.cb_pick.addItem(f"{tid} · {tt['title'][:90]}", tid)
+        self.cb_pick.currentIndexChanged.connect(self._pick_changed); prow.addWidget(self.cb_pick, 1)
+        self.btn_pick_run = QPushButton(tr("Run this test on the selected unit →")); self.btn_pick_run.setProperty("kind", "big"); self.btn_pick_run.setEnabled(False); self.btn_pick_run.clicked.connect(self.run_picked); prow.addWidget(self.btn_pick_run)
+        self.btn_pick_row = QPushButton(tr("Open the selected run")); self.btn_pick_row.setProperty("kind", "ghost"); self.btn_pick_row.clicked.connect(self.run_selected_row); prow.addWidget(self.btn_pick_row)
+        self.lbl_pick = label("", "muted", wrap=True); pc.body.addWidget(self.lbl_pick)
+        centre.addWidget(pc)
         c = Card(tr("Runs of this test"), hint=tr("double-click a NOT_STARTED / IN_PROGRESS run to open it"))
         self.runs_tbl = QTableWidget(0, 6); self.runs_tbl.setHorizontalHeaderLabels([tr("Unit"), tr("Variant"), tr("Rep"), tr("Status"), tr("Verdict"), tr("Operator")])
         self.runs_tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch); self.runs_tbl.verticalHeader().hide(); self.runs_tbl.setSelectionBehavior(QTableWidget.SelectRows)
@@ -295,14 +373,69 @@ class MainWindow(QMainWindow):
         if not u: return
         self.select_unit(u)
         na = self.engine.next_action(u)
-        self.lbl_next.setText(na.message)
+        self.lbl_next.setText(na.message + (f"\n🔧 {na.setup}" if na.setup else ""))
         self.lbl_block.setVisible(bool(na.blockers)); self.lbl_block.setText(tr("Blocked:") + "\n• " + "\n• ".join(b.text for b in na.blockers))
         codes = {b.code for b in na.blockers}
         for k, b in self.fix_buttons.items(): b.setVisible(k in codes)
         startable = na.run is not None and na.run["status"] in ("NOT_STARTED", "IN_PROGRESS")
         self.btn_start.setEnabled(startable and not na.blockers); self.btn_override.setEnabled(startable and bool(na.blockers))
         self.btn_start.setText(tr("Resume guided run →") if na.run and na.run["status"] == "IN_PROGRESS" else tr("Start guided run →"))
-        self._fill_runs(na.run["test_id"] if na.run else None)
+        picked = self.cb_pick.currentData() if hasattr(self, "cb_pick") else None
+        self._fill_runs(picked or (na.run["test_id"] if na.run else None))
+        if picked: self._pick_changed()
+
+    # ---- pick a test
+    def _pick_changed(self, *_):
+        if self.wizard: return
+        tid = self.cb_pick.currentData(); u = self.unit_id()
+        if not tid:
+            self.lbl_pick.setText(""); self.btn_pick_run.setEnabled(False); self.refresh_console(); return
+        self._fill_runs(tid)
+        if not u: return
+        run = self.engine.pending_run(tid, u)
+        if run is None:
+            done = [r for r in self.store.runs(tid, u)]
+            self.lbl_pick.setText(trf("No pending run of {test} on {unit} — {why}.", test=tid, unit=u,
+                                      why=tr("all its runs are done") if done else tr("the test does not apply to this unit")))
+            self.btn_pick_run.setEnabled(False); return
+        blockers = self.engine.blockers_for(run)
+        variant = ", ".join(f"{k}={v}" for k, v in run["variant"].items()) or tr("single")
+        head = trf("{status} run {test} on {unit}: {variant}, repetition {rep}", status=tr("Resume") if run["status"] == "IN_PROGRESS" else tr("Start"),
+                   test=tid, unit=u, variant=variant, rep=run["repetition"])
+        self.lbl_pick.setText(head + ("\n" + tr("Blocked:") + " " + "; ".join(b.text for b in blockers) + "\n" + tr("(Run anyway = supervisor override, recorded)") if blockers else ""))
+        self.btn_pick_run.setText(tr("Run anyway (supervisor) →") if blockers else tr("Run this test on the selected unit →"))
+        self.btn_pick_run.setProperty("kind", "danger" if blockers else "big"); self.btn_pick_run.style().unpolish(self.btn_pick_run); self.btn_pick_run.style().polish(self.btn_pick_run)
+        self.btn_pick_run.setEnabled(True)
+
+    def _launch_picked(self, run):
+        """Open a run the operator chose explicitly: blockers must be overridden by a supervisor (reason recorded)."""
+        blockers = self.engine.blockers_for(run)
+        if blockers:
+            if QMessageBox.question(self, tr("Blocked"), tr("Blocked:") + "\n• " + "\n• ".join(b.text for b in blockers) + "\n\n" + tr("Start anyway with a supervisor override?"),
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
+            reason, ok = QInputDialog.getText(self, "Supervisor override", "Reason for starting despite blockers (recorded):")
+            if not ok or not reason.strip(): return
+            self.store.log("Blocker override", self.operator, run["run_id"], {"blockers": [b.text for b in blockers], "reason": reason, "picked": True})
+        self.store.log("Test picked directly", self.operator, run["run_id"], {"test_id": run["test_id"], "unit_id": run["unit_id"]})
+        self._launch_wizard(run, override_check=not blockers)
+
+    def run_picked(self):
+        tid = self.cb_pick.currentData(); u = self.unit_id()
+        if not tid or not u: return
+        run = self.engine.pending_run(tid, u)
+        if run is None: self._pick_changed(); return
+        self._launch_picked(run)
+
+    def run_selected_row(self):
+        row = self.runs_tbl.currentRow()
+        if row < 0 or row >= len(self._runs_cache):
+            self.toast(tr("Select a run in the table first"), T.WARN); return
+        r = self._runs_cache[row]
+        if r["status"] not in ("NOT_STARTED", "IN_PROGRESS"):
+            self.toast(tr("That run is already finished — pick a NOT_STARTED or IN_PROGRESS run"), T.WARN); return
+        self.units.setCurrentRow(self.cat.unit_ids().index(r["unit_id"]))
+        self._launch_picked(r)
 
     def _fill_runs(self, test_id):
         self.runs_tbl.setRowCount(0); self._runs_cache = []
@@ -322,7 +455,10 @@ class MainWindow(QMainWindow):
             self._launch_wizard(r, override_check=False)
 
     def open_test(self, test_id):
-        self.show_page("console"); self._fill_runs(test_id)
+        self.show_page("console")
+        i = self.cb_pick.findData(test_id)
+        if i >= 0: self.cb_pick.setCurrentIndex(i)
+        self._fill_runs(test_id)
         pending = [r for r in self.store.runs(test_id) if r["status"] in ("NOT_STARTED", "IN_PROGRESS")]
         if pending: self.units.setCurrentRow(self.cat.unit_ids().index(pending[0]["unit_id"]))
 
@@ -359,33 +495,60 @@ class MainWindow(QMainWindow):
     def _instruments_page(self):
         w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(18, 16, 18, 16); l.setSpacing(14)
         c = Card(tr("Instruments & calibration records"), hint="SRS-DVT-085 — a run is blocked while any of its instruments has no valid record")
-        self.inst_tbl = QTableWidget(0, 4); self.inst_tbl.setHorizontalHeaderLabels([tr("Instrument"), tr("Calibration id"), tr("Valid until"), tr("Used by")])
-        self.inst_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch); self.inst_tbl.verticalHeader().hide(); c.body.addWidget(self.inst_tbl)
+        c.body.addWidget(label(tr("Every external device the campaign needs, once — the catalog's different wordings of the same device are grouped; a calibration record covers all of them."), "muted", wrap=True))
+        self.inst_tbl = QTableWidget(0, 5); self.inst_tbl.setHorizontalHeaderLabels([tr("Instrument"), tr("Calibration id"), tr("Valid until"), tr("Used by"), tr("Catalog wordings")])
+        self.inst_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents); self.inst_tbl.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.inst_tbl.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch); self.inst_tbl.verticalHeader().hide(); self.inst_tbl.setWordWrap(True); c.body.addWidget(self.inst_tbl)
         b = QPushButton(tr("Record calibration for selected…")); b.clicked.connect(self._record_calibration); c.body.addWidget(b, 0, Qt.AlignLeft)
-        l.addWidget(c)
+        l.addWidget(c, 3)
+        c = Card(tr("Fixtures, consumables and access items"), hint=tr("needed on the bench, no calibration record"))
+        self.fix_tbl = QTableWidget(0, 2); self.fix_tbl.setHorizontalHeaderLabels([tr("Item"), tr("Used by")])
+        self.fix_tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch); self.fix_tbl.verticalHeader().hide(); self.fix_tbl.setWordWrap(True); c.body.addWidget(self.fix_tbl)
+        l.addWidget(c, 2)
         return w
 
+    def _device_calibration(self, key: str, entries: list[str]) -> dict | None:
+        """The record for a device: the one recorded under the device name, else the first valid one under any of its catalog wordings."""
+        cal = self.store.calibration(key)
+        if cal and cal.get("valid_until"): return cal
+        for n in entries:
+            c = self.store.calibration(n)
+            if c and c.get("valid_until"): return c
+        return cal
+
     def _fill_instruments(self):
-        names = {}
-        for tid, t in self.cat.tests.items():
-            for e in t.get("equipment") or []: names.setdefault(e["name"], []).append(tid)
-        self.inst_tbl.setRowCount(0)
-        for name, used in sorted(names.items()):
-            cal = self.store.calibration(name); i = self.inst_tbl.rowCount(); self.inst_tbl.insertRow(i)
-            for c, txt in enumerate([name, cal["calibration_id"] if cal else "—", cal["valid_until"] if cal else "MISSING", ", ".join(used)]):
-                it = QTableWidgetItem(txt)
-                if c == 2: it.setForeground(Qt.GlobalColor.green if cal and cal["valid_until"] >= datetime.now().date().isoformat() else Qt.GlobalColor.red)
+        from dvt_tool import bench
+        devices, others = bench.instruments(self.cat)
+        self._inst_rows = []
+        self.inst_tbl.setRowCount(0); today = datetime.now().date().isoformat()
+        for key, d in devices.items():
+            cal = self._device_calibration(key, d["entries"]); i = self.inst_tbl.rowCount(); self.inst_tbl.insertRow(i); self._inst_rows.append((key, d["entries"]))
+            cells = [key, cal["calibration_id"] if cal else "—", cal["valid_until"] if cal else tr("MISSING"), ", ".join(x.replace("DVT-", "") for x in d["tests"]), "; ".join(d["entries"])]
+            for c, txt in enumerate(cells):
+                it = QTableWidgetItem(txt); it.setToolTip(txt)
+                if c == 2: it.setForeground(Qt.GlobalColor.green if cal and cal["valid_until"] >= today else Qt.GlobalColor.red)
                 self.inst_tbl.setItem(i, c, it)
+        self.inst_tbl.resizeRowsToContents()
+        self.fix_tbl.setRowCount(0)
+        for o in others:
+            i = self.fix_tbl.rowCount(); self.fix_tbl.insertRow(i)
+            self.fix_tbl.setItem(i, 0, QTableWidgetItem(o["name"])); self.fix_tbl.setItem(i, 1, QTableWidgetItem(", ".join(x.replace("DVT-", "") for x in o["tests"])))
+        self.fix_tbl.resizeRowsToContents()
 
     def _record_calibration(self):
         r = self.inst_tbl.currentRow()
-        if r < 0: return
-        name = self.inst_tbl.item(r, 0).text()
-        cid, ok = QInputDialog.getText(self, "Calibration record", f"{name}\nCertificate id:")
+        if r < 0 or r >= len(getattr(self, "_inst_rows", [])): return
+        key, entries = self._inst_rows[r]
+        cid, ok = QInputDialog.getText(self, "Calibration record", f"{key}\nCertificate id:")
         if not ok: return
         until, ok = QInputDialog.getText(self, "Calibration record", "Valid until (YYYY-MM-DD):")
         if not ok: return
-        self.store.set_calibration(name, cid, until); self._fill_instruments(); self.kick_sync()
+        # one record per device, written under the device name AND under every catalog wording of it — the wizard and the
+        # blockers look the equipment entry up by its catalog name
+        for name in [key, *entries]:
+            self.store.set_calibration(name, cid, until)
+        self.toast(trf("{device}: calibration {id} recorded for {n} catalog entries", device=key, id=cid, n=len(entries)), T.OK)
+        self._fill_instruments(); self.kick_sync()
 
     # ------------------------------------------------------------------ pages: reports / settings
     def _reports_page(self):
@@ -394,11 +557,67 @@ class MainWindow(QMainWindow):
         self.lbl_reports = label("", "muted", wrap=True); c.body.addWidget(self.lbl_reports)
         row = QHBoxLayout()
         b = QPushButton(tr("Export + sync now")); b.clicked.connect(self.kick_sync); row.addWidget(b)
+        b = QPushButton(tr("Temperature graphs →")); b.setProperty("kind", "ghost"); b.setToolTip(tr("Per component, per machine: mean ± std, between-unit std, outliers — also exported as charts/temp_*.png and the TempStats sheet"))
+        b.clicked.connect(lambda: self.show_page("stats")); row.addWidget(b)
+        b = QPushButton(tr("Campaign document (PDF)")); b.setProperty("kind", "ghost"); b.clicked.connect(self.export_document); row.addWidget(b)
         b = QPushButton(tr("Open Drive folder")); b.setProperty("kind", "ghost"); b.clicked.connect(self.open_reports); row.addWidget(b)
         b = QPushButton(tr("Open local export folder")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: os.startfile(str(self.data / "export"))); row.addWidget(b)
         row.addStretch(); c.body.addLayout(row)
+        # ---- controlled history: checkpoints committed to the Git repository
+        from PySide6.QtWidgets import QCheckBox
+        cg = Card(tr("Git checkpoints"), hint=tr("a reviewed snapshot of the campaign committed to the repository — automatically at every phase gate, or on demand")); l.addWidget(cg)
+        cg.body.addWidget(label(tr("Live team work stays in the Drive folder; Git keeps the controlled history. Each checkpoint is a folder under DVT/checkpoints/<campaign>/ with the campaign JSON, the workbook, the report and a CHECKPOINT.md summary, committed (and pushed) as one commit."), "muted", wrap=True))
+        crow = QHBoxLayout(); cg.body.addLayout(crow)
+        b = QPushButton(tr("Save checkpoint to Git…")); b.clicked.connect(lambda: self.save_checkpoint()); crow.addWidget(b)
+        self.cb_git_push = QCheckBox(tr("push to the remote")); self.cb_git_push.setChecked(self.store.get_meta("git_push", "1") == "1"); self.cb_git_push.toggled.connect(lambda on: self.store.set_meta("git_push", "1" if on else "0")); crow.addWidget(self.cb_git_push)
+        self.cb_git_auto = QCheckBox(tr("checkpoint automatically at each phase gate")); self.cb_git_auto.setChecked(self.store.get_meta("git_auto_checkpoint", "1") == "1"); self.cb_git_auto.toggled.connect(lambda on: self.store.set_meta("git_auto_checkpoint", "1" if on else "0")); crow.addWidget(self.cb_git_auto)
+        crow.addStretch()
+        self.lbl_ckpt = label("", "mono"); self.lbl_ckpt.setWordWrap(True); cg.body.addWidget(self.lbl_ckpt); self._show_checkpoints()
         self.events = QPlainTextEdit(); self.events.setReadOnly(True); c2 = Card(tr("Campaign events (latest)")); c2.body.addWidget(self.events); l.addWidget(c2, 1)
         return w
+
+    # ------------------------------------------------------------------ Git checkpoints
+    def save_checkpoint(self, label: str | None = None):
+        if label is None:
+            label, ok = QInputDialog.getText(self, tr("Git checkpoint"), tr("Label (e.g. phase-2-gate, weekly-review):"), text="manual")
+            if not ok or not label.strip(): return
+        if getattr(self, "_cw", None) and self._cw.isRunning():
+            self.toast(tr("A checkpoint is already being saved…"), T.WARN); return
+        self.toast(trf("Saving checkpoint '{label}' to Git…", label=label.strip()), T.INFO)
+        self._cw = CheckpointWorker(self, label.strip(), self.store.get_meta("git_push", "1") == "1"); self._cw.done.connect(self._checkpoint_done); self._cw.start()
+
+    def _checkpoint_done(self, res):
+        if res.ok:
+            self.store.set_meta("git_last_checkpoint", f"{res.commit} · {res.folder.name if res.folder else ''}")
+            self.store.log("Git checkpoint", self.operator, None, {"commit": res.commit, "folder": str(res.folder), "pushed": res.pushed, "files": res.files, "note": res.error})
+            self.toast(trf("Checkpoint {commit} committed{pushed}", commit=res.commit, pushed=tr(" and pushed") if res.pushed else (" — " + (res.error or tr("not pushed")))), T.OK if res.pushed or not res.error else T.WARN)
+        else:
+            self.store.log("Git checkpoint failed", self.operator, None, {"error": res.error})
+            self.toast(trf("Checkpoint failed: {error}", error=res.error), T.BAD)
+        self._show_checkpoints(); self.refresh_all()
+
+    def _show_checkpoints(self):
+        if not getattr(self, "lbl_ckpt", None): return
+        repo = ckpt.repo_root(Path(__file__).resolve().parent)
+        if repo is None:
+            self.lbl_ckpt.setText(tr("Git not available or the console is not inside a repository — checkpoints disabled.")); return
+        last = ckpt.last_checkpoints(repo, self.cfg.campaign, 3)
+        self.lbl_ckpt.setText(trf("Repository: {repo}", repo=repo) + "\n" + (tr("Latest checkpoints: ") + " · ".join(c["name"] for c in last) if last else tr("No checkpoint yet.")))
+
+    def export_document(self):
+        """Everything in one PDF (SRS-DVT-197): written to the export folder (so the next sync puts it on Drive) and opened."""
+        from dvt_tool.docgen import DocBuilder
+        self.toast(tr("Building the campaign document…"), T.INFO); QApplication.processEvents()
+        try:
+            html_path, pdf_path = DocBuilder(self.cat, self.store, self.cfg.campaign).write(self.data / "export")
+        except Exception as e:  # noqa: BLE001
+            self.toast(f"{type(e).__name__}: {e}", T.BAD); return
+        target = pdf_path or html_path
+        self.toast(trf("Campaign document written: {name}", name=target.name) if pdf_path else trf("No browser for PDF — HTML written: {name}", name=target.name), T.OK if pdf_path else T.WARN)
+        self.store.log("Campaign document exported", self.operator, None, {"file": target.name, "pdf": bool(pdf_path)})
+        self.kick_sync()
+        try: os.startfile(str(target))
+        except Exception as e: self.toast(f"cannot open {target}: {e}", T.BAD)  # noqa: BLE001
 
     def open_reports(self):
         target = self.cfg.folder_path if (self.cfg.mode == "folder" and self.cfg.folder_path) else (self.data / "export")
@@ -414,6 +633,11 @@ class MainWindow(QMainWindow):
         g.addWidget(label(tr("OAuth client (mode=api)")), 2, 0); self.lbl_cred = label(str(self.cfg.credentials_file), "mono"); g.addWidget(self.lbl_cred, 2, 1)
         b2 = QPushButton(tr("Select credentials.json…")); b2.setProperty("kind", "ghost"); b2.clicked.connect(self._pick_credentials); g.addWidget(b2, 2, 2)
         b3 = QPushButton(tr("Apply")); b3.clicked.connect(self._apply_sync); g.addWidget(b3, 3, 1, alignment=Qt.AlignLeft); l.addWidget(c)
+        c = Card(tr("Shared campaign (team)"), hint=tr("one journal per console in the synced folder; everyone's events are replayed here")); l.addWidget(c)
+        c.body.addWidget(label(tr("Several consoles work on the same campaign through the Google Drive folder: each console writes its own journal file, and pulls the others' every 15 s. A run belongs to whoever started it first. Attachments land in the shared attachments folder."), "muted", wrap=True))
+        self.lbl_team = label("", "mono"); self.lbl_team.setWordWrap(True); c.body.addWidget(self.lbl_team)
+        trow = QHBoxLayout(); b = QPushButton(tr("Pull now")); b.setProperty("kind", "ghost"); b.clicked.connect(lambda: self._journal_pull()); trow.addWidget(b); trow.addStretch(); c.body.addLayout(trow)
+        self._show_team()
         c = Card(tr("Work mode")); mrow = QHBoxLayout(); c.body.addLayout(mrow)
         from PySide6.QtWidgets import QRadioButton
         self.rb_mode_normal = QRadioButton(tr("Normal — real machine")); self.rb_mode_sim = QRadioButton(tr("Simulation — built-in simulated machine"))
@@ -433,6 +657,98 @@ class MainWindow(QMainWindow):
         return w
 
     RESTART_CODE = 42
+
+    # ------------------------------------------------------------------ unit reset (irreversible, journaled)
+    def reset_unit(self):
+        """Test Console → Danger zone: restart the selected UUT. Are-you-sure + required reason, then the unit's data is
+        erased here and — through the journal — on every other console."""
+        from dvt_tool.ui.reset_dialog import ResetDialog
+        from PySide6.QtWidgets import QDialog
+        u = self.unit_id()
+        if not u:
+            self.toast(tr("Select a unit first"), T.WARN); return
+        if self.wizard:
+            QMessageBox.warning(self, tr("Reset"), tr("Leave the wizard first.")); return
+        dlg = ResetDialog(self, self.data, self._shared_folder(), unit_id=u)
+        if dlg.exec() != QDialog.Accepted or not dlg.reason:
+            return
+        removed = self.store.reset_unit(u, dlg.reason, self.operator)
+        import shutil
+        for path in removed.get("attachment_paths") or []:
+            try:
+                pth = Path(path)
+                if pth.exists(): pth.unlink()
+            except OSError:
+                pass
+        for d in (self.data / "export" / "attachments").glob(f"*_{u}"):
+            shutil.rmtree(d, ignore_errors=True)
+        try:
+            with (self.data / "reset_log.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": now(), "by": self.operator, "unit_id": u, "reason": dlg.reason, **{k: v for k, v in removed.items() if k != "attachment_paths"}}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        self.kick_sync(); self.refresh_all()
+        self.toast(trf("{unit} restarted — {runs} runs back to NOT_STARTED, data erased", unit=u, runs=removed.get("runs", 0)), T.OK)
+
+    # ------------------------------------------------------------------ campaign reset (irreversible)
+    def reset_campaign(self, follow: dict | None = None):
+        """Test Console → Danger zone. Confirms (irreversible) and requires a reason, then erases the campaign data
+        here and in the shared folder, writes the reset marker + audit line, and restarts the console empty."""
+        from dvt_tool.ui.reset_dialog import ResetDialog
+        from PySide6.QtWidgets import QDialog
+        if self.wizard:
+            QMessageBox.warning(self, tr("Reset"), tr("Leave the wizard first.")); return
+        if follow is None:
+            dlg = ResetDialog(self, self.data, self._shared_folder())
+            if dlg.exec() != QDialog.Accepted or not dlg.reason:
+                return
+            reason = dlg.reason
+        else:
+            reason = tr("follows the shared reset by {by} at {ts}: {reason}").format(by=follow.get("by") or "?", ts=follow.get("ts") or "?", reason=follow.get("reason") or "")
+        keep = {k: self.store.get_meta(k) for k in ("language", "machine_url", "machines", "operator", "last_unit", "journal_client_id")}
+        marker = self.journal.erase_shared(self.operator, reason, self.cfg.campaign) if follow is None else dict(follow)
+        audit = {"ts": marker.get("ts"), "by": self.operator, "reason": reason, "shared": str(self._shared_folder() or ""), "follow": follow is not None}
+        try:
+            with (self.data / "reset_log.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(audit, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        # stop everything that touches the store, then erase the local campaign
+        if getattr(self, "_jt", None): self._jt.stop()
+        if getattr(self, "dut_monitor", None):
+            try: self.dut_monitor.stop()
+            except Exception: pass  # noqa: BLE001
+        try: self.store.db.close()
+        except Exception: pass  # noqa: BLE001
+        import shutil
+        for name in ("campaign.db", "campaign.db-journal", "campaign.db-wal", "campaign.db-shm"):
+            f = self.data / name
+            if f.exists():
+                try: f.unlink()
+                except OSError: pass
+        for name in ("export", "journal"):
+            d = self.data / name
+            if d.exists(): shutil.rmtree(d, ignore_errors=True)
+        # a fresh, empty campaign with the console settings kept; the marker is remembered so this console is not asked again
+        fresh = Store(self.data / "campaign.db")
+        for k, v in keep.items():
+            if v: fresh.set_meta(k, v)
+        fresh.set_meta("reset_marker_seen", marker.get("ts") or ""); fresh.set_meta("show_start_dialog", "0")
+        fresh.log("Campaign reset — all data erased", self.operator, None, audit); fresh.db.close()
+        QApplication.instance().exit(self.RESTART_CODE)
+
+    def _check_shared_reset(self):
+        """At start-up: if the shared campaign was erased after this console's data was written, say so and offer to follow."""
+        marker = self.journal.reset_marker() if getattr(self, "journal", None) else None
+        if not marker or self.store.get_meta("reset_marker_seen", "") == marker.get("ts"):
+            return
+        if QMessageBox.question(self, tr("Campaign reset"),
+                                trf("The shared campaign was erased on {ts} by {by}.\nReason: {reason}\n\nThis console still holds data from before the reset; it will not be shared (events older than the reset are ignored by every console). Erase this console's local data now so it matches?",
+                                    ts=marker.get("ts", "?"), by=marker.get("by") or "?", reason=marker.get("reason") or "—"),
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            self.reset_campaign(follow=marker)
+        else:
+            self.store.set_meta("reset_marker_seen", marker.get("ts") or "")
 
     def restart(self):
         self.store.set_meta("language", self.cb_lang.currentData())
@@ -455,6 +771,9 @@ class MainWindow(QMainWindow):
             self.syncer = Syncer(self.cfg, self.store, self.data / "export"); self._sync_err = None; self.toast("Sync settings applied", T.OK)
         except Exception as e:  # noqa: BLE001
             self._sync_err = str(e); self.toast(str(e), T.BAD)
+        # the shared campaign follows the synced folder: re-open the journal there, push ours, pull everyone's
+        self.journal = Journal.open(self.store, self.data, self._shared_folder(), self.operator, self.cat.version); self.journal.attach(self.store)
+        self.journal.push(); self._journal_pull()
         self.kick_sync()
 
     # ------------------------------------------------------------------ unit actions
@@ -472,6 +791,8 @@ class MainWindow(QMainWindow):
         checklist = [f"Phase {ph['id']} — {ph['name']}: readiness reviewed", "Equipment on the bench, calibrations checked", "Preceding phase closed for this unit", f"Gate: {ph.get('gate')}"]
         if QMessageBox.question(self, "Test Readiness Review", "\n".join("☐ " + c for c in checklist) + f"\n\nSign as {self.operator}?") == QMessageBox.Yes:
             self.store.sign_phase(u, ph["id"], self.operator, checklist); self.kick_sync(); self.refresh_all()
+            if self.store.get_meta("git_auto_checkpoint", "1") == "1":            # a phase gate is a controlled point: snapshot it in Git
+                self.save_checkpoint(f"phase-{ph['id']}-gate-{u}")
 
     def close_ncr(self):
         it = self.ncr_list.currentItem()
@@ -508,6 +829,32 @@ class MainWindow(QMainWindow):
         if self.pages.currentIndex() == self.page_index.get("dashboard", -1): self.dashboard.refresh()
         self.refresh_console()
 
+    # ------------------------------------------------------------------ shared campaign (team journal in the Drive folder)
+    def _shared_folder(self):
+        return self.cfg.folder_path if self.cfg.mode == "folder" and self.cfg.folder_path else None
+
+    def _journal_pull(self, quiet=False):
+        if not getattr(self, "journal", None) or not self.journal.enabled:
+            return
+        res = self.journal.pull()
+        if res.applied and not quiet:
+            self.refresh_all()
+            self.toast(trf("{n} updates from the team ({clients})", n=res.applied, clients=", ".join(res.clients) or "—"), T.INFO)
+        for c in res.conflicts:
+            self.toast(trf("Run claim conflict: {text}", text=c), T.WARN)
+        if res.errors and not quiet:
+            self.toast(trf("Journal replay problems: {n} (see the events log)", n=len(res.errors)), T.BAD)
+            for e in res.errors: self.store.log("Journal replay error", None, None, {"error": e})
+        if getattr(self, "lbl_team", None): self._show_team()
+
+    def _show_team(self):
+        st = self.journal.status()
+        if not st["enabled"]:
+            self.lbl_team.setText(tr("Not shared — set Google Drive sync to a synced folder above.")); return
+        self.lbl_team.setText(trf("Folder: {shared}\nThis console: {id} · other consoles: {clients}\nEvents: {own} own · {applied} applied · last pull {at}",
+                                  shared=st["shared"], id=st["client_id"], clients=", ".join(st["other_clients"]) or tr("none yet"),
+                                  own=st["own_events"], applied=st["applied_events"], at=(st["last_pull"] or "—")[11:19]))
+
     def kick_sync(self):
         if getattr(self, "_sw", None) and self._sw.isRunning(): return
         self._sw = SyncWorker(self); self._sw.done.connect(self._show_sync); self._sw.start()
@@ -537,12 +884,13 @@ def main(argv=None):
     ap.add_argument("--machine", help="DUT address, e.g. http://192.168.2.155:3001, or 'sim'")
     ap.add_argument("--lang", choices=list(LANGUAGES), help="UI language (en / he)")
     ap.add_argument("--no-dialog", action="store_true", help="skip the start dialog")
+    ap.add_argument("--open", metavar="TEST_ID", help="open the console on this test's runs at start-up, e.g. DVT-OPT-001")
     a = ap.parse_args(argv)
-    cat = Catalog.load(a.catalog)
     data = Path(a.data); data.mkdir(parents=True, exist_ok=True)
     while True:
         meta = Store(data / "campaign.db")
         lang = a.lang or meta.get_meta("language", "en"); set_language(lang)
+        cat = Catalog.load(a.catalog, lang)                 # catalog prose follows the console language (SRS-DVT-194)
         app = QApplication(sys.argv[:1]); app.setStyleSheet(T.QSS); app.setLayoutDirection(Qt.RightToLeft if is_rtl() else Qt.LeftToRight)
         machine = a.machine
         if machine is None and not a.no_dialog and meta.get_meta("show_start_dialog", "1") != "0":
@@ -556,13 +904,16 @@ def main(argv=None):
             r = dlg.result_
             if r["lang"] != lang:
                 meta.set_meta("language", r["lang"]); set_language(r["lang"]); app.setLayoutDirection(Qt.RightToLeft if is_rtl() else Qt.LeftToRight)
+                cat = Catalog.load(a.catalog, r["lang"])     # reload so the catalog prose matches the language just chosen
             machine = SIM_URL if r["mode"] == "sim" else (r["machine"] or DEFAULT_MACHINES[0])
             meta.set_meta("last_unit", r["unit"] or ""); meta.set_meta("operator", r["operator"] or "")
         meta.set_meta("show_start_dialog", "1"); meta.db.close()
         w = MainWindow(cat, data, machine)
         op = w.store.get_meta("operator")
         if op: w.ed_operator.setText(op)
-        w.show()
+        w.showMaximized() if w.compact else w.show()   # small / high-DPI screens: use the whole work area
+        if a.open and a.open in cat.tests:
+            w.open_test(a.open)
         rc = app.exec()
         del w; del app
         if rc != MainWindow.RESTART_CODE:

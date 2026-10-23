@@ -43,7 +43,7 @@ class StartDialog(QDialog):
         g.addWidget(self.cb_machine, 1, 1)
         self.l_unit = label(tr("Unit under test:"), bold=True); g.addWidget(self.l_unit, 2, 0)
         self.cb_unit = QComboBox()
-        for u in self._units: self.cb_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role')}" if u.get("role") else ""), u["id"])
+        for u in self._units: self.cb_unit.addItem(f"{u['id']}" + (f"  ·  {u.get('role_label') or u.get('role')}" if u.get("role") else ""), u["id"])
         if unit: self.cb_unit.setCurrentIndex(max(0, self.cb_unit.findData(unit)))
         g.addWidget(self.cb_unit, 2, 1)
         self.l_op = label(tr("Operator:"), bold=True); g.addWidget(self.l_op, 3, 0); self.ed_op = QLineEdit(operator); g.addWidget(self.ed_op, 3, 1)

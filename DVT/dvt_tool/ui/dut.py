@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from PySide6.QtCore import Qt, QThread, Signal, QRectF
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
 from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QLineEdit, QPushButton,
-                               QMessageBox, QSizePolicy, QComboBox, QInputDialog)
+                               QMessageBox, QSizePolicy, QComboBox, QInputDialog, QApplication)
 
 from . import theme as T
 from .widgets import Card, Pill, PulseDot, label
@@ -37,6 +37,8 @@ FIELD_MAP = {
     "max_temp_reached": "chamberTemp", "chamber_temp_at_trip": "chamberTemp", "min_temp_reached": "chamberTemp",
     "max_led_temp": "ledTempMax", "peak_heater_temp": "heaterTemp",
     "max_temp_right": "ledTempRight", "max_temp_left": "ledTempLeft", "max_temp_back": "ledTempBack", "max_temp_door": "ledTempDoor",
+    "settled_temp_right": "ledTempRight", "settled_temp_left": "ledTempLeft", "settled_temp_back": "ledTempBack", "settled_temp_door": "ledTempDoor",
+    "max_settled_temp": "ledTempMax", "thermistor_hottest_panel": "ledTempMax", "tach_rpm": "ledFanRpm",
     "baseline_tach": "ledFanRpm", "tach_reading": "ledFanRpm", "tach_at_alarm": "ledFanRpm",
     "error_code": "errorCode", "alarm_text": "alertText",
 }
@@ -106,6 +108,12 @@ class DutClient:
     def fan(self, name: str, speed: int): return self._req(f"/api/fans/{name}?speed={speed}", "POST")
     def led_test(self): return self._req("/api/diagnostics/led-test", "POST")
     def fan_test(self): return self._req("/api/diagnostics/fan-test", "POST")
+    # DVT UV linearity sweep — the StarBright is on the MACHINE's USB (server/uv_sweep.py)
+    def meter(self): return self._req("/api/dvt/meter")
+    def meter_set_wavelength(self, nm: int): return self._req(f"/api/dvt/meter/wavelength?nm={int(nm)}", "POST")
+    def uv_sweep_start(self, q: dict): return self._req("/api/dvt/uv-sweep?" + urllib.parse.urlencode(q), "POST")
+    def uv_sweep_status(self): return self._req("/api/dvt/uv-sweep")
+    def uv_sweep_abort(self): return self._req("/api/dvt/uv-sweep/abort", "POST")
     def version(self):
         try: return self._req("/api/system/version")
         except Exception: return {}  # noqa: BLE001
@@ -203,6 +211,23 @@ class DutPanel(QWidget):
         self.lbl_ver = label("", "muted"); st.addWidget(self.lbl_ver); st.addStretch(); c.body.addLayout(st)
         self.lbl_err = label("", "muted"); self.lbl_err.setWordWrap(True); c.body.addWidget(self.lbl_err)
 
+        # ---- SSH: the machine address is also the SSH host (logs, service, shell on the CM5)
+        from .. import ssh as sshmod
+        c = Card(tr("SSH access"), hint=tr("same host as the machine address — port 22, key-based")); left.addWidget(c)
+        sr = QGridLayout(); sr.setHorizontalSpacing(10); c.body.addLayout(sr)
+        sr.addWidget(label(tr("Host"), "muted"), 0, 0); self.lbl_ssh_host = label("—", "mono", bold=True); sr.addWidget(self.lbl_ssh_host, 0, 1)
+        sr.addWidget(label(tr("User"), "muted"), 1, 0); self.ed_ssh_user = QLineEdit(app.store.get_meta("ssh_user", sshmod.DEFAULT_USER)); sr.addWidget(self.ed_ssh_user, 1, 1)
+        sr.addWidget(label(tr("Key file"), "muted"), 2, 0); self.ed_ssh_key = QLineEdit(app.store.get_meta("ssh_key", sshmod.DEFAULT_KEY)); sr.addWidget(self.ed_ssh_key, 2, 1)
+        self.lbl_ssh_cmd = label("", "mono"); self.lbl_ssh_cmd.setStyleSheet(f"color: {T.MUTED}; font-family: Consolas; font-size: 11px;"); self.lbl_ssh_cmd.setWordWrap(True); sr.addWidget(self.lbl_ssh_cmd, 3, 0, 1, 2)
+        sb = QHBoxLayout(); c.body.addLayout(sb)
+        b = QPushButton(tr("Open SSH terminal")); b.clicked.connect(self.ssh_open); sb.addWidget(b)
+        b = QPushButton(tr("Test SSH")); b.setProperty("kind", "ghost"); b.clicked.connect(self.ssh_test); sb.addWidget(b)
+        b = QPushButton(tr("Copy command")); b.setProperty("kind", "ghost"); b.clicked.connect(self.ssh_copy); sb.addWidget(b)
+        sb.addStretch()
+        self.lbl_ssh_out = label("", "muted"); self.lbl_ssh_out.setWordWrap(True); c.body.addWidget(self.lbl_ssh_out)
+        for w in (self.ed_ssh_user, self.ed_ssh_key): w.editingFinished.connect(self._ssh_refresh)
+        self._ssh_refresh()
+
         c = Card(tr("Live state")); grid = QGridLayout(); grid.setHorizontalSpacing(14); c.body.addLayout(grid); left.addWidget(c)
         self.tiles = {}
         for i, (key, cap, unit, col, rng) in enumerate(TILES):
@@ -249,6 +274,34 @@ class DutPanel(QWidget):
         self.out = label("", "mono"); self.out.setWordWrap(True); self.out.setStyleSheet(f"color: {T.MUTED}; font-family: Consolas; font-size: 11px;"); c.body.addWidget(self.out)
         right.addStretch()
 
+    # ---- SSH (host = the machine address)
+    def _ssh_refresh(self):
+        from .. import ssh as sshmod
+        user, key = self.ed_ssh_user.text().strip() or sshmod.DEFAULT_USER, self.ed_ssh_key.text().strip()
+        self.app.store.set_meta("ssh_user", user); self.app.store.set_meta("ssh_key", key)
+        host = sshmod.host_of(self.app.machine_url)
+        self.lbl_ssh_host.setText(host or tr("— (simulator: no SSH host)"))
+        self.lbl_ssh_cmd.setText(sshmod.ssh_command(self.app.machine_url, user, key) or "")
+
+    def ssh_open(self):
+        from .. import ssh as sshmod
+        cmd = sshmod.open_terminal(self.app.machine_url, self.ed_ssh_user.text(), self.ed_ssh_key.text())
+        self.lbl_ssh_out.setText(trf("Opened a terminal: {cmd}", cmd=cmd) if cmd else tr("No SSH host — connect a real machine first."))
+        if cmd: self.app.store.log("SSH terminal opened", self.app.operator, None, {"cmd": cmd})
+
+    def ssh_test(self):
+        from .. import ssh as sshmod
+        self.lbl_ssh_out.setText(tr("Testing SSH…")); QApplication.processEvents()
+        ok, text = sshmod.test_ssh(self.app.machine_url, self.ed_ssh_user.text(), self.ed_ssh_key.text())
+        self.lbl_ssh_out.setText(("✓ " if ok else "✗ ") + text); self.lbl_ssh_out.setStyleSheet(f"color: {T.OK if ok else T.BAD};")
+        self.app.store.log("SSH test", self.app.operator, None, {"ok": ok, "result": text[:200], "host": sshmod.host_of(self.app.machine_url)})
+
+    def ssh_copy(self):
+        from .. import ssh as sshmod
+        cmd = sshmod.ssh_command(self.app.machine_url, self.ed_ssh_user.text(), self.ed_ssh_key.text())
+        if cmd:
+            QApplication.clipboard().setText(cmd); self.lbl_ssh_out.setText(tr("Command copied to the clipboard."))
+
     def discover(self):
         """Try the known hostnames / the last IPs and pick the first that answers."""
         cands = [u for u in self.app.known_machines() if not u.startswith("sim://")] + ["http://testingcm5.local:3001", "http://127.0.0.1:3001"]
@@ -278,6 +331,8 @@ class DutPanel(QWidget):
             self.out.setText(f"sim {name}: ERROR {e}")
 
     def on_state(self, st: DutState):
+        if getattr(self, "_ssh_url_seen", None) != st.url:
+            self._ssh_url_seen = st.url; self._ssh_refresh()
         self.state = st
         sim = bool(st.online and st.flags.get("simulated"))
         self.sim_card.setVisible(sim)

@@ -32,8 +32,8 @@ BAD = "#d62839"
 INFO = "#2f6fdb"
 PURPLE = "#7c5cbf"
 
-SUBSYSTEM = {"Safety": "#d62839", "Thermal": "#e8760c", "Electrical": "#2f6fdb", "Environmental": "#1f9d61"}
-SUBSYSTEM_ICON = {"Safety": "⚠", "Thermal": "🌡", "Electrical": "⚡", "Environmental": "🚚"}
+SUBSYSTEM = {"Safety": "#d62839", "Thermal": "#e8760c", "Electrical": "#2f6fdb", "Environmental": "#1f9d61", "Process": "#7c5cbf", "Optical": "#0e9aa7"}
+SUBSYSTEM_ICON = {"Safety": "⚠", "Thermal": "🌡", "Electrical": "⚡", "Environmental": "🚚", "Process": "🫧", "Optical": "🔆"}
 STATUS = {"Complete": OK, "Running": WARN, "Failed": BAD, "Pending": MUTED, "Blocked": WARN}
 VERDICT = {"PASS": OK, "FAIL": BAD, "BLOCKED": WARN, "WAIVED": PURPLE}
 MODE = {"OFFLINE": MUTED, "SIMULATION": PURPLE, "FAULT": BAD, "CURING": WARN, "HEATING": WARN, "COOLING": INFO, "IDLE": OK}

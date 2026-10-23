@@ -35,15 +35,17 @@ FAULTS = {
     "led_thermistor_open": "LED thermistor open (right panel)",
     "led_fan_disconnected": "LED cooling fan disconnected (right)",
     "led_fan_blocked": "LED cooling fan blocked rotor (right)",
+    "led_panel_open": "LED panel electrically disconnected (right)",
     "circulation_fan_loss": "Heater circulation fan loss",
     "chamber_fan_loss": "Chamber cooling fan loss",
     "mains_dropout": "Mains dropout",
     "thermal_cutout": "Independent thermal cutout tripped",
+    "selector_open": "Voltage selector in the mid position (heater open circuit)",
 }
 ERROR_CODES = {
-    "door_open": "1101", "heater_sensor_open": "2201", "heater_sensor_short": "2202", "led_thermistor_open": "2301",
+    "door_open": "1101", "heater_sensor_open": "2201", "heater_sensor_short": "2202", "led_thermistor_open": "2301", "led_panel_open": "2310",
     "led_fan_disconnected": "2401", "led_fan_blocked": "2402", "circulation_fan_loss": "2410", "chamber_fan_loss": "2411",
-    "mains_dropout": "3001", "thermal_cutout": "2210", "heater_watchdog": "2220", "led_overtemp": "2320",
+    "mains_dropout": "3001", "thermal_cutout": "2210", "heater_watchdog": "2220", "led_overtemp": "2320", "selector_open": "7004",
 }
 
 
@@ -53,6 +55,7 @@ class SimMachine:
     LED_WORKING_LIMIT = 75.0
     LED_SHUTDOWN = 82.0          # protective shutdown (catalog CONFIRM item)
     CHAMBER_CEILING = 95.0
+    STALL_WATCHDOG_S = 60.0      # simulator-accelerated no-heating watchdog (real machine: 25 min)
 
     def __init__(self, ambient: float = 24.0, mains_v: float = 230.0):
         self.lock = threading.Lock()
@@ -64,11 +67,13 @@ class SimMachine:
         self.uv_on = False; self.uv_pct = 0; self.uv_wavelength = 405
         self.door_open = False
         self.duty = {"chamber_heating": 0, "chamber_intake": 0, "led_cooling": 0}
-        self.faults: set[str] = set()
+        self.fan_override = {}          # operator-commanded fan duty (DVT-THM-005); cleared on stop
+        self.faults: set[str] = set(); self._heat_t0 = None; self._heat_start = None
         self.alerts: list[dict] = []
         self.acked = True
         self.job_status = None
         self.version = "0.7.9-sim"
+        self.meter_wavelength = 405        # the simulated StarBright's wavelength setting
         self.t0 = time.monotonic(); self._last = time.monotonic()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="sim-machine"); self._thread.start()
 
@@ -117,12 +122,26 @@ class SimMachine:
             self.uv_on = False
             key = "led_fan_disconnected" if "led_fan_disconnected" in f else "led_fan_blocked"
             self._alarm(key, FAULTS[key] + " — UV inhibited", "Check the right LED cooling fan")
+        if self.uv_on and "led_panel_open" in f:
+            # dark panel detected at switch-on / mid-job: alarm names the panel, tells the operator to check the LED
+            self.uv_on = False
+            if self.job_status == "running": self.job_status = "aborted"
+            self._alarm("led_panel_open", "LED panel not working (right) — UV inhibited", "Check the right LED panel and its driver connection")
         if self.uv_on and max(self.led.values()) >= self.LED_SHUTDOWN:
             self.uv_on = False; self._alarm("led_overtemp", f"LED back-face over {self.LED_SHUTDOWN:.0f} °C — UV inhibited", "Let the panels cool")
         # ---- heater / chamber ----
-        gain = (self.mains_v / 230.0) ** 2
+        gain = 0.0 if "selector_open" in f else (self.mains_v / 230.0) ** 2   # mid-position selector: heater branch open
         if heating and self.target is not None:
             self.duty["chamber_heating"] = 100
+            # no-heating watchdog (the real machine's stall rule, Err 7004, is 5 x 5 min; the simulator uses 60 s)
+            if self._heat_t0 is None: self._heat_t0, self._heat_start = time.monotonic(), self.chamber
+            if time.monotonic() - self._heat_t0 >= self.STALL_WATCHDOG_S and self.chamber - self._heat_start < 1.0:
+                self.mode = "IDLE"; heating = False
+                if self.job_status == "running": self.job_status = "aborted"
+                self._alarm("selector_open", "Chamber not heating — the heater receives no power", "Set the voltage selector to the position matching your mains (115 V or 230 V) — a mid position is an open circuit")
+        else:
+            self._heat_t0 = None
+        if heating and self.target is not None:
             err = self.target - self.chamber
             drive = max(0.0, min(1.0, err / 4.0))                      # simple P control with a 4 °C band
             self.chamber += (1.6 / 60.0) * gain * drive * dt
@@ -143,12 +162,15 @@ class SimMachine:
         # passive loss to ambient
         self.chamber += (self.ambient - self.chamber) * (0.25 / 60.0) * dt
         # ---- LEDs ----
+        led_duty = self.fan_override.get("led_cooling", 100)
         target_led = self.ambient + (0.55 * self.uv_pct if self.uv_on else 0) + max(0.0, (self.chamber - self.ambient) * 0.35)
+        if self.uv_on: target_led += (100 - led_duty) * 0.3          # less cooling airflow -> hotter back face (~+9 C at 70 % duty)
         for k in self.led:
             t = target_led
             if k == "right" and self.uv_on and ("led_fan_disconnected" in f or "led_fan_blocked" in f): t += 25
+            if k == "right" and "led_panel_open" in f: t = self.ambient + max(0.0, (self.chamber - self.ambient) * 0.35)   # dark panel: no self-heating
             self.led[k] += (t - self.led[k]) * (1 - math.exp(-dt / 40.0)) + random.uniform(-0.05, 0.05)
-        self.duty["led_cooling"] = 100 if self.uv_on else (40 if max(self.led.values()) > self.ambient + 5 else 0)
+        self.duty["led_cooling"] = self.fan_override.get("led_cooling", 100 if self.uv_on else (40 if max(self.led.values()) > self.ambient + 5 else 0))
         if self.mode == "CURE" and self.uv_on and self.job_end and time.monotonic() >= self.job_end:
             self.uv_on = False; self.mode = "IDLE"; self.job_status = "complete"
 
@@ -165,7 +187,7 @@ class SimMachine:
 
     def stop(self):
         with self.lock:
-            self.mode = "IDLE"; self.uv_on = False; self.target = None; self.duty = {k: 0 for k in self.duty}
+            self.mode = "IDLE"; self.uv_on = False; self.target = None; self.duty = {k: 0 for k in self.duty}; self.fan_override.clear()
             if self.job_status == "running": self.job_status = "aborted"
             return {"ok": True}
 
@@ -175,6 +197,9 @@ class SimMachine:
             if on and any(k in self.faults for k in ("led_thermistor_open", "led_fan_disconnected", "led_fan_blocked")):
                 self._alarm(next(k for k in ("led_thermistor_open", "led_fan_disconnected", "led_fan_blocked") if k in self.faults), "Job start inhibited — LED protection", "Fix the fault")
                 return {"ok": False, "message": "inhibited"}
+            if on and "led_panel_open" in self.faults:
+                self._alarm("led_panel_open", "LED panel not working (right) — job start inhibited", "Check the right LED panel and its driver connection")
+                return {"ok": False, "message": "inhibited"}
             self.uv_on = bool(on); self.uv_pct = int(intensity); self.uv_wavelength = wavelength
             self.mode = "CURE" if on else ("HEAT" if self.target and self.mode == "CURE" else self.mode)
             self.job_end = (time.monotonic() + seconds) if (on and seconds) else None
@@ -183,11 +208,15 @@ class SimMachine:
 
     def door(self, open_):
         with self.lock:
-            self.door_open = bool(open_); return {"ok": True, "doorOpen": self.door_open}
+            self.door_open = bool(open_)
+            if self.door_open and self.uv_on:      # hardware interlock: UV is cut the instant the door opens (SAF-012)
+                self.uv_on = False; self._alarm("door_open", FAULTS["door_open"], "Close the door and restart the job")
+                if self.job_status == "running": self.job_status = "aborted"
+            return {"ok": True, "doorOpen": self.door_open}
 
     def fan(self, name, speed):
         with self.lock:
-            if name in self.duty: self.duty[name] = int(speed)
+            if name in self.duty: self.duty[name] = int(speed); self.fan_override[name] = int(speed)
             return {"ok": True}
 
     def ack(self):
@@ -235,7 +264,83 @@ class SimMachine:
                     "uptime": round(time.monotonic() - self.t0)}
 
 
+class SimUvSweep:
+    """In-process stand-in for server/uv_sweep.py: the same state document, the same refusals,
+    a StarBright whose reading follows the simulated LEDs (bends over towards 100 %, like the bench)."""
+
+    def __init__(self, sim: SimMachine):
+        self.sim = sim; self.state = {"running": False, "status": "NOT_RUN", "phase": "idle", "samples": [], "steps": [], "error": None}
+        self._abort = threading.Event(); self._lock = threading.Lock()
+
+    def _read(self) -> float:
+        s = self.sim
+        with s.lock:
+            on, pct, wl = s.uv_on, s.uv_pct, s.uv_wavelength
+        base = 45.0 if wl == 405 else 34.0
+        v = base * pct / 100.0 * (1 - 0.15 * max(0, pct - 30) / 70) if on else 0.002
+        return max(0.0, v + random.gauss(0, 0.01))
+
+    def meter(self) -> dict:
+        return {"ok": True, "present": True, "transport": "sim", "firmware": "SIM1.00", "instrument": "STBR 000000 StarBright (simulated)", "head": "SI 000000 PD300RM-8W (sim)",
+                "units": "w", "unit_name": "W/cm2", "wavelength_nm": self.sim.meter_wavelength, "reading_mw_cm2": round(self._read(), 4)}
+
+    def set_wavelength(self, nm) -> dict:
+        self.sim.meter_wavelength = int(nm); return {"ok": True, "wavelength_nm": int(nm)}
+
+    def start(self, q: dict) -> dict:
+        with self._lock:
+            if self.state["running"]: return {"ok": False, "message": "a sweep is already running"}
+            wl = int(q.get("wavelength", 405)); steps = [int(x) for x in str(q.get("steps", "30,40,50,60,70,80,90,100")).split(",") if str(x).strip()]
+            cfg = {"wavelength": wl, "steps": steps, "dwell": float(q.get("dwell", 15)), "baseline": float(q.get("baseline", 5)), "settle": float(q.get("settle", 5)),
+                   "tail": float(q.get("tail", 1)), "hz": float(q.get("hz", 5))}
+            if self.sim.door_open: return {"ok": False, "message": "door open — close the door (the LEDs are interlocked)"}
+            mwl = self.sim.meter_wavelength; force = str(q.get("force", 0)) not in ("0", "", "false")
+            if mwl != wl and not force:
+                return {"ok": False, "code": "METER_WAVELENGTH", "meter_wavelength_nm": mwl,
+                        "message": f"the StarBright is set to {mwl} nm but this test is at {wl} nm — set the meter to {wl} nm first (or force=1 to record it as unverified)"}
+            self._abort.clear()
+            self.state = {"running": True, "status": "RUNNING", "phase": "starting", "config": cfg, "samples": [], "steps": [], "error": None, "aborted": False, "started": time.time(),
+                          "finished": None, "elapsed": 0.0, "step_index": None, "intensity": 0, "reading": None, "meter": self.meter(), "meter_wavelength_nm": mwl, "meter_wavelength_verified": mwl == wl}
+            threading.Thread(target=self._run, args=(cfg,), daemon=True, name="sim-uv-sweep").start()
+            return {"ok": True, "message": "simulated sweep started", "meter_wavelength_nm": mwl, "meter_wavelength_verified": mwl == wl}
+
+    def _run(self, cfg):
+        s, t0 = self.state, time.monotonic()
+        def led_max():
+            with self.sim.lock: return round(max(self.sim.led.values()), 1)
+        def hold(seconds, phase, pct, on):
+            period = 1.0 / cfg["hz"]; nxt = time.monotonic(); end = nxt + seconds
+            while time.monotonic() < end and not self._abort.is_set():
+                v = self._read(); s["samples"].append([round(time.monotonic() - t0, 3), round(v, 4), pct, phase, led_max(), on]); s["reading"] = v
+                nxt += period; self._abort.wait(max(0.0, nxt - time.monotonic()))
+        try:
+            s["phase"] = "baseline"; self.sim.uv(False); hold(cfg["baseline"], "baseline", 0, False)
+            dark = [x[1] for x in s["samples"]]; s["dark_mw_cm2"] = round(sum(dark) / len(dark), 4) if dark else None
+            for i, pct in enumerate(cfg["steps"]):
+                if self._abort.is_set(): break
+                s["phase"] = "step"; s["step_index"] = i; s["intensity"] = pct
+                r = self.sim.uv(True, pct, cfg["wavelength"])
+                if not r.get("ok"): s["error"] = f"UV refused at {pct} %: {r.get('message')}"; break
+                hold(cfg["dwell"], "step", pct, True)
+                tail = [x[1] for x in s["samples"] if x[3] == "step" and x[2] == pct and x[0] >= (time.monotonic() - t0) - cfg["settle"]]
+                mean = sum(tail) / len(tail) if tail else None
+                sd = (sum((v - mean) ** 2 for v in tail) / len(tail)) ** 0.5 if tail and mean is not None else None
+                s["steps"].append({"intensity": pct, "mean_mw_cm2": None if mean is None else round(mean, 4), "sd_mw_cm2": None if sd is None else round(sd, 4), "n": len(tail), "led_max_c": led_max()})
+            s["phase"] = "tail"; s["intensity"] = 0; self.sim.uv(False); hold(cfg["tail"], "tail", 0, False)
+            s["aborted"] = self._abort.is_set()
+            s["status"] = "ABORTED" if s["aborted"] else ("ERROR" if s["error"] else ("OK" if len(s["steps"]) == len(cfg["steps"]) else "INCOMPLETE"))
+        finally:
+            self.sim.uv(False); s["phase"] = "done"; s["running"] = False; s["finished"] = time.time(); s["elapsed"] = round(time.monotonic() - t0, 1)
+
+    def status(self) -> dict:
+        return {"ok": True, **dict(self.state)}
+
+    def abort(self) -> dict:
+        self._abort.set(); return {"ok": True, "message": "abort requested"}
+
+
 _SIM: SimMachine | None = None
+_SIM_SWEEP: SimUvSweep | None = None
 
 
 def get_sim() -> SimMachine:
@@ -280,6 +385,16 @@ class SimClient:
     def inject(self, fault, on=True): return self.sim.inject(fault, on)
     def set_mains(self, v): return self.sim.set_mains(v)
     def version(self): return {"appVersion": self.sim.version, "simulated": True}
+    # StarBright on the simulated machine + the UV linearity sweep (DVT-OPT-001/002)
+    def _sweep(self) -> SimUvSweep:
+        global _SIM_SWEEP
+        if _SIM_SWEEP is None: _SIM_SWEEP = SimUvSweep(self.sim)
+        return _SIM_SWEEP
+    def meter(self): return self._sweep().meter()
+    def meter_set_wavelength(self, nm): return self._sweep().set_wavelength(nm)
+    def uv_sweep_start(self, q): return self._sweep().start(q)
+    def uv_sweep_status(self): return self._sweep().status()
+    def uv_sweep_abort(self): return self._sweep().abort()
 
 
 def is_sim_url(url: str | None) -> bool:

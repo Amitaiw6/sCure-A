@@ -1,0 +1,2906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sCure DVT Tool</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+  code, .mono { font-family: Consolas, 'Courier New', monospace; }
+
+  .header { background: #111; border-bottom: 2px solid #f44336; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; gap: 12px; }
+  .header h1 { font-size: 18px; color: #f44336; }
+  .header .version { font-size: 11px; color: #666; margin-top: 2px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #f44336; flex: none; }
+  .status-dot.connected { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .status-label { font-size: 11px; color: #888; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+  .config-bar { background: #151515; border: 1px solid #222; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .config-bar label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .config-bar input, .config-bar select { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; color: #fff; font-size: 13px; }
+  .config-bar input:focus, .config-bar select:focus { outline: none; border-color: #f44336; }
+  #apiUrl { width: 220px; } #operator { width: 150px; }
+  .spacer { flex: 1; }
+  .pair { display: inline-flex; align-items: center; gap: 8px; }
+
+  .btn { padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+  .btn:active { transform: scale(0.97); }
+  .btn-run { background: #f44336; color: #fff; }
+  .btn-run:hover { background: #e53935; }
+  .btn-run:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-outline { background: transparent; border: 1px solid #444; color: #ccc; }
+  .btn-outline:hover { border-color: #888; color: #fff; }
+  .btn-small { padding: 5px 12px; font-size: 11px; border-radius: 6px; }
+  .btn:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .cat-header:focus-visible, .test-head:focus-visible { outline: 2px solid #ff9800; outline-offset: 1px; }
+
+  .folder-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -8px 0 20px; padding: 10px 18px; border-radius: 10px; background: #151515; border: 1px solid #222; font-size: 12px; }
+  .folder-bar.missing { border-color: #5a2323; background: #1d1111; }
+  .folder-dot { width: 10px; height: 10px; border-radius: 50%; background: #f44336; flex: none; }
+  .folder-dot.ok { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .folder-text { color: #bbb; }
+  .folder-bar.missing .folder-text { color: #f44336; }
+
+  .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 12px; }
+  .summary-card { background: #151515; border: 1px solid #222; border-radius: 10px; padding: 14px; text-align: center; }
+  .summary-card .num { font-size: 28px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .summary-card .label { font-size: 10px; color: #888; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.5px; }
+  .num.pass { color: #4caf50; } .num.fail { color: #f44336; } .num.warn { color: #ff9800; } .num.skip { color: #777; }
+
+  .progress-bar { height: 6px; background: #1a1a1a; border-radius: 3px; overflow: hidden; margin-bottom: 20px; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #f44336, #ff9800); width: 0; transition: width 0.3s; }
+
+  .category { background: #151515; border: 1px solid #222; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+  .cat-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; user-select: none; }
+  .cat-header:hover { background: #1a1a1a; }
+  .cat-header .phase-no { font-size: 12px; font-weight: 700; color: #f44336; min-width: 22px; }
+  .cat-header .name { font-weight: 600; font-size: 14px; }
+  .cat-header .gate { font-size: 11px; color: #666; flex: 1; }
+  .cat-header .stats { font-size: 11px; color: #888; white-space: nowrap; }
+  .cat-header .arrow { color: #666; transition: transform 0.2s; }
+  .category.open .cat-header .arrow { transform: rotate(90deg); }
+  [dir="rtl"] .cat-header .arrow { transform: scaleX(-1); }
+  [dir="rtl"] .category.open .cat-header .arrow { transform: rotate(90deg); }
+  .cat-body { display: none; border-top: 1px solid #222; }
+  .category.open .cat-body { display: block; }
+  .closed-badge { font-size: 10px; background: #1b3d1f; color: #4caf50; padding: 2px 8px; border-radius: 10px; }
+
+  .test { border-bottom: 1px solid #1a1a1a; }
+  .test:last-child { border-bottom: none; }
+  .test-head { display: grid; grid-template-columns: 28px 1fr auto 18px; gap: 10px; align-items: center; padding: 8px 16px; font-size: 12px; cursor: pointer; }
+  .test-head:hover { background: #181818; }
+  .test.na .test-head { opacity: 0.45; }
+  .test-status { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #222; color: #666; }
+  .test-status.pass { background: #1b3d1f; color: #4caf50; }
+  .test-status.fail { background: #3d1b1b; color: #f44336; }
+  .test-status.warn { background: #3d2e10; color: #ff9800; }
+  .test-status.skip { background: #222; color: #888; }
+  .test-status.progress { background: #3d3410; color: #ffc107; }
+  .test-name { font-weight: 600; color: #ddd; }
+  .test-id { color: #f44336; font-weight: 700; margin-inline-end: 2px; }
+  .test-desc { font-size: 11px; color: #777; margin-top: 2px; }
+  .test-meta { color: #666; font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: end; }
+  .badge { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px; margin-inline-start: 6px; vertical-align: 1px; font-weight: 600; }
+  .badge.crit { background: #3d1b1b; color: #f44336; }
+  .badge.auto { background: #10283d; color: #64b5f6; }
+  .badge.meth { background: #222; color: #aaa; }
+  .test .arrow { color: #555; transition: transform 0.2s; }
+  .test.open .arrow { transform: rotate(90deg); }
+  [dir="rtl"] .test .arrow { transform: scaleX(-1); }
+  [dir="rtl"] .test.open .arrow { transform: rotate(90deg); }
+
+  .test-body { display: none; padding: 4px 16px 18px 54px; font-size: 12px; line-height: 1.55; }
+  [dir="rtl"] .test-body { padding: 4px 54px 18px 16px; }
+  .test.open .test-body { display: block; }
+  .test-body h4 { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 6px; }
+  .test-body p { color: #bbb; max-width: 90ch; }
+  .test-body ul, .test-body ol { padding-inline-start: 18px; color: #bbb; }
+  .test-body li { margin-bottom: 3px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .safety { border: 1px solid #5a2323; background: #1d1111; border-radius: 8px; padding: 8px 14px; margin-top: 12px; }
+  .safety h4 { color: #f44336; margin-top: 4px; }
+  .na-note { margin-top: 12px; padding: 10px 14px; background: #1a1a1a; border-radius: 8px; color: #999; }
+  .dep-ok { color: #4caf50; } .dep-open { color: #ff9800; }
+
+  .run-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding: 10px 12px; background: #101010; border: 1px solid #222; border-radius: 8px; }
+  .run-bar select { background: #0a0a0a; border: 1px solid #333; border-radius: 6px; padding: 5px 8px; color: #fff; font-size: 12px; max-width: 100%; }
+  .variant { color: #ffb74d; font-size: 12px; margin-top: 8px; }
+
+  .step { margin-top: 12px; padding: 10px 12px; border: 1px solid #1f1f1f; border-radius: 8px; background: #121212; }
+  .step-text { color: #ddd; }
+  .step-no { color: #f44336; font-weight: 700; margin-inline-end: 6px; }
+  .auto-note { margin-top: 6px; color: #64b5f6; font-size: 11px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 14px; margin-top: 10px; }
+  .field label { display: block; font-size: 11px; color: #9a9a9a; margin-bottom: 3px; }
+  .field .unit { color: #666; }
+  .field .note { display: block; font-size: 10px; color: #666; margin-top: 2px; }
+  .field input, .field select { width: 100%; background: #0a0a0a; border: 1px solid #333; border-radius: 6px; padding: 5px 8px; color: #fff; font-size: 12px; }
+  .field input:focus, .field select:focus { outline: none; border-color: #f44336; }
+  .field input[readonly], .field select:disabled, .field input:disabled { color: #888; border-color: #222; }
+  .field.filled input, .field.filled select { border-color: #2e4d31; }
+
+  .auto-card { margin-top: 10px; padding: 10px 12px; border: 1px solid #1d3a57; border-radius: 8px; background: #0d1620; }
+  .auto-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .auto-text { font-size: 12px; color: #9ecbf0; }
+  .auto-text.fail { color: #f44336; } .auto-text.pass { color: #4caf50; }
+  .btn-auto { background: #1565c0; color: #fff; }
+  .btn-auto:hover { background: #1976d2; }
+  .btn-auto:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .auto-script { border-color: #2a4a6b; background: #0e1a26; }
+  .auto-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .auto-est { font-size: 11px; color: #8aa4bb; font-variant-numeric: tabular-nums; }
+  .auto-prompt { margin-top: 10px; padding: 10px 12px; border: 1px solid #5a4a12; border-radius: 6px; background: #1d1809; }
+  .auto-prompt-text { font-size: 13px; color: #ffd76a; margin-bottom: 8px; line-height: 1.5; }
+  .auto-prompt-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .auto-prompt-row input, .auto-prompt-row select { background: #0a0a0a; border: 1px solid #444; border-radius: 6px; padding: 5px 8px; color: #fff; font-size: 12px; min-width: 160px; }
+  .g-prompt { margin-top: 10px; padding: 12px 14px; border-radius: 8px; background: #3d2e10; border: 1px solid #ff9800; color: #ffcc80; font-size: 15px; font-weight: 700; }
+  .tc-checks { display: grid; gap: 6px; }
+  .tc-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #bbb; }
+  .tc-dot { width: 10px; height: 10px; border-radius: 50%; background: #444; flex: none; }
+  .tc-row.ok .tc-dot { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .tc-row.bad .tc-dot { background: #f44336; }
+  .tc-row.warn .tc-dot { background: #ff9800; }
+  .tc-label { min-width: 190px; }
+  .tc-val { color: #9ecbf0; font-variant-numeric: tabular-nums; }
+  .tc-row.bad .tc-val { color: #f44336; }
+  .tc-row.warn .tc-val { color: #ff9800; }
+  .chart { display: block; width: 100%; max-width: 640px; height: auto; margin-top: 10px; background: #0a0a0a; border: 1px solid #1f1f1f; border-radius: 6px; }
+  .criteria { margin-top: 16px; padding: 10px 12px; border-radius: 8px; background: #101010; border: 1px solid #222; }
+  .criteria code { display: block; color: #bbb; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+  .verdict { display: inline-block; font-weight: 700; font-size: 12px; padding: 2px 10px; border-radius: 10px; margin-top: 8px; }
+  .verdict.PASS { background: #1b3d1f; color: #4caf50; } .verdict.FAIL { background: #3d1b1b; color: #f44336; } .verdict.BLOCKED { background: #3d2e10; color: #ff9800; }
+  .verdict-detail { font-size: 11px; color: #888; margin-inline-start: 8px; }
+  .record { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+  .record textarea { flex: 1; min-width: 240px; min-height: 44px; background: #0a0a0a; border: 1px solid #333; border-radius: 6px; padding: 6px 8px; color: #ddd; font: inherit; font-size: 12px; resize: vertical; }
+  .recorded { font-size: 11px; color: #888; margin-top: 8px; }
+
+  .log-section { background: #151515; border: 1px solid #222; border-radius: 10px; margin-top: 20px; }
+  .log-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid #222; }
+  .log-header h3 { font-size: 13px; }
+  .log-box { font-family: Consolas, 'Courier New', monospace; font-size: 11px; padding: 10px 16px; max-height: 260px; overflow-y: auto; line-height: 1.6; }
+  .log-box .pass { color: #4caf50; } .log-box .fail { color: #f44336; } .log-box .warn { color: #ff9800; } .log-box .info { color: #888; }
+
+  .report-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 20; align-items: center; justify-content: center; }
+  .report-modal.open { display: flex; }
+  .report-content { background: #151515; border: 1px solid #333; border-radius: 10px; width: min(900px, 92vw); max-height: 88vh; display: flex; flex-direction: column; padding: 16px; gap: 10px; }
+  .report-content textarea { flex: 1; min-height: 50vh; background: #0a0a0a; color: #ddd; border: 1px solid #333; border-radius: 6px; padding: 10px; font-family: Consolas, monospace; font-size: 11px; resize: vertical; direction: ltr; }
+  .report-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .banner { background: #3d1b1b; color: #f44336; padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; display: none; }
+
+  @media (max-width: 720px) {
+    .summary { grid-template-columns: repeat(3, 1fr); }
+    .cols { grid-template-columns: 1fr; }
+    .test-body, [dir="rtl"] .test-body { padding-inline: 16px; }
+    .cat-header .gate { display: none; }
+    #apiUrl { width: 150px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1 id="appTitle">sCure DVT Tool</h1>
+    <div class="version" id="catalogInfo"></div>
+  </div>
+  <div class="header-right">
+    <span class="status-label" id="statusLabel">not connected</span>
+    <div class="status-dot" id="statusDot"></div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="banner" id="banner">dvt-catalog.js / dvt-criteria.js could not be loaded - open dvt-tool.html from the DVT/web folder (next to both files).</div>
+
+  <div class="config-bar">
+    <span class="pair"><label for="unit" data-t="unit">Unit</label><select id="unit"></select></span>
+    <span class="pair"><label for="operator" data-t="operator">Operator</label><input id="operator" spellcheck="false"></span>
+    <span class="pair"><label for="apiUrl" data-t="machine">Machine</label><input id="apiUrl" placeholder="scurebox.local" spellcheck="false" dir="ltr">
+    <button class="btn btn-outline btn-small" id="connectBtn" data-t="connect">Connect</button>
+    <select id="machinePick" aria-label="Machine" hidden></select></span>
+    <span class="spacer"></span>
+    <select id="lang" aria-label="Language"><option value="en">English</option><option value="he">עברית</option></select>
+    <button class="btn btn-run" id="reportBtn" data-t="report">Export report</button>
+  </div>
+
+  <div class="folder-bar" id="folderBar">
+    <span class="folder-dot" id="folderDot"></span>
+    <span class="folder-text" id="folderText"></span>
+    <span class="spacer"></span>
+    <button class="btn btn-outline btn-small" id="folderReconnectBtn" hidden></button>
+    <button class="btn btn-outline btn-small" id="folderBtn" data-t="folderBtn">Choose results folder</button>
+  </div>
+
+  <!-- sCure Cloud (Google Apps Script): every recorded run and its raw measurement files also go to the portal's DVT tab -->
+  <div class="folder-bar" id="cloudBar">
+    <span class="folder-dot" id="cloudDot"></span>
+    <span class="folder-text" id="cloudText"></span>
+    <span class="spacer"></span>
+    <span class="pair"><label for="cloudUrl" data-t="cloudUrl">Cloud</label>
+      <input id="cloudUrl" placeholder="https://script.google.com/macros/s/.../exec" spellcheck="false" dir="ltr" style="min-width:260px"></span>
+    <span class="pair"><label for="cloudKey" data-t="cloudKey">Key</label>
+      <input id="cloudKey" type="password" spellcheck="false" dir="ltr" style="min-width:140px"></span>
+    <span class="pair"><label for="cloudMachine" data-t="cloudMachine">CureBox</label>
+      <select id="cloudMachine" style="min-width:150px"></select></span>
+    <button class="btn btn-outline btn-small" id="cloudSyncBtn" data-t="cloudSyncAll">Sync all</button>
+  </div>
+
+  <div class="summary">
+    <div class="summary-card"><div class="num" id="sumTotal">0</div><div class="label" data-t="sumRuns">Runs owed</div></div>
+    <div class="summary-card"><div class="num pass" id="sumPass">0</div><div class="label" data-t="sumPass">Pass</div></div>
+    <div class="summary-card"><div class="num fail" id="sumFail">0</div><div class="label" data-t="sumFail">Fail</div></div>
+    <div class="summary-card"><div class="num warn" id="sumBlocked">0</div><div class="label" data-t="sumBlocked">Blocked</div></div>
+    <div class="summary-card"><div class="num skip" id="sumOpen">0</div><div class="label" data-t="sumOpen">Open</div></div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+  <div id="phases"></div>
+
+  <div class="log-section">
+    <div class="log-header">
+      <h3 data-t="log">Log</h3>
+      <button class="btn btn-outline btn-small" id="clearLogBtn" data-t="clear">Clear</button>
+    </div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+</div>
+
+<div class="report-modal" id="reportModal">
+  <div class="report-content" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <h3 id="reportTitle" data-t="reportTitle">DVT report (text)</h3>
+    <textarea id="reportText" spellcheck="false"></textarea>
+    <div class="report-actions">
+      <button class="btn btn-outline btn-small" id="copyBtn" data-t="copy">Copy to clipboard</button>
+      <button class="btn btn-outline btn-small" id="downloadBtn" data-t="download">Download .txt</button>
+      <button class="btn btn-outline btn-small" id="saveReportBtn" data-t="saveToFolder">Save to results folder</button>
+      <button class="btn btn-run btn-small" id="closeBtn" data-t="close">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="dvt-catalog.js"></script>
+<script src="dvt-criteria.js"></script>
+<script src="dvt-auto.js"></script>
+<script>
+// ============================================================
+// DVT runner. Catalog data: dvt-catalog.js (generated by build_dvt_web.py
+// from DVT/catalog). Verdicts: dvt-criteria.js (same rules as the console).
+// ============================================================
+const CAT = window.SCURE_DVT;
+const CRIT = window.DVT_CRITERIA;
+const STORE_KEY = 'scure-dvt-web-v1';
+
+const T = {
+  en: {
+    unit: 'Unit', operator: 'Operator', machine: 'Machine', connect: 'Connect',
+    folderBtn: 'Choose results folder', saveToFolder: 'Save to results folder',
+    folderNone: 'No results folder - choose one: every value, verdict and measurement is written there',
+    folderOk: (name, at) => `Results folder: ${name}${at ? ' · saved ' + at : ''}`,
+    folderLost: (name) => `Results folder ${name} needs your permission again`, folderReconnect: (name) => `Reconnect ${name}`,
+    folderFirst: 'Choose the results folder first - every result is written there', folderUnsupported: 'This browser cannot write to a folder - use Chrome or Edge',
+    folderError: (m) => `could not write to the results folder: ${m}`,
+    folderRetry: (m, s) => `the results folder refused a write (${m}) - trying again in ${s} s; the run stays queued (a CSV open in Excel? OneDrive?)`,
+    folderRetrying: (name, m) => `Results folder: ${name} · a write failed (${m}) - retrying, nothing is lost`,
+    cloudUrl: 'Cloud', cloudKey: 'Key', cloudSyncAll: 'Sync all', cloudMachine: 'CureBox',
+    cloudMachinePick: '- which CureBox is this unit? -',
+    logCloudMachine: (u, m) => m ? `${u} is ${m} on sCure Cloud - its runs are filed under it` : `${u}: no CureBox on sCure Cloud`,
+    cloudNone: 'sCure Cloud: not set - paste the portal web-app URL and the DVT key to publish results to the DVT tab',
+    cloudOk: (n, at) => `sCure Cloud: ${n} runs published${at ? ' · ' + at : ''}`,
+    cloudQueued: (n) => `sCure Cloud: sending ${n} run${n === 1 ? '' : 's'}…`,
+    cloudError: (m) => `sCure Cloud: not reached (${m}) - results stay queued and in the results folder`,
+    logCloud: (id) => `${id}: published to sCure Cloud`,
+    logCloudAll: (n) => `sCure Cloud: ${n} runs queued for upload`,
+    logCloudFail: (m) => `sCure Cloud upload failed: ${m}`,
+    tcNotSaved: 'The recording is NOT in the results folder yet - it is only in this browser. Reconnect the folder (top bar) before closing the page.',
+    tcAutoStopped: (why) => `stopped by itself: ${why}`,
+    logFolder: (name, n) => `results folder ${name}: ${n} runs read from it`, reportSaved: (f) => `report saved: ${f}`,
+    report: 'Export report', sumRuns: 'Runs owed', sumPass: 'Pass', sumFail: 'Fail', sumBlocked: 'Blocked', sumOpen: 'Open',
+    log: 'Log', clear: 'Clear', reportTitle: 'DVT report (text)', copy: 'Copy to clipboard', download: 'Download .txt', close: 'Close',
+    catalog: 'Catalog', tool: 'tool', notConnected: 'not connected', connected: 'connected', phase: 'Phase', gate: 'Gate', closed: 'closed', tests: 'tests',
+    runsOf: (d, n) => `${d}/${n} runs`, min: 'min', purpose: 'Purpose', safetyPlan: 'Safety plan', equipment: 'Equipment',
+    preconditions: 'Preconditions', dependencies: 'Must pass first on this unit', rationale: 'Sample rationale',
+    notOwed: (u, w) => `Not owed by ${u} - this test runs on ${w} only.`, unitTbd: 'the unit is still to be decided (CONFIRM)',
+    run: 'Run', repetition: 'repetition', prev: '◀', next: '▶', procedure: 'Procedure', otherData: 'Other data',
+    autoStep: (tool) => `Automated in the DVT console (tool: ${tool}) - run it there and enter the results here.`,
+    criteria: 'Pass criteria', record: 'Record verdict', reopen: 'Reopen', note: 'Note (optional)',
+    recordedBy: (v, by, at) => `Recorded ${v}${by ? ' by ' + by : ''} · ${at}`, yes: 'Yes', no: 'No', choose: '-',
+    safetyCritical: 'safety-critical', auto: 'auto', inspection: 'inspection',
+    logRecorded: (id, v) => `${id}: ${v} recorded`, logReopen: (id) => `${id}: reopened`,
+    logConnect: (s) => `machine: ${s}`, operatorFirst: 'Enter the operator name first',
+    searching: 'looking for the machine…', notFound: 'no machine found - type its address once (e.g. 192.168.1.20)',
+    foundMany: (n) => `${n} machines found - choose this unit's machine`, pickMachine: (n) => `choose (${n} found)`,
+    otherUnit: (u) => `this machine is paired with ${u} - press Connect to pair it with this unit instead`,
+    doorIntro: (th) => `Automatic: press Start and open the door when asked. The machine sees the door open, the StarBright takes a dark reading, then the machine tries to start a cure (a 405 nm program and a direct UV command) while the StarBright watches for 5 s. UV above ${th} mW/cm² over dark, or a start the machine accepts, fails the step. Wear UV eye protection near the door.`,
+    tcAmbient: 'Ambient (the TC-08 cold junction)', tcNoAmbient: 'not reported by this machine software - type ambient_temp',
+    tcRef: 'Reference thermocouple in the chamber (TC-08 CH2)',
+    tcMachine: 'Machine connected', tcDevice: 'TC-08 connected to the machine', tcCh1: 'Thermocouple on CH1 (at the cutout)',
+    tcDriver: 'the TC-08 driver (Pico libusbtc08) is not installed on the machine', tcPlug: 'plug the TC-08 into the machine\'s USB',
+    tcNoCh1: 'no valid reading on CH1 - connect the thermocouple to CH1', tcStart: 'Start recording', tcStop: 'Stop recording',
+    tcNotReady: 'Start is enabled when all three checks are green', tcReady: 'everything is connected - you can start',
+    tcStarted: 'TC-08 CH1 recording started (1 Hz)',
+    tcRecording: (c, m, e, n) => `recording · CH1 ${c === null ? '—' : c.toFixed(1) + ' °C'} · max ${m.toFixed(1)} °C · ${e} · ${n} samples`,
+    tcLost: (s) => `CH1 has given no reading for ${s} s - check the thermocouple (still recording)`,
+    tcStopped: (n, m) => `recording stopped - ${n} samples, max ${m.toFixed(1)} °C, saved to the results folder`,
+    tcRead: (n) => `${n} values read out of the recording`,
+    tcReread: 'Read the recording again', tcNothingRead: 'nothing could be read out of this recording',
+    gOnset: 'heating', gTrip: 'CUT-OFF', gReset: 'closed again', gLegend: 'blue: heater body (CH1) · orange: chamber',
+    tcOpen: (c, a) => `${c.toFixed(1)} °C with the TC-08 itself at ${a.toFixed(1)} °C - the thermocouple is open or badly seated, not hot. Reseat it at the measurement point.`,
+    tcOpenExt: (c, a) => `${c.toFixed(1)} °C with the TC-08 itself at ${a.toFixed(1)} °C and the machine not heating - real if the heater is fed from the external supply, otherwise the thermocouple is open. Start asks you to confirm.`,
+    tcConfirmExt: (c, a) => `CH1 reads ${c.toFixed(1)} °C while the machine is not heating (the TC-08 itself is at ${a.toFixed(1)} °C).\n\nIs the heater being fed from the external supply and the thermocouple seated on the heater body?\n\nOK = yes, start recording.  Cancel = no, I will reseat the thermocouple first.`,
+    tcFan: 'Heater fan (the machine does not run it for an external heater)', tcFanWait: 'turning the fan on…',
+    tcSettling: 'hot with the machine not heating - watching whether the reading holds steady (a floating input jumps)…',
+    gStart: 'Start', gChecking: 'checking the machine…', gCloseFirst: 'close the door first',
+    gDone: (x) => `done - ${x}`, graphSaved: (f) => `graph saved: ${f}`,
+    trDisplayed: 'displayed (machine chamber sensor)', trRef: 'chamber reference (TC-08 CH2)', trBody: 'heater body (TC-08 CH1)',
+    trPanel: 'LED panel', trHeaterOn: 'heater on', trUvOn: 'UV on', trAlarm: (c) => `alarm ${c}`, trRows: (n, f) => `${n} samples${f ? ' · ' + f : ''}`,
+    trFanCooling: 'cooling fan rpm', trFanHeater: 'heater fan rpm', trDamperOpen: 'damper open',
+    g2Intro: 'Automatic: the machine runs a real 405 nm cure at 100 % and waits for a stable StarBright reading, then asks you to open the door with the UV on - it sends no open-door command. It times, on its own clock (20 Hz), how long the machine takes to switch the UV off and to reach zero after the door sensor sees the door open. If the UV is still above 10 % 12 s after the door opened, the run switches it off and fails the step. The graph and the raw CSV go to the results folder. UV eyewear near the door.',
+    endpointMissing: (p, m) => `the machine software${m ? ' (' + m.split(' · ')[0] + ')' : ''} does not have ${p} - install a newer sCureBox`,
+    g2Phase: (ph, r, p) => `${ph}${typeof r === 'number' ? ' · ' + r.toFixed(2) + ' mW/cm²' : ''}${typeof p === 'number' ? ' · plateau ' + p.toFixed(1) : ''}`,
+    g2Wait: 'UV on - waiting for a stable reading, keep the door closed', g2OpenNow: 'THE UV IS ON - OPEN THE DOOR NOW',
+    g3Intro: 'Automatic: the machine runs a 405 nm cure at 30 % with the door closed; when asked, pull the door firmly for 10 s. The lock holds if the door sensor never reports it open. UV eyewear.',
+    g3Starting: 'starting the cure…', g3NoUv: 'the cure did not switch the UV on within 30 s',
+    g3PullNow: 'UV IS ON - PULL THE DOOR FIRMLY NOW (10 s)', g3Pulling: (s) => `pulling… ${s} s left`,
+    g4Intro: 'Automatic: the machine releases the door; open it and keep it open, then hold the hand magnet against the door sensor from outside for 10 s. No UV in this step.',
+    g4OpenNow: 'THE LOCK IS RELEASED - OPEN THE DOOR AND KEEP IT OPEN', g4MagnetNow: 'HOLD THE MAGNET ON THE DOOR SENSOR NOW (10 s) - door stays open',
+    g4Holding: (s, f) => `${s} s left${f ? ' - the sensor reads CLOSED' : ''}`, g4Done: 'remove the magnet and close the door',
+    g4Confirm: 'The door sensor reported CLOSED while the magnet was held. Was the door still open the whole time?\n\nOK = yes, it stayed open (the magnet fooled the sensor)\nCancel = no, the door had closed (repeat the step)',
+    g4Repeat: 'the door closed during the magnet check - repeat the step with the door kept open',
+    g5Intro: 'Automatic: follow the prompts - close, open, close, hold the door closed. The page checks the door reading follows every real movement and that the lock release alone does not change it.',
+    g5Close: 'CLOSE THE DOOR', g5Open: 'THE LOCK IS RELEASED - OPEN THE DOOR', g5Hold: 'HOLD THE DOOR CLOSED - the lock is about to be released',
+    g5NoClose: 'the machine did not see the door closed within 30 s',
+    g6Intro: 'Automatic: reads the alarm and the error code the machine reported when the door opened during the step 2 cure.',
+    g6Read: 'Read', g6NeedStep2: 'run step 2 first - the alarm comes from its cure',
+    gAdvancing: (n) => `passed - going on to step ${n} by itself`, gAdvancingIn: (n, s) => `passed - step ${n} starts in ${s} s (■ to stay here)`,
+    gCloseToContinue: (n) => `Close the door to continue to step ${n}`, gAdvanceStopped: 'stayed here - start the next step yourself',
+    gNoAdvance: (why) => `not going on by itself: ${why}`,
+    benchStart: 'Start', benchIntro: 'Automatic on the machine: the DVT bench process (port 3002) runs the whole test itself - heats, waits for the heater body to rise, tells you when to pull and when to reconnect the thermistor, times everything on the machine clock and fills every field. The trace and the graph go to the results folder.',
+    benchMissing: 'the DVT bench is not running on this machine (port 3002) - it comes with sCureBox 1.0.42; install it', benchNoTest: (id) => `the bench on this machine does not know ${id}`,
+    benchBusy: (id) => `the bench is busy with ${id}`, benchDone: (n) => `done - ${n} fields filled by the machine`,
+    benchSvc: 'DVT bench service on the machine (port 3002)', benchChamber: 'Heater thermistor (TEMP_CHAMBER) reading', benchIdle: 'Machine idle',
+    benchChamberOpen: 'the heater thermistor is disconnected - reconnect it (the run starts with it connected; the bench tells you when to pull it)',
+    benchMachineBusy: 'a process is running on the machine - stop it first', benchIdleOk: 'nothing running', benchFwDead: 'the machine software does not answer',
+    benchHotBody: (a) => `hot with nothing running (TC-08 itself at ${a.toFixed(1)} °C) - a body still hot from an earlier test is fine, the bench waits for it to cool; a floating probe is refused`,
+    benchProbeOpen: (m) => `CH1 is open or badly seated - ${m}`,
+    benchNotStarted: (why) => `did not start: ${why}`, benchNotReady: 'Start is enabled when all checks are green', benchReady: 'everything is ready - you can start',
+    benchFailedAt: (phase, why, n) => `failed at "${phase}": ${why} - the ${n} values measured before it are filled; the rest stay empty`,
+    benchPhase: (ph, el, ch1, chamber) => `${ph} · ${Math.floor(el / 60)}:${String(Math.floor(el % 60)).padStart(2, '0')}${typeof ch1 === 'number' ? ' · body ' + ch1.toFixed(1) + ' °C' : ''}${typeof chamber === 'number' ? ' · chamber ' + chamber.toFixed(1) + ' °C' : ''}`,
+    doorStart: 'Start', doorBusy: 'a process is running on the machine - stop it first',
+    doorOpenNow: 'OPEN THE DOOR NOW - waiting for the machine to see it open…', doorStopped: 'stopped by the operator - LEDs commanded off',
+    doorNotSeen: 'the machine did not report the door open within 60 s - check the door sensor (this is a finding)',
+    doorDark: 'dark reading with the door open…', doorNoReading: 'the StarBright gave no reading',
+    doorClosedDuring: 'the door closed during the attempt - the run is not valid, repeat it with the door kept open',
+    doorAttempt: 'trying to start a cure with the door open, watching for UV…',
+    doorAccepted: (id) => `${id}: the machine ACCEPTED a start with the door open`,
+    doorPass: (p) => `inhibited - both starts refused, no UV seen (peak ${p} mW/cm² over dark)`,
+    doorFail: (v) => `NOT inhibited - ${[!v.cure_start_refused && 'program start accepted', !v.uv_command_refused && 'UV command accepted', v.uv_detected && `UV seen ${v.uv_peak_above_dark} mW/cm² over dark`].filter(Boolean).join(', ') || 'UV reported on by the machine'}`,
+    repaired: (s, from, to) => `machine ${s} moved from ${from} to ${to}`,
+    runOnMachine: 'Run on the machine', abortRun: 'Abort', needMachine: 'Connect to the machine first (Machine field at the top)',
+    autoIntro: 'Automatic: the machine checks the StarBright on its USB, sets it to the test wavelength, runs the sweep and fills every value below.',
+    autoMeter: 'checking the StarBright on the machine…', autoSetWl: (nm) => `setting the meter to ${nm} nm…`,
+    autoRunning: (ph, pct, rd, i, n) => `${ph}${pct ? ' · ' + pct + ' %' : ''}${i !== null ? ` · step ${i + 1}/${n}` : ''} · ${rd === null || rd === undefined ? '—' : rd.toFixed(2) + ' mW/cm²'}`,
+    autoDone: (st) => `sweep ${st} - values filled in, check the verdict and record it`, autoFailed: (m) => `stopped: ${m}`,
+    logAuto: (id, st) => `${id}: automatic sweep ${st}`, busyElsewhere: 'another automatic run is in progress',
+  },
+  he: {
+    unit: 'יחידה', operator: 'מבצע', machine: 'מכונה', connect: 'התחבר',
+    folderBtn: 'בחר תיקיית תוצאות', saveToFolder: 'שמור בתיקיית התוצאות',
+    folderNone: 'לא נבחרה תיקיית תוצאות - בחר תיקייה: כל ערך, תוצאה ומדידה נכתבים אליה',
+    folderOk: (name, at) => `תיקיית תוצאות: ${name}${at ? ' · נשמר ' + at : ''}`,
+    folderLost: (name) => `תיקיית התוצאות ${name} צריכה שוב את אישורך`, folderReconnect: (name) => `חבר מחדש את ${name}`,
+    folderFirst: 'בחר קודם תיקיית תוצאות - כל תוצאה נכתבת אליה', folderUnsupported: 'הדפדפן הזה לא יכול לכתוב לתיקייה - השתמש ב-Chrome או Edge',
+    folderError: (m) => `הכתיבה לתיקיית התוצאות נכשלה: ${m}`,
+    folderRetry: (m, s) => `תיקיית התוצאות דחתה כתיבה (${m}) - ניסיון נוסף בעוד ${s} שניות; הריצה נשארת בתור (קובץ CSV פתוח באקסל? OneDrive?)`,
+    folderRetrying: (name, m) => `תיקיית תוצאות: ${name} · כתיבה נכשלה (${m}) - מנסה שוב, שום דבר לא אבד`,
+    cloudUrl: 'ענן', cloudKey: 'מפתח', cloudSyncAll: 'סנכרן הכול', cloudMachine: 'CureBox',
+    cloudMachinePick: '- איזה CureBox היחידה הזו? -',
+    logCloudMachine: (u, m) => m ? `${u} היא ${m} בענן sCure - הריצות שלה נשמרות תחתיו` : `${u}: אין CureBox בענן sCure`,
+    cloudNone: 'ענן sCure: לא מוגדר - הדבק את כתובת אפליקציית הפורטל ואת מפתח ה-DVT כדי שהתוצאות יופיעו בטאב DVT',
+    cloudOk: (n, at) => `ענן sCure: ${n} ריצות פורסמו${at ? ' · ' + at : ''}`,
+    cloudQueued: (n) => `ענן sCure: שולח ${n} ריצות…`,
+    cloudError: (m) => `ענן sCure: אין קשר (${m}) - התוצאות נשארות בתור ובתיקיית התוצאות`,
+    logCloud: (id) => `${id}: פורסם לענן sCure`,
+    logCloudAll: (n) => `ענן sCure: ${n} ריצות בתור להעלאה`,
+    logCloudFail: (m) => `העלאה לענן sCure נכשלה: ${m}`,
+    tcNotSaved: 'הרישום עדיין לא נמצא בתיקיית התוצאות - הוא רק בדפדפן הזה. חבר מחדש את התיקייה (בסרגל העליון) לפני שסוגרים את הדף.',
+    tcAutoStopped: (why) => `נעצר מעצמו: ${why}`,
+    logFolder: (name, n) => `תיקיית תוצאות ${name}: נקראו ממנה ${n} ריצות`, reportSaved: (f) => `הדו"ח נשמר: ${f}`,
+    report: 'ייצוא דו"ח', sumRuns: 'ריצות נדרשות', sumPass: 'עבר', sumFail: 'נכשל', sumBlocked: 'חסום', sumOpen: 'פתוח',
+    log: 'יומן', clear: 'נקה', reportTitle: 'דו"ח DVT (טקסט)', copy: 'העתק', download: 'הורד ‎.txt', close: 'סגור',
+    catalog: 'קטלוג', tool: 'כלי', notConnected: 'לא מחובר', connected: 'מחובר', phase: 'שלב', gate: 'שער', closed: 'סגור', tests: 'בדיקות',
+    runsOf: (d, n) => `${d}/${n} ריצות`, min: 'דק\'', purpose: 'מטרה', safetyPlan: 'תוכנית בטיחות', equipment: 'ציוד',
+    preconditions: 'תנאים מקדימים', dependencies: 'חייבות לעבור קודם ביחידה זו', rationale: 'הצדקת מדגם',
+    notOwed: (u, w) => `${u} לא נדרשת לבדיקה זו - היא מתבצעת רק ב-${w}.`, unitTbd: 'היחידה טרם נקבעה (CONFIRM)',
+    run: 'ריצה', repetition: 'חזרה', prev: '▶', next: '◀', procedure: 'מהלך הבדיקה', otherData: 'נתונים נוספים',
+    autoStep: (tool) => `שלב אוטומטי בקונסולת ה-DVT (כלי: ${tool}) - הרץ אותו שם והזן כאן את התוצאות.`,
+    criteria: 'קריטריון מעבר', record: 'רשום תוצאה', reopen: 'פתח מחדש', note: 'הערה (לא חובה)',
+    recordedBy: (v, by, at) => `נרשם ${v}${by ? ' על ידי ' + by : ''} · ${at}`, yes: 'כן', no: 'לא', choose: '-',
+    safetyCritical: 'קריטי לבטיחות', auto: 'אוטומטי', inspection: 'סקירה',
+    logRecorded: (id, v) => `${id}: נרשם ${v}`, logReopen: (id) => `${id}: נפתח מחדש`,
+    logConnect: (s) => `מכונה: ${s}`, operatorFirst: 'הזן קודם את שם המבצע',
+    searching: 'מחפש את המכונה…', notFound: 'לא נמצאה מכונה - הקלד את הכתובת שלה פעם אחת (למשל 192.168.1.20)',
+    foundMany: (n) => `נמצאו ${n} מכונות - בחר את המכונה של היחידה הזו`, pickMachine: (n) => `בחר (נמצאו ${n})`,
+    otherUnit: (u) => `המכונה הזו משויכת ל-${u} - לחץ "התחבר" כדי לשייך אותה ליחידה הזו במקום`,
+    doorIntro: (th) => `אוטומטי: לחץ "התחל" ופתח את הדלת כשתתבקש. המכונה מזהה שהדלת נפתחה, ה-StarBright לוקח קריאת חושך, ואז המכונה מנסה להתחיל קיור (תוכנית 405 ננומטר ופקודת UV ישירה) בזמן שה-StarBright צופה 5 שניות. UV מעל ${th} mW/cm² מעל החושך, או התחלה שהמכונה מקבלת, מכשילים את השלב. משקפי מגן ל-UV ליד הדלת.`,
+    tcAmbient: 'טמפרטורת סביבה (נקודת הייחוס של ה-TC-08)', tcNoAmbient: 'תוכנת המכונה לא מדווחת - הקלד את ambient_temp',
+    tcRef: 'תרמוקפל ייחוס בתא (TC-08 ערוץ 2)',
+    tcMachine: 'המכונה מחוברת', tcDevice: 'ה-TC-08 מחובר למכונה', tcCh1: 'תרמוקפל ב-CH1 (על המנתק)',
+    tcDriver: 'הדרייבר של ה-TC-08 (Pico libusbtc08) לא מותקן במכונה', tcPlug: 'חבר את ה-TC-08 ל-USB של המכונה',
+    tcNoCh1: 'אין קריאה תקינה ב-CH1 - חבר את התרמוקפל ל-CH1', tcStart: 'התחל רישום', tcStop: 'עצור רישום',
+    tcNotReady: '"התחל" יתאפשר כששלוש הבדיקות ירוקות', tcReady: 'הכול מחובר - אפשר להתחיל',
+    tcStarted: 'רישום CH1 של ה-TC-08 התחיל (1 Hz)',
+    tcRecording: (c, m, e, n) => `רושם · CH1 ${c === null ? '—' : c.toFixed(1) + ' °C'} · מקסימום ${m.toFixed(1)} °C · ${e} · ${n} דגימות`,
+    tcLost: (s) => `אין קריאה מ-CH1 כבר ${s} שניות - בדוק את התרמוקפל (הרישום ממשיך)`,
+    tcStopped: (n, m) => `הרישום נעצר - ${n} דגימות, מקסימום ${m.toFixed(1)} °C, נשמר בתיקיית התוצאות`,
+    tcRead: (n) => `${n} ערכים נקראו מהרישום`,
+    tcReread: 'קרא שוב את הרישום', tcNothingRead: 'לא ניתן לקרוא שום דבר מהרישום הזה',
+    gOnset: 'חימום', gTrip: 'ניתוק', gReset: 'נסגר שוב', gLegend: 'כחול: גוף החימום (CH1) · כתום: התא',
+    tcOpen: (c, a) => `${c.toFixed(1)} °C בזמן שה-TC-08 עצמו על ${a.toFixed(1)} °C - התרמוקפל מנותק או לא יושב טוב, הוא לא חם. הצמד אותו מחדש לנקודת המדידה.`,
+    tcOpenExt: (c, a) => `${c.toFixed(1)} °C בזמן שה-TC-08 עצמו על ${a.toFixed(1)} °C והמכונה לא מחממת - אמיתי אם ההיטר מוזן מהספק החיצוני, אחרת התרמוקפל מנותק. "התחל" יבקש אישור.`,
+    tcConfirmExt: (c, a) => `CH1 קורא ${c.toFixed(1)} °C בזמן שהמכונה לא מחממת (ה-TC-08 עצמו על ${a.toFixed(1)} °C).\n\nהאם ההיטר מוזן מהספק החיצוני והתרמוקפל צמוד לגוף החימום?\n\nאישור = כן, התחל רישום.  ביטול = לא, אצמיד קודם את התרמוקפל.`,
+    tcFan: 'מאוורר ההיטר (המכונה לא מפעילה אותו עבור היטר חיצוני)', tcFanWait: 'מדליק את המאוורר…',
+    tcSettling: 'חם בזמן שהמכונה לא מחממת - בודק אם הקריאה יציבה (כניסה מנותקת קופצת)…',
+    gStart: 'התחל', gChecking: 'בודק את המכונה…', gCloseFirst: 'סגור קודם את הדלת',
+    gDone: (x) => `הסתיים - ${x}`, graphSaved: (f) => `הגרף נשמר: ${f}`,
+    trDisplayed: 'מוצג (חיישן התא של המכונה)', trRef: 'ייחוס בתא (TC-08 ערוץ 2)', trBody: 'גוף ההיטר (TC-08 ערוץ 1)',
+    trPanel: 'פאנל LED', trHeaterOn: 'היטר דולק', trUvOn: 'UV דולק', trAlarm: (c) => `התראה ${c}`, trRows: (n, f) => `${n} דגימות${f ? ' · ' + f : ''}`,
+    trFanCooling: 'מאוורר קירור סל"ד', trFanHeater: 'מאוורר היטר סל"ד', trDamperOpen: 'דמפר פתוח',
+    g2Intro: 'אוטומטי: המכונה מריצה קיור אמיתי ב-405 ננומטר ו-100% וממתינה לקריאה יציבה של ה-StarBright, ואז מבקשת ממך לפתוח את הדלת כשה-UV דולק - היא לא שולחת פקודת פתיחת דלת. היא מודדת בשעון שלה (20 Hz) כמה זמן לוקח למכונה לכבות את ה-UV ולהגיע לאפס מהרגע שחיישן הדלת מזהה פתיחה. אם ה-UV עדיין מעל 10% 12 שניות אחרי פתיחת הדלת, הריצה מכבה אותו והשלב נכשל. הגרף וה-CSV הגולמי נשמרים בתיקיית התוצאות. משקפי מגן ל-UV ליד הדלת.',
+    endpointMissing: (p, m) => `בתוכנת המכונה${m ? ' (' + m.split(' · ')[0] + ')' : ''} אין את ${p} - צריך להתקין גרסת sCureBox חדשה יותר`,
+    g2Phase: (ph, r, p) => `${ph}${typeof r === 'number' ? ' · ' + r.toFixed(2) + ' mW/cm²' : ''}${typeof p === 'number' ? ' · מישור ' + p.toFixed(1) : ''}`,
+    g2Wait: 'ה-UV דולק - ממתין לקריאה יציבה, השאר את הדלת סגורה', g2OpenNow: 'ה-UV דולק - פתח את הדלת עכשיו',
+    g3Intro: 'אוטומטי: המכונה מריצה קיור ב-405 ננומטר ו-30% כשהדלת סגורה; כשתתבקש, משוך את הדלת בחוזקה 10 שניות. המנעול מחזיק אם חיישן הדלת לא דיווח שהיא נפתחה. משקפי מגן ל-UV.',
+    g3Starting: 'מתחיל את הקיור…', g3NoUv: 'הקיור לא הדליק UV תוך 30 שניות',
+    g3PullNow: 'ה-UV דולק - משוך את הדלת בחוזקה עכשיו (10 שניות)', g3Pulling: (s) => `מושך… נותרו ${s} שניות`,
+    g4Intro: 'אוטומטי: המכונה משחררת את הדלת; פתח אותה והשאר אותה פתוחה, ואז הצמד את המגנט הידני לחיישן הדלת מבחוץ 10 שניות. בלי UV בשלב הזה.',
+    g4OpenNow: 'המנעול שוחרר - פתח את הדלת והשאר אותה פתוחה', g4MagnetNow: 'הצמד עכשיו את המגנט לחיישן הדלת (10 שניות) - הדלת נשארת פתוחה',
+    g4Holding: (s, f) => `נותרו ${s} שניות${f ? ' - החיישן מראה סגור' : ''}`, g4Done: 'הורד את המגנט וסגור את הדלת',
+    g4Confirm: 'חיישן הדלת דיווח "סגור" בזמן שהמגנט הוצמד. האם הדלת נשארה פתוחה כל הזמן?\n\nאישור = כן, היא נשארה פתוחה (המגנט הטעה את החיישן)\nביטול = לא, הדלת נסגרה (חזור על השלב)',
+    g4Repeat: 'הדלת נסגרה במהלך בדיקת המגנט - חזור על השלב כשהדלת נשארת פתוחה',
+    g5Intro: 'אוטומטי: פעל לפי ההנחיות - סגור, פתח, סגור, החזק את הדלת סגורה. הדף בודק שקריאת הדלת עוקבת אחרי כל תנועה אמיתית ושחרור המנעול לבדו לא משנה אותה.',
+    g5Close: 'סגור את הדלת', g5Open: 'המנעול שוחרר - פתח את הדלת', g5Hold: 'החזק את הדלת סגורה - המנעול עומד להשתחרר',
+    g5NoClose: 'המכונה לא ראתה שהדלת נסגרה תוך 30 שניות',
+    g6Intro: 'אוטומטי: קורא את האזעקה וקוד השגיאה שהמכונה דיווחה כשהדלת נפתחה במהלך הקיור של שלב 2.',
+    g6Read: 'קרא', g6NeedStep2: 'הרץ קודם את שלב 2 - האזעקה מגיעה מהקיור שלו',
+    gAdvancing: (n) => `עבר - ממשיך לבד לשלב ${n}`, gAdvancingIn: (n, s) => `עבר - שלב ${n} מתחיל בעוד ${s} שניות (■ כדי להישאר כאן)`,
+    gCloseToContinue: (n) => `סגור את הדלת כדי להמשיך לשלב ${n}`, gAdvanceStopped: 'נשאר כאן - התחל את השלב הבא בעצמך',
+    gNoAdvance: (why) => `לא ממשיך לבד: ${why}`,
+    benchStart: 'התחל', benchIntro: 'אוטומטי במכונה: שירות הספסל של ה-DVT (פורט 3002) מריץ את כל הבדיקה בעצמו - מחמם, ממתין שגוף החימום יעלה, אומר לך מתי לנתק ומתי לחבר מחדש את התרמיסטור, מודד הכול בשעון המכונה וממלא את כל השדות. הרישום והגרף נשמרים בתיקיית התוצאות.',
+    benchMissing: 'שירות הספסל של ה-DVT לא רץ במכונה הזאת (פורט 3002) - הוא מגיע עם sCureBox 1.0.42; התקן אותה', benchNoTest: (id) => `הספסל במכונה לא מכיר את ${id}`,
+    benchBusy: (id) => `הספסל עסוק ב-${id}`, benchDone: (n) => `הסתיים - ${n} שדות מולאו על ידי המכונה`,
+    benchSvc: 'שירות הספסל של ה-DVT במכונה (פורט 3002)', benchChamber: 'קריאת תרמיסטור ההיטר (TEMP_CHAMBER)', benchIdle: 'המכונה במנוחה',
+    benchChamberOpen: 'תרמיסטור ההיטר מנותק - חבר אותו (הריצה מתחילה כשהוא מחובר; הספסל יגיד לך מתי לנתק)',
+    benchMachineBusy: 'יש תהליך פעיל במכונה - עצור אותו קודם', benchIdleOk: 'שום דבר לא פועל', benchFwDead: 'תוכנת המכונה לא עונה',
+    benchHotBody: (a) => `חם בזמן ששום דבר לא פועל (ה-TC-08 עצמו על ${a.toFixed(1)} °C) - גוף שעדיין חם מבדיקה קודמת זה בסדר, הספסל ימתין שיתקרר; חיישן מנותק יידחה`,
+    benchProbeOpen: (m) => `CH1 מנותק או לא יושב טוב - ${m}`,
+    benchNotStarted: (why) => `לא התחיל: ${why}`, benchNotReady: '"התחל" יתאפשר כשכל הבדיקות ירוקות', benchReady: 'הכול מוכן - אפשר להתחיל',
+    benchFailedAt: (phase, why, n) => `נכשל בשלב "${phase}": ${why} - ${n} הערכים שנמדדו לפניו מולאו; השאר נשארים ריקים`,
+    benchPhase: (ph, el, ch1, chamber) => `${ph} · ${Math.floor(el / 60)}:${String(Math.floor(el % 60)).padStart(2, '0')}${typeof ch1 === 'number' ? ' · גוף ' + ch1.toFixed(1) + ' °C' : ''}${typeof chamber === 'number' ? ' · תא ' + chamber.toFixed(1) + ' °C' : ''}`,
+    doorStart: 'התחל', doorBusy: 'יש תהליך פעיל במכונה - עצור אותו קודם',
+    doorOpenNow: 'פתח את הדלת עכשיו - ממתין שהמכונה תזהה שהיא פתוחה…', doorStopped: 'נעצר על ידי המפעיל - נשלחה פקודת כיבוי ללדים',
+    doorNotSeen: 'המכונה לא דיווחה שהדלת נפתחה תוך 60 שניות - בדוק את חיישן הדלת (זה ממצא)',
+    doorDark: 'קריאת חושך כשהדלת פתוחה…', doorNoReading: 'ה-StarBright לא נתן קריאה',
+    doorClosedDuring: 'הדלת נסגרה במהלך הניסיון - הריצה לא תקפה, חזור עליה כשהדלת נשארת פתוחה',
+    doorAttempt: 'מנסה להתחיל קיור כשהדלת פתוחה, צופה ב-UV…',
+    doorAccepted: (id) => `${id}: המכונה קיבלה התחלה כשהדלת פתוחה`,
+    doorPass: (p) => `נחסם - שתי ההתחלות סורבו, לא נראה UV (שיא ${p} mW/cm² מעל החושך)`,
+    doorFail: (v) => `לא נחסם - ${[!v.cure_start_refused && 'התחלת התוכנית התקבלה', !v.uv_command_refused && 'פקודת ה-UV התקבלה', v.uv_detected && `נראה UV ${v.uv_peak_above_dark} mW/cm² מעל החושך`].filter(Boolean).join(', ') || 'המכונה דיווחה UV פועל'}`,
+    repaired: (s, from, to) => `המכונה ${s} הועברה מ-${from} ל-${to}`,
+    runOnMachine: 'הרץ על המכונה', abortRun: 'עצור', needMachine: 'התחבר קודם למכונה (שדה "מכונה" למעלה)',
+    autoIntro: 'אוטומטי: המכונה בודקת את ה-StarBright שמחובר ל-USB שלה, מכוונת אותו לאורך הגל של הבדיקה, מריצה את הסריקה וממלאת את כל הערכים למטה.',
+    autoMeter: 'בודק את ה-StarBright במכונה…', autoSetWl: (nm) => `מכוון את המד ל-${nm} ננומטר…`,
+    autoRunning: (ph, pct, rd, i, n) => `${ph}${pct ? ' · ' + pct + ' %' : ''}${i !== null ? ` · שלב ${i + 1}/${n}` : ''} · ${rd === null || rd === undefined ? '—' : rd.toFixed(2) + ' mW/cm²'}`,
+    autoDone: (st) => `הסריקה ${st} - הערכים מולאו, בדוק את התוצאה ורשום אותה`, autoFailed: (m) => `נעצר: ${m}`,
+    logAuto: (id, st) => `${id}: סריקה אוטומטית ${st}`, busyElsewhere: 'ריצה אוטומטית אחרת בתהליך',
+  },
+};
+
+let state = { unit: '', operator: '', lang: (navigator.language || '').startsWith('he') ? 'he' : 'en', api: '', results: {} };
+let machineInfo = '';
+const openTests = new Set();
+const openPhases = new Set();
+const selectedRun = {};
+const logLines = [];
+
+const t = (k) => T[state.lang][k];
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const $ = (id) => document.getElementById(id);
+
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (s && typeof s === 'object') state = { ...state, ...s, results: s.results || {} }; }
+  catch (e) { /* storage unavailable: start empty */ }
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+}
+
+// ---------- catalog helpers ----------
+const TESTS = CAT ? CAT.tests : {};
+function tx(test, key) { return state.lang === 'he' && test.he && test.he[key] ? test.he[key] : test[key]; }
+function stepText(test, i) { return state.lang === 'he' && test.he.steps[i] ? test.he.steps[i] : test.procedure_steps[i].step; }
+function equipText(test, i) { return state.lang === 'he' && test.he.equipment[i] ? test.he.equipment[i] : (test.equipment[i].label || test.equipment[i].name); }
+function fieldNote(test, f) { return state.lang === 'he' && test.he.notes[f.name] ? test.he.notes[f.name] : (f.note || ''); }
+function phaseText(p, key) { return state.lang === 'he' && p.he[key] ? p.he[key] : p[key]; }
+function variantLabel(v) { return Object.entries(v).map(([k, x]) => `${k}=${x}`).join(','); }
+function caseText(test, v) {
+  if (!v.case || !test.case_matrix) return '';
+  const i = test.case_matrix.findIndex((c) => c.case === v.case);
+  return i < 0 ? '' : (state.lang === 'he' && test.he.cases[i]) || test.case_matrix[i].description || '';
+}
+
+function runsFor(tid, unit) {
+  const test = TESTS[tid];
+  if (!test.units.includes(unit)) return [];
+  const reps = Number(test.repetitions) || 1;
+  const out = [];
+  test.variants.forEach((v) => { for (let r = 1; r <= reps; r++) out.push({ id: `${tid}|${unit}|${variantLabel(v)}|${r}`, variant: v, rep: r }); });
+  return out;
+}
+function testVerdict(tid, unit) {
+  const runs = runsFor(tid, unit);
+  if (!runs.length) return 'na';
+  const vs = runs.map((r) => state.results[r.id] && state.results[r.id].verdict);
+  if (vs.some((v) => !v)) return vs.some(Boolean) ? 'progress' : null;
+  for (const v of ['FAIL', 'BLOCKED', 'WAIVED', 'PASS']) if (vs.includes(v)) return v;
+  return null;
+}
+function phaseClosed(p, unit) { return p.tests.filter((tid) => TESTS[tid].units.includes(unit)).every((tid) => ['PASS', 'WAIVED'].includes(testVerdict(tid, unit))); }
+function runValues(test, run) {
+  const rec = state.results[run.id] || {};
+  const vals = { ...(rec.values || {}) };
+  for (const [k, v] of Object.entries(run.variant)) if (test.data_fields.some((f) => f.name === k)) vals[k] = v;
+  return vals;
+}
+function evaluateRun(test, run) {
+  try { return CRIT.evaluate(test.pass_criteria, runValues(test, run), CAT.thresholds); }
+  catch (e) { return { verdict: 'BLOCKED', detail: e.message }; }
+}
+
+// ---------- rendering ----------
+const ICON = { PASS: ['pass', '✓'], FAIL: ['fail', '✗'], BLOCKED: ['warn', '!'], WAIVED: ['skip', 'W'], progress: ['progress', '…'], na: ['skip', '—'] };
+
+function renderAll() {
+  document.documentElement.lang = state.lang;
+  document.documentElement.dir = state.lang === 'he' ? 'rtl' : 'ltr';
+  document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t); });
+  $('catalogInfo').textContent = `${t('catalog')} ${CAT.catalog_version} · ${Object.keys(TESTS).length} ${t('tests')} · SRS-DVT-SW Rev B · ${t('tool')} ${DVT_AUTO.version}`;
+  $('unit').innerHTML = CAT.units.map((u) => {
+    const role = state.lang === 'he' && u.he.role ? u.he.role : u.role;
+    return `<option value="${esc(u.id)}"${u.id === state.unit ? ' selected' : ''}>${esc(u.id)} · ${esc(role)}</option>`;
+  }).join('');
+  $('lang').value = state.lang;
+  renderStatus();
+  renderPhases();
+  updateSummary();
+  renderFolder();
+  renderCloud();
+}
+
+function renderPhases() {
+  $('phases').innerHTML = CAT.phases.map((p) => `
+    <div class="category${openPhases.has(p.id) ? ' open' : ''}" id="phase-${p.id}">
+      <div class="cat-header" tabindex="0" role="button" aria-expanded="${openPhases.has(p.id)}" data-phase="${p.id}">
+        <span class="phase-no">${p.id}</span>
+        <span class="name">${esc(phaseText(p, 'name'))}</span>
+        <span class="gate">${p.gate ? esc(t('gate') + ': ' + phaseText(p, 'gate')) : ''}</span>
+        <span id="phase-badge-${p.id}"></span>
+        <span class="stats" id="phase-stats-${p.id}"></span>
+        <span class="arrow">▶</span>
+      </div>
+      <div class="cat-body">${p.tests.map(renderTest).join('')}</div>
+    </div>`).join('');
+  CAT.phases.forEach(updatePhaseStats);
+}
+
+function renderTest(tid) {
+  const test = TESTS[tid];
+  const na = !test.units.includes(state.unit);
+  const auto = DVT_AUTO.has(tid) || test.procedure_steps.some((s) => s.auto);
+  return `
+    <div class="test${na ? ' na' : ''}${openTests.has(tid) ? ' open' : ''}" id="test-${tid}">
+      <div class="test-head" tabindex="0" role="button" aria-expanded="${openTests.has(tid)}" data-test="${tid}">
+        <div class="test-status" id="status-${tid}">-</div>
+        <div>
+          <div class="test-name"><bdi class="test-id mono">${tid}</bdi> ${esc(tx(test, 'title'))}${test.safety_critical ? `<span class="badge crit">${t('safetyCritical')}</span>` : ''}${auto ? `<span class="badge auto">${t('auto')}</span>` : ''}${test.method !== 'Test' ? `<span class="badge meth">${t('inspection')}</span>` : ''}</div>
+        </div>
+        <div class="test-meta" id="meta-${tid}"></div>
+        <span class="arrow">▶</span>
+      </div>
+      <div class="test-body" id="body-${tid}">${openTests.has(tid) ? renderBody(tid) : ''}</div>
+    </div>`;
+}
+
+function renderBody(tid) {
+  const test = TESTS[tid];
+  let h = `<h4>${t('purpose')}</h4><p>${esc(tx(test, 'purpose'))}</p>`;
+  const rationale = tx(test, 'sample_rationale');
+  if (rationale) h += `<h4>${t('rationale')}</h4><p>${esc(rationale)}</p>`;
+  const runs = runsFor(tid, state.unit);
+  if (!runs.length) {
+    const who = test.units.length ? test.units.join(', ') : t('unitTbd');
+    return h + `<div class="na-note">${esc(t('notOwed')(state.unit, who))}</div>`;
+  }
+  const plan = tx(test, 'safety_plan');
+  if (plan && plan.length) h += `<div class="safety"><h4>${t('safetyPlan')}</h4><ul>${plan.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  const equip = test.equipment || [];
+  const pre = tx(test, 'preconditions') || [];
+  h += `<div class="cols"><div>${equip.length ? `<h4>${t('equipment')}</h4><ul>${equip.map((_, i) => `<li>${esc(equipText(test, i))}</li>`).join('')}</ul>` : ''}</div>
+        <div>${pre.length ? `<h4>${t('preconditions')}</h4><ul>${pre.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div></div>`;
+  if (test.dependencies && test.dependencies.length) {
+    h += `<h4>${t('dependencies')}</h4><p>${test.dependencies.map((d) => {
+      const ok = ['PASS', 'WAIVED'].includes(testVerdict(d, state.unit));
+      return `<bdi class="mono ${ok ? 'dep-ok' : 'dep-open'}">${d} ${ok ? '✓' : '…'}</bdi>`;
+    }).join(' &nbsp; ')}</p>`;
+  }
+  return h + renderRun(tid, runs);
+}
+
+function renderRun(tid, runs) {
+  const test = TESTS[tid];
+  let idx = Math.min(selectedRun[tid] || 0, runs.length - 1);
+  const run = runs[idx];
+  const rec = state.results[run.id] || {};
+  const locked = !!rec.verdict;
+  const vals = runValues(test, run);
+  const options = runs.map((r, i) => {
+    const v = state.results[r.id] && state.results[r.id].verdict;
+    const vl = variantLabel(r.variant);
+    return `<option value="${i}"${i === idx ? ' selected' : ''}>${t('run')} ${i + 1}/${runs.length}${vl ? ' · ' + esc(vl) : ''}${runs.length > test.variants.length ? ` · ${t('repetition')} ${r.rep}` : ''}${v ? ' · ' + v : ''}</option>`;
+  }).join('');
+  let h = `<div class="run-bar">
+      <button class="btn btn-outline btn-small" data-act="prev" data-test="${tid}" ${idx === 0 ? 'disabled' : ''} aria-label="previous run">${t('prev')}</button>
+      <select data-act="pick" data-test="${tid}" aria-label="${t('run')}">${options}</select>
+      <button class="btn btn-outline btn-small" data-act="next" data-test="${tid}" ${idx === runs.length - 1 ? 'disabled' : ''} aria-label="next run">${t('next')}</button>
+    </div>`;
+  const vl = variantLabel(run.variant);
+  if (vl) h += `<div class="variant"><bdi class="mono">${esc(vl)}</bdi>${caseText(test, run.variant) ? ' - ' + esc(caseText(test, run.variant)) : ''}</div>`;
+
+  const captured = new Set();
+  h += `<h4>${t('procedure')}</h4>`;
+  h += DVT_AUTO.has(tid) ? DVT_AUTO.card(test, run, locked) + renderTraceCharts(test, run) : '';   // one Start button for the whole test (dvt-auto.js), then its traces as charts
+  test.procedure_steps.forEach((s, i) => {
+    const fields = (s.capture || []).map((n) => test.data_fields.find((f) => f.name === n)).filter(Boolean);
+    fields.forEach((f) => captured.add(f.name));
+    h += `<div class="step"><div class="step-text"><span class="step-no">${i + 1}.</span>${esc(stepText(test, i))}</div>
+      ${s.tool === 'auto_script' ? DVT_AUTO.stepNote() : s.tool === 'uv_linearity' ? renderAutoCard(test, run, locked) : s.tool === 'door_open_cure' ? renderDoorCard(test, run, locked) : s.tool === 'tc08_record' ? renderTc08Card(test, run, locked) : s.tool === 'bench' ? renderBenchCard(test, run, locked) : GUIDED[s.tool] ? renderGuidedCard(test, run, locked, s.tool) : s.auto || s.tool ? `<div class="auto-note">${esc(t('autoStep')(s.tool || 'console'))}</div>` : ''}
+      ${fields.length ? `<div class="fields">${fields.map((f) => renderField(test, run, f, vals, locked)).join('')}</div>` : ''}</div>`;
+  });
+  const rest = test.data_fields.filter((f) => !captured.has(f.name));
+  if (rest.length) h += `<div class="step"><div class="step-text">${t('otherData')}</div><div class="fields">${rest.map((f) => renderField(test, run, f, vals, locked)).join('')}</div></div>`;
+
+  const ev = locked ? { verdict: rec.verdict, detail: rec.detail || '' } : evaluateRun(test, run);
+  h += `<div class="criteria"><h4 style="margin-top:0">${t('criteria')}</h4><code dir="ltr">${esc(test.pass_criteria)}</code>
+      <span class="verdict ${ev.verdict}" id="verdict-${tid}">${ev.verdict}</span><span class="verdict-detail" id="vdetail-${tid}"><bdi>${esc(ev.detail)}</bdi></span></div>`;
+  h += `<div class="record">
+      <textarea data-act="note" data-test="${tid}" placeholder="${esc(t('note'))}" aria-label="${esc(t('note'))}" ${locked ? 'readonly' : ''}>${esc(rec.note || '')}</textarea>
+      ${locked ? `<button class="btn btn-outline btn-small" data-act="reopen" data-test="${tid}">${t('reopen')}</button>`
+               : `<button class="btn btn-run btn-small" data-act="record" data-test="${tid}">${t('record')}</button>`}
+    </div>`;
+  if (locked) h += `<div class="recorded">${esc(t('recordedBy')(rec.verdict, rec.by, new Date(rec.at).toLocaleString()))}</div>`;
+  return h;
+}
+
+function renderField(test, run, f, vals, locked) {
+  const id = `f-${test.test_id}-${f.name}`;
+  const fromVariant = Object.prototype.hasOwnProperty.call(run.variant, f.name);
+  const measured = ((state.results[run.id] || {}).autoFields || []).includes(f.name);   // filled by the machine: not typed over
+  const v = vals[f.name];
+  const dis = locked || fromVariant || measured ? ' disabled' : '';
+  let input;
+  if (f.type === 'bool') {
+    input = `<select id="${id}" data-field="${f.name}" data-test="${test.test_id}"${dis}>
+      <option value="">${t('choose')}</option><option value="true"${v === true ? ' selected' : ''}>${t('yes')}</option><option value="false"${v === false ? ' selected' : ''}>${t('no')}</option></select>`;
+  } else if (f.type === 'enum') {
+    input = `<select id="${id}" data-field="${f.name}" data-test="${test.test_id}"${dis}><option value="">${t('choose')}</option>${(f.values || []).map((x) => `<option value="${esc(x)}"${v === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+  } else {
+    const num = f.type === 'float' || f.type === 'int';
+    input = `<input id="${id}" dir="ltr" data-field="${f.name}" data-test="${test.test_id}" ${num ? `type="number" step="${f.type === 'int' ? 1 : 'any'}"` : 'type="text"'} value="${v === undefined || v === null ? '' : esc(v)}"${dis}>`;
+  }
+  const filled = v !== undefined && v !== null && v !== '';
+  const note = fieldNote(test, f);
+  return `<div class="field${filled ? ' filled' : ''}"><label for="${id}"><bdi class="mono">${esc(f.name)}</bdi>${f.unit ? ` <span class="unit">[${esc(f.unit)}]</span>` : ''}</label>${input}${note ? `<span class="note">${esc(note)}</span>` : ''}</div>`;
+}
+
+function updateTestHead(tid) {
+  const v = testVerdict(tid, state.unit);
+  const [cls, icon] = ICON[v] || ['', '-'];
+  const el = $('status-' + tid);
+  el.className = 'test-status ' + cls;
+  el.textContent = icon;
+  el.title = v || '';
+  const runs = runsFor(tid, state.unit);
+  const done = runs.filter((r) => state.results[r.id] && state.results[r.id].verdict).length;
+  const test = TESTS[tid];
+  $('meta-' + tid).textContent = (runs.length ? t('runsOf')(done, runs.length) : '—') + (test.duration_est_min ? ` · ~${test.duration_est_min} ${t('min')}` : '');
+}
+
+function updatePhaseStats(p) {
+  const owed = p.tests.flatMap((tid) => runsFor(tid, state.unit));
+  const vs = owed.map((r) => state.results[r.id] && state.results[r.id].verdict);
+  const n = (k) => vs.filter((v) => v === k).length;
+  $('phase-stats-' + p.id).innerHTML = owed.length
+    ? `<span style="color:#4caf50">${n('PASS')}P</span> / <span style="color:#f44336">${n('FAIL')}F</span> / <span style="color:#ff9800">${n('BLOCKED')}B</span> / ${owed.length}`
+    : '—';
+  $('phase-badge-' + p.id).innerHTML = owed.length && phaseClosed(p, state.unit) ? `<span class="closed-badge">${t('closed')}</span>` : '';
+  p.tests.forEach(updateTestHead);
+}
+
+function updateSummary() {
+  const owed = Object.keys(TESTS).flatMap((tid) => runsFor(tid, state.unit));
+  const vs = owed.map((r) => state.results[r.id] && state.results[r.id].verdict);
+  const n = (k) => vs.filter((v) => v === k).length;
+  const done = vs.filter(Boolean).length;
+  $('sumTotal').textContent = owed.length;
+  $('sumPass').textContent = n('PASS');
+  $('sumFail').textContent = n('FAIL');
+  $('sumBlocked').textContent = n('BLOCKED');
+  $('sumOpen').textContent = owed.length - done;
+  $('progressFill').style.width = owed.length ? Math.round((done / owed.length) * 100) + '%' : '0%';
+}
+
+function refreshTest(tid) {
+  const body = $('body-' + tid);
+  if (openTests.has(tid)) { body.innerHTML = renderBody(tid); drawCharts(tid); drawDecay(tid); drawBench(tid); drawTc08(tid); drawTraces(tid); }
+  const p = CAT.phases.find((x) => x.tests.includes(tid));
+  updatePhaseStats(p);
+  updateSummary();
+}
+
+function liveVerdict(tid) {
+  const test = TESTS[tid];
+  const runs = runsFor(tid, state.unit);
+  const run = runs[Math.min(selectedRun[tid] || 0, runs.length - 1)];
+  const ev = evaluateRun(test, run);
+  const el = $('verdict-' + tid);
+  el.className = 'verdict ' + ev.verdict;
+  el.textContent = ev.verdict;
+  $('vdetail-' + tid).innerHTML = `<bdi>${esc(ev.detail)}</bdi>`;
+}
+
+// ---------- automatic measurement on the machine (tool: uv_linearity -> /api/dvt/*) ----------
+const AUTO = {};                     // tid -> { busy, text, cls, runId }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function api(path, method = 'GET') {
+  const r = await fetch(state.api + path, { method, signal: AbortSignal.timeout(10000) });
+  if (r.status === 404) throw new Error(t('endpointMissing')(path.split('?')[0], machineInfo));   // older machine software
+  return r.json();
+}
+function sweepSteps(test) {
+  return test.data_fields.map((f) => /^irradiance_(\d+)$/.exec(f.name)).filter(Boolean).map((m) => Number(m[1])).sort((a, b) => a - b);
+}
+
+function renderAutoCard(test, run, locked) {
+  const tid = test.test_id;
+  const a = AUTO[tid] && AUTO[tid].runId === run.id ? AUTO[tid] : null;
+  const busy = Object.values(AUTO).some((x) => x.busy);
+  const rec = state.results[run.id] || {};
+  return `<div class="auto-card">
+      <div class="auto-note" style="margin:0 0 8px">${esc(t('autoIntro'))}</div>
+      <div class="auto-row">
+        <button class="btn btn-auto btn-small" data-act="auto" data-test="${tid}" ${locked || busy ? 'disabled' : ''}>▶ ${t('runOnMachine')}</button>
+        ${a && a.busy ? `<button class="btn btn-outline btn-small" data-act="auto-abort" data-test="${tid}">■ ${t('abortRun')}</button>` : ''}
+        <span class="auto-text ${a ? a.cls || '' : ''}" id="auto-text-${tid}">${a ? esc(a.text) : ''}</span>
+      </div>
+      ${rec.auto && rec.auto.steps && rec.auto.steps.length ? `<canvas class="chart" id="chart-${tid}" width="640" height="240" aria-label="irradiance against commanded power"></canvas>` : ''}
+    </div>`;
+}
+
+function autoSay(tid, text, cls = '') {
+  if (!AUTO[tid]) return;
+  AUTO[tid].text = text;
+  AUTO[tid].cls = cls;
+  const el = $('auto-text-' + tid);
+  if (el) { el.textContent = text; el.className = 'auto-text ' + cls; }
+}
+
+function linearFit(pts) {
+  if (pts.length < 2) return null;
+  const n = pts.length;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
+  for (const [x, y] of pts) { sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y; }
+  const d = n * sxx - sx * sx;
+  if (d === 0) return null;
+  const m = (n * sxy - sx * sy) / d, b = (sy - m * sx) / n;
+  const ssTot = syy - (sy * sy) / n;
+  const ssRes = pts.reduce((acc, [x, y]) => acc + (y - (m * x + b)) ** 2, 0);
+  return { m, b, r2: ssTot ? 1 - ssRes / ssTot : 1 };
+}
+
+/** Same numbers as DVT/dvt_tool/instruments/uvsweep.py analyze() + values(). */
+function analyzeSweep(st) {
+  const r4 = (v) => Math.round(v * 1e4) / 1e4;
+  const has = (v) => v !== null && v !== undefined;
+  const steps = (st.steps || []).map((x) => ({ i: x.intensity, mean: x.mean_mw_cm2, led: x.led_max_c }));
+  const measured = steps.filter((x) => has(x.mean));
+  const want = (st.config && st.config.steps) || [];
+  const v = {
+    meter_detected: !!st.meter,
+    meter_wavelength_verified: !!st.meter_wavelength_verified,
+    all_steps_measured: want.length > 0 && JSON.stringify(steps.map((x) => x.i)) === JSON.stringify(want) && steps.every((x) => has(x.mean)),
+  };
+  if (has(st.meter_wavelength_nm)) v.meter_wavelength_nm = st.meter_wavelength_nm;
+  if (st.meter && st.meter.head) v.meter_head = String(st.meter.head);
+  if (has(st.dark_mw_cm2)) v.dark_mw_cm2 = r4(st.dark_mw_cm2);
+  measured.forEach((x) => { v['irradiance_' + x.i] = Math.round(x.mean * 1000) / 1000; });
+  let fit = null;
+  if (measured.length >= 2) {
+    fit = linearFit(measured.map((x) => [x.i, x.mean]));
+    if (fit) {
+      const full = fit.m * 100 + fit.b;
+      const devs = measured.map((x) => (full ? Math.abs(((x.mean - (fit.m * x.i + fit.b)) / full) * 100) : null)).filter((d) => d !== null);
+      Object.assign(v, { slope_mw_per_pct: r4(fit.m), intercept_mw_cm2: r4(fit.b), r2: r4(fit.r2) });
+      if (devs.length) v.max_dev_pct = r4(Math.max(...devs));
+    }
+    v.monotonic = measured.every((x, k) => k === 0 || x.mean > measured[k - 1].mean);
+    v.gain_30 = r4(measured[0].mean / measured[0].i);
+    v.gain_100 = r4(measured[measured.length - 1].mean / measured[measured.length - 1].i);
+    v.graph_attached = true;                     // drawn on the page from the sweep stored with the run
+  }
+  const leds = steps.map((x) => x.led).filter(has);
+  if (leds.length) v.led_max_c = r4(Math.max(...leds));
+  return { values: v, fit, steps };
+}
+
+async function runUvSweep(tid) {
+  const test = TESTS[tid];
+  const run = currentRun(tid);
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  if (!state.api || !machineInfo) { AUTO[tid] = { runId: run.id }; autoSay(tid, t('needMachine'), 'fail'); return; }
+  if (Object.values(AUTO).some((x) => x.busy)) { alert(t('busyElsewhere')); return; }
+  const nm = test.uv_wavelength_nm || 405;
+  const steps = sweepSteps(test);
+  AUTO[tid] = { busy: true, runId: run.id, text: t('autoMeter') };
+  refreshTest(tid);
+  try {
+    const m = await api('/api/dvt/meter');
+    if (!m.present) throw new Error(m.message || 'no StarBright on the machine');
+    if (m.wavelength_nm !== nm) {
+      autoSay(tid, t('autoSetWl')(nm));
+      const w = await api(`/api/dvt/meter/wavelength?nm=${nm}`, 'POST');
+      if (!w.ok) throw new Error(w.message || `the meter did not take ${nm} nm`);
+    }
+    const start = await api(`/api/dvt/uv-sweep?wavelength=${nm}&steps=${steps.join(',')}&dwell=10&baseline=5&settle=5&hz=5`, 'POST');
+    if (!start.ok) throw new Error(start.message || 'refused');
+    log('info', `${run.id}: ${start.message}`);
+    let st;
+    do {
+      await sleep(1000);
+      st = await api('/api/dvt/uv-sweep?samples=0');
+      const i = st.phase === 'step' && st.step_index !== null && st.step_index !== undefined ? st.step_index : null;
+      autoSay(tid, t('autoRunning')(st.phase, st.intensity, st.reading, i, steps.length));
+    } while (st.running);
+    st = await api('/api/dvt/uv-sweep');
+    const res = analyzeSweep(st);
+    const known = new Set(test.data_fields.map((f) => f.name));
+    const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+    if (!rec.verdict) {
+      for (const [k, val] of Object.entries(res.values)) if (known.has(k)) rec.values[k] = val;
+      rec.autoFields = Object.keys(res.values).filter((k) => known.has(k));
+      rec.auto = { kind: 'uv_sweep', status: st.status, error: st.error, at: new Date().toISOString(), machine: machineInfo,
+                   config: st.config, meter: st.meter, dark: st.dark_mw_cm2, steps: st.steps, samples: st.samples };
+      persist(run.id, true);
+      journal('measurement', run.id);
+    }
+    const ok = st.status === 'OK';
+    AUTO[tid] = { busy: false, runId: run.id, text: ok ? t('autoDone')(st.status) : t('autoFailed')(st.error || st.status), cls: ok ? 'pass' : 'fail' };
+    log(ok ? 'pass' : 'fail', t('logAuto')(run.id, st.status + (st.error ? ' - ' + st.error : '')));
+  } catch (e) {
+    AUTO[tid] = { busy: false, runId: run.id, text: t('autoFailed')(e.message), cls: 'fail' };
+    log('fail', `${run.id}: ${e.message}`);
+  }
+  refreshTest(tid);
+}
+
+// ---------- DVT-SAF-012 step 1 (tool: door_open_cure): the door opened, the machine tries to start a cure, the StarBright watches ----------
+const DOOR_UV_THRESHOLD = 0.5;       // mW/cm2 above the dark reading = UV seen (catalog field note: CONFIRM)
+const DOOR_WATCH_MS = 5000;
+
+function renderDoorCard(test, run, locked) {
+  const tid = test.test_id;
+  const a = AUTO[tid] && AUTO[tid].runId === run.id ? AUTO[tid] : null;
+  const busy = Object.values(AUTO).some((x) => x.busy);
+  return `<div class="auto-card">
+      <div class="auto-note" style="margin:0 0 8px">${esc(t('doorIntro')(DOOR_UV_THRESHOLD))}</div>
+      <div class="auto-row">
+        <button class="btn btn-auto btn-small" data-act="door-auto" data-test="${tid}" ${locked || busy ? 'disabled' : ''}>▶ ${t('doorStart')}</button>
+        ${a && a.busy ? `<button class="btn btn-outline btn-small" data-act="door-stop" data-test="${tid}">■ ${t('abortRun')}</button>` : ''}
+        <span class="auto-text ${a ? a.cls || '' : ''}" id="auto-text-${tid}">${a ? esc(a.text) : ''}</span>
+      </div>
+    </div>`;
+}
+
+async function postJson(path, body) {
+  const r = await fetch(state.api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
+  return r.json();
+}
+
+async function runDoorOpenCure(tid) {
+  const test = TESTS[tid];
+  const run = currentRun(tid);
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  if (!state.api || !machineInfo) { AUTO[tid] = { runId: run.id }; autoSay(tid, t('needMachine'), 'fail'); return; }
+  if (Object.values(AUTO).some((x) => x.busy)) { alert(t('busyElsewhere')); return; }
+  AUTO[tid] = { busy: true, runId: run.id, text: t('autoMeter') };
+  refreshTest(tid);
+  const stopped = () => AUTO[tid] && AUTO[tid].stop;
+  const t0 = performance.now();
+  const trace = [];                  // [t_s, mW/cm2, phase, door_open, uv_on]
+  const sec = () => Math.round(performance.now() - t0) / 1000;
+  const read = async (phase) => {
+    const [m, s] = await Promise.all([api('/api/dvt/meter'), api('/api/state')]);
+    const v = m.present && typeof m.reading_mw_cm2 === 'number' ? m.reading_mw_cm2 : null;
+    trace.push([sec(), v, phase, s.doorClosed === false, !!s.uvOn]);
+    await sleep(150);                  // about 5 readings a second
+    return { v, s };
+  };
+  let accepted = { recipe: false, uv: false };
+  const allOff = async () => {
+    try { await api('/api/uv?on=0', 'POST'); } catch (e) { /* next */ }
+    if (accepted.recipe) { try { await api('/api/recipe/abort', 'POST'); } catch (e) { /* next */ } }
+    if (accepted.recipe || accepted.uv) { try { await api('/api/cure/stop?immediate=1', 'POST'); } catch (e) { /* best effort */ } }
+  };
+  try {
+    const st0 = await api('/api/state');
+    if (st0.uvOn || st0.isHeating || st0.isCooling || st0.nitrogenActive) throw new Error(t('doorBusy'));
+    const m = await api('/api/dvt/meter');
+    if (!m.present) throw new Error(m.message || 'no StarBright on the machine');
+    if (m.wavelength_nm !== 405) {
+      autoSay(tid, t('autoSetWl')(405));
+      const w = await api('/api/dvt/meter/wavelength?nm=405', 'POST');
+      if (!w.ok) throw new Error(w.message || 'the meter did not take 405 nm');
+    }
+
+    try { await api('/api/door/open', 'POST'); } catch (e) { /* the door lock release is best effort; the operator may open it otherwise */ }
+    autoSay(tid, t('doorOpenNow'));
+    const until = Date.now() + 60000;
+    let opened = false;
+    while (Date.now() < until && !stopped()) {
+      const s = await api('/api/state');
+      if (s.doorClosed === false) { opened = true; break; }
+      await sleep(300);
+    }
+    if (stopped()) throw new Error(t('doorStopped'));
+    if (!opened) throw new Error(t('doorNotSeen'));
+
+    autoSay(tid, t('doorDark'));
+    const darkEnd = performance.now() + 2000;
+    while (performance.now() < darkEnd) await read('dark');
+    const darkVals = trace.filter((r) => r[2] === 'dark' && r[1] !== null).map((r) => r[1]);
+    if (!darkVals.length) throw new Error(t('doorNoReading'));
+    const dark = Math.max(...darkVals);
+    if (trace.some((r) => r[2] === 'dark' && !r[3])) throw new Error(t('doorClosedDuring'));
+
+    autoSay(tid, t('doorAttempt'));
+    const material = { id: 'dvt-saf-012', name: 'DVT-SAF-012 door interlock', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
+    const rRecipe = await postJson('/api/recipe/start', { material });
+    accepted.recipe = rRecipe.ok === true;
+    let recipeStop = null;
+    if (accepted.recipe) {           // "started" can still be stopped by the program's own pre-flight a moment later (6015 door open)
+      const until3 = Date.now() + 3000;
+      while (Date.now() < until3) {
+        const rs = await api('/api/recipe/status');
+        if (String(rs.state).toLowerCase() === 'error') { recipeStop = { state: rs.state, message: rs.message, code: rs.errorCode }; break; }
+        await sleep(300);
+      }
+      if (recipeStop) accepted.recipe = false;
+    }
+    trace.push([sec(), null, 'recipe_start:' + (rRecipe.ok ? (recipeStop ? `stopped by the machine (${recipeStop.code} ${recipeStop.message})` : 'accepted') : 'refused'), null, null]);
+    const rUv = await api('/api/uv?on=1&intensity=30&wavelength=405', 'POST');
+    accepted.uv = rUv.ok === true;
+    trace.push([sec(), null, 'uv_command:' + (accepted.uv ? 'accepted' : 'refused'), null, null]);
+    if (accepted.recipe || accepted.uv) log('fail', t('doorAccepted')(run.id));
+
+    let peak = dark;
+    let uvOnSeen = false;
+    let doorStayed = true;
+    const watchEnd = performance.now() + DOOR_WATCH_MS;
+    while (performance.now() < watchEnd && !stopped()) {
+      const { v, s } = await read('watch');
+      if (v !== null) peak = Math.max(peak, v);
+      if (s.uvOn) uvOnSeen = true;
+      if (s.doorClosed !== false) doorStayed = false;
+      if (v !== null && v - dark > DOOR_UV_THRESHOLD) { await allOff(); break; }     // UV seen: off at once, the step has failed
+    }
+    await allOff();
+    if (stopped()) throw new Error(t('doorStopped'));
+    if (!doorStayed) throw new Error(t('doorClosedDuring'));
+
+    const uvDetected = peak - dark > DOOR_UV_THRESHOLD;
+    const values = {
+      door_open_detected: true,
+      cure_start_refused: !accepted.recipe,
+      uv_command_refused: !accepted.uv,
+      uv_detected: uvDetected,
+      uv_peak_above_dark: Math.round(Math.max(0, peak - dark) * 1e4) / 1e4,
+      cure_start_inhibited: !accepted.recipe && !accepted.uv && !uvDetected && !uvOnSeen,
+    };
+    const known = new Set(test.data_fields.map((f) => f.name));
+    const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+    if (!rec.verdict) {
+      for (const [k, val] of Object.entries(values)) if (known.has(k)) rec.values[k] = val;
+      rec.autoFields = [...new Set([...(rec.autoFields || []), ...Object.keys(values).filter((k) => known.has(k))])];
+      setAuto(rec, { kind: 'door_open_cure', status: values.cure_start_inhibited ? 'INHIBITED' : 'NOT_INHIBITED', at: new Date().toISOString(),
+                   machine: machineInfo, dark_mw_cm2: dark, peak_mw_cm2: peak, threshold_mw_cm2: DOOR_UV_THRESHOLD,
+                   recipe_response: rRecipe, recipe_stopped_by_machine: recipeStop, uv_response: rUv, uv_on_seen: uvOnSeen, samples: trace,
+                   columns: ['t_s', 'irradiance_mw_cm2', 'phase', 'door_open', 'uv_on'] });
+      persist(run.id, true);
+      journal('measurement', run.id);
+    }
+    const ok = values.cure_start_inhibited;
+    AUTO[tid] = { busy: false, runId: run.id, text: ok ? t('doorPass')(values.uv_peak_above_dark) : t('doorFail')(values), cls: ok ? 'pass' : 'fail',
+                  advance: values };
+    log(ok ? 'pass' : 'fail', `${run.id}: ${AUTO[tid].text}`);
+  } catch (e) {
+    await allOff();
+    AUTO[tid] = { busy: false, runId: run.id, text: t('autoFailed')(e.message), cls: 'fail' };
+    log('fail', `${run.id}: ${e.message}`);
+  }
+  refreshTest(tid);
+  if (AUTO[tid] && AUTO[tid].advance) { const v = AUTO[tid].advance; delete AUTO[tid].advance; await autoAdvance(tid, 'door_open_cure', v); }
+}
+
+// ---------- TC-08 on the machine (tool: tc08_record): readiness gate, then CH1 logged at 1 Hz ----------
+const TC08 = { ready: {}, rec: null, fan: {} };   // ready[tid] = last check; rec = { tid, runId, timer, t0, max, n, badSince }; fan[tid] = { state, at, message } for tests with external heat
+const TC_MIN_C = -25, TC_MAX_C = 400;    // the machine's valid CH1 range (PicoLogTc08Probe; 400 leaves headroom above a 250 C cutout)
+const TC_OPEN_MARGIN_C = 60;             // above the cold junction, with nothing running = an open thermocouple
+const TC_JITTER_OPEN_C = 5, TC_JITTER_POLLS = 3;   // external heat: a reading moving this much across 3 polls (~6 s) is an open input, not a body
+TC08.hist = {};                          // hist[tid] = the last CH1 readings of the readiness poll
+let machineState = null;                 // the last /api/state the readiness poll saw
+
+function renderTc08Card(test, run, locked) {
+  const tid = test.test_id;
+  const recording = TC08.rec && TC08.rec.runId === run.id;
+  const a = AUTO[tid] && AUTO[tid].runId === run.id ? AUTO[tid] : null;
+  const row = (id, label) => `<div class="tc-row" id="tc-${id}-${tid}"><span class="tc-dot"></span><span class="tc-label">${esc(label)}</span><span class="tc-val"></span></div>`;
+  return `<div class="auto-card">
+      <div class="tc-checks">${row('machine', t('tcMachine'))}${row('dev', t('tcDevice'))}${row('ch1', t('tcCh1'))}${row('amb', t('tcAmbient'))}${test.external_heat ? row('fan', t('tcFan')) : ''}</div>
+      <div class="auto-row" style="margin-top:8px">
+        ${recording ? `<button class="btn btn-outline btn-small" data-act="tc-stop" data-test="${tid}">■ ${t('tcStop')}</button>`
+                    : `<button class="btn btn-auto btn-small" id="tc-start-${tid}" data-act="tc-start" data-test="${tid}" disabled>▶ ${t('tcStart')}</button>`}
+        ${!recording && !locked && hasRecording(run) ? `<button class="btn btn-outline btn-small" data-act="tc-reread" data-test="${tid}">${t('tcReread')}</button>` : ''}
+        <span class="auto-text ${a ? a.cls || '' : ''}" id="auto-text-${tid}">${a ? esc(a.text) : recording ? '' : esc(t('tcNotReady'))}</span>
+      </div>
+      ${hasRecording(run) || recording ? `<canvas class="chart" id="tc08-${tid}" width="720" height="280" aria-label="heater body and chamber against time"></canvas>` : ''}
+    </div>`;
+}
+
+/** The recording as a graph: heater body (CH1) and chamber against time, with the trip and the reset marked. */
+function drawTc08(tid) {
+  const canvas = $('tc08-' + tid);
+  if (!canvas) return;
+  const rec = state.results[currentRun(tid).id];
+  const a = rec && ((rec.autos && rec.autos.tc08_record) || (rec.auto && rec.auto.kind === 'tc08_record' ? rec.auto : null));
+  if (!a || !a.samples || !a.samples.length) return;
+  const rows = a.samples;
+  const body = rows.filter((r) => typeof r[1] === 'number').map((r) => [r[0] / 60, r[1]]);
+  const chamber = rows.filter((r) => typeof r[2] === 'number').map((r) => [r[0] / 60, r[2]]);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, L = 56, R = 16, T = 22, B = 36;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  if (!body.length && !chamber.length) return;
+  const all = body.concat(chamber);
+  const xmax = Math.max(1, ...all.map((p) => p[0]));
+  const ymin = Math.min(...all.map((p) => p[1])) - 5, ymax = Math.max(...all.map((p) => p[1])) + 5;
+  const X = (x) => L + (x / xmax) * (W - L - R);
+  const Y = (y) => H - B - ((y - ymin) / (ymax - ymin)) * (H - T - B);
+  ctx.font = '11px Segoe UI, sans-serif'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = ymin + ((ymax - ymin) * k) / 4;
+    ctx.strokeStyle = '#2a2a2a'; ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(W - R, Y(v)); ctx.stroke();
+    ctx.fillStyle = '#777'; ctx.textAlign = 'right'; ctx.fillText(v.toFixed(0), L - 6, Y(v) + 4);
+  }
+  ctx.textAlign = 'center';
+  const step = xmax > 40 ? 10 : xmax > 15 ? 5 : xmax > 6 ? 2 : 1;
+  for (let x = 0; x <= xmax; x += step) ctx.fillText(x + ' min', X(x), H - B + 16);
+  ctx.save(); ctx.translate(14, (H - B + T) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('°C', 0, 0); ctx.restore();
+  const line = (pts, color) => {
+    if (!pts.length) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    pts.forEach((p, k) => (k ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
+  };
+  line(chamber, '#ff9800');
+  line(body, '#64b5f6');
+  const m = rec.marks || {};
+  const vline = (sec, color, label, row) => {
+    if (sec === null || sec === undefined) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.beginPath();
+    ctx.moveTo(X(sec / 60), T); ctx.lineTo(X(sec / 60), H - B); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.fillText(label, X(sec / 60) + 3, T + 12 + row * 13);
+  };
+  vline(m.onset_s, '#9e9e9e', t('gOnset'), 0);
+  vline(m.trip_s, '#f44336', t('gTrip'), 1);
+  vline(m.reset_s, '#4caf50', t('gReset'), 2);
+  const v = rec.values || {};
+  ctx.fillStyle = '#ddd'; ctx.textAlign = 'right';
+  ctx.fillText(`${t('gLegend')} · ${v.cutout_trip_temp ?? '-'} °C · ${v.time_to_trip ?? '-'} min · ${v.reset_temp ?? '-'} °C`, W - R, T - 8);
+}
+
+/** Does this run already hold a TC-08 recording with samples in it? */
+function hasRecording(run) {
+  const rec = state.results[run.id];
+  const a = rec && ((rec.autos && rec.autos.tc08_record) || (rec.auto && rec.auto.kind === 'tc08_record' ? rec.auto : null));
+  return !!(a && a.samples && a.samples.length);
+}
+
+/** Read the stored recording again - a run measured before an analysis improvement gets it now. */
+function rereadTc08(tid) {
+  const run = currentRun(tid);
+  const rec = state.results[run.id];
+  if (!rec || rec.verdict) return;
+  const read = DVT_AUTO.fromTrace(TESTS[tid], rec);
+  AUTO[tid] = { busy: false, runId: run.id, cls: read.filled.length ? 'pass' : 'warn',
+                text: read.filled.length ? t('tcRead')(read.filled.length) : read.message || t('tcNothingRead') };
+  if (read.message) log(read.filled.length ? 'pass' : 'warn', `${run.id}: ${read.message}`);
+  persist(run.id, true);
+  refreshTest(tid);
+}
+
+function setTcRow(tid, id, ok, value) {
+  const el = $(`tc-${id}-${tid}`);
+  if (!el) return;
+  el.classList.toggle('ok', ok === true);
+  el.classList.toggle('bad', ok === false);
+  el.classList.toggle('warn', ok === 'warn');
+  el.querySelector('.tc-val').textContent = value || '';
+}
+
+/**
+ * A test that heats from an external supply (catalog external_heat) needs the heater fan running from the moment
+ * the element can be fed - not only once the operator presses Start - so the fan goes on as soon as the readiness
+ * check sees the TC-08 on the machine (DVT_AUTO.prepare turns it on and waits for the tach; finish gives it back).
+ */
+function ensureHeaterFan(tid) {
+  const f = TC08.fan[tid];
+  if (f && (f.state === 'on' || f.state === 'pending')) return f;
+  if (f && f.state === 'failed' && Date.now() - f.at < 10000) return f;     // try again every 10 s (e.g. the start-up self-test)
+  TC08.fan[tid] = { state: 'pending', at: Date.now(), message: '' };
+  DVT_AUTO.prepare(TESTS[tid]).then((r) => {
+    TC08.fan[tid] = { state: r.ok ? 'on' : 'failed', at: Date.now(), message: r.message || '' };
+    log(r.ok ? 'info' : 'warn', `${tid}: ${r.message || (r.ok ? 'heater fan on' : 'heater fan not on')}`);
+    checkTc08(tid);
+  }).catch((e) => { TC08.fan[tid] = { state: 'failed', at: Date.now(), message: String(e.message || e) }; });
+  return TC08.fan[tid];
+}
+
+async function checkTc08(tid) {
+  const machine = !!machineInfo;
+  let st = null;
+  if (machine) {
+    try { st = await api('/api/dev/picolog/status'); } catch (e) { st = null; }
+    try { machineState = await api('/api/state'); } catch (e) { /* keep the last one */ }
+  }
+  const driverMissing = !!(st && st.error && /driver unavailable|usbtc08/i.test(st.error));
+  const connected = !!(st && st.connected);
+  const temp = st && typeof st.temperature === 'number' ? st.temperature : null;
+  const inBand = connected && st.ch1Available && temp !== null && temp >= TC_MIN_C && temp <= TC_MAX_C;
+  const ambient = st && typeof st.ambient === 'number' ? st.ambient : null;       // the TC-08's cold junction (sCureBox 1.0.39+)
+  // An open thermocouple does not read null: it floats near the top of the valid band, so an in-band
+  // reading is not enough. The cold junction is the reference - the instrument's terminal block is at
+  // ambient, so a probe far above it while nothing runs is open, not hot (DVT_AUTO.P.tcCheck does the same).
+  const running = !!(machineState && (machineState.uvOn || machineState.isHeating));
+  const floating = inBand && !running && ambient !== null && temp - ambient > TC_OPEN_MARGIN_C;
+  // With the heater fed from an external supply (catalog external_heat) the machine never reports heating while the
+  // body is genuinely hot, so there the rule cannot decide: it becomes a warning and Start asks the operator.
+  // Level alone cannot tell them apart there, behaviour can: an open input FLOATS (105 then 180 C within minutes on the
+  // idle unit) while a hot body moves less than a degree between polls - so a reading that jumps more than
+  // TC_JITTER_OPEN_C across the last polls is open even on an external-heat test, and a steady one is a hot body.
+  const external = !!(TESTS[tid] && TESTS[tid].external_heat);
+  const hist = (TC08.hist[tid] = (TC08.hist[tid] || []).concat(temp === null ? [] : [temp]).slice(-TC_JITTER_POLLS));
+  const jittery = hist.length >= 2 && Math.max(...hist) - Math.min(...hist) > TC_JITTER_OPEN_C;
+  const steady = external && floating && hist.length >= TC_JITTER_POLLS && !jittery;
+  const ch1 = inBand && (!floating || steady);
+  let fan = null;
+  if (external && machine && connected && inBand && !(TC08.rec && TC08.rec.tid === tid)) fan = ensureHeaterFan(tid);
+  const fanOk = !external || !!(fan && fan.state === 'on');
+  const ready = machine && connected && ch1 && fanOk;
+  TC08.ready[tid] = { ready, temp, ambient, floating: steady, device: st && st.deviceInfo };
+  setTcRow(tid, 'machine', machine, machine ? machineInfo : t('needMachine'));
+  setTcRow(tid, 'dev', machine ? connected : null, !machine ? '' : connected ? (st.deviceInfo || '') : driverMissing ? t('tcDriver') : t('tcPlug'));
+  setTcRow(tid, 'ch1', !connected ? null : steady ? 'warn' : ch1,
+    !connected ? '' : steady ? t('tcOpenExt')(temp, ambient) : ch1 ? temp.toFixed(1) + ' °C'
+      : floating && external && !jittery ? t('tcSettling') : floating ? t('tcOpen')(temp, ambient) : t('tcNoCh1'));
+  // the ambient / reference a run records is the REAL thermocouple on CH2 when one is plugged in (sCureBox 1.0.50+, user
+  // 2026-10-01); the cold junction stays the fallback and remains the reference of the open-probe rule above
+  const reference = st && typeof st.ch2 === 'number' ? st.ch2 : null;
+  TC08.ready[tid].reference = reference;
+  const ambRow = $(`tc-amb-${tid}`);
+  if (ambRow) ambRow.querySelector('.tc-label').textContent = reference !== null ? t('tcRef') : t('tcAmbient');
+  const shown = reference !== null ? reference : ambient;
+  setTcRow(tid, 'amb', connected ? shown !== null : null, !connected ? '' : shown !== null ? shown.toFixed(1) + ' °C' : t('tcNoAmbient'));
+  if (external) setTcRow(tid, 'fan', !fan ? null : fan.state === 'on' ? true : fan.state === 'failed' ? false : null,
+    !fan ? '' : fan.state === 'pending' ? t('tcFanWait') : fan.message);
+  const btn = $('tc-start-' + tid);
+  if (btn) btn.disabled = !ready || Object.values(AUTO).some((x) => x.busy);
+  const txt = $('auto-text-' + tid);
+  if (txt && !(TC08.rec && TC08.rec.tid === tid) && !(AUTO[tid] && AUTO[tid].text)) txt.textContent = ready ? t('tcReady') : t('tcNotReady');
+  return ready;
+}
+
+async function startTc08(tid) {
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  if (!state.operator.trim()) { alert(t('operatorFirst')); $('operator').focus(); return; }
+  if (!(await checkTc08(tid))) return;
+  const test = TESTS[tid];
+  const rd = TC08.ready[tid];
+  if (rd.floating && !confirm(t('tcConfirmExt')(rd.temp, rd.ambient))) return;   // hot from outside, or open: the operator knows
+  const fan = TC08.fan[tid];
+  if (!(fan && fan.state === 'on')) {                 // the fan is normally on already (ensureHeaterFan); other tests: the UV self-test check
+    const prep = await DVT_AUTO.prepare(test);        // what this test needs of the machine before it logs anything
+    if (!prep.ok) { AUTO[tid] = { busy: false, runId: currentRun(tid).id, text: prep.message, cls: 'fail' }; refreshTest(tid); return; }
+    if (prep.message) log('info', `${tid}: ${prep.message}`);
+  }
+  const run = currentRun(tid);
+  const first = TC08.ready[tid].temp;
+  const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+  if (rec.verdict) return;
+  // a new recording starts clean: the values and marks the previous recording's analysis put here would otherwise show
+  // on the card and in the graph header until the new trace is read (78.91 / 0 min / 73.23 from an earlier run, seen live)
+  (rec.autoFields || []).forEach((f) => { delete rec.values[f]; });
+  rec.autoFields = [];
+  delete rec.marks;
+  const amb = TC08.ready[tid].reference !== null && TC08.ready[tid].reference !== undefined ? TC08.ready[tid].reference : TC08.ready[tid].ambient;   // CH2 first
+  if (amb !== null && test.data_fields.some((f) => f.name === 'ambient_temp')) {        // older machines: left to the operator
+    rec.values.ambient_temp = Math.round(amb * 100) / 100;
+    rec.autoFields = [...new Set([...(rec.autoFields || []), 'ambient_temp'])];
+  }
+  if (test.data_fields.some((f) => f.name === 'start_temp')) {
+    rec.values.start_temp = Math.round(first * 100) / 100;
+    rec.autoFields = [...new Set([...(rec.autoFields || []), 'start_temp'])];
+  }
+  rec.auto = { kind: 'tc08_record', status: 'RECORDING', at: new Date().toISOString(), machine: machineInfo, device: TC08.ready[tid].device,
+               columns: ['t_s', 'ch1_c', 'machine_chamber_c', 'machine_heating', 'alerts', 'heater_commanded', 'heater_pwm_pct'], samples: [] };
+  setAuto(rec, rec.auto);
+  TC08.rec = { tid, runId: run.id, t0: performance.now(), max: first, n: 0, badSince: null };
+  AUTO[tid] = { busy: true, runId: run.id, text: t('tcRecording')(first, first, '0:00', 0) };
+  persist(run.id, true);
+  journal('measurement_start', run.id);
+  log('info', `${run.id}: ${t('tcStarted')}`);
+  refreshTest(tid);
+  TC08.rec.timer = setInterval(() => tcTick().catch(() => {}), 1000);
+}
+
+async function tcTick() {
+  const r = TC08.rec;
+  if (!r || r.busyTick) return;
+  r.busyTick = true;
+  try {
+    const [p, s] = await Promise.all([api('/api/dev/picolog/status').catch(() => null), api('/api/state').catch(() => null)]);
+    const rec = state.results[r.runId];
+    if (!rec || !rec.auto || TC08.rec !== r) return;
+    const temp = p && p.ch1Available && typeof p.temperature === 'number' ? p.temperature : null;
+    const secs = Math.round(performance.now() - r.t0) / 1000;
+    // the alarm AND the machine's own heater command ride in the trace: with the heater driven
+    // externally, the drive going low while the temperature still climbs is the protection acting
+    rec.auto.samples.push([secs, temp, s && typeof s.chamberTemp === 'number' ? Math.round(s.chamberTemp * 100) / 100 : null, s ? !!s.isHeating : null,
+                           s && s.alerts ? s.alerts.join('|') : '',
+                           s ? s.heaterOut === true : null,
+                           s && typeof s.heaterPwm === 'number' ? Math.round(s.heaterPwm * 10) / 10 : null]);
+    r.n++;
+    if (temp !== null) { r.max = Math.max(r.max, temp); r.badSince = null; } else if (r.badSince === null) r.badSince = secs;
+    const mmss = `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+    const lost = r.badSince !== null && secs - r.badSince >= 10;
+    autoSay(r.tid, lost ? t('tcLost')(Math.round(secs - r.badSince)) : t('tcRecording')(temp, r.max, mmss, r.n), lost ? 'fail' : '');
+    drawTc08(r.tid);                                    // the graph grows live, one point a second
+    if (r.n % 30 === 0) persist(r.runId, true);         // the trace reaches the results folder every 30 s
+    // the analyser decides when the run is over (SAF-013: trip seen, then the reset or the wait after it) - the operator does not
+    const as = typeof DVT_AUTO.autoStop === 'function' ? DVT_AUTO.autoStop(TESTS[r.tid], rec) : { stop: false };
+    if (as && as.stop) { log('info', `${r.runId}: ${t('tcAutoStopped')(as.why || '')}`); stopTc08(r.tid); return; }
+  } finally {
+    r.busyTick = false;
+  }
+}
+
+function stopTc08(tid) {
+  const r = TC08.rec;
+  if (!r || r.tid !== tid) return;
+  clearInterval(r.timer);
+  TC08.rec = null;
+  const rec = state.results[r.runId];
+  if (rec && rec.auto) rec.auto.status = 'STOPPED';
+  DVT_AUTO.finish(TESTS[tid]);
+  delete TC08.fan[tid];                                 // the fan is the machine's again; the next readiness check turns it on for a new run
+  const read = rec ? DVT_AUTO.fromTrace(TESTS[tid], rec) : { filled: [], message: '' };
+  AUTO[tid] = { busy: false, runId: r.runId, cls: 'pass',
+    text: t('tcStopped')(r.n, r.max) + (read.filled.length ? ` · ${t('tcRead')(read.filled.length)}` : '') };
+  if (read.message) log(read.filled.length ? 'pass' : 'warn', `${r.runId}: ${read.message}`);
+  persist(r.runId, true);
+  journal('measurement', r.runId);
+  log('info', `${r.runId}: ${AUTO[tid].text}`);
+  // a run whose every needed value came out of the trace is complete: verdict recorded, the operator told in one line
+  const done = rec && typeof DVT_AUTO.completed === 'function' ? DVT_AUTO.completed(TESTS[tid], rec) : { ok: false };
+  if (done && done.ok) {
+    AUTO[tid].text = done.message || AUTO[tid].text;
+    AUTO[tid].cls = done.verdict === 'FAIL' ? 'fail' : 'pass';
+    log(done.verdict === 'FAIL' ? 'fail' : 'pass', `${r.runId}: ${done.message || done.verdict}`);
+    if (FOLDER.ok && state.operator.trim() && !rec.verdict) recordVerdict(tid);
+  }
+  refreshTest(tid);
+  syncing.then(() => { if (!FOLDER.ok || dirty.has(r.runId)) { log('fail', t('tcNotSaved')); alert(t('tcNotSaved')); } });
+}
+
+setInterval(() => {                      // keep the readiness checks of every open TC-08 step current
+  for (const tid of openTests) {
+    const test = TESTS[tid];
+    if (!test || !test.procedure_steps.some((s) => s.tool === 'tc08_record')) continue;
+    if (TC08.rec && TC08.rec.tid === tid) continue;
+    checkTc08(tid);
+  }
+}, 2000);
+
+// ---------- DVT-SAF-012 steps 2-6: guided door checks, each measured by the machine ----------
+// every automatic step keeps its own record in rec.autos[kind] (and its own CSV in sweeps/); rec.auto is the latest one
+function setAuto(rec, auto) {
+  rec.autos = rec.autos || {};
+  rec.autos[auto.kind] = auto;
+  rec.auto = auto;
+}
+function fillAuto(test, rec, values) {
+  const known = new Set(test.data_fields.map((f) => f.name));
+  const keys = Object.keys(values).filter((k) => known.has(k));
+  keys.forEach((k) => { rec.values[k] = values[k]; });
+  rec.autoFields = [...new Set([...(rec.autoFields || []), ...keys])];
+}
+
+const GUIDED = {
+  uv_off_timing: { intro: 'g2Intro', start: 'gStart' },
+  door_lock_check: { intro: 'g3Intro', start: 'gStart' },
+  door_magnet_defeat: { intro: 'g4Intro', start: 'gStart' },
+  door_status_check: { intro: 'g5Intro', start: 'gStart' },
+  door_alarm_check: { intro: 'g6Intro', start: 'g6Read' },
+};
+
+// ---------- auto-advance: a guided step that passed its part of the criteria starts the next one by itself ----------
+const NEEDS_DOOR_CLOSED = new Set(['uv_off_timing', 'door_lock_check']);   // these refuse to start with the door open
+
+/**
+ * Pure: after `tool` produced `values`, which step comes next by itself? Only the catalog criteria clauses whose
+ * fields this step produced are judged - top-level AND list, each clause through the page's evaluator with the
+ * catalog thresholds - so the page has no number of its own: "under 2 s" is whatever the catalog says.
+ * Returns { next, checked, failed, why }.
+ */
+function nextStepAfter(test, rec, tool, values) {
+  const tools = (test.procedure_steps || []).map((s) => s.tool);
+  const i = tools.indexOf(tool);
+  const next = i >= 0 ? tools.slice(i + 1).find((x) => x && GUIDED[x]) || null : null;
+  const expr = String(test.pass_criteria || '');
+  if (/\(|\bOR\b/.test(expr)) return { next: null, checked: [], failed: [], why: 'criteria are not a plain AND list' };
+  const produced = new Set(Object.keys(values || {}));
+  const all = { ...((rec && rec.values) || {}), ...(values || {}) };
+  const checked = [], failed = [];
+  for (const clause of expr.split(/\s+AND\s+/).map((c) => c.trim()).filter(Boolean)) {
+    let refs;
+    try { refs = CRIT.referencedNames(clause); } catch (e) { return { next: null, checked, failed, why: 'unreadable clause: ' + clause }; }
+    if (!refs.some((n) => produced.has(n))) continue;
+    const r = CRIT.evaluate(clause, all, CAT.thresholds);
+    checked.push(clause);
+    if (r.verdict !== 'PASS') failed.push(clause + (r.detail ? ' (' + r.detail + ')' : ''));
+  }
+  if (failed.length) return { next: null, checked, failed, why: failed.join('; ') };
+  if (!next) return { next: null, checked, failed, why: 'last step' };
+  return { next, checked, failed, why: '' };
+}
+
+/** Act on nextStepAfter: wait for what the next step needs (the door closed), tell the operator, then start it. */
+async function autoAdvance(tid, tool, values) {
+  const test = TESTS[tid], run = currentRun(tid), rec = state.results[run.id];
+  if (!rec || rec.verdict) return;
+  const d = nextStepAfter(test, rec, tool, values);
+  const stepNo = (x) => test.procedure_steps.findIndex((s) => s.tool === x) + 1;
+  if (!d.next) { if (d.failed.length) log('warn', `${run.id}: ${t('gNoAdvance')(d.why)}`); return; }
+  const key = tid + ':' + d.next;
+  const n = stepNo(d.next);
+  AUTO[key] = { busy: true, runId: run.id, text: t('gAdvancing')(n), prompt: '' };
+  log('info', `${run.id}: ${t('gAdvancing')(n)}`);
+  refreshTest(tid);
+  const stop = () => { AUTO[key] = { busy: false, runId: run.id, text: t('gAdvanceStopped'), cls: 'warn' }; refreshTest(tid); };
+  if (NEEDS_DOOR_CLOSED.has(d.next)) {
+    gPrompt(key, t('gCloseToContinue')(n));
+    const s = await waitState(key, (x) => x.doorClosed === true, 300);
+    gPrompt(key, '');
+    if (!s) return stop();
+  } else {
+    for (let left = 3; left > 0; left--) {
+      if (AUTO[key].stop) return stop();
+      gSay(key, t('gAdvancingIn')(n, left));
+      await sleep(1000);
+    }
+  }
+  if (AUTO[key].stop) return stop();
+  AUTO[key] = { busy: false, runId: run.id };          // runGuided refuses to start while anything is busy
+  await runGuided(tid, d.next);
+}
+
+function renderGuidedCard(test, run, locked, tool) {
+  const tid = test.test_id;
+  const key = tid + ':' + tool;
+  const a = AUTO[key] && AUTO[key].runId === run.id ? AUTO[key] : null;
+  const busy = Object.values(AUTO).some((x) => x.busy);
+  const decay = tool === 'uv_off_timing' && (state.results[run.id] || {}).autos && state.results[run.id].autos.uv_off_timing;
+  return `<div class="auto-card">
+      <div class="auto-note" style="margin:0 0 8px">${esc(t(GUIDED[tool].intro))}</div>
+      <div class="auto-row">
+        <button class="btn btn-auto btn-small" data-act="guided" data-tool="${tool}" data-test="${tid}" ${locked || busy ? 'disabled' : ''}>▶ ${t(GUIDED[tool].start)}</button>
+        ${a && a.busy ? `<button class="btn btn-outline btn-small" data-act="guided-stop" data-tool="${tool}" data-test="${tid}">■ ${t('abortRun')}</button>` : ''}
+        <span class="auto-text ${a ? a.cls || '' : ''}" id="auto-text-${key.replace(':', '-')}">${a ? esc(a.text) : ''}</span>
+      </div>
+      <div class="g-prompt" id="prompt-${key.replace(':', '-')}" ${a && a.prompt ? '' : 'hidden'}>${a && a.prompt ? esc(a.prompt) : ''}</div>
+      ${decay && decay.samples && decay.samples.length ? `<canvas class="chart" id="decay-${tid}" width="720" height="260" aria-label="irradiance against time after the door opened"></canvas>` : ''}
+    </div>`;
+}
+
+function gSay(key, text, cls = '') {
+  if (!AUTO[key]) return;
+  AUTO[key].text = text; AUTO[key].cls = cls;
+  const el = $('auto-text-' + key.replace(':', '-'));
+  if (el) { el.textContent = text; el.className = 'auto-text ' + cls; }
+}
+function gPrompt(key, text) {
+  if (!AUTO[key]) return;
+  AUTO[key].prompt = text;
+  const el = $('prompt-' + key.replace(':', '-'));
+  if (el) { el.textContent = text || ''; el.hidden = !text; }
+}
+
+/** Poll until cond(state) holds; returns the state or null on timeout / stop. */
+async function waitState(key, cond, seconds) {
+  const until = Date.now() + seconds * 1000;
+  while (Date.now() < until) {
+    if (AUTO[key] && AUTO[key].stop) return null;
+    const s = await api('/api/state');
+    if (cond(s)) return s;
+    await sleep(250);
+  }
+  return null;
+}
+
+async function runGuided(tid, tool) {
+  const test = TESTS[tid];
+  const run = currentRun(tid);
+  const key = tid + ':' + tool;
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  if (!state.api || !machineInfo) { alert(t('needMachine')); return; }
+  if (Object.values(AUTO).some((x) => x.busy)) { alert(t('busyElsewhere')); return; }
+  const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+  if (rec.verdict) return;
+  AUTO[key] = { busy: true, runId: run.id, text: t('gChecking') };
+  refreshTest(tid);
+  const trace = [];
+  const t0 = performance.now();
+  const sec = () => Math.round(performance.now() - t0) / 1000;
+  const stopped = () => AUTO[key] && AUTO[key].stop;
+  let started = { recipe: false };
+  let advanceValues = null;                                 // set when the step finished: the next step may follow by itself
+  const safe = async () => {
+    try { await api('/api/uv?on=0', 'POST'); } catch (e) { /* next */ }
+    if (started.recipe) { try { await api('/api/recipe/abort', 'POST'); } catch (e) { /* best effort */ } }
+  };
+  try {
+    const st0 = await api('/api/state');
+    if (st0.uvOn || st0.isHeating || st0.isCooling || st0.nitrogenActive) throw new Error(t('doorBusy'));
+    let values = {};
+    let auto = { kind: tool, at: new Date().toISOString(), machine: machineInfo, columns: ['t_s', 'door_open', 'uv_on', 'phase'], samples: trace };
+    const mark = (s, phase) => trace.push([sec(), s ? s.doorClosed === false : null, s ? !!s.uvOn : null, phase]);
+
+    if (tool === 'uv_off_timing') {
+      const m = await api('/api/dvt/meter');
+      if (!m.present) throw new Error(m.message || 'no StarBright on the machine');
+      if (m.wavelength_nm !== 405) {
+        gSay(key, t('autoSetWl')(405));
+        const w = await api('/api/dvt/meter/wavelength?nm=405', 'POST');
+        if (!w.ok) throw new Error(w.message || 'the meter did not take 405 nm');
+      }
+      if (st0.doorClosed !== true) throw new Error(t('gCloseFirst'));
+      const r = await api('/api/dvt/uv-off?wavelength=405&intensity=100', 'POST');
+      if (!r.ok) throw new Error(r.message || 'refused');
+      let st;
+      do {
+        await sleep(400);
+        if (stopped()) { await api('/api/dvt/uv-off/abort', 'POST'); }
+        st = await api('/api/dvt/uv-off?samples=0');
+        gSay(key, t('g2Phase')(st.phase, st.reading, st.plateau_mw_cm2));
+        gPrompt(key, st.phase === 'open_door' ? t('g2OpenNow') : st.phase === 'plateau' ? t('g2Wait') : '');
+      } while (st.running);
+      gPrompt(key, '');
+      st = await api('/api/dvt/uv-off');
+      if (st.status !== 'OK') throw new Error(st.error || st.status);
+      values = { uv_off_time: st.uv_off_time_s, uv_zero_time: st.uv_zero_time_s, residual_irradiance: st.residual_mw_cm2 };
+      auto = { ...auto, columns: ['t_s', 'irradiance_mw_cm2', 'door_open', 'phase'], samples: st.samples, status: st.status,
+               plateau_mw_cm2: st.plateau_mw_cm2, dark_mw_cm2: st.dark_mw_cm2, release_to_off_s: st.release_to_off_s,
+               release_at_s: st.release_at_s, door_open_at_s: st.door_open_at_s, below_10pct_at_s: st.below_10pct_at_s,
+               zero_at_s: st.zero_at_s, zero_threshold_mw_cm2: st.zero_threshold_mw_cm2, release_to_zero_s: st.release_to_zero_s,
+               graph: true,
+               uv_off_before_door_open: st.uv_off_before_door_open, program_end: st.program_end, alerts_before: st.alerts_before,
+               alerts_after: st.alerts_after, alert_details: st.alert_details, door_aborted: st.door_aborted, ui_alerts: st.ui_alerts, mode: st.mode };
+    }
+
+    if (tool === 'door_lock_check') {
+      if (st0.doorClosed !== true) throw new Error(t('gCloseFirst'));
+      const material = { id: 'dvt-saf-012-lock', name: 'DVT-SAF-012 lock check', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
+      const r = await postJson('/api/recipe/start', { material });
+      if (!r.ok) throw new Error(r.message || 'the program did not start');
+      started.recipe = true;
+      gSay(key, t('g3Starting'));
+      const lit = await waitState(key, (s) => s.uvOn, 30);
+      if (!lit) throw new Error(stopped() ? t('doorStopped') : t('g3NoUv'));
+      gPrompt(key, t('g3PullNow'));
+      let opened = false;
+      const end = Date.now() + 10000;
+      while (Date.now() < end && !stopped()) {
+        const s = await api('/api/state');
+        mark(s, 'pull');
+        if (s.doorClosed === false) { opened = true; await safe(); break; }
+        gSay(key, t('g3Pulling')(Math.ceil((end - Date.now()) / 1000)));
+        await sleep(200);
+      }
+      gPrompt(key, '');
+      if (stopped()) throw new Error(t('doorStopped'));
+      const rs = await api('/api/recipe/status');
+      const sEnd = await api('/api/state');
+      await safe();                                          // the cure has done its job: stop it and the UV
+      values = { lock_engaged: !opened };
+      auto = { ...auto, status: opened ? 'OPENED' : 'HELD', program_end: { state: rs.state, message: rs.message, error_code: rs.errorCode },
+               alerts_after: sEnd.alerts, alert_details: sEnd.alertDetails, door_aborted: sEnd.doorAborted };
+    }
+
+    if (tool === 'door_magnet_defeat') {
+      await api('/api/door/open', 'POST');
+      gPrompt(key, t('g4OpenNow'));
+      const open = await waitState(key, (s) => s.doorClosed === false, 30);
+      if (!open) throw new Error(stopped() ? t('doorStopped') : t('doorNotSeen'));
+      mark(open, 'open');
+      gPrompt(key, t('g4MagnetNow'));
+      let fooled = false;
+      const end = Date.now() + 10000;
+      while (Date.now() < end && !stopped()) {
+        const s = await api('/api/state');
+        mark(s, 'magnet');
+        if (s.doorClosed === true) fooled = true;
+        gSay(key, t('g4Holding')(Math.ceil((end - Date.now()) / 1000), fooled));
+        await sleep(200);
+      }
+      gPrompt(key, t('g4Done'));
+      if (stopped()) throw new Error(t('doorStopped'));
+      if (fooled && !confirm(t('g4Confirm'))) throw new Error(t('g4Repeat'));   // a door that fell shut also reads closed
+      values = { defeat_by_magnet_possible: fooled };
+      auto = { ...auto, status: fooled ? 'SENSOR_FOOLED' : 'SENSOR_HELD' };
+    }
+
+    if (tool === 'door_status_check') {
+      gPrompt(key, t('g5Close'));
+      const c1 = await waitState(key, (s) => s.doorClosed === true, 30);
+      if (!c1) throw new Error(stopped() ? t('doorStopped') : t('g5NoClose'));
+      mark(c1, 'closed_1');
+      await api('/api/door/open', 'POST');
+      gPrompt(key, t('g5Open'));
+      const o = await waitState(key, (s) => s.doorClosed === false, 30);
+      if (!o) throw new Error(stopped() ? t('doorStopped') : t('doorNotSeen'));
+      mark(o, 'open');
+      gPrompt(key, t('g5Close'));
+      const c2 = await waitState(key, (s) => s.doorClosed === true, 30);
+      if (!c2) throw new Error(stopped() ? t('doorStopped') : t('g5NoClose'));
+      mark(c2, 'closed_2');
+      gPrompt(key, t('g5Hold'));
+      await sleep(2500);
+      await api('/api/door/open', 'POST');                  // the only software actuator on the door: the lock release
+      let flipped = false;
+      const end = Date.now() + 3000;
+      while (Date.now() < end) {
+        const s = await api('/api/state');
+        mark(s, 'release_held');
+        if (s.doorClosed !== true) flipped = true;
+        await sleep(200);
+      }
+      gPrompt(key, '');
+      values = { door_status_read_only_confirmed: !flipped };
+      auto = { ...auto, status: flipped ? 'CHANGED_BY_RELEASE' : 'FOLLOWS_THE_DOOR_ONLY' };
+    }
+
+    if (tool === 'door_alarm_check') {
+      const src = rec.autos && rec.autos.uv_off_timing;
+      if (!src) throw new Error(t('g6NeedStep2'));
+      const before = new Set((src.alerts_before || []).map(String));
+      const codes = [...new Set([...(src.alerts_after || []).map(String).filter((c) => !before.has(c)),
+        ...(src.ui_alerts || []).map(String),
+        ...(src.program_end && src.program_end.error_code ? [String(src.program_end.error_code)] : []),
+        ...(src.door_aborted ? ['6016'] : [])])];
+      values = { alarm_raised: codes.length > 0, error_code: codes.join(', ') };
+      auto = { ...auto, status: codes.length ? 'ALARM' : 'NO_ALARM', source: 'uv_off_timing', program_end: src.program_end, codes, samples: [] };
+    }
+
+    fillAuto(test, rec, values);
+    setAuto(rec, auto);
+    persist(run.id, true);
+    journal('measurement', run.id);
+    if (tool === 'uv_off_timing') { AUTO[key] = { busy: false, runId: run.id }; refreshTest(tid); await saveDecayPng(tid, run, auto); }
+    const text = Object.entries(values).map(([k, v]) => `${k} = ${v}`).join(', ');
+    AUTO[key] = { busy: false, runId: run.id, text: t('gDone')(text), cls: 'pass' };
+    log('info', `${run.id} ${tool}: ${text}`);
+    advanceValues = values;
+  } catch (e) {
+    await safe();
+    AUTO[key] = { busy: false, runId: run.id, text: t('autoFailed')(e.message), cls: 'fail' };
+    log('fail', `${run.id} ${tool}: ${e.message}`);
+  }
+  refreshTest(tid);
+  if (advanceValues) await autoAdvance(tid, tool, advanceValues);
+}
+
+/** Irradiance against time, t = 0 at the door opening: release, door open, 10 % and zero marked. */
+function drawDecay(tid) {
+  const canvas = $('decay-' + tid);
+  if (!canvas) return;
+  const rec = state.results[currentRun(tid).id];
+  const a = rec && rec.autos && rec.autos.uv_off_timing;
+  if (!a || !a.samples || !a.samples.length) return;
+  const t0 = a.door_open_at_s ?? a.release_at_s ?? 0;
+  const from = (a.release_at_s ?? t0) - 2;
+  const to = Math.max((a.zero_at_s ?? t0) + 2, t0 + 3);
+  const pts = a.samples.filter((s) => s[1] !== null && s[0] >= from && s[0] <= to).map((s) => [s[0] - t0, s[1]]);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, L = 56, R = 16, T = 18, B = 36;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  if (!pts.length) return;
+  const xmin = from - t0, xmax = to - t0;
+  const ymax = Math.max(a.plateau_mw_cm2 || 0, ...pts.map((p) => p[1])) * 1.08 || 1;
+  const X = (x) => L + ((x - xmin) / (xmax - xmin)) * (W - L - R);
+  const Y = (y) => H - B - (Math.max(0, y) / ymax) * (H - T - B);
+  ctx.font = '11px Segoe UI, sans-serif'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = (ymax * k) / 4;
+    ctx.strokeStyle = '#2a2a2a'; ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(W - R, Y(v)); ctx.stroke();
+    ctx.fillStyle = '#777'; ctx.textAlign = 'right'; ctx.fillText(v.toFixed(v < 10 ? 1 : 0), L - 6, Y(v) + 4);
+  }
+  ctx.textAlign = 'center';
+  const step = xmax - xmin > 12 ? 2 : xmax - xmin > 5 ? 1 : 0.5;
+  for (let x = Math.ceil(xmin / step) * step; x <= xmax; x += step) ctx.fillText(x.toFixed(step < 1 ? 1 : 0) + ' s', X(x), H - B + 16);
+  ctx.save(); ctx.translate(14, (H - B + T) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('mW/cm²', 0, 0); ctx.restore();
+  const vline = (x, color, label, row) => {                  // one label row each: the three can fall on the same instant
+    if (x === null || x === undefined) return;
+    ctx.strokeStyle = color; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(X(x - t0), T); ctx.lineTo(X(x - t0), H - B); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.fillText(label, X(x - t0) + 3, T + 24 + row * 13);
+  };
+  vline(a.release_at_s, '#ff9800', 'release', 0);
+  vline(a.door_open_at_s, '#f44336', 'door open', 1);
+  vline(a.zero_at_s, '#4caf50', 'zero', 2);
+  if (a.plateau_mw_cm2) {
+    const ten = (a.dark_mw_cm2 || 0) + 0.1 * (a.plateau_mw_cm2 - (a.dark_mw_cm2 || 0));
+    ctx.strokeStyle = '#555'; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(L, Y(ten)); ctx.lineTo(W - R, Y(ten)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#888'; ctx.textAlign = 'right'; ctx.fillText('10 %', W - R - 2, Y(ten) - 3);
+  }
+  ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((p, k) => (k ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
+  ctx.fillStyle = '#ddd'; ctx.textAlign = 'right';
+  ctx.fillText(`door open -> zero ${a.uv_zero_time_s ?? rec.values.uv_zero_time ?? '-'} s · release -> zero ${a.release_to_zero_s ?? '-'} s`, W - R, T + 10);
+}
+
+// ---------- script traces (rec.autos['auto_<name>'], the runner's watch() columns): one chart each, and a PNG beside the CSV ----------
+const TRACE_SERIES = [
+  { col: 'chamber_c', color: '#ff9800', label: 'trDisplayed' },
+  { col: 'tc08_ch2_c', color: '#64b5f6', label: 'trRef' },
+  { col: 'tc08_ch1_c', color: '#f44336', label: 'trBody' },
+  { col: 'led_right_c', color: '#ab47bc', label: 'trPanel', suffix: ' R' },
+  { col: 'led_left_c', color: '#7e57c2', label: 'trPanel', suffix: ' L' },
+  { col: 'led_back_c', color: '#26a69a', label: 'trPanel', suffix: ' B' },
+  { col: 'led_door_c', color: '#ffca28', label: 'trPanel', suffix: ' D' },
+];   // a series is drawn only when its column holds numbers, so a heater-only trace shows no panel lines
+const TRACE_RPM_SERIES = [                 // right-hand rpm axis, dashed: the damper position is read off the cooling fan's speed
+  { col: 'fan_cooling_rpm', color: '#4dd0e1', label: 'trFanCooling' },
+  { col: 'fan_heater_rpm', color: '#ffab91', label: 'trFanHeater' },
+];
+const isTrace = (a) => !!(a && a.kind && a.kind.indexOf('auto_') === 0 && Array.isArray(a.columns) && a.columns.indexOf('t_s') === 0
+  && a.samples && a.samples.length > 1 && TRACE_SERIES.some((s) => a.columns.indexOf(s.col) >= 0));
+
+function traceAutos(rec) {
+  return rec && rec.autos ? Object.values(rec.autos).filter(isTrace) : [];
+}
+
+function renderTraceCharts(test, run) {
+  const rec = state.results[run.id];
+  return traceAutos(rec).map((a) => `<canvas class="chart" id="trace-${test.test_id}-${a.kind}" width="900" height="320" aria-label="${esc(a.kind)} against time"></canvas>
+      <div class="auto-note" style="margin-top:4px">${esc(a.kind.slice(5))} · ${esc(t('trRows')(a.samples.length, a.graph_file || ''))}</div>`).join('');
+}
+
+/** The trace on a canvas: temperatures against minutes, the heater / UV bands at the bottom, the first alarm marked with its code. */
+function drawTrace(canvas, a) {
+  const ctx = canvas.getContext('2d');
+  const ix = (c) => a.columns.indexOf(c);
+  const tI = ix('t_s');
+  const pick = (defs) => defs.map((s) => ({ ...s, i: ix(s.col) })).filter((s) => s.i >= 0)
+    .map((s) => ({ ...s, pts: a.samples.filter((r) => typeof r[s.i] === 'number' && typeof r[tI] === 'number').map((r) => [r[tI] / 60, r[s.i]]) }))
+    .filter((s) => s.pts.length > 1);
+  const series = pick(TRACE_SERIES);
+  // fan tachs on a second, right-hand axis (rpm) - the damper position is read off the cooling fan's speed
+  const rpmSeries = pick(TRACE_RPM_SERIES);
+  const W = canvas.width, H = canvas.height, L = 56, R = rpmSeries.length ? 58 : 16, T = 26, B = 56;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  if (!series.length) return;
+  const all = series.flatMap((s) => s.pts);
+  const xmax = Math.max(1 / 60, ...all.map((p) => p[0]));
+  const ymin = Math.min(...all.map((p) => p[1])) - 3, ymax = Math.max(...all.map((p) => p[1])) + 3;
+  const X = (x) => L + (x / xmax) * (W - L - R);
+  const Y = (y) => H - B - ((y - ymin) / (ymax - ymin)) * (H - T - B);
+  ctx.font = '11px Segoe UI, sans-serif'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = ymin + ((ymax - ymin) * k) / 4;
+    ctx.strokeStyle = '#2a2a2a'; ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(W - R, Y(v)); ctx.stroke();
+    ctx.fillStyle = '#777'; ctx.textAlign = 'right'; ctx.fillText(v.toFixed(0), L - 6, Y(v) + 4);
+  }
+  ctx.textAlign = 'center';
+  const step = xmax > 40 ? 10 : xmax > 15 ? 5 : xmax > 6 ? 2 : xmax > 2 ? 1 : 0.5;
+  for (let x = 0; x <= xmax + 1e-9; x += step) ctx.fillText((step < 1 ? x.toFixed(1) : x) + ' min', X(x), H - B + 16);
+  ctx.save(); ctx.translate(14, (H - B + T) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('°C', 0, 0); ctx.restore();
+  // what the machine was doing: heater / UV bands along the bottom
+  const band = (col, color, label, row) => {
+    const i = ix(col);
+    if (i < 0) return;
+    let from = null;
+    const y = H - B + 24 + row * 7;
+    const flush = (to) => { if (from !== null) { ctx.fillStyle = color; ctx.fillRect(X(from), y, Math.max(1, X(to) - X(from)), 5); from = null; } };
+    a.samples.forEach((r) => { const on = r[i] === true; const x = r[tI] / 60; if (on && from === null) from = x; if (!on) flush(x); });
+    flush(xmax);
+    ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.fillText(label, L, y + 5 + 7 * 0);
+  };
+  band('heater_on', '#ff572266', t('trHeaterOn'), 0);
+  band('uv_on', '#7c4dff66', t('trUvOn'), 1);
+  band('damper_open', '#4dd0e166', t('trDamperOpen'), 2);
+  if (rpmSeries.length) {
+    const rmax = Math.max(100, ...rpmSeries.flatMap((s) => s.pts.map((p) => p[1]))) * 1.05;
+    const YR = (v) => H - B - (v / rmax) * (H - T - B);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#777';
+    for (let k = 0; k <= 4; k++) { const v = (rmax * k) / 4; ctx.fillText(Math.round(v).toString(), W - R + 6, YR(v) + 4); }
+    ctx.save(); ctx.translate(W - 10, (H - B + T) / 2); ctx.rotate(Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('rpm', 0, 0); ctx.restore();
+    rpmSeries.forEach((s) => {
+      ctx.strokeStyle = s.color; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath();
+      s.pts.forEach((p, k) => (k && p[0] >= s.pts[k - 1][0] ? ctx.lineTo(X(p[0]), YR(p[1])) : ctx.moveTo(X(p[0]), YR(p[1])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+  }
+  series.forEach((s) => {
+    // a trace that holds several passes (SAF-008: one per fan, each timed from 0) restarts its clock: start a new line
+    // there instead of drawing a stroke back to the left edge
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.beginPath();
+    s.pts.forEach((p, k) => (k && p[0] >= s.pts[k - 1][0] ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
+  });
+  // the first alarm, with its code
+  const alI = ix('alerts');
+  if (alI >= 0) {
+    const first = a.samples.find((r) => typeof r[alI] === 'string' && r[alI] !== '');
+    if (first) {
+      const x = X(first[tI] / 60);
+      ctx.strokeStyle = '#f44336'; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, H - B); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#f44336'; ctx.textAlign = 'left'; ctx.fillText(t('trAlarm')(String(first[alI]).split('|')[0]) + ` · ${(first[tI] / 60).toFixed(2)} min`, x + 4, T + 12);
+    }
+  }
+  ctx.textAlign = 'right';
+  let lx = W - R;
+  rpmSeries.concat(series).reverse().forEach((s) => {
+    const text = t(s.label) + (s.suffix || '');
+    ctx.fillStyle = s.color; ctx.fillText(text, lx, T - 8);
+    lx -= ctx.measureText(text).width + 18;
+  });
+}
+
+function drawTraces(tid) {
+  const rec = state.results[currentRun(tid).id];
+  traceAutos(rec).forEach((a) => { const c = $(`trace-${tid}-${a.kind}`); if (c) drawTrace(c, a); });
+}
+
+/** The same chart as a PNG blob, drawn off-screen - the results folder gets it beside the trace's CSV. */
+async function tracePng(a) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 900; canvas.height = 320;
+  drawTrace(canvas, a);
+  return new Promise((r) => canvas.toBlob(r, 'image/png'));
+}
+
+async function saveDecayPng(tid, run, auto) {
+  drawDecay(tid);
+  const canvas = $('decay-' + tid);
+  if (!canvas || !FOLDER.ok) return;
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+  const { dir, stem } = runPath(run.id);
+  const name = `${stem}_uv_off_timing_${auto.at.replace(/[-:]/g, '').replace(/\..*$/, '')}.png`;
+  try {
+    const f = await (await dirAt(['sweeps', ...dir])).getFileHandle(name, { create: true });
+    const w = await f.createWritable();
+    await w.write(blob);
+    await w.close();
+    auto.graph_file = `sweeps/${dir.join('/')}/${name}`;
+    persist(run.id, true);
+    log('info', t('graphSaved')(auto.graph_file));
+  } catch (e) {
+    log('fail', t('folderError')(e.message));
+  }
+}
+
+// ---------- machine bench (tool: bench): a whole test run by the DVT bench process on the machine (port 3002) ----------
+const benchUrl = () => state.api.replace(/:(\d+)$/, ':3002');
+async function benchApi(path, method = 'GET') {
+  const r = await fetch(benchUrl() + path, { method, signal: AbortSignal.timeout(10000) });
+  if (r.status === 404) throw new Error(t('benchMissing'));
+  return r.json();
+}
+
+function renderBenchCard(test, run, locked) {
+  const tid = test.test_id;
+  const key = tid + ':bench';
+  const a = AUTO[key] && AUTO[key].runId === run.id ? AUTO[key] : null;
+  const busy = Object.values(AUTO).some((x) => x.busy);
+  const rec = state.results[run.id] || {};
+  const done = rec.autos && rec.autos.bench;
+  const row = (id, label) => `<div class="tc-row" id="bench-${id}-${tid}"><span class="tc-dot"></span><span class="tc-label">${esc(label)}</span><span class="tc-val"></span></div>`;
+  return `<div class="auto-card">
+      <div class="auto-note" style="margin:0 0 8px">${esc(t('benchIntro'))}</div>
+      <div class="tc-checks">${row('machine', t('tcMachine'))}${row('svc', t('benchSvc'))}${row('tc08', t('tcCh1'))}${row('chamber', t('benchChamber'))}${row('idle', t('benchIdle'))}</div>
+      <div class="auto-row" style="margin-top:8px">
+        <button class="btn btn-auto btn-small" id="bench-start-${tid}" data-act="bench" data-test="${tid}" ${locked || busy || !(BENCH.ready[tid] && BENCH.ready[tid].ready) ? 'disabled' : ''}>▶ ${t('benchStart')}</button>
+        ${a && a.busy ? `<button class="btn btn-outline btn-small" data-act="bench-stop" data-test="${tid}">■ ${t('abortRun')}</button>` : ''}
+        <span class="auto-text ${a ? a.cls || '' : ''}" id="auto-text-${tid}-bench">${a ? esc(a.text) : esc(t('benchNotReady'))}</span>
+      </div>
+      <div class="g-prompt" id="prompt-${tid}-bench" ${a && a.prompt ? '' : 'hidden'}>${a && a.prompt ? esc(a.prompt) : ''}</div>
+      ${done && done.samples && done.samples.length ? `<canvas class="chart" id="bench-${tid}" width="720" height="260" aria-label="heater body against time"></canvas>` : ''}
+      ${done && done.notes && done.notes.length ? `<div class="auto-note" style="margin-top:8px">${done.notes.map(esc).join('<br>')}</div>` : ''}
+    </div>`;
+}
+
+// ---------- bench readiness: what the run would refuse on, shown BEFORE Start (a refused run looked like a half-recorded one) ----------
+const BENCH = { ready: {} };
+
+function setBenchRow(tid, id, ok, value) {
+  const el = $(`bench-${id}-${tid}`);
+  if (!el) return;
+  el.classList.toggle('ok', ok === true);
+  el.classList.toggle('bad', ok === false);
+  el.classList.toggle('warn', ok === 'warn');
+  el.querySelector('.tc-val').textContent = value || '';
+}
+
+/** The bench's own refusal texts, in the operator's language where the reason is a known one; the bench's words otherwise. */
+function benchReason(msg) {
+  const m = String(msg || '');
+  if (/TEMP_CHAMBER.*not reading/i.test(m)) return t('benchChamberOpen');
+  if (/does not answer/i.test(m)) return t('benchFwDead');
+  if (/program is running|outputs are on|is heating|UV is on/i.test(m)) return t('benchMachineBusy');
+  if (/no TC-08|TC-08 not usable|CH1 gives no reading/i.test(m)) return t('tcPlug');
+  if (/jumps by .* open or badly seated/i.test(m)) return t('benchProbeOpen')(m);
+  if (/bench is busy/i.test(m)) return t('benchBusy')(m.replace(/^.*\(|\).*$/g, ''));
+  return m;
+}
+
+async function checkBench(tid) {
+  const machine = !!machineInfo;
+  let bs = null, st = null, p = null;
+  if (machine) {
+    [bs, st, p] = await Promise.all([benchApi('/bench/status').catch(() => null), api('/api/state').catch(() => null), api('/api/dev/picolog/status').catch(() => null)]);
+  }
+  const svc = !!(bs && bs.ok && bs.tests && bs.tests.includes(tid));
+  const temp = p && p.connected && p.ch1Available && typeof p.temperature === 'number' ? p.temperature : null;
+  const ambient = p && typeof p.ambient === 'number' ? p.ambient : null;
+  const running = !!(st && (st.uvOn || st.isHeating || st.isCooling || st.nitrogenActive || (st.recipe && st.recipe.state && st.recipe.state !== 'idle')));
+  const hot = temp !== null && ambient !== null && temp - ambient > TC_OPEN_MARGIN_C && !running;   // steady or floating: the bench watches it 3 s before deciding
+  const tc08 = temp !== null && temp >= TC_MIN_C && temp <= TC_MAX_C;
+  const chamber = st && st.sensors && st.sensors.chamber ? st.sensors.chamber.ok === true : null;
+  const idle = st ? !running : null;
+  const ready = machine && svc && tc08 && chamber === true && idle === true && !(TC08.rec) && !Object.values(AUTO).some((x) => x.busy);
+  BENCH.ready[tid] = { ready, temp, ambient, chamber, idle, svc, version: bs && bs.version };
+  setBenchRow(tid, 'machine', machine, machine ? machineInfo : t('needMachine'));
+  setBenchRow(tid, 'svc', machine ? svc : null, !machine ? '' : svc ? `sCureBox ${bs.version}${bs.run && bs.run.running ? ' · ' + t('benchBusy')(bs.run.test_id) : ''}` : bs && bs.ok ? t('benchNoTest')(tid) : t('benchMissing'));
+  setBenchRow(tid, 'tc08', !machine ? null : !p || !p.connected ? false : tc08 ? (hot ? 'warn' : true) : false,
+    !machine ? '' : !p || !p.connected ? t('tcPlug') : tc08 ? temp.toFixed(1) + ' °C' + (hot ? ' · ' + t('benchHotBody')(ambient) : '') : t('tcNoCh1'));
+  setBenchRow(tid, 'chamber', chamber, chamber === null ? '' : chamber ? (typeof st.chamberTemp === 'number' ? st.chamberTemp.toFixed(1) + ' °C' : 'ok') : t('benchChamberOpen'));
+  setBenchRow(tid, 'idle', idle, idle === null ? '' : idle ? t('benchIdleOk') : t('benchMachineBusy'));
+  const btn = $('bench-start-' + tid);
+  if (btn) btn.disabled = !ready;
+  const txt = $('auto-text-' + tid + '-bench');
+  const a = AUTO[tid + ':bench'];
+  if (txt && !(a && (a.busy || a.text))) txt.textContent = ready ? t('benchReady') : t('benchNotReady');
+  return ready;
+}
+
+setInterval(() => {                      // keep the bench readiness current while such a step is open and no run is on
+  for (const tid of openTests) {
+    const test = TESTS[tid];
+    if (!test || !test.procedure_steps.some((s) => s.tool === 'bench')) continue;
+    const a = AUTO[tid + ':bench'];
+    if (a && a.busy) continue;
+    checkBench(tid);
+  }
+}, 2000);
+
+async function runBench(tid) {
+  const test = TESTS[tid];
+  const run = currentRun(tid);
+  const key = tid + ':bench';
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  if (!state.api || !machineInfo) { alert(t('needMachine')); return; }
+  if (Object.values(AUTO).some((x) => x.busy)) { alert(t('busyElsewhere')); return; }
+  if (!(await checkBench(tid))) return;
+  const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+  if (rec.verdict) return;
+  // a new run starts clean: a timestamp and raw_log_attached from a run four days earlier made a refused run look half-recorded
+  (rec.autoFields || []).forEach((f) => { delete rec.values[f]; });
+  rec.autoFields = [];
+  delete rec.marks;
+  AUTO[key] = { busy: true, runId: run.id, text: t('gChecking') };
+  refreshTest(tid);
+  try {
+    const bs = await benchApi('/bench/status');
+    if (!bs.tests.includes(tid)) throw new Error(t('benchNoTest')(tid));
+    if (bs.run && bs.run.running) throw new Error(t('benchBusy')(bs.run.test_id));
+    const start = await benchApi(`/bench/run?test=${encodeURIComponent(tid)}`, 'POST');
+    if (!start.ok) throw new Error(start.message || 'refused');
+    log('info', `${run.id}: ${start.message}`);
+    let st;
+    do {
+      await sleep(1000);
+      if (AUTO[key] && AUTO[key].stop) { await benchApi('/bench/run/abort?by=page', 'POST').catch(() => {}); AUTO[key].stop = false; }
+      st = await benchApi('/bench/run?samples=0');
+      const last = st.last || [];
+      gSay(key, t('benchPhase')(st.phase, st.elapsed, last[1], last[7]));
+      gPrompt(key, st.prompt || '');
+    } while (st.running);
+    gPrompt(key, '');
+    st = await benchApi('/bench/run');
+    const known = new Set(test.data_fields.map((f) => f.name));
+    const values = {};
+    // every value the bench measured is kept, also when a LATER phase failed (a run that measured nine values and then
+    // waited 180 s for the thermistor to come back showed nothing at all); the failed phase's own fields stay empty
+    // because the bench never set them. A run that never reached the disconnect fills nothing - its trace is still kept
+    const measured = st.status === 'OK' || !!(st.marks && st.marks.disconnect);
+    if (measured) {
+      for (const [k, v] of Object.entries(st.values || {})) if (known.has(k) && v !== null && v !== undefined) values[k] = v;
+      if (known.has('raw_log_attached') && st.samples && st.samples.length) values.raw_log_attached = true;   // the samples go to sweeps/ with this run
+    }
+    fillAuto(test, rec, values);
+    setAuto(rec, { kind: 'bench', status: st.status, error: st.error, at: new Date().toISOString(), machine: machineInfo,
+                   test_id: st.test_id, config: st.config, marks: st.marks, phases: st.phases, notes: st.notes, extra: st.values,
+                   tc08: st.tc08, columns: st.columns, samples: st.samples });
+    persist(run.id, true);
+    journal('measurement', run.id);
+    const ok = st.status === 'OK';
+    const neverHeated = !(st.marks && st.marks.heat_on);                     // ended in prepare / cooldown: the test itself never began
+    const failedPhase = (st.phases || []).length ? st.phases[st.phases.length - 1].name : st.phase;
+    AUTO[key] = { busy: false, runId: run.id, cls: ok ? 'pass' : 'fail',
+                  text: ok ? t('benchDone')(Object.keys(values).length) : neverHeated ? t('benchNotStarted')(benchReason(st.error || st.status))
+                      : t('benchFailedAt')(failedPhase, benchReason(st.error || st.status), Object.keys(values).length) };
+    log(ok ? 'pass' : 'fail', `${run.id} bench: ${st.status}${st.error ? ' - ' + st.error : ''}`);
+    refreshTest(tid);
+    await saveBenchPng(tid, run, rec.autos.bench);
+  } catch (e) {
+    AUTO[key] = { busy: false, runId: run.id, text: t('benchNotStarted')(benchReason(e.message)), cls: 'fail' };
+    log('fail', `${run.id} bench: ${e.message}`);
+    refreshTest(tid);
+  }
+}
+
+/** Heater body (TC-08 CH1) against time with the run's marks; the chamber temperature as a thin second line. */
+function drawBench(tid) {
+  const canvas = $('bench-' + tid);
+  if (!canvas) return;
+  const rec = state.results[currentRun(tid).id];
+  const a = rec && rec.autos && rec.autos.bench;
+  if (!a || !a.samples || !a.samples.length) return;
+  const pts = a.samples.filter((s) => s[1] !== null).map((s) => [s[0], s[1]]);
+  const ch = a.samples.filter((s) => s[7] !== null).map((s) => [s[0], s[7]]);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, L = 56, R = 16, T = 18, B = 36;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  if (!pts.length) return;
+  const xmax = Math.max(...pts.map((p) => p[0])) || 1;
+  const all = pts.concat(ch).map((p) => p[1]);
+  const ymin = Math.floor(Math.min(...all) - 2), ymax = Math.ceil(Math.max(...all) + 2);
+  const X = (x) => L + (x / xmax) * (W - L - R);
+  const Y = (y) => H - B - ((y - ymin) / (ymax - ymin)) * (H - T - B);
+  ctx.font = '11px Segoe UI, sans-serif'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = ymin + ((ymax - ymin) * k) / 4;
+    ctx.strokeStyle = '#2a2a2a'; ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(W - R, Y(v)); ctx.stroke();
+    ctx.fillStyle = '#777'; ctx.textAlign = 'right'; ctx.fillText(v.toFixed(0), L - 6, Y(v) + 4);
+  }
+  ctx.textAlign = 'center';
+  const step = xmax > 300 ? 60 : xmax > 60 ? 10 : 5;
+  for (let x = 0; x <= xmax; x += step) ctx.fillText(x + ' s', X(x), H - B + 16);
+  ctx.save(); ctx.translate(14, (H - B + T) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('°C', 0, 0); ctx.restore();
+  const colors = { heat_on: '#ff9800', disconnect: '#f44336', alarm: '#e91e63', reconnect: '#4caf50' };
+  let row = 0;
+  for (const [name, x] of Object.entries(a.marks || {})) {
+    const c = colors[name] || '#9e9e9e';
+    ctx.strokeStyle = c; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(X(x), T); ctx.lineTo(X(x), H - B); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = c; ctx.textAlign = 'left'; ctx.fillText(name, X(x) + 3, T + 12 + (row++ % 4) * 13);
+  }
+  ctx.strokeStyle = '#9e9e9e'; ctx.lineWidth = 1; ctx.beginPath();
+  ch.forEach((p, k) => (k ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
+  ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((p, k) => (k ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
+  ctx.fillStyle = '#ddd'; ctx.textAlign = 'right';
+  const v = rec.values || {};
+  ctx.fillText(`heater body (blue) · chamber (grey)${v.heater_off_time !== undefined ? ` · heater off ${v.heater_off_time} s after the disconnect` : ''}`, W - R, H - 6);
+}
+
+async function saveBenchPng(tid, run, auto) {
+  drawBench(tid);
+  const canvas = $('bench-' + tid);
+  if (!canvas || !FOLDER.ok) return;
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+  const { dir, stem } = runPath(run.id);
+  const name = `${stem}_bench_${auto.at.replace(/[-:]/g, '').replace(/\..*$/, '')}.png`;
+  try {
+    const f = await (await dirAt(['sweeps', ...dir])).getFileHandle(name, { create: true });
+    const w = await f.createWritable();
+    await w.write(blob);
+    await w.close();
+    auto.graph_file = `sweeps/${dir.join('/')}/${name}`;
+    persist(run.id, true);
+    log('info', t('graphSaved')(auto.graph_file));
+  } catch (e) {
+    log('fail', t('folderError')(e.message));
+  }
+}
+
+async function abortUvSweep(tid) {
+  try { const r = await api('/api/dvt/uv-sweep/abort', 'POST'); autoSay(tid, r.message || 'abort requested'); }
+  catch (e) { autoSay(tid, e.message, 'fail'); }
+}
+
+function drawCharts(tid) {
+  const canvas = $('chart-' + tid);
+  if (!canvas) return;
+  const rec = state.results[currentRun(tid).id];
+  if (!rec || !rec.auto) return;
+  const { fit, steps } = analyzeSweep({ steps: rec.auto.steps, config: rec.auto.config });
+  const pts = steps.filter((x) => x.mean !== null && x.mean !== undefined);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, L = 52, R = 14, T = 14, B = 34;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  if (!pts.length) return;
+  const ymax = Math.max(...pts.map((x) => x.mean)) * 1.1 || 1;
+  const X = (pct) => L + (pct / 100) * (W - L - R);
+  const Y = (v) => H - B - (v / ymax) * (H - T - B);
+  ctx.strokeStyle = '#2a2a2a'; ctx.fillStyle = '#777'; ctx.font = '11px Segoe UI, sans-serif'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = (ymax * k) / 4, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(v.toFixed(0), L - 6, y + 4);
+  }
+  ctx.textAlign = 'center';
+  for (let pct = 0; pct <= 100; pct += 20) ctx.fillText(pct + ' %', X(pct), H - B + 16);
+  ctx.save(); ctx.translate(14, (H - B + T) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('mW/cm²', 0, 0); ctx.restore();
+  if (fit) {
+    ctx.strokeStyle = '#ff9800'; ctx.setLineDash([5, 4]); ctx.beginPath();
+    ctx.moveTo(X(0), Y(Math.max(0, fit.b))); ctx.lineTo(X(100), Y(fit.m * 100 + fit.b)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((x, k) => (k ? ctx.lineTo(X(x.i), Y(x.mean)) : ctx.moveTo(X(x.i), Y(x.mean)))); ctx.stroke();
+  ctx.fillStyle = '#64b5f6';
+  pts.forEach((x) => { ctx.beginPath(); ctx.arc(X(x.i), Y(x.mean), 3.5, 0, Math.PI * 2); ctx.fill(); });
+}
+
+// ---------- actions ----------
+function log(kind, msg) {
+  const ts = new Date().toLocaleTimeString();
+  logLines.push({ ts, kind, msg });
+  const line = document.createElement('div');
+  line.className = kind;
+  line.textContent = `[${ts}] ${msg}`;
+  $('logBox').appendChild(line);
+  $('logBox').scrollTop = $('logBox').scrollHeight;
+}
+
+function currentRun(tid) {
+  const runs = runsFor(tid, state.unit);
+  return runs[Math.min(selectedRun[tid] || 0, runs.length - 1)];
+}
+
+function setValue(tid, field, raw) {
+  const test = TESTS[tid];
+  const f = test.data_fields.find((x) => x.name === field);
+  const run = currentRun(tid);
+  let v = raw;
+  if (raw === '') v = null;
+  else if (f.type === 'bool') v = raw === 'true';
+  else if (f.type === 'float') v = Number(raw);
+  else if (f.type === 'int') v = Math.round(Number(raw));
+  if (typeof v === 'number' && !Number.isFinite(v)) v = null;
+  const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+  if (v === null) delete rec.values[field]; else rec.values[field] = v;
+  persist(run.id);
+}
+
+function recordVerdict(tid) {
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  if (!state.operator.trim()) { alert(t('operatorFirst')); $('operator').focus(); return; }
+  const test = TESTS[tid];
+  const run = currentRun(tid);
+  const ev = evaluateRun(test, run);
+  const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+  Object.assign(rec, { verdict: ev.verdict, detail: ev.detail, by: state.operator.trim(), at: new Date().toISOString(), catalog: CAT.catalog_version });
+  persist(run.id, true);
+  journal('record', run.id);
+  log(ev.verdict === 'PASS' ? 'pass' : ev.verdict === 'FAIL' ? 'fail' : 'warn', t('logRecorded')(run.id, ev.verdict));
+  const runs = runsFor(tid, state.unit);
+  const nextOpen = runs.findIndex((r) => !(state.results[r.id] && state.results[r.id].verdict));
+  if (nextOpen >= 0) selectedRun[tid] = nextOpen;
+  refreshTest(tid);
+}
+
+function reopen(tid) {
+  const run = currentRun(tid);
+  const rec = state.results[run.id];
+  if (!rec) return;
+  delete rec.verdict; delete rec.detail; delete rec.by; delete rec.at;
+  persist(run.id, true);
+  journal('reopen', run.id);
+  log('info', t('logReopen')(run.id));
+  refreshTest(tid);
+}
+
+const normUrl = (u) => {
+  u = String(u || '').trim().replace(/\/+$/, '');
+  if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
+  if (u && !/:\d+$/.test(u.replace(/^https?:\/\//i, ''))) u += ':3001';
+  return u;
+};
+const serialOf = (v) => (v && (v.emmcSerial || v.serial) ? String(v.emmcSerial || v.serial).replace(/^0x/i, '') : null);
+
+// A search or connect belongs to the unit it started for; a newer one (unit switch, Connect) makes it stale.
+let connGen = 0;
+let conn = { busy: false, owner: null, many: 0, notFound: false };
+
+function renderStatus() {
+  const s = conn.busy ? t('searching')
+    : machineInfo ? `${t('connected')} - ${machineInfo}${conn.owner ? ' - ' + t('otherUnit')(conn.owner) : ''}`
+    : conn.many ? t('foundMany')(conn.many)
+    : conn.notFound ? t('notFound') : t('notConnected');
+  $('statusLabel').textContent = s;
+  $('statusDot').classList.toggle('connected', !!machineInfo && !conn.busy);
+}
+
+/** manual = the operator pressed Connect / chose a machine: that choice re-pairs the machine with this unit. */
+async function checkConnection(gen = ++connGen, unit = state.unit, manual = false) {
+  const url = normUrl($('apiUrl').value);
+  $('apiUrl').value = url;
+  conn = { busy: true, owner: null, many: 0, notFound: false };
+  machineInfo = '';
+  renderStatus();
+  let serial = null;
+  let ip = null;
+  let info = '';
+  if (url) {
+    try {
+      const s = await (await fetch(url + '/api/state', { signal: AbortSignal.timeout(4000) })).json();
+      let ver = '';
+      try {
+        const v = await (await fetch(url + '/api/system/version', { signal: AbortSignal.timeout(4000) })).json();
+        ver = v.appVersion || v.version || '';
+        serial = serialOf(v);
+      } catch (e) { /* version endpoint optional */ }
+      const temp = typeof s.chamberTemp === 'number' ? ' · ' + s.chamberTemp.toFixed(1) + '°C' : '';
+      info = [ver && 'v' + ver, serial, s.hwSource].filter(Boolean).join(' · ') + temp;
+      try {                                                  // the IP behind a name like scurebox.local: tried next time, and its network scanned
+        const n = await (await fetch(url + '/api/network/status', { signal: AbortSignal.timeout(4000) })).json();
+        ip = typeof n.ip === 'string' && /^\d+\.\d+\.\d+\.\d+$/.test(n.ip) ? n.ip : null;
+      } catch (e) { /* optional */ }
+    } catch (e) { /* not reachable */ }
+  }
+  if (gen !== connGen) return false;                       // overtaken by a newer search / connect
+  state.api = url;
+  machineInfo = info;
+  conn = { busy: false, owner: null, many: 0, notFound: false };
+  if (info) {
+    log('info', t('logConnect')(info));
+    state.machines = state.machines || {};
+    const owner = serial && Object.entries(state.machines).find(([u, m]) => u !== unit && m.serial === serial);
+    if (owner && !manual) {
+      conn.owner = owner[0];
+      log('warn', t('otherUnit')(owner[0]));
+    } else {
+      if (owner) {
+        delete state.machines[owner[0]];
+        log('warn', t('repaired')(serial, owner[0], unit));
+      }
+      state.machines[unit] = { url, serial, ip };
+    }
+  }
+  save();
+  renderStatus();
+  return !!info;
+}
+
+async function probe(url, ms = 2500) {
+  try {
+    const v = await (await fetch(url + '/api/system/version', { signal: AbortSignal.timeout(ms) })).json();
+    return v && (v.appVersion || v.version) ? { url, version: v.appVersion || v.version, serial: serialOf(v) } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** The /24 networks of every IPv4 address the page already knows. */
+function knownSubnets() {
+  const urls = [state.api, ...Object.values(state.machines || {}).flatMap((m) => [m.url, m.ip && `http://${m.ip}:3001`])];
+  const nets = new Set();
+  urls.forEach((u) => { const m = /^https?:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(u || ''); if (m) nets.add(m[1]); });
+  return [...nets];
+}
+
+async function scan(nets, wantSerial) {
+  const found = [];
+  for (const net of nets) {
+    const ips = Array.from({ length: 254 }, (_, i) => `http://${net}.${i + 1}:3001`);
+    for (let k = 0; k < ips.length; k += 64) {
+      const batch = await Promise.all(ips.slice(k, k + 64).map((u) => probe(u, 1500)));
+      found.push(...batch.filter(Boolean));
+      if (wantSerial && found.some((f) => f.serial === wantSerial)) return found;
+    }
+  }
+  return found;
+}
+
+/** Find the machine of the selected unit without typing: its remembered address, scurebox.local, then a scan of the known networks. */
+async function autoConnect() {
+  const gen = ++connGen;
+  const unit = state.unit;
+  const mine = (state.machines || {})[unit];
+  machineInfo = '';
+  conn = { busy: true, owner: null, many: 0, notFound: false };
+  $('machinePick').hidden = true;
+  renderStatus();
+  const direct = [...new Set([mine && mine.url, mine && mine.ip && `http://${mine.ip}:3001`, state.api, 'http://scurebox.local:3001'].filter(Boolean))];
+  let found = (await Promise.all(direct.map((u) => probe(u)))).filter(Boolean);
+  if (gen !== connGen) return;
+  const pick = (list) => (mine && mine.serial ? list.find((f) => f.serial === mine.serial) : null);
+  let hit = pick(found);
+  if (!hit && (!mine || !mine.serial) && new Set(found.map((f) => f.serial)).size === 1) hit = found[0];
+  if (!hit) {
+    const more = await scan(knownSubnets(), mine && mine.serial);
+    if (gen !== connGen) return;
+    found = [...new Map([...found, ...more].map((f) => [f.serial || f.url, f])).values()];
+    hit = pick(found) || (!mine || !mine.serial ? (found.length === 1 ? found[0] : null) : null);
+  }
+  if (hit) {
+    $('apiUrl').value = hit.url;
+    await checkConnection(gen, unit);
+    return;
+  }
+  conn = { busy: false, owner: null, many: found.length, notFound: !found.length };
+  if (found.length) {
+    const sel = $('machinePick');
+    sel.innerHTML = `<option value="">${esc(t('pickMachine')(found.length))}</option>` +
+      found.map((f) => `<option value="${esc(f.url)}">${esc(f.url.replace(/^https?:\/\//, ''))} · ${esc(f.serial || '?')} · v${esc(f.version)}</option>`).join('');
+    sel.hidden = false;
+  }
+  renderStatus();
+}
+
+function buildReport() {
+  const unit = state.unit;
+  const now = new Date();
+  const owed = Object.keys(TESTS).flatMap((tid) => runsFor(tid, unit));
+  const vs = owed.map((r) => state.results[r.id] && state.results[r.id].verdict);
+  const n = (k) => vs.filter((v) => v === k).length;
+  let r = `sCure DVT Report - ${unit}\n` + '='.repeat(60) + '\n';
+  r += `Date: ${now.toLocaleString()}\nOperator: ${state.operator || '-'}\nCatalog: ${CAT.catalog_version} (${CAT.source})\n`;
+  r += `Machine: ${machineInfo || 'not connected'}\n\n`;
+  r += `Runs: ${owed.length} owed / ${n('PASS')} PASS / ${n('FAIL')} FAIL / ${n('BLOCKED')} BLOCKED / ${owed.length - vs.filter(Boolean).length} open\n` + '='.repeat(60) + '\n\n';
+  CAT.phases.forEach((p) => {
+    const tests = p.tests.filter((tid) => runsFor(tid, unit).length);
+    if (!tests.length) return;
+    r += `[Phase ${p.id}] ${p.name}${phaseClosed(p, unit) ? '  - CLOSED' : ''}\n  Gate: ${p.gate || '-'}\n`;
+    tests.forEach((tid) => {
+      const test = TESTS[tid];
+      const runs = runsFor(tid, unit);
+      r += `  ${(testVerdict(tid, unit) || 'OPEN').toUpperCase().padEnd(8)} ${tid}  ${test.title}\n`;
+      runs.forEach((run, i) => {
+        const rec = state.results[run.id];
+        if (!rec || !rec.verdict) return;
+        const vals = Object.entries(rec.values || {}).map(([k, v]) => `${k}=${v}`).join(', ');
+        r += `      run ${i + 1}/${runs.length} ${variantLabel(run.variant) || ''} rep ${run.rep}: ${rec.verdict}${rec.detail ? ' (' + rec.detail + ')' : ''} - ${rec.by}, ${new Date(rec.at).toLocaleString()}\n`;
+        if (vals) r += `        ${vals}\n`;
+        if (rec.note) r += `        note: ${rec.note}\n`;
+      });
+    });
+    r += '\n';
+  });
+  if (logLines.length) r += 'Log:\n' + '-'.repeat(60) + '\n' + logLines.map((l) => `[${l.ts}] ${l.msg}`).join('\n') + '\n';
+  return r;
+}
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- results folder: every run, value, verdict and measurement is written to a folder the user picks ----------
+// <folder>/runs.csv            one row per run (verdict, operator, times)         - regenerated
+// <folder>/values.csv          one row per value (long format, for analysis)      - regenerated
+// <folder>/journal.jsonl       every record / reopen / measurement, append-only
+// <folder>/runs/<unit>/<test>/<variant>_r<n>.json   the full run
+// <folder>/sweeps/<unit>/<test>/<variant>_r<n>_<time>.csv   raw samples of an automatic measurement
+// <folder>/reports/            text reports saved from Export report
+const FOLDER = { handle: null, ok: false, name: '', savedAt: '', retrying: null };   // retrying = the last transient write error, while a retry is pending
+const dirty = new Set();
+let syncTimer = null;
+let syncing = Promise.resolve();
+
+function kvOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('scure-dvt-web', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function kv(key, value) {
+  const db = await kvOpen();
+  return new Promise((res) => {
+    const tx = db.transaction('kv', value === undefined ? 'readonly' : 'readwrite');
+    const q = value === undefined ? tx.objectStore('kv').get(key) : tx.objectStore('kv').put(value, key);
+    q.onsuccess = () => res(value === undefined ? q.result : true);
+    q.onerror = () => res(undefined);
+  });
+}
+
+const safeName = (s) => String(s).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
+function runPath(id) {
+  const [tid, unit, vl, rep] = id.split('|');
+  return { dir: [safeName(unit), safeName(tid)], stem: `${vl ? safeName(vl) + '_' : ''}r${rep}` };
+}
+async function dirAt(parts) {
+  let d = FOLDER.handle;
+  for (const p of parts) d = await d.getDirectoryHandle(p, { create: true });
+  return d;
+}
+async function writeText(parts, name, text) {
+  const f = await (await dirAt(parts)).getFileHandle(name, { create: true });
+  const w = await f.createWritable();
+  await w.write(text);
+  await w.close();
+}
+async function appendText(parts, name, text) {
+  const f = await (await dirAt(parts)).getFileHandle(name, { create: true });
+  const size = (await f.getFile()).size;
+  const w = await f.createWritable({ keepExistingData: true });
+  await w.seek(size);
+  await w.write(text);
+  await w.close();
+}
+
+function csvCell(v) {
+  if (v === null || v === undefined) return '';
+  const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+const csvText = (rows) => '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';   // BOM: Excel reads the Hebrew notes
+
+function runInfo(id) {
+  const [tid, unit, variant, rep] = id.split('|');
+  const test = TESTS[tid];
+  const runs = test ? runsFor(tid, unit) : [];
+  const phase = CAT.phases.find((p) => p.tests.includes(tid));
+  return { tid, unit, variant, rep: Number(rep), test, index: runs.findIndex((r) => r.id === id) + 1, total: runs.length, phase: phase ? phase.id : '' };
+}
+
+function runsCsv() {
+  const rows = [['unit', 'test_id', 'phase', 'subsystem', 'title', 'run', 'runs_total', 'variant', 'repetition', 'verdict', 'detail',
+    'operator', 'recorded_at', 'updated_at', 'catalog_version', 'values_measured_by_machine', 'machine', 'measurement_status', 'note']];
+  for (const id of Object.keys(state.results).sort()) {
+    const rec = state.results[id];
+    const i = runInfo(id);
+    rows.push([i.unit, i.tid, i.phase, i.test && i.test.subsystem, i.test && i.test.title, i.index || '', i.total || '', i.variant, i.rep,
+      rec.verdict || '', rec.detail || '', rec.by || '', rec.at || '', rec.updated || '', rec.catalog || CAT.catalog_version,
+      (rec.autoFields || []).length, rec.auto ? rec.auto.machine : '', rec.auto ? rec.auto.status : '', rec.note || '']);
+  }
+  return csvText(rows);
+}
+
+function valuesCsv() {
+  const rows = [['unit', 'test_id', 'run', 'variant', 'repetition', 'field', 'value', 'unit_of_measure', 'type', 'source', 'verdict', 'recorded_at', 'updated_at']];
+  for (const id of Object.keys(state.results).sort()) {
+    const rec = state.results[id];
+    const i = runInfo(id);
+    const fields = i.test ? i.test.data_fields : [];
+    for (const [k, v] of Object.entries(rec.values || {})) {
+      const f = fields.find((x) => x.name === k) || {};
+      rows.push([i.unit, i.tid, i.index || '', i.variant, i.rep, k, v, f.unit || '', f.type || '',
+        (rec.autoFields || []).includes(k) ? 'machine' : 'manual', rec.verdict || '', rec.at || '', rec.updated || '']);
+    }
+  }
+  return csvText(rows);
+}
+
+function sweepCsv(auto) {
+  const rows = [Array.isArray(auto.columns) ? auto.columns      // any automatic step may name its own sample columns
+    : auto.kind === 'tc08_record' ? ['t_s', 'ch1_c', 'machine_chamber_c', 'machine_heating']
+    : auto.kind === 'door_open_cure'
+    ? ['t_s', 'irradiance_mw_cm2', 'phase', 'door_open', 'uv_on']
+    : ['t_s', 'irradiance_mw_cm2', 'intensity_pct', 'phase', 'led_max_c', 'uv_on']];
+  (auto.samples || []).forEach((s) => rows.push(s));
+  return csvText(rows);
+}
+
+const README = `sCure DVT results - written by DVT/web/dvt-tool.html
+
+runs.csv       one row per run: unit, test, variant, repetition, verdict, operator, times, note
+values.csv     one row per recorded value (long format): filter / pivot by unit, test, field
+               source = machine (measured automatically) or manual (typed by the operator)
+journal.jsonl  every record / reopen / automatic measurement, append-only, one JSON per line
+runs/<unit>/<test>/<variant>_r<n>.json       the full run (values, verdict, note, measurement summary)
+sweeps/<unit>/<test>/<variant>_r<n>[_<step tool>]_<time>.csv  raw samples of an automatic measurement
+sweeps/<unit>/<test>/<variant>_r<n>_uv_off_timing_<time>.png  the UV-off graph (SAF-012 step 2)
+reports/       text reports saved from "Export report"
+
+The page reads runs/ back when this folder is chosen, so the folder - not the browser - is the record.
+`;
+
+// Only a lost permission takes the folder away (the operator reconnects it); any other write failure - a CSV open in
+// Excel, OneDrive or an antivirus holding the file for a moment - is transient: the run stays queued and the write is
+// tried again, so a recording in progress never silently stops reaching the folder (a 734-sample run was lost that way).
+const isPermissionLoss = (e) => !!e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+const RETRY_DELAYS_MS = [5000, 15000, 60000];
+let retryTimer = null, retries = 0;
+
+async function syncNow() {
+  if (!FOLDER.ok || !dirty.size) return;
+  const ids = [...dirty];
+  dirty.clear();
+  let failure = null;                                             // the first transient error of this pass
+  const attempt = async (fn) => {
+    try { await fn(); return true; }
+    catch (e) { if (isPermissionLoss(e)) throw e; failure = failure || e; return false; }
+  };
+  try {
+    for (const id of ids) {
+      const rec = state.results[id];
+      if (!rec) continue;
+      const { dir, stem } = runPath(id);
+      const i = runInfo(id);
+      const autos = rec.autos ? Object.values(rec.autos) : rec.auto ? [rec.auto] : [];
+      let ok = true;
+      for (const a of autos) {                     // raw samples only in hand right after a measurement - never overwrite them with nothing
+        if (!a.samples || !a.samples.length || !a.at) continue;
+        const file = `${stem}${rec.autos ? '_' + a.kind : ''}_${a.at.replace(/[-:]/g, '').replace(/\..*$/, '')}.csv`;
+        a.samples_file = `sweeps/${dir.join('/')}/${file}`;
+        if (!(await attempt(() => writeText(['sweeps', ...dir], file, sweepCsv(a))))) ok = false;
+        if (isTrace(a) && !a.graph_file && !a.live) {          // a script trace gets its picture beside the CSV, once - when the run is over, not from a live snapshot
+          const png = file.replace(/\.csv$/, '.png');
+          const wrote = await attempt(async () => {
+            const blob = await tracePng(a);
+            const f = await (await dirAt(['sweeps', ...dir])).getFileHandle(png, { create: true });
+            const w = await f.createWritable(); await w.write(blob); await w.close();
+          });
+          if (wrote) { a.graph_file = `sweeps/${dir.join('/')}/${png}`; log('info', t('graphSaved')(a.graph_file)); } else ok = false;
+        }
+      }
+      const strip = (a) => ({ ...a, samples: undefined, n_samples: (a.samples || []).length || a.n_samples || 0 });
+      const doc = { run_id: id, unit: i.unit, test_id: i.tid, run: i.index, runs_total: i.total, variant: i.variant, repetition: i.rep,
+        ...rec, auto: rec.auto ? strip(rec.auto) : undefined,
+        autos: rec.autos ? Object.fromEntries(Object.entries(rec.autos).map(([k, a]) => [k, strip(a)])) : undefined };
+      if (!(await attempt(() => writeText(['runs', ...dir], stem + '.json', JSON.stringify(doc, null, 1))))) ok = false;
+      if (!ok) dirty.add(id);                                     // one locked file does not hold the other runs back
+    }
+    if (!(await attempt(() => writeText([], 'runs.csv', runsCsv()))) | !(await attempt(() => writeText([], 'values.csv', valuesCsv()))))
+      ids.forEach((id) => dirty.add(id));
+    if (failure) {
+      FOLDER.retrying = failure.message;
+      const delay = RETRY_DELAYS_MS[Math.min(retries++, RETRY_DELAYS_MS.length - 1)];
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => { retryTimer = null; syncing = syncing.then(syncNow); }, delay);
+      log('warn', t('folderRetry')(failure.message, Math.round(delay / 1000)));
+    } else {
+      FOLDER.retrying = null;
+      retries = 0;
+      FOLDER.savedAt = new Date().toLocaleTimeString();
+    }
+  } catch (e) {                                                   // permission gone: everything waits for the reconnect
+    ids.forEach((id) => dirty.add(id));
+    FOLDER.ok = false;
+    FOLDER.retrying = null;
+    log('fail', t('folderError')(e.message));
+  }
+  renderFolder();
+}
+
+setInterval(() => { if (FOLDER.ok && dirty.size && !retryTimer) syncing = syncing.then(syncNow); }, 60000);   // nothing stays queued for long
+
+function persist(id, now = false) {
+  const rec = state.results[id];
+  if (rec) rec.updated = new Date().toISOString();
+  save();
+  dirty.add(id);
+  cloudQueue(id);
+  clearTimeout(syncTimer);
+  if (now) syncing = syncing.then(syncNow);
+  else syncTimer = setTimeout(() => { syncing = syncing.then(syncNow); }, 800);
+}
+
+// ---------- sCure Cloud: the same runs published to the portal's DVT tab (Code.gs kinds "dvt_run" / "dvt_file") ----------
+// The results folder stays THE record; the cloud is the copy everyone else sees. A failed upload only queues the run
+// again (and is retried every minute), so nothing recorded here can be lost by the network.
+const CLOUD = { queue: new Set(), busy: false, sent: 0, at: '', error: '', timer: null, machines: [], catalogSent: false };
+
+const cloudCfg = () => state.cloud || (state.cloud = { url: '', key: '' });
+const cloudReady = () => !!(cloudCfg().url && cloudCfg().key);
+// which CureBox (portal machine name) each DVT unit is - chosen from the portal's list, remembered per unit
+const cloudMachineFor = (unit) => ((cloudCfg().machines || {})[unit] || '');
+
+async function cloudPost(body) {
+  // text/plain: no CORS preflight (Apps Script answers OPTIONS with a redirect, which the browser rejects)
+  const r = await fetch(cloudCfg().url, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow',
+    body: JSON.stringify({ ...body, machineKey: cloudCfg().key }), signal: AbortSignal.timeout(60000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const out = await r.json().catch(() => null);
+  if (!out || !out.ok) throw new Error((out && out.message) || 'the portal refused the upload');
+  return out;
+}
+
+const textB64 = (text) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+const blobB64 = (blob) => new Promise((res, rej) => {
+  const fr = new FileReader();
+  fr.onload = () => res(String(fr.result).split(',')[1]);
+  fr.onerror = () => rej(fr.error || new Error('could not read the file'));
+  fr.readAsDataURL(blob);
+});
+
+/** One run as the portal stores it: catalog identity, verdict and every recorded value. */
+function cloudRunBody(id) {
+  const rec = state.results[id] || {};
+  const i = runInfo(id);
+  return { kind: 'dvt_run', unit: i.unit, testId: i.tid, variant: i.variant || '', rep: i.rep, runId: id,
+           verdict: rec.verdict || '', operator: rec.by || state.operator || '', startedAt: rec.at || rec.updated || '',
+           note: rec.note || '', machine: cloudMachineFor(i.unit), values: rec.values || {} };
+}
+
+/** The catalog as the portal needs it to list EVERY test: phases + gates, and per test its units and the runs it owes
+ *  (the same `variant|rep` keys runsFor builds), so a test nobody started still shows - as open. */
+function cloudCatalogBody() {
+  const tests = {};
+  for (const [tid, t] of Object.entries(TESTS)) {
+    const reps = Number(t.repetitions) || 1;
+    const isBench = (t.procedure_steps || []).some((s) => s.tool === 'bench');
+    tests[tid] = { title: t.title, safety: !!t.safety_critical, auto: !!(DVT_AUTO.has && DVT_AUTO.has(tid)) || isBench, minutes: t.duration_est_min || null,
+                   d: DVT_AUTO.detailOf ? DVT_AUTO.detailOf(t) : undefined,
+                   units: t.units || [], runs: (t.variants || [{}]).flatMap((v) => Array.from({ length: reps }, (_, r) => `${variantLabel(v)}|${r + 1}`)) };
+  }
+  return { kind: 'dvt_catalog', catalog: { version: CAT.catalog_version,
+    phases: CAT.phases.map((ph) => ({ id: ph.id, name: ph.name, gate: ph.gate || '', tests: ph.tests })), tests } };
+}
+
+/** The run, then every raw measurement it carries (sweep CSV, and the trace graph once the run is over). */
+async function cloudSendRun(id) {
+  const rec = state.results[id] || {};
+  const i = runInfo(id);
+  await cloudPost(cloudRunBody(id));
+  const { stem } = runPath(id);
+  const autos = rec.autos ? Object.values(rec.autos) : rec.auto ? [rec.auto] : [];
+  for (const a of autos) {
+    if (!a.samples || !a.samples.length || !a.at) continue;
+    const name = `${stem}${rec.autos ? '_' + a.kind : ''}_${a.at.replace(/[-:]/g, '').replace(/\..*$/, '')}.csv`;
+    await cloudPost({ kind: 'dvt_file', unit: i.unit, runId: id, fileKind: a.kind || 'sweep', fileName: name,
+                      mimeType: 'text/csv', contentBase64: textB64(sweepCsv(a)) });
+    if (isTrace(a) && !a.live) {
+      const png = name.replace(/\.csv$/, '.png');
+      await cloudPost({ kind: 'dvt_file', unit: i.unit, runId: id, fileKind: `${a.kind || 'sweep'}_graph`, fileName: png,
+                        mimeType: 'image/png', contentBase64: await blobB64(await tracePng(a)) });
+    }
+  }
+}
+
+async function cloudSyncNow() {
+  if (!cloudReady() || CLOUD.busy || (!CLOUD.queue.size && CLOUD.catalogSent)) return;   // a catalog that failed is retried even with no run queued
+  CLOUD.busy = true;
+  const ids = [...CLOUD.queue];
+  CLOUD.queue.clear();
+  renderCloud();
+  let failed = null;
+  if (!CLOUD.catalogSent) {                     // first: the catalog, so the portal can lay out every test
+    try { await cloudPost(cloudCatalogBody()); CLOUD.catalogSent = true; } catch (e) { failed = e; }
+  }
+  for (const id of ids) {
+    if (!state.results[id]) continue;
+    try { await cloudSendRun(id); CLOUD.sent++; log('info', t('logCloud')(id)); }
+    catch (e) { CLOUD.queue.add(id); failed = failed || e; }
+  }
+  CLOUD.busy = false;
+  CLOUD.error = failed ? failed.message : '';
+  if (failed) {
+    log('warn', t('logCloudFail')(failed.message));
+    clearTimeout(CLOUD.timer);
+    CLOUD.timer = setTimeout(cloudSyncNow, 60000);
+  } else {
+    CLOUD.at = new Date().toLocaleTimeString();
+  }
+  renderCloud();
+}
+
+function cloudQueue(id) {
+  if (!cloudReady()) return;
+  CLOUD.queue.add(id);
+  clearTimeout(CLOUD.timer);
+  CLOUD.timer = setTimeout(cloudSyncNow, 1500);
+  renderCloud();
+}
+
+/** "Sync all": everything this browser holds, including runs recorded before the cloud was set up. */
+function cloudSyncAll() {
+  if (!cloudReady()) { alert(t('cloudNone')); return; }
+  CLOUD.catalogSent = false;                    // the catalog goes again too (a newer catalog version)
+  Object.keys(state.results).forEach((id) => CLOUD.queue.add(id));
+  log('info', t('logCloudAll')(CLOUD.queue.size));
+  renderCloud();
+  cloudSyncNow();
+}
+
+/** The portal's CureBoxes for the list (names only; the DVT key may read nothing else). */
+async function cloudLoadMachines() {
+  if (!cloudReady()) { CLOUD.machines = []; renderCloud(); return; }
+  try { CLOUD.machines = (await cloudPost({ kind: 'dvt_machines' })).machines || []; CLOUD.error = ''; }
+  catch (e) { CLOUD.error = e.message; }
+  renderCloud();
+}
+
+/** Assign the current DVT unit to a CureBox: its runs already on the portal are re-sent and filed under it. */
+function cloudSetMachine(name) {
+  const c = cloudCfg();
+  c.machines = c.machines || {};
+  if (name) c.machines[state.unit] = name; else delete c.machines[state.unit];
+  save();
+  Object.keys(state.results).filter((id) => id.split('|')[1] === state.unit).forEach((id) => CLOUD.queue.add(id));
+  log('info', t('logCloudMachine')(state.unit, name));
+  renderCloud();
+  cloudSyncNow();
+}
+
+function renderCloud() {
+  const bar = $('cloudBar');
+  if (!bar) return;
+  const ready = cloudReady();
+  bar.classList.toggle('missing', !ready || !!CLOUD.error);
+  $('cloudDot').classList.toggle('ok', ready && !CLOUD.error && !CLOUD.queue.size && !CLOUD.busy);
+  const sel = $('cloudMachine');
+  if (sel) {
+    const mine = cloudMachineFor(state.unit);
+    const names = [...new Set([...CLOUD.machines, ...(mine ? [mine] : [])])];
+    sel.innerHTML = `<option value="">${esc(t('cloudMachinePick'))}</option>` +
+      names.map((n) => `<option value="${esc(n)}"${n === mine ? ' selected' : ''}>${esc(n)}</option>`).join('');
+    sel.disabled = !ready;
+  }
+  $('cloudText').textContent = !ready ? t('cloudNone')
+    : CLOUD.error ? t('cloudError')(CLOUD.error)
+    : (CLOUD.busy || CLOUD.queue.size) ? t('cloudQueued')(CLOUD.queue.size || 1)
+    : t('cloudOk')(CLOUD.sent, CLOUD.at);
+}
+
+
+async function journal(event, id) {
+  if (!FOLDER.ok) return;
+  const rec = state.results[id] || {};
+  const line = JSON.stringify({ ts: new Date().toISOString(), event, run_id: id, operator: state.operator || null, machine: machineInfo || null,
+    verdict: rec.verdict || null, detail: rec.detail || null, values: rec.values || {}, note: rec.note || null,
+    measurement: rec.auto ? { status: rec.auto.status, error: rec.auto.error, at: rec.auto.at } : null });
+  try { await appendText([], 'journal.jsonl', line + '\n'); }
+  catch (e) { log('fail', t('folderError')(e.message)); }
+}
+
+async function readRunsFromFolder() {
+  let count = 0;
+  let runsDir;
+  try { runsDir = await FOLDER.handle.getDirectoryHandle('runs'); } catch (e) { return 0; }
+  for await (const unitDir of runsDir.values()) {
+    if (unitDir.kind !== 'directory') continue;
+    for await (const testDir of unitDir.values()) {
+      if (testDir.kind !== 'directory') continue;
+      for await (const f of testDir.values()) {
+        if (f.kind !== 'file' || !f.name.endsWith('.json')) continue;
+        try {
+          const doc = JSON.parse(await (await f.getFile()).text());
+          const mine = state.results[doc.run_id];
+          if (mine && (mine.updated || '') >= (doc.updated || '')) continue;
+          const { run_id, unit, test_id, run, runs_total, variant, repetition, auto, autos, ...rec } = doc;
+          if (auto) rec.auto = { ...auto, samples: mine && mine.auto && mine.auto.at === auto.at ? mine.auto.samples : [] };
+          if (autos) {
+            rec.autos = Object.fromEntries(Object.entries(autos).map(([k, a]) => [k,
+              { ...a, samples: mine && mine.autos && mine.autos[k] && mine.autos[k].at === a.at ? mine.autos[k].samples : [] }]));
+            if (rec.auto && rec.autos[rec.auto.kind]) rec.auto = rec.autos[rec.auto.kind];
+          }
+          state.results[run_id] = rec;
+          count++;
+        } catch (e) { /* unreadable file: left for the analysis to flag */ }
+      }
+    }
+  }
+  return count;
+}
+
+async function attachFolder(handle) {
+  FOLDER.handle = handle;
+  FOLDER.name = handle.name;
+  FOLDER.ok = true;
+  try { await kv('folder', handle); } catch (e) { /* the folder is just asked for again next time */ }
+  try {
+    const n = await readRunsFromFolder();
+    save();
+    Object.keys(state.results).forEach((id) => dirty.add(id));   // what was only in the browser goes to the folder now
+    await writeText([], 'README.txt', README);
+    await syncNow();
+    log('info', t('logFolder')(FOLDER.name, n));
+  } catch (e) {
+    FOLDER.ok = false;
+    log('fail', t('folderError')(e.message));
+  }
+  renderAll();
+}
+
+async function chooseFolder() {
+  if (!window.showDirectoryPicker) { alert(t('folderUnsupported')); return; }
+  let h;
+  try { h = await window.showDirectoryPicker({ id: 'scure-dvt-results', mode: 'readwrite' }); } catch (e) { return; }
+  await attachFolder(h);
+}
+
+async function reconnectFolder() {
+  if (!FOLDER.handle) return chooseFolder();
+  try { if (await FOLDER.handle.requestPermission({ mode: 'readwrite' }) === 'granted') await attachFolder(FOLDER.handle); }
+  catch (e) { log('fail', t('folderError')(e.message)); }
+}
+
+async function restoreFolder() {
+  let h;
+  try { h = await kv('folder'); } catch (e) { return; }
+  if (!h) return;
+  FOLDER.handle = h;
+  FOLDER.name = h.name;
+  let perm = 'prompt';
+  try { perm = await h.queryPermission({ mode: 'readwrite' }); } catch (e) { /* unknown: ask */ }
+  if (perm === 'granted') await attachFolder(h);
+  else renderFolder();
+}
+
+function renderFolder() {
+  const bar = $('folderBar');
+  const lost = !FOLDER.ok && FOLDER.handle;
+  bar.classList.toggle('missing', !FOLDER.ok || !!FOLDER.retrying);
+  $('folderDot').classList.toggle('ok', FOLDER.ok && !FOLDER.retrying);
+  $('folderText').textContent = FOLDER.ok ? (FOLDER.retrying ? t('folderRetrying')(FOLDER.name, FOLDER.retrying) : t('folderOk')(FOLDER.name, FOLDER.savedAt))
+    : lost ? t('folderLost')(FOLDER.name) : t('folderNone');
+  $('folderReconnectBtn').hidden = !lost;
+  $('folderReconnectBtn').textContent = lost ? t('folderReconnect')(FOLDER.name) : '';
+}
+
+async function saveReport() {
+  if (!FOLDER.ok) { alert(t('folderFirst')); return; }
+  const name = `report_${safeName(state.unit)}_${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.txt`;
+  try { await writeText(['reports'], name, $('reportText').value); log('info', t('reportSaved')('reports/' + name)); }
+  catch (e) { log('fail', t('folderError')(e.message)); }
+}
+
+// ---------- wiring ----------
+function toggle(set, key, el) {
+  if (set.has(key)) set.delete(key); else set.add(key);
+  el.classList.toggle('open', set.has(key));
+  el.querySelector('[aria-expanded]').setAttribute('aria-expanded', set.has(key));
+}
+
+function init() {
+  if (!CAT || !CRIT) { $('banner').style.display = 'block'; return; }
+  load();
+  if (!T[state.lang]) state.lang = 'en';
+  if (!CAT.units.some((u) => u.id === state.unit)) state.unit = CAT.units[0].id;
+  $('operator').value = state.operator || '';
+  if (state.api) $('apiUrl').value = state.api;
+  $('cloudUrl').value = cloudCfg().url || '';
+  $('cloudKey').value = cloudCfg().key || '';
+
+  DVT_AUTO.attach({                       // everything the automatic runner needs from this page
+    base: () => state.api, lang: () => state.lang, connected: () => !!machineInfo, machine: () => machineInfo,
+    folderOk: () => FOLDER.ok, operator: () => state.operator.trim(),
+    test: (tid) => TESTS[tid], run: (tid) => currentRun(tid), results: () => state.results,
+    log, persist, journal, refreshTest, record: recordVerdict, setAuto,
+    drawTraces, hasTraceCanvas: (tid) => !!document.querySelector(`canvas[id^="trace-${tid}-"]`),   // live chart: the runner sets its rows and asks for a redraw
+    autoMap: () => AUTO, busy: () => Object.values(AUTO).some((x) => x.busy),
+  });
+
+  $('unit').addEventListener('change', (e) => { state.unit = e.target.value; save(); renderAll(); autoConnect(); });
+  $('machinePick').addEventListener('change', async (e) => {
+    if (!e.target.value) return;
+    $('apiUrl').value = e.target.value;
+    if (await checkConnection(++connGen, state.unit, true)) e.target.hidden = true;
+  });
+  $('lang').addEventListener('change', (e) => { state.lang = e.target.value; save(); renderAll(); });
+  $('operator').addEventListener('input', (e) => { state.operator = e.target.value; save(); });
+  $('connectBtn').addEventListener('click', () => checkConnection(++connGen, state.unit, true));
+  $('reportBtn').addEventListener('click', () => { $('reportText').value = buildReport(); $('reportModal').classList.add('open'); $('closeBtn').focus(); });
+  $('closeBtn').addEventListener('click', () => $('reportModal').classList.remove('open'));
+  $('reportModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.classList.remove('open'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('reportModal').classList.remove('open'); });
+  $('copyBtn').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('reportText').value); } catch (e) { $('reportText').select(); document.execCommand('copy'); } });
+  $('downloadBtn').addEventListener('click', () => download(`scure-dvt-report-${state.unit}-${new Date().toISOString().slice(0, 10)}.txt`, $('reportText').value, 'text/plain'));
+  $('folderBtn').addEventListener('click', chooseFolder);
+  $('folderReconnectBtn').addEventListener('click', reconnectFolder);
+  let machinesTimer = null;
+  const cloudEdited = () => { CLOUD.error = ''; save(); renderCloud(); clearTimeout(machinesTimer); machinesTimer = setTimeout(cloudLoadMachines, 800); };
+  $('cloudUrl').addEventListener('input', (e) => { cloudCfg().url = e.target.value.trim(); cloudEdited(); });
+  $('cloudKey').addEventListener('input', (e) => { cloudCfg().key = e.target.value.trim(); cloudEdited(); });
+  $('cloudMachine').addEventListener('change', (e) => cloudSetMachine(e.target.value));
+  cloudLoadMachines();
+  $('cloudSyncBtn').addEventListener('click', cloudSyncAll);
+  $('saveReportBtn').addEventListener('click', saveReport);
+  $('clearLogBtn').addEventListener('click', () => { logLines.length = 0; $('logBox').innerHTML = ''; });
+
+  const host = $('phases');
+  const activate = (e) => {
+    const ph = e.target.closest('[data-phase]');
+    if (ph && e.target.closest('.cat-header')) { toggle(openPhases, Number(ph.dataset.phase), $('phase-' + ph.dataset.phase)); return; }
+    const head = e.target.closest('.test-head');
+    if (head) {
+      const tid = head.dataset.test;
+      toggle(openTests, tid, $('test-' + tid));
+      $('body-' + tid).innerHTML = openTests.has(tid) ? renderBody(tid) : '';
+      if (openTests.has(tid)) { drawCharts(tid); drawDecay(tid); drawBench(tid); drawTc08(tid); drawTraces(tid); }
+    }
+  };
+  host.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]');
+    if (act && act.tagName === 'BUTTON') {
+      const tid = act.dataset.test;
+      if (act.dataset.act === 'prev') { selectedRun[tid] = Math.max(0, (selectedRun[tid] || 0) - 1); refreshTest(tid); }
+      if (act.dataset.act === 'next') { selectedRun[tid] = (selectedRun[tid] || 0) + 1; refreshTest(tid); }
+      if (act.dataset.act.indexOf('as-') === 0) DVT_AUTO.click(act.dataset.act, tid);   // the automatic runner's own buttons
+      if (act.dataset.act === 'record') recordVerdict(tid);
+      if (act.dataset.act === 'reopen') reopen(tid);
+      if (act.dataset.act === 'auto') runUvSweep(tid);
+      if (act.dataset.act === 'auto-abort') abortUvSweep(tid);
+      if (act.dataset.act === 'door-auto') runDoorOpenCure(tid);
+      if (act.dataset.act === 'tc-start') startTc08(tid);
+      if (act.dataset.act === 'tc-stop') stopTc08(tid);
+      if (act.dataset.act === 'tc-reread') rereadTc08(tid);
+      if (act.dataset.act === 'guided') runGuided(tid, act.dataset.tool);
+      if (act.dataset.act === 'bench') runBench(tid);
+      if (act.dataset.act === 'bench-stop' && AUTO[tid + ':bench']) AUTO[tid + ':bench'].stop = true;
+      if (act.dataset.act === 'guided-stop' && AUTO[tid + ':' + act.dataset.tool]) { AUTO[tid + ':' + act.dataset.tool].stop = true; if (act.dataset.tool === 'uv_off_timing') api('/api/dvt/uv-off/abort', 'POST').catch(() => {}); }
+      if (act.dataset.act === 'door-stop' && AUTO[tid]) { AUTO[tid].stop = true; api('/api/uv?on=0', 'POST').catch(() => {}); }
+      return;
+    }
+    if (e.target.closest('.test-body')) return;
+    activate(e);
+  });
+  host.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && (e.target.classList.contains('cat-header') || e.target.classList.contains('test-head'))) { e.preventDefault(); activate(e); }
+  });
+  host.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.dataset.act === 'pick') { selectedRun[el.dataset.test] = Number(el.value); refreshTest(el.dataset.test); return; }
+    if (el.dataset.field) {
+      setValue(el.dataset.test, el.dataset.field, el.value);
+      el.closest('.field').classList.toggle('filled', el.value !== '');
+      liveVerdict(el.dataset.test);
+    }
+  });
+  host.addEventListener('input', (e) => {
+    const el = e.target;
+    if (el.dataset.act === 'note') {
+      const run = currentRun(el.dataset.test);
+      const rec = state.results[run.id] || (state.results[run.id] = { values: {} });
+      rec.note = el.value;
+      persist(run.id);
+    } else if (el.dataset.field && el.tagName === 'INPUT') {
+      setValue(el.dataset.test, el.dataset.field, el.value);
+      liveVerdict(el.dataset.test);
+    }
+  });
+
+  renderAll();
+  restoreFolder();
+  autoConnect();
+}
+
+init();
+</script>
+</body>
+</html>
