@@ -62,6 +62,11 @@ Cross-cutting server rules (every ticket):
 ---
 
 ### CLOUD-01 — Apps Script project, manifest, clasp deploy and the build-reload handshake
+**Summary**
+- **What it is for:** The base Google Apps Script project that hosts the sCure Cloud portal as a web page anyone can reach, plus the steps to publish a new version.
+- **Problem it solves:** Without it there is no portal at all, machines could not post data without a login, and open browser tabs would not know a newer version was published.
+- **How we solve it:** Set up the project settings and the list of files to upload, publish to one fixed address, and keep a build number in both server and page so an old tab shows a Reload banner.
+
 **Project / folder:** cloud/google/appsscript.json, .clasp.json, .claspignore, Code.gs (`PORTAL_BUILD`, `setup`), Page.html (`PORTAL_BUILD`)
 **Goal:** Create the Apps Script project that hosts the portal as a public web app executing as the deployer, define the push allow-list and the deploy procedure, and give open browser tabs a way to learn that a newer build was deployed.
 **Depends on:** none
@@ -93,6 +98,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** cloud/google/appsscript.json 1-17; .clasp.json; .claspignore; Code.gs 734, 1505-1510; Page.html 611, 1167-1169, 1459-1461; .claude/skills/scure-cloud-ux/SKILL.md 10; build_errors.py 1-9.
 
 ### CLOUD-02 — Configuration and secrets (script properties, Secrets.gs fallback, build_secrets.py)
+**Summary**
+- **What it is for:** One place that reads all passwords, machine keys and other settings the portal needs.
+- **Problem it solves:** Secrets could leak into git, and each part of the code could read settings in a different way.
+- **How we solve it:** Read each value from the project's private settings first, else from a generated Secrets file that is never committed. A small script builds that file from a local text file and never prints the values.
+
 **Project / folder:** cloud/google/Code.gs (`cfg_`, `googleCfg_`, `execUrl_`, `ownerEmail_`), build_secrets.py, Secrets.gs (generated)
 **Goal:** One place that resolves every secret and setting: Apps Script script properties win, a generated `Secrets.gs` is the fallback, and nothing secret is ever in git.
 **Depends on:** CLOUD-01
@@ -121,6 +131,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 24-33, 47-58, 1166-1182; build_secrets.py 1-43; .gitignore 35-39.
 
 ### CLOUD-03 — Google Sheets storage, schema and in-place migrations
+**Summary**
+- **What it is for:** The storage layer: one Google Sheet with 12 tabs that holds all portal data.
+- **Problem it solves:** Without it there is nowhere to save data, old sheets would break after changes, and long text does not fit in one cell.
+- **How we solve it:** Open or create the sheet automatically, make sure every tab and header exists, upgrade older tabs in place without losing data, and split long text over several cells.
+
 **Project / folder:** cloud/google/Code.gs (`book_`, `sheet_`, chunk helpers, `now_`, `json_`)
 **Goal:** Open (or create) the single data spreadsheet, guarantee every sheet with its header exists, migrate older sheets in place without moving data, and provide the "long value over several cells" convention.
 **Depends on:** CLOUD-02
@@ -144,6 +159,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 9-19, 39, 60-108, 608; test_code.cjs 4-33, 81-85, 109-113, 494-506.
 
 ### CLOUD-04 — Request routing (doGet / doPost) and the page↔server call map
+**Summary**
+- **What it is for:** The front door of the server: it decides where each incoming request goes and lists every server function the page calls.
+- **Problem it solves:** Apps Script has limits (no paths, no headers, no error codes), so the page and machines need one clear, agreed way to talk to the server.
+- **How we solve it:** Route GET and POST requests by their parameters and the kind of message, check the right key for machines or the DVT tool, and swap the page's network calls for a small adapter that calls server functions.
+
 **Project / folder:** cloud/google/Code.gs (`doGet`, `doPost`), Page.html (first `<script>`: the Apps Script shim)
 **Goal:** Route every incoming HTTP request and define the exact list of server functions the page calls, through a `window.fetch` shim that keeps the page's REST-style code while calling `google.script.run`.
 **Depends on:** CLOUD-03, CLOUD-09
@@ -197,6 +217,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 1-8, 146-202, 1137-1145; Page.html 1-118.
 
 ### CLOUD-05 — Machine sync endpoint: snapshot storage and command delivery/ack (contract with PLAT-10)
+**Summary**
+- **What it is for:** The endpoint each sCure Box calls every few seconds to send its current state and pick up waiting commands.
+- **Problem it solves:** Without it the portal would not know each machine's state, and changes made on the site could not reach the machine reliably.
+- **How we solve it:** Find the machine by its key, save its latest snapshot, and return its queued commands. A command is sent again on every sync until the machine confirms it.
+
 **Project / folder:** cloud/google/Code.gs (`doPost` machine branch, `machines_`, `writeMachine_`, `commands_`)
 **Goal:** Accept the periodic snapshot each CureBox posts, store it as that machine's latest state, merge its alert log, and hand back the data-only commands queued for it, marking them delivered and acknowledged.
 **Depends on:** CLOUD-03, CLOUD-04, CLOUD-06
@@ -225,6 +250,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 39-44, 110-143, 170-202; sCureBox-CS src/SCureBox.Application/Platform/CloudSyncAgent.cs 110-158, 301-350, 400-460 (machine side, PLAT-10).
 
 ### CLOUD-06 — Machine alert log storage and the "Errors today" query
+**Summary**
+- **What it is for:** Stores each machine's error and alert history and gives the Errors screen today's and still-active alerts.
+- **Problem it solves:** Without it, alerts would be lost or saved twice on every sync, and staff could not see what went wrong today.
+- **How we solve it:** Save each alert once by machine, code and start time, update it when it clears, delete old ones after 30 days, and add the error title and repair video to each one.
+
 **Project / folder:** cloud/google/Code.gs (`alerts_`, `saveAlerts_`, `portalAlerts`)
 **Goal:** Keep each machine's alert history (raised / cleared transitions) in its own sheet, deduplicated across syncs, and answer the Errors view with today's and still-active alerts enriched with the registry title and repair video.
 **Depends on:** CLOUD-03, CLOUD-07, CLOUD-09
@@ -248,6 +278,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 44, 182-185, 204-257.
 
 ### CLOUD-07 — Error registry for the portal (build_errors.py → ErrorRegistry.gs)
+**Summary**
+- **What it is for:** Gives the portal the title and optional repair video of every error code.
+- **Problem it solves:** Without it the Errors screen would show bare numbers, or words different from what the machine shows.
+- **How we solve it:** A script reads the machine's master error list and writes a small file the server uses. Only safe web links are kept as videos.
+
 **Project / folder:** cloud/google/build_errors.py, ErrorRegistry.gs, Code.gs (`errorDef_`)
 **Goal:** Give the server the title and optional repair-video link of every error code, generated from the firmware's master `errors.json`, so the Errors view shows the same wording the machine uses.
 **Depends on:** CLOUD-01; DOM-02 (errors.json format)
@@ -270,6 +305,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** build_errors.py 1-41; ErrorRegistry.gs 1-2; Code.gs 253-257.
 
 ### CLOUD-08 — Cure report storage and serving
+**Summary**
+- **What it is for:** Stores the HTML cure report each machine uploads after a finished run and shows it to signed-in users.
+- **Problem it solves:** Without it, staff could not see or download cure reports remotely, and reports deleted on the machine would stay online.
+- **How we solve it:** Save or replace reports by run, keep the newest 25 per machine, delete what the machine deletes, and open a report as a page or download only for signed-in users.
+
 **Project / folder:** cloud/google/Code.gs (`reports_`, `saveReport_`, `deleteReports_`, `reportHtml_`, `serveReport_`)
 **Goal:** Store the self-contained HTML cure report each machine uploads after a finished run, mirror deletions done on the machine, keep the newest 25 per machine, and serve a report to signed-in browsers as a page or a download.
 **Depends on:** CLOUD-03, CLOUD-04, CLOUD-05, CLOUD-09; PLAT-14 (report content)
@@ -295,6 +335,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 43, 175-176, 259-331.
 
 ### CLOUD-09 — Sessions, shared-password sign-in and the role gate
+**Summary**
+- **What it is for:** Handles portal sign-in sessions and checks each person's role before every action.
+- **Problem it solves:** Without it anyone could see or change data, and there would be no record of who did what.
+- **How we solve it:** Give each sign-in a token that lasts 6 hours, allow a shared password only until Google sign-in is set up, check the role (Viewer, Service, Admin) on every call, and log refusals and actions.
+
 **Project / folder:** cloud/google/Code.gs (`newSession_`, `authed_`, `need_`, `portalLoginMode`, `portalLogin`, `portalMe`, `portalLogout`)
 **Goal:** Issue and check portal session tokens, support the shared password until Google sign-in is configured, and gate every action by role with a uniform refusal and audit trail.
 **Depends on:** CLOUD-02, CLOUD-11 (users / audit helpers)
@@ -323,6 +368,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 41, 1147-1165, 1224-1269, 1336-1349.
 
 ### CLOUD-10 — Google account sign-in (OAuth code flow in a popup, polled by the page)
+**Summary**
+- **What it is for:** Lets people sign in to the portal with their Google account.
+- **Problem it solves:** A shared password cannot tell people apart, and the portal must only let in people on its list.
+- **How we solve it:** Open Google sign-in in a new window, let Google send the user back to the portal, check the account details and the people list, and let the waiting page pick up the session by asking again and again.
+
 **Project / folder:** cloud/google/Code.gs (`portalLoginStart`, `portalLoginPoll`, `googleCallback_`)
 **Goal:** Let people sign in with their Google account: the page opens Google in a new window, Google returns to the web app's `/exec`, the server swaps the code for an ID token, checks the claims and the people list, and the waiting page collects a session token by polling.
 **Depends on:** CLOUD-02, CLOUD-04, CLOUD-09, CLOUD-11
@@ -348,6 +398,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 1163, 1271-1334.
 
 ### CLOUD-11 — People list, owner / last-admin rules and the audit log
+**Summary**
+- **What it is for:** Keeps the list of people allowed to use the portal, each with a role, and a log of important actions.
+- **Problem it solves:** Without it you could not control who gets in, someone could lock everyone out, and nobody could check who changed what.
+- **How we solve it:** Store people and roles in a sheet, always keep the owner as admin, refuse removing the last admin, and log sign-ins, refusals, role changes and service actions.
+
 **Project / folder:** cloud/google/Code.gs (`users_`, `userOf_`, `lastAdmin_`, `audit_`, `portalUsers`, `portalUserSave`, `portalUserRemove`, `portalAudit`)
 **Goal:** Keep the list of who may use the portal with a role each, guarantee the list can never lock everyone out, and record every sign-in, refusal, role change and service/admin action.
 **Depends on:** CLOUD-03, CLOUD-09
@@ -376,6 +431,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 1160-1222, 1351-1426.
 
 ### CLOUD-12 — Machines API for the page and the data-only command queue
+**Summary**
+- **What it is for:** Gives the page the list of machines with their latest state, and lets service users send data to a machine.
+- **Problem it solves:** Without it the page could not show machines, and there would be no safe way to send programs or test prints.
+- **How we solve it:** Return every machine's snapshot, online flag, pending commands, reports and NetBird status. Allow only four data-only commands (add or delete a program, send or delete a print), never hardware actions.
+
 **Project / folder:** cloud/google/Code.gs (`portalMachines`, `portalCommand`)
 **Goal:** Give the page every machine's latest snapshot, online flag, pending command count, report list and NetBird status, and let service users queue the four data-only commands (programs, simulated prints).
 **Depends on:** CLOUD-05, CLOUD-08, CLOUD-09, CLOUD-13
@@ -398,6 +458,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 42, 1463-1503; Page.html 2440-2497.
 
 ### CLOUD-13 — NetBird reachability status per CureBox (read-only)
+**Summary**
+- **What it is for:** Shows on each machine card if the sCure Box is connected to the NetBird remote-access network.
+- **Problem it solves:** Without it you cannot tell a machine that syncs but cannot be reached remotely from one that has no power or network.
+- **How we solve it:** Ask the NetBird service for its list of devices (read-only), keep it for 30 seconds, and match each machine to its device, picking the connected or most recent one.
+
 **Project / folder:** cloud/google/Code.gs (`netbirdStatus_`)
 **Goal:** Show on each machine card whether the CureBox is connected to the NetBird mesh and when NetBird last saw it, so a person can tell "syncing but not remotely reachable" from "no power / no network".
 **Depends on:** CLOUD-02, CLOUD-12; OPS-08 (enrolment)
@@ -417,6 +482,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 29-31, 1428-1461.
 
 ### CLOUD-14 — DVT tool ingest: runs, raw files, deletions, CureBox list and the catalog
+**Summary**
+- **What it is for:** Receives DVT test campaign data from the DVT tool and the machine runners: test runs, raw files, deletions and the test catalog.
+- **Problem it solves:** Without it test results and measurement files would not be stored centrally, and an old runner could put an older test list back.
+- **How we solve it:** Accept posts signed with the DVT key, save runs and files (files in Google Drive), refuse catalogs older than the stored one, and apply one-time test renames to existing data.
+
 **Project / folder:** cloud/google/Code.gs (`saveDvtRun_`, `dvtFolder_`, `saveDvtFile_`, `dvtFiles_`, `deleteDvtRuns_`, `dvtMachineNames_`, `saveDvtCatalog_`, `catalogCmp_`, `dvtApplyRenames_`, `dvtCatalog_`)
 **Goal:** Receive the DVT campaign data posted with the DVT key by the DVT tool and the CureBox runners: recorded runs (upsert), raw measurement files into Drive, deletions, the list of CureBoxes, and the test catalog with version guard and one-time test renames.
 **Depends on:** CLOUD-03, CLOUD-04, CLOUD-18 (`bumpVer_`)
@@ -448,6 +518,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 14-22, 154-169, 333-511, 560-565.
 
 ### CLOUD-15 — DVT read API for the page (portalDvt, detail, sample files, raw file download)
+**Summary**
+- **What it is for:** Gives the DVT, Overview, Race and Compare screens all their data, plus sample CSV text and raw files.
+- **Problem it solves:** Without it the screens have no data, and sending all test details on every refresh would be too slow.
+- **How we solve it:** Send everything in one call but leave out the big test details, which the page loads separately only when they change. Hand out files only to signed-in users, within size limits.
+
 **Project / folder:** cloud/google/Code.gs (`portalDvt`, `stripDetail_`, `portalDvtDetail`, `portalDvtFiles`, `serveDvtFile_`, `dvtRuns_`, cache helpers)
 **Goal:** Serve everything the DVT, Overview, Race and Compare views need in one polled call, keep it small by splitting off the per-test detail, and hand out sample CSV text and raw files to signed-in users.
 **Depends on:** CLOUD-14, CLOUD-16, CLOUD-17, CLOUD-09
@@ -474,6 +549,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 334-343, 513-603, 662-685, 1123-1134.
 
 ### CLOUD-16 — DVT units registry and the race between machines
+**Summary**
+- **What it is for:** Stores facts about each test unit in the campaign (who builds it, versions, planned dates) and the race between machines.
+- **Problem it solves:** Without it there is no shared place for unit plans, and the Race screen has no start time or list of units.
+- **How we solve it:** Save unit details with simple checks (valid names, dates as YYYY-MM-DD), and store only the race start time and unit list. The page works out the ranking and clocks.
+
 **Project / folder:** cloud/google/Code.gs (`DVT_UNIT_COLS`, `dvtUnits_`, `portalDvtUnitSave`, `dvtUnitRow_`, `raceGet_`, `portalRaceSet`)
 **Goal:** Store, per DVT unit of the campaign, who integrates it, its revisions and planned dates; and store the two facts of the race (official start and participating units) — ranking and clocks are computed in the page.
 **Depends on:** CLOUD-03, CLOUD-09, CLOUD-18 (`bumpVer_`)
@@ -496,6 +576,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 605-660, 687-722.
 
 ### CLOUD-17 — DVT runner protocol: hello, long-poll for work, command channel, progress updates
+**Summary**
+- **What it is for:** The way the test runner on each sCure Box gets test requests from the portal and reports its progress back.
+- **Problem it solves:** Without it tests requested on the site would not reach the machine fast, progress would not show, and tests cut by a restart would look stuck.
+- **How we solve it:** The runner says hello, waits for work with held requests and cheap cache checks, and sends progress, questions and results. The portal only passes messages; the machine still needs Start pressed on its screen.
+
 **Project / folder:** cloud/google/Code.gs (`dvtRunnerHello_`, `dvtCloseOrphans_`, `dvtNext_`, `dvtNextFull_`, `dvtEvents_`, `dvtUpdate_`, `runners_`, `touchRunner_`, `dvtRequests_`, `writeRequest_`, `pruneRequests_`, `dvtReadiness_`, `dvtWatching_`)
 **Goal:** Relay DVT test requests to the runner on each CureBox (`DVT/runner/dvt-runner.cjs`) cheaply and quickly, and record its progress, prompts, steps, results and live machine state — the portal only queues and relays; the machine's own interlocks and the at-machine Start confirmation stay in charge.
 **Depends on:** CLOUD-04, CLOUD-14, CLOUD-18; DVT-05 (RemoteConfirm at the machine)
@@ -528,6 +613,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 724-963; DVT/runner/dvt-runner.cjs 127-166, 449-450 (client).
 
 ### CLOUD-18 — DVT actions from the site and change notification (request, cancel, answer, acted, approve, long poll)
+**Summary**
+- **What it is for:** The actions people take on DVT tests from the site (request, stop, answer, confirm, approve) and the fast 'something changed' alert.
+- **Problem it solves:** Without it staff could not drive tests remotely, wrong or duplicate requests could be queued, and open screens would be slow to update.
+- **How we solve it:** Check roles and rules before each action, skip duplicates, keep a change counter, and let pages and runners wait on it so they update within about a second. Requests never start hardware by themselves.
+
 **Project / folder:** cloud/google/Code.gs (`portalDvtRequest`, `dvtOpenOthers_`, `portalDvtCancel`, `portalDvtActed`, `portalDvtAnswer`, `portalDvtApprove`, `portalDvtWait`, `waitFor_`, `bumpVer_`, `bumpCmd_`, `bump_`)
 **Goal:** Let service users queue DVT tests on a CureBox, stop them, answer the runner's questions and confirm manual steps; let admins approve hand-made electrical-safety tests; and push "something changed" to open DVT tabs and runners within a second through version counters and long polls.
 **Depends on:** CLOUD-09, CLOUD-14, CLOUD-17
@@ -561,6 +651,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 558, 894-917, 965-1121; Page.html 2499-2531.
 
 ### CLOUD-19 — Test harness for the server and the page (Node vm fakes, headless-browser stubs)
+**Summary**
+- **What it is for:** The automated tests for the portal server and page.
+- **Problem it solves:** Without tests, changes could break the portal, and testing against real Google services is slow and risky.
+- **How we solve it:** Run the server code on a computer with fake copies of every Google service, and test the page in a headless browser with stand-in server functions. No network is used.
+
 **Project / folder:** cloud/google/test_code.cjs, test_page.py, test_*.cjs (browser tests), conventions
 **Goal:** Test Code.gs locally without Google by running it in a Node `vm` against in-memory fakes of every Apps Script service, and give the page tests one shared way to stand in for `google.script.run`.
 **Depends on:** CLOUD-01..18; UI ranges CLOUD-20..59 own the page assertions

@@ -5,6 +5,11 @@
 ---
 
 ### DOM-01 — Project scaffold and hardware naming model
+**Summary**
+- **What it is for:** Sets up the core rules library of the sCure Box software and gives one fixed name to every fan, UV LED panel, temperature sensor and UV light sensor in the machine.
+- **Problem it solves:** Without one shared list of names, the screen, the API and the alert texts could call the same part by different names, and links between parts (which fan cools which panel) would be guessed in many places.
+- **How we solve it:** One small file holds all part names and their links (fan groups, the fan of each panel, plain-English labels). Every other part of the software uses these names and never makes up its own.
+
 **Project / folder:** `src/SCureBox.Domain/SCureBox.Domain.csproj`, `src/SCureBox.Domain/Models/HardwareNames.cs`; test project `tests/SCureBox.Domain.Tests/SCureBox.Domain.Tests.csproj`
 **Goal:** Create the domain class library and its test project, and define the physical names of every fan, LED panel, thermistor and UV photoresistor plus the lookups (groups, owning fan, UI zone, operator wording) that all other layers use. These names are the wire IDs used by the API, the UI and the alert texts, so their spelling is part of the contract.
 **Depends on:** none (first ticket of the Domain area). Every other DOM ticket depends on it.
@@ -66,6 +71,11 @@ internal static class RepoFiles { public static string Config(string name, [Call
 ---
 
 ### DOM-02 — Error registry, error codes and OpResult
+**Summary**
+- **What it is for:** A central list of every error and warning code the machine can show, with its message, how serious it is, and tips to fix it. It also defines the standard result returned for every command.
+- **Problem it solves:** Without one list, the same fault could get different numbers or messages on the machine, in the cloud and in reports, and the operator would not know what a code means or how to fix it.
+- **How we solve it:** All codes live in one file (errors.json) with a built-in backup copy if the file is missing or broken. Each fan, sensor and panel gets its own code, and old grouped codes stay only so old reports still show a title.
+
 **Project / folder:** `src/SCureBox.Domain/Errors/` (+ `config/errors.json`)
 **Goal:** One central registry of every error/warning code the machine emits, with severity, message, troubleshooting and support links. The numeric code travels unchanged from the hardware layer to every UI; its first digit is the SRS section. Provides per-component code mappers (one code per thermistor / fan / LED panel since 2026-10-21) and the family mapping back to the older grouped codes, plus `OpResult`, the command-result shape the API returns.
 **Depends on:** DOM-01.
@@ -267,6 +277,11 @@ public sealed class ErrorRegistry
 ---
 
 ### DOM-03 — Curing program, run-history and job models (wire contracts)
+**Summary**
+- **What it is for:** Defines the data shapes for a curing program (material and its steps), a cure run with its readings and alerts, print jobs with their NFC tag, and measured step timings. It also holds the ready-made preset programs.
+- **Problem it solves:** The machine, the screen, the API and CSV files must all read and write the same data. If field names or spellings differed, programs and reports would break between parts of the system.
+- **How we solve it:** Write each record once, with exact fixed field names and value spellings, and share it with every layer. Presets ship in a read-only file.
+
 **Project / folder:** `src/SCureBox.Domain/Models/CureProgram.cs`, `src/SCureBox.Domain/Models/History.cs` (+ `config/presets.json`)
 **Goal:** The serialisable records that describe a curing program (material + steps), a cure run with its telemetry, alerts and issues, print jobs (with NFC tag) and measured phase timings. JSON property names and enum spellings are the API/UI/CSV contract and must match exactly. Also the bundled read-only preset programs.
 **Depends on:** DOM-01.
@@ -367,6 +382,11 @@ preset-deflect-110 | P3 Deflect 110 | 55 | 1 Drying 45 8; 2 Cure 65 12 uv50; 3 C
 ---
 
 ### DOM-04 — Program validation and the program CSV format
+**Summary**
+- **What it is for:** Checks that a curing program written by an operator is valid, and saves or loads programs as CSV files (for the editor and USB import).
+- **Problem it solves:** A bad program (wrong temperature, time or UV level, or wrong nitrogen steps) could run badly or harm parts, and CSV files from other sources could load wrong data.
+- **How we solve it:** Check every rule and collect all failures together, each with its error code, so the operator sees everything at once. Use one fixed 10-column CSV format, and still accept the older 5-column format.
+
 **Project / folder:** `src/SCureBox.Domain/Programs/` (`ProgramValidator.cs`, `ValidationError.cs`, `ValidationResult.cs`, `ProgramCsv.cs`, `CsvParseResult.cs`)
 **Goal:** Pure validation of an operator-authored curing program (temperature/time/intensity ranges, cooling-drop rule, non-decreasing temperature chain, nitrogen block rules), collecting every failure with an error code; plus the 10-column CSV export/import (with legacy 5-column import) used by the editor and USB import.
 **Depends on:** DOM-02 (codes), DOM-03 (CureStep / enums).
@@ -434,6 +454,11 @@ public sealed record CsvParseResult(IReadOnlyList<CureStep> Steps, IReadOnlyList
 ---
 
 ### DOM-05 — Program duration estimator
+**Summary**
+- **What it is for:** Estimates how long a program will really take, for the whole program, each step, and the minutes shown for a print job.
+- **Problem it solves:** Just adding up the hold times hides the time spent heating up, cooling down and purging with nitrogen, so the time shown to the operator would be wrong.
+- **How we solve it:** Add heating, cooling and nitrogen time using simple fixed rates measured on the test machine, on top of the hold times.
+
 **Project / folder:** `src/SCureBox.Domain/Programs/ProgramEstimator.cs`, `ProgramEstimate.cs`
 **Goal:** Estimate what a program really takes (holds + heating ramps + cooling + nitrogen purges) from measured phase rates, per program and per step, and the minutes a print job shows. Rates are linear on purpose and come from phase timings collected on the test machine (reviewed 2026-09-07).
 **Depends on:** DOM-03.
@@ -485,6 +510,11 @@ public static class ProgramEstimator
 ---
 
 ### DOM-06 — Recipe sequencer state machine
+**Summary**
+- **What it is for:** The step-by-step engine that runs a curing program: it moves through the steps and tells the machine what to do (heat, dry, cure with UV, cool, nitrogen, stop).
+- **Problem it solves:** Without one clear engine, the machine could run steps in a different way than the screen shows, and pause, skip or abort could leave the machine in a confused state.
+- **How we solve it:** A pure state machine gets the time and chamber temperature and returns commands. It follows the same rules as the cure screen and supports pause, resume, skip, abort and fail; another layer carries out the commands.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`RecipeStateMachine.cs`, `RecipeCommand.cs`, `RecipeCommandKind.cs`, `RecipePhase.cs`, `RecipeState.cs`, `RecipeProgress.cs`)
 **Goal:** A pure program sequencer: given wall time and the chamber temperature it walks a `Material`'s steps and emits machine commands (heat, dry, cure with UV, UV-only, cool, nitrogen, stop, phase-ended timing records). It mirrors the UI's cure page rules (ramp band, hold timer modes, cooling band, fixed nitrogen purge, deferred UV) and supports pause/resume, skip, abort and fail. The recipe runner (Application) executes the commands.
 **Depends on:** DOM-03.
@@ -567,6 +597,11 @@ public sealed class RecipeStateMachine
 ---
 
 ### DOM-07 — Sensor conversion maths and signal helpers
+**Summary**
+- **What it is for:** Turns raw sensor voltages into real values (temperature in C, nitrogen pressure) and gives small helper tools for signals, like rate of change and fan speed.
+- **Problem it solves:** Raw voltages mean nothing on their own, the chamber reading needs calibration to match the reference meter, and short glitches in readings could trigger false alarms.
+- **How we solve it:** Shared math functions convert each sensor, apply the chamber calibration, measure slope over a short window, count fan speed, and keep the last good value during a short glitch.
+
 **Project / folder:** `src/SCureBox.Domain/Sensors/` (`NtcMath.cs`, `ChamberTempCalibration.cs`, `PressureConversion.cs`, `PressureResult.cs`, `PressureSensorParameters.cs`) and `src/SCureBox.Domain/Control/` (`SlopeEstimator.cs`, `TachRateTracker.cs`, `SensorGlitchHold.cs`)
 **Goal:** Convert raw analog readings into engineering values — NTC tap volts to °C, raw chamber °C to the TC-08-calibrated chamber temperature with rate compensation, N2 sensor volts to MPa/bar — and provide the generic signal helpers used by the hardware and control loops: least-squares slope over a sliding window, a shared-reader tachometer RPM tracker, and a short-glitch hold that keeps the last good value.
 **Depends on:** DOM-01.
@@ -624,6 +659,11 @@ public sealed class SensorGlitchHold<TKey, TValue> where TKey : notnull
 ---
 
 ### DOM-08 — Heater PI + delta-sigma controller and HDT calibration maths
+**Summary**
+- **What it is for:** The math that controls the heater power, plus the math used to calibrate the heater (HDT calibration).
+- **Problem it solves:** Without good control, the chamber temperature would overshoot or swing around the target, and calibration results could not be computed the same way every time.
+- **How we solve it:** A PI controller sets a power level from 0 to 1, and a simple modulator turns it into on/off heater cycles. Separate pure functions do the calibration math (stability, slope, time constant).
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`PiDeltaSigmaController.cs`, `PiDeltaSigmaGains.cs`, `HdtModel.cs`)
 **Goal:** The heater control law (PI(D) on a 0..1 power scale streamed as per-cycle ON/OFF by a first-order delta-sigma modulator, port of temperature_control._loop) and the pure maths used by HDT (heat-deflection) calibration: stability test, least-squares slope in °C/min, equilibrium temperature line vs power, first-order time constant and boost time.
 **Depends on:** DOM-01.
@@ -665,6 +705,11 @@ public static class HdtModel
 ---
 
 ### DOM-09 — Heater and thermistor safety supervision (9010-9014, 9006, 9007) and output watchdog decision (9017)
+**Summary**
+- **What it is for:** Safety checks for the heater and the temperature sensors, and the logic for a watchdog that cuts power if the software stops responding.
+- **Problem it solves:** A broken or stuck sensor, or a heater that runs but does not warm (wrong voltage switch or blown fuse), could cause overheating or a failed cure. Frozen software could leave heater and UV on.
+- **How we solve it:** Each check watches the readings over time and returns an alert code for the exact sensor or fault. The rest of the system then switches outputs off; the watchdog cuts heater and UV when the heartbeat stops.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`SensorSupervisionEvaluator.cs`, `SensorSupervisionResult.cs`, `SensorState.cs`, `FrozenReadingEvaluator.cs`, `NoHeatEvaluator.cs`, `WatchdogMonitor.cs`)
 **Goal:** The evaluators that protect the heater: open-circuit thermistor supervision with one code per sensor, the plausible-but-frozen chamber reading (a fixed resistor / stuck ADC / stuck reader thread, DVT-SAF-003), the heater that drives without warming the chamber (voltage selector between positions or blown fuse, DVT-SAF-017), and the decision logic of the external output watchdog that cuts heater + UV when the firmware heartbeat goes silent (DVT-SAF-010). Each returns alerts as `code -> detail`; the caller (Application supervision / Hardware watchdog) switches outputs off.
 **Depends on:** DOM-01, DOM-02, DOM-07 (NtcMath constants share the same valid range).
@@ -735,6 +780,11 @@ public sealed class WatchdogMonitor
 ---
 
 ### DOM-10 — Fan, LED-panel and UV-light supervision (902x, 903x, 904x, 906x, 9046/9047)
+**Summary**
+- **What it is for:** Health checks for the fans, the UV LED panels and the UV light sensors during and before a cure.
+- **Problem it solves:** A weak or stopped fan, a panel that does not light, or UV that is not really on could overheat parts or give a bad cure without anyone noticing.
+- **How we solve it:** Warn when a fan slows down and stop when it is too slow, test fans before a job, check that each panel warms up and does not cool during a cure, and confirm UV light with the light sensors. Each part has its own code.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`FanHealthEvaluator.cs`, `FanHealthRules.cs`, `FanHealthEntry.cs`, `FanHealthOutcome.cs`, `LedHeatingEvaluator.cs`, `LedHeatingRules.cs`, `LedHealthEntry.cs`, `LedHeatingResult.cs`, `UvLightEvaluator.cs`)
 **Goal:** Per-component supervision of the cooling/heater fans (wear warning, critical stop latch, operator override and acknowledge, pre-flight not-spinning verdicts), of the UV LED panels' thermal proof of current (panel must warm its thermistor; mid-process temperature drop), and of the UV-on light confirmation by the Left/Right photoresistors. One alert code per fan / panel (since 2026-10-21); the grouped codes are never raised.
 **Depends on:** DOM-01, DOM-02, DOM-09 (`SensorSupervisionEvaluator.ReadOk`), DOM-07 (`NtcMath.VRef`).
@@ -816,6 +866,11 @@ public sealed class UvLightEvaluator
 ---
 
 ### DOM-11 — RGB status-strip priority ladder and animation maths
+**Summary**
+- **What it is for:** Decides what the machine's RGB light strip shows (fault, door open, warning, heating, busy, no internet, normal) and how it blinks or animates.
+- **Problem it solves:** When several things happen at once, the strip needs one clear rule for which status wins, or the operator would get mixed signals.
+- **How we solve it:** A fixed priority ladder picks the most important status, and simple color math handles blinking, brightness and the moving busy animation.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`StripModeLadder.cs`, `StripInputs.cs`)
 **Goal:** Decide which status the RGB LED strip shows (fault, door, warning, manual heat, busy, no internet, normal) from machine flags, and provide the pure colour maths for blinking, brightness scaling and the "comet" busy animation (port of StatusLeds._mode / _paint_chase). The Application status-LED service drives the strip with these.
 **Depends on:** DOM-01.

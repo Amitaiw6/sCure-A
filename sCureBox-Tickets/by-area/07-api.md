@@ -131,6 +131,11 @@ Dvt-Hdt area, not here; API-01 only dispatches to it from the command line.
 ---
 
 ### API-01 — Host bootstrap and composition (`ScureApiHost`, `Program`, `HostSettings`, command-line modes, logging)
+**Summary**
+- **What it is for:** This is the start-up code of the machine software. It builds the one program that runs the web server, connects all software layers, and also offers a few command-line tools (version, watchdog, update package).
+- **Problem it solves:** Without one clear start-up place, settings, logging, layers and routes would be set up in different ways, and the machine would not shut down its outputs and save data safely when it stops.
+- **How we solve it:** One builder reads settings from the environment, sets the port (3001), logs in one simple style, registers every layer in a fixed order, adds all routes, and runs boot and safe-shutdown steps.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — root folder + `Infrastructure/`
 **Goal:** Build the single firmware process: resolve host settings from the environment, configure Kestrel, systemd integration,
 house-style console logging, CORS and JSON options, register all firmware layers in DI, install middleware and map every
@@ -203,6 +208,11 @@ Dvt-Hdt (`Bench.DvtBenchHost.Run`); Native UI (consumes `Build(args, configure)`
 ---
 
 ### API-02 — HTTP infrastructure: JSON conventions, envelopes, query parsing, exception envelope, request log
+**Summary**
+- **What it is for:** These are the shared rules that every web route uses: how JSON looks, how replies say ok or failed, how URL values are read, and how requests are logged.
+- **Problem it solves:** If each route did this on its own, the screens would get mixed reply formats, bad input could crash a request, and error codes from the hardware could be lost.
+- **How we solve it:** One small toolbox builds every reply as {ok, code, message}, reads URL values the same way, pulls error codes out of hardware messages, and turns any crash into a clear JSON error. Each request is logged.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Infrastructure/`
 **Goal:** One place for the wire conventions every endpoint uses: serializer options, the lenient body reader, the
 `{ok, code?, message}` envelopes and the hardware-refusal mapping, Flask-compatible query-string parsing, and the middleware that
@@ -248,6 +258,11 @@ turns unhandled exceptions into JSON envelopes and logs every request.
 ---
 
 ### API-03 — Liveness services: systemd watchdog keep-alive and output-watchdog heartbeat
+**Summary**
+- **What it is for:** Two background services that tell the system the machine software is still alive: one talks to the Linux service manager, one writes a heartbeat file every second.
+- **Problem it solves:** If the software crashes or freezes, heaters and UV LEDs could stay on with nobody in control. That is a safety risk.
+- **How we solve it:** The software sends regular 'I am alive' signals. A separate watchdog watches the heartbeat file; if it stops for 20 seconds, the watchdog turns heaters and UV off. A clean stop removes the file.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Infrastructure/`
 **Goal:** Keep systemd's `WatchdogSec=` satisfied while the process is healthy, and write the heartbeat file that the separate
 output watchdog (`scurebox --watchdog`, scurebox-watchdog.service) monitors: when the firmware crashes, is killed or hangs, the
@@ -277,6 +292,11 @@ heartbeat goes silent and the watchdog switches heaters and UV LEDs off after 20
 ---
 
 ### API-04 — Static kiosk UI, SPA fallback and unknown-route 404
+**Summary**
+- **What it is for:** This part serves the touch-screen web app (the kiosk UI) and its config files from the machine itself.
+- **Problem it solves:** Without it, the screen app could not load, page links inside the app would break on reload, and wrong API addresses would return a web page instead of a clear error.
+- **How we solve it:** Serve the built app files directly, send the main page for any other screen address, and answer unknown API addresses with a JSON 'Not found' (404).
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/StaticUi.cs`
 **Goal:** Serve the built React UI (and its `/config/*.json` assets) from `SCURE_UI_DIR` at `/`, fall back to `index.html` for
 client-side routes, and give unknown `/api` routes a JSON 404 instead of the SPA page.
@@ -306,6 +326,11 @@ client-side routes, and give unknown `/api` routes a JSON 404 instead of the SPA
 ---
 
 ### API-05 — Machine state poll and NFC setting
+**Summary**
+- **What it is for:** The main status route that the screens ask once a second to learn everything about the machine, plus routes to read and switch the NFC tag reader.
+- **Problem it solves:** The screens need one full, up-to-date picture of the machine (temperatures, fans, alerts, counters, cloud, NFC, program). Without it they cannot show what is happening.
+- **How we solve it:** Take the machine state and add counters, cloud status, offline mode, NFC info and the running program. During a planned test freeze, return the last saved state. Turning NFC on without a reader is refused with code 9052.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/StateEndpoints.cs`
 **Goal:** `GET /api/state` is the 1 Hz poll of the UIs: the controller's `MachineState` decorated by the host with component
 counters, cloud-sync status, offline mode, NFC reader info and the recipe runner status; during a DVT hang it returns the frozen
@@ -338,6 +363,11 @@ pre-hang state. The NFC routes read and switch the NFC feature.
 ---
 
 ### API-06 — Cure process commands (`/api/cure/*`)
+**Summary**
+- **What it is for:** Commands that start each step of a cure: heat, dry, cure with 405 or 450 nm UV, UV only, cool, nitrogen, and stop.
+- **Problem it solves:** The screen drives the cure step by step. Without checked commands, wrong values (like too-high temperature) could reach the machine, and hardware refusals would not be explained.
+- **How we solve it:** One command per step. Values are checked against allowed ranges first, with clear error codes; then the request goes to the machine control, and any refusal comes back with its code.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/CureEndpoints.cs`
 **Goal:** One POST per recipe process (heat, dry, cure-405, cure-450, uv-only, cool, nitrogen, stop) used by the UI's
 phase-by-phase cure flow. The API validates the parameter ranges with registry codes, then forwards to `ICureController`, mapping
@@ -376,6 +406,11 @@ refusals through `ApiJson.HwResult`.
 ---
 
 ### API-07 — Direct hardware, acknowledgements, BOFA policy and diagnostics
+**Summary**
+- **What it is for:** Service and settings routes that control single parts directly: door, chamber heating, light strip, fans, damper, UV, fume extractor (BOFA), alarm acknowledgements, and fan and LED tests.
+- **Problem it solves:** Service people and settings screens need to test and control each part alone, clear alarms, and save the extractor settings. Without these routes they could not.
+- **How we solve it:** Simple routes, one per action, that pass the request to the machine control. Some always answer ok for compatibility with the old system. Test routes return fan speed and LED heating results.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/HardwareEndpoints.cs`, `Endpoints/DiagnosticsEndpoints.cs`
 **Goal:** Service / settings-screen routes that drive single outputs (door, manual chamber heating, RGB strip, fans, damper, UV,
 BOFA extractor), operator acknowledgements of latched alarms, the persisted BOFA policy, and the fan RPM and LED heating
@@ -428,6 +463,11 @@ diagnostics. Several routes answer `ok:true` unconditionally (Flask fidelity).
 ---
 
 ### API-08 — Data endpoints: materials, print history, cure history, cure runs, reports, phase timings
+**Summary**
+- **What it is for:** Routes that save and read the machine's data: preset and user programs, print history, cure runs with their reports, cure history, and phase-timing statistics.
+- **Problem it solves:** Without stored data, users would lose their programs and history, and there would be no record or report of each cure.
+- **How we solve it:** The screen saves full lists and follows a cure run by its own id: start, send readings, finish, save report. While a run is active, the server also records sensor and fan problems and adds them to the run.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/MaterialEndpoints.cs`, `Endpoints/HistoryEndpoints.cs`, `Endpoints/CureRunEndpoints.cs`, `Infrastructure/RunIssueTracker.cs`
 **Goal:** Persisted data the UI reads and writes: bundled preset programs, user programs and print history (full-replace
 arrays), the cure-run lifecycle keyed by the UI's external id (start → telemetry → finish → report), cure-history listing and
@@ -480,6 +520,11 @@ finished run.
 ---
 
 ### API-09 — Server-side recipe runner endpoints and recipe validation wiring
+**Summary**
+- **What it is for:** Routes to run a whole cure program on the machine by itself: start, pause, resume, abort, skip a step, and read the status.
+- **Problem it solves:** If only the screen drives each step, a screen problem can break the cure. Programs also need one shared check before they run.
+- **How we solve it:** The machine runs the whole program itself. A program can be picked by id or sent in full. Before start, one checker combines the range checks and the program rules.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/RecipeEndpoints.cs`, `Infrastructure/RecipeValidation.cs`
 **Goal:** Run a whole program (Material) on the machine without the UI driving each phase: start by preset/user id or inline
 material, pause, resume, abort, skip a step, read the status. The host supplies the recipe validator that combines the API range
@@ -515,6 +560,11 @@ checks with the Domain program rules.
 ---
 
 ### API-10 — System, update, network, network policy and cloud configuration
+**Summary**
+- **What it is for:** Settings-screen system actions: restart and power off, clock and network time, version, USB exports, software update from USB, offline mode, cloud settings, and network status and setup.
+- **Problem it solves:** Users and service need to manage the machine, update it safely and set up the network from the screen. Without these routes they would need a computer and command line.
+- **How we solve it:** Thin routes that pass each request to the system services, which do the real work. Errors come back with clear codes (for example USB or network problems). Updates must be signed.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/SystemEndpoints.cs`, `Endpoints/NetworkEndpoints.cs`
 **Goal:** Settings-screen system actions: reboot/shutdown, clock and network time, version, USB exports, signed software update
 from USB, offline/network policy, cloud sync configuration, wired-network status, safe network diagnostics and static IP. The API
@@ -569,6 +619,11 @@ is a thin adapter; behaviour lives in Platform services.
 ---
 
 ### API-11 — Developer Mode endpoints (`/api/dev/*`): event log, LED calibration, LED power drive, PicoLog, HDT calibration
+**Summary**
+- **What it is for:** Engineering routes for Developer Mode: an event log, LED power calibration, an LED power test, the PicoLog temperature logger, and material heat-deflection (HDT) calibration.
+- **Problem it solves:** Engineers need to calibrate and test the machine. Without these tools LED output could be uneven and material calibration could not be done or reported.
+- **How we solve it:** Routes that save and apply LED calibration factors for four zones (checked to 0-1.5), drive LEDs with test factors, hand the PicoLog to the test bench, and run HDT calibration with a CSV report.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/DevEndpoints.cs`
 **Goal:** Engineering routes behind the UI's Developer Mode: an append-only event log, the four-zone LED calibration factors
 (persisted and applied to the controller), a calibrated LED power test drive with optional preview factors, the PicoLog TC-08
@@ -613,6 +668,11 @@ status and its hand-over to the DVT bench process, and the material HDT calibrat
 ---
 
 ### API-12 — DVT bench endpoints (`/api/dvt/*`), loopback-only switches and the DVT hang gate
+**Summary**
+- **What it is for:** Routes for design-verification (DVT) tests: UV meter control, a bench lock, UV sweep and UV-off timing tests, a planned software freeze test, LED check switch, and 'confirm at the machine' for cloud-started tests.
+- **Problem it solves:** Safety and optical tests must be run and measured in a repeatable way. Some test actions are dangerous, so they must not be started by any remote caller.
+- **How we solve it:** Special test routes run each test and return the measurements. Risky switches only accept calls from the machine itself. During a planned freeze, most changing requests are blocked with 409.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/DvtEndpoints.cs`
 **Goal:** Routes used by the DVT console, the DVT web page and the on-machine DVT runner: the Ophir StarBright meter on the
 machine's USB, the bench lock lease, the UV linearity sweep (DVT-OPT-001/002), the UV-off-on-door-open timing (DVT-SAF-008), the
@@ -664,6 +724,11 @@ deliberate firmware hang (DVT-SAF-010) with its 409 gate, the in-memory LED pane
 ---
 
 ### API-13 — Integration test harness (`SCureBox.Api.Tests`)
+**Summary**
+- **What it is for:** A test setup that runs the full machine software inside the tests, with simulated hardware and a temporary data folder.
+- **Problem it solves:** Without it, the web routes could only be checked on a real machine, which is slow, risky and hard to repeat.
+- **How we solve it:** Start the whole software in memory with fake hardware and send real web requests to every route. A second variant acts as a local caller to test the machine-only DVT routes.
+
 **Project / folder:** `tests/SCureBox.Api.Tests/SCureBox.Api.Tests.csproj` — root
 **Goal:** Host the complete firmware in-process with simulated hardware and a throw-away data directory so every endpoint ticket
 can be verified over real HTTP, plus a loopback variant for the DVT routes that require a local caller.

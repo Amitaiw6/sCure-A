@@ -21,6 +21,11 @@ Ticket list: PLAT-01 persistence foundation · PLAT-02 JSON data stores · PLAT-
 ---
 
 ### PLAT-01 — Persistence foundation (data dir, atomic writes, JSON settings, base store)
+**Summary**
+- **What it is for:** The basic building blocks for saving data on the sCure Box: where data and config files live, and a safe way to write a file.
+- **Problem it solves:** If power is cut during a save, a file can be left half-written and the machine may fail to start or lose data.
+- **How we solve it:** Write to a temporary file, force it to disk, then swap it in. Readers treat a missing or broken file as default values and only log a warning.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Persistence/`
 **Goal:** Provide the common plumbing every durable store uses: where data and bundled config live, a power-cut-safe file write, the shared `System.Text.Json` options, and an abstract one-file JSON store with a lock and a tolerant loader.
 **Depends on:** none in this area. Domain (nothing beyond BCL).
@@ -78,6 +83,11 @@ public abstract class JsonFileStore<T> where T : class {
 ---
 
 ### PLAT-02 — JSON data stores (materials, print history, cure runs + telemetry + reports, phase timings)
+**Summary**
+- **What it is for:** The default data storage in plain JSON files: cure programs, print history, cure runs with their sensor data and reports, and measured phase times.
+- **Problem it solves:** Without it the machine cannot remember programs, show history or reports, or improve its time estimates.
+- **How we solve it:** One file per data type. Keep only the newest 25 runs, save sensor data every 15 samples, and mark runs cut off by a power loss as errors.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Persistence/`, interfaces in `Contracts/IStores.cs`
 **Goal:** The default (no-database) implementation of the four data stores the process engine, API and UI use: bundled preset programs + user programs, print history, cure runs with telemetry and saved reports (keeping only the newest 25), and the append-only measured phase timings that feed the program estimate model.
 **Depends on:** PLAT-01. Domain (`Material`, `CureStep`, `PrintLog`, `CureLog`, `TelemetrySample`, `CureRunStart`, `CureRunFinish`, `CureReport`, `SensorIssue`, `FanIssue`, `RunAlert`, `PhaseTiming`).
@@ -152,6 +162,11 @@ Presets: `ConfigDir/presets.json` (`Material[]`), read-only.
 ---
 
 ### PLAT-03 — PostgreSQL backend, schema and sticky store selector
+**Summary**
+- **What it is for:** An optional PostgreSQL database that can store the same data as the JSON files.
+- **Problem it solves:** Some setups want the data in a real database, but the machine must still work if the database is missing or down.
+- **How we solve it:** At startup, use the database only if it is set up and reachable, create its tables if needed, and otherwise use the JSON files. The choice does not change until restart.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Persistence/`; schema `deploy/db/schema.sql`, `deploy/db/seed_presets.sql`
 **Goal:** Optional relational backend (port of the Python `db.py`) implementing the same three store interfaces over a normalized ER schema with convenience views that return the UI's JSON shapes. A selector picks Postgres once at startup when configured AND reachable, else JSON — never retried during the process lifetime.
 **Depends on:** PLAT-01, PLAT-02. Deploy-Ops (ships `deploy/db/*.sql` beside the app).
@@ -219,6 +234,11 @@ Schema (`schema.sql`, idempotent: `CREATE EXTENSION IF NOT EXISTS pgcrypto`, `CR
 ---
 
 ### PLAT-04 — Restart markers and safety latches on disk (planned restart, heater run-on, frozen reading)
+**Summary**
+- **What it is for:** Three tiny files that remember important state across a restart: planned restart, remaining heater-fan cooling time, and a frozen temperature reading lock.
+- **Problem it solves:** After a restart the machine would forget it should boot quickly, stop cooling too early, or allow a heater that was refused for safety.
+- **How we solve it:** Write a small marker file before the restart and read it once at the next start; old markers are ignored and deleted.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Persistence/`
 **Goal:** Three tiny files that carry state across a firmware stop/start: "this restart was planned" (quick boot, skip self-tests), "the heater fan run-on still has N seconds to go" (resume cooling after a restart), and the Err 9006 frozen-reading latch (a restart must not re-allow a refused heater).
 **Depends on:** PLAT-01. Consumers: Application-Process (registers `FrozenReadingStore`, `PlannedRestart` in `ProcessServiceCollectionExtensions`), Api (`HeaterRunOnMarker` in `ScureApiHost`).
@@ -268,6 +288,11 @@ public sealed class FrozenReadingStore : JsonFileStore<FrozenReadingRecord> {
 ---
 
 ### PLAT-05 — Process runner and small platform utilities (platform info, eMMC identity, dev event log)
+**Summary**
+- **What it is for:** Shared helpers: running outside programs safely, knowing the operating system, reading the unit's fixed storage serial number, and a developer event log.
+- **Problem it solves:** Outside programs can hang or crash the app, and the unit needs a stable ID and a simple debug log.
+- **How we solve it:** Run programs without a shell, with a time limit, never throwing errors. Read the serial from the built-in storage only, and append events as one line each.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Safe execution of external tools (no shell, timeouts, never throws), OS detection, reading the unit's immutable eMMC serial, and the append-only Developer Mode event log.
 **Depends on:** PLAT-01.
@@ -304,6 +329,11 @@ public sealed class DevEventLog : IDevEventLog { public const int MaxEventLength
 ---
 
 ### PLAT-06 — USB drive discovery and the system service (power, version info, log/CSV/report export)
+**Summary**
+- **What it is for:** Finds a plugged-in USB drive and handles system actions: reboot, shut down, show version info, and export logs, program CSV files or cure reports to USB.
+- **Problem it solves:** Operators need to restart the machine, see what version runs, and take data off the machine.
+- **How we solve it:** Look for a mounted removable drive, write files there with safe names, and return a clear message or error code (for example no USB drive).
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Find a mounted removable USB drive ("Disk-on-Key") on the Pi or a PC, and implement the `/api/system/*` actions: reboot, shutdown, version info, export logs / program CSV / cure report HTML to USB. (Clock/NTP methods are on the same class, specified in PLAT-07.)
 **Depends on:** PLAT-05, PLAT-07 (ISupervisorClient, optional ctor arg). Domain (`OpResult`, `ErrorCodes`).
@@ -352,6 +382,11 @@ public sealed record ExportResultDto { bool Ok "ok"; string Message "message" = 
 ---
 
 ### PLAT-07 — Clock and network time (timedatectl) + Origin supervisor client
+**Summary**
+- **What it is for:** Lets the operator set the date and time and turn network time on or off, and talks to the Origin device supervisor.
+- **Problem it solves:** On an Origin image, clock changes made the normal way are lost after a reboot.
+- **How we solve it:** When the Origin supervisor is present, send clock settings to it so it re-applies them at boot; otherwise use the normal system time tool.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/SystemService.cs` (clock part), `Platform/SupervisorClient.cs`
 **Goal:** Let the operator set date/time and switch network time (NTP) on/off such that it survives reboots on an Origin image (where the supervisor owns `/opt/config/clock.conf` and `origin-apply-clock.service` re-applies it at boot). Provide the HTTP client to the Origin device supervisor (ASP.NET service on `127.0.0.1:8080`) used for clock and for software updates (PLAT-08).
 **Depends on:** PLAT-05, PLAT-06.
@@ -392,6 +427,11 @@ public sealed class HttpSupervisorClient : ISupervisorClient {
 ---
 
 ### PLAT-08 — Software update: signed `.scu` package from USB, or through the Origin supervisor
+**Summary**
+- **What it is for:** Installs a new software version from a USB stick.
+- **Problem it solves:** Machines need safe updates; a fake or broken package must not be installed, and a failed install must not leave the machine broken.
+- **How we solve it:** Standalone machines check a signed package, run its install script, and roll back on failure. Origin devices hand the update to the supervisor, which checks and switches versions.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Install a new firmware version from a USB stick. Standalone machines use the `.scu` format (outer tar with an RSA-SHA256-signed inner tar.gz carrying `manifest.json` + `install.sh`, run with `--pre`/`--post`, `--rollback` on failure). On an Origin device (supervisor answering) the update is delegated to the supervisor, which verifies SHA256SUMS + manifest of a `.tgz` and switches `current`.
 **Depends on:** PLAT-05, PLAT-06 (IUsbMounts), PLAT-07 (ISupervisorClient). Deploy-Ops (`deploy/keys/scure-update.pub`, package scripts `deploy/package-origin-app.*`, `make-installer.ps1`).
@@ -451,6 +491,11 @@ public sealed record UpdateResultDto { bool Ok "ok"; IReadOnlyList<UpdateStepDto
 ---
 
 ### PLAT-09 — Network service (status, diagnostics, static IP, NetBird/WireGuard tunnel IP) and network policy
+**Summary**
+- **What it is for:** Shows network status, runs network tests, sets a fixed or automatic IP address, and decides if having no network is a problem.
+- **Problem it solves:** Operators and support need to see and fix network issues, but units that are offline on purpose should not show a fault.
+- **How we solve it:** Read interface and tunnel status, run ping and similar tools only on checked addresses, apply IP settings through the network manager, and stay green when offline by choice.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Report the wired interface (eth0) state, all interfaces, gateway and the remote-access tunnel IP; run ping/traceroute/nslookup safely against validated addresses; apply DHCP/static IPv4 via NetworkManager; and decide whether "no network" is a fault at all (offline-by-choice / not cloud-enrolled units stay green).
 **Depends on:** PLAT-05, PLAT-10 (`ICloudSync.Status().Enabled` for the policy). Application-Process (registers `NetworkPolicy`, consumes it in `StatusLedService`; supplies `InternetReachability`).
@@ -504,6 +549,11 @@ public sealed class NetworkPolicy {
 ---
 
 ### PLAT-10 — Cloud sync agent (outbound-only portal sync, data-only commands, report upload/deletion)
+**Summary**
+- **What it is for:** A background service that keeps the machine in sync with the sCure Cloud portal.
+- **Problem it solves:** Without it the portal cannot see machine status, alerts or reports, and cannot send programs and prints to the machine.
+- **How we solve it:** The machine regularly sends its status to the portal (outbound only), accepts only data commands (never hardware control), uploads each finished report once, and reports deleted runs.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** A background service that, when `data/cloud.json` holds a portal URL and machine key, periodically POSTs a machine snapshot to the sCure Cloud portal (Flask `/api/agent/sync` or a Google Apps Script `/exec` URL), applies the portal's DATA-ONLY commands (programs and prints — never hardware), acks them on the next sync, keeps a 48 h alert log for the portal, uploads each finished run's HTML report once and propagates local run deletions.
 **Depends on:** PLAT-01, PLAT-02, PLAT-11 (`IComponentCounters`), PLAT-14 (`ICureReportBuilder`, `CureReportContext`). Domain (`ProgramEstimator.EstimateProgramMinutes`, `NfcUid`, `Material`, `PrintLog`). Application-Process (`MachineState`, `CloudSyncDto`, `ICureController` via `MachineStateSource`).
@@ -562,6 +612,11 @@ Files: `data/cloud.json` (CloudConfig, indented), `data/cloud_reports.json` (sor
 ---
 
 ### PLAT-11 — Component ON-hour counters (wear tracking)
+**Summary**
+- **What it is for:** Counts how many hours each wearing part has been on: the 405 nm and 450 nm LEDs, cooling fan, heater and heater fan.
+- **Problem it solves:** Without on-time counts there is no way to know when parts are worn and need service.
+- **How we solve it:** Add up on-time from the live machine state, save it so it survives reboots and power cuts, and show it in hours in the app and the cloud.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Accumulate the real ON-time of the wear components (405 nm LEDs, 450 nm LEDs, chamber cooling fan, heater, heater fan) from the live machine state and persist it across reboots and power cuts; exposed as hours in `/api/state.counters` and the cloud snapshot.
 **Depends on:** PLAT-01. Application-Process (`MachineState` fields `UvOn`, `UvWavelength`, `HeaterOut`, `HeaterPwm`, `IsHeating`, `FanRpmEach`, `Fans`).
@@ -598,6 +653,11 @@ public sealed class ComponentCountersHostedService : BackgroundService { public 
 ---
 
 ### PLAT-12 — Machine setting stores: LED calibration factors, BOFA extractor policy, serial-number backup
+**Summary**
+- **What it is for:** Three small saved settings: LED output calibration per zone, whether a BOFA fume extractor is connected, and a backup copy of the serial number.
+- **Problem it solves:** LED output varies between units, the extractor setting must be remembered, and the serial number can be lost if storage is replaced.
+- **How we solve it:** Save each setting in its own file, and keep a second copy of the serial number on a removable card so it can be restored.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Three small persisted settings: per-zone LED output calibration factors; whether a BOFA fume extractor is connected and its speed reference; and a second copy of the unit's serial number on a removable card so a reinstalled/swapped storage can restore it.
 **Depends on:** PLAT-01. Consumers: Application-Process (`CureController` uses `BofaPolicy` and LED factors; BOFA 24 V supply / Err 9048 logic is there), Dvt-Hdt (HDT uses factors), Native UI (`UiSettingsStore` uses `SerialBackup`).
@@ -649,6 +709,11 @@ public sealed class SerialBackup {
 ---
 
 ### PLAT-13 — NFC reader: USB detection, enable setting, Eccel Pepper C2 tag reading
+**Summary**
+- **What it is for:** Supports the USB NFC reader (Eccel Pepper C2) used to read tags that start a job.
+- **Problem it solves:** The machine must know if the reader is there, warn when it is unplugged, and read tags reliably.
+- **How we solve it:** Detect the reader by its USB ID without opening it, refuse to enable NFC without a reader, raise error 9052 when it is unplugged, and send one event per tag.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Detect the Eccel Pepper C2 USB NFC reader by USB identity (never opening the port for detection), persist the operator's "NFC enabled" setting (refused while no reader is present), raise Err 9052 when an enabled reader is unplugged, and — as a hosted service — read tags over the reader's binary protocol, raising one event per tag arrival (a tag starts the job it was sent with).
 **Depends on:** PLAT-01. Domain (`NfcUid`), Application-Process (`MachineState` with `NfcEnabled`, `NfcReader`, `Alerts`, `AlertDetails`; `NfcReaderDto`).
@@ -709,6 +774,11 @@ public sealed class PepperC2TagReader : BackgroundService, INfcTagReader {
 ---
 
 ### PLAT-14 — Cure report builder (self-contained HTML + inline SVG line charts and timing diagram)
+**Summary**
+- **What it is for:** Builds the printable Process Report for one cure run.
+- **Problem it solves:** Users need a clear record of each cure: settings, measured times, alerts and temperature, LED and fan data.
+- **How we solve it:** Create one self-contained HTML page with built-in charts and a timing diagram, plus a short summary saved next to it.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Reports/`
 **Goal:** Build the printable, self-contained HTML "Process Report" of one cure run — a port of the React `src/lib/cure-report.ts` with Chart.js replaced by inline SVG — including metric cards, phase ribbon, program-steps table with measured phase times, a logic-analyser-style timing diagram, run alerts, chamber/LED/fan charts and sensor/fan issue notes; plus the summary object stored next to it.
 **Depends on:** PLAT-02 (`IPhaseTimingStore`). Domain (`CureLog`, `TelemetrySample`, `CureStep`, `ProcessType`, `TimerMode`, `PhaseTiming`, `SensorIssue`, `FanIssue`, `RunAlert`, `ErrorRegistry`, `ErrorCodes.SensorDisconnectedOf/FanFailureOf/FanWearOf`, `HardwareNames.SupervisedSensors`, `Fan` enum).
@@ -763,6 +833,11 @@ internal static class ReportText { Esc, N(double), N(int), C1, F(v,decimals), C 
 ---
 
 ### PLAT-15 — HDT calibration report (HTML + CSV) and report persistence / USB export
+**Summary**
+- **What it is for:** Builds the material HDT calibration report and helps save and export cure reports.
+- **Problem it solves:** Calibration results must be readable and exportable, and cure reports must be kept and copied to USB.
+- **How we solve it:** Create an HTML report with a chart plus a CSV file, save the cure report in the run store when possible, and export it to USB with a clear result message.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Reports/`
 **Goal:** Render the Material HDT Calibration report (port of `src/lib/hdt-report.ts` with an inline SVG chart, and the CSV layout of `hdt_calibration.py csv_report`), and provide the helper that persists a built cure report in the run store (best effort) and exports it to the USB drive, returning an outcome the UI shows.
 **Depends on:** PLAT-06 (`ISystemService.ExportReport`), PLAT-02 (`ICureRunStore`), PLAT-14 (`SvgLineChart`, `ReportText`, `CureReportDocument`). Dvt-Hdt (`HdtStatusDto`, `HdtSample`, `HdtLevelResult`, `HdtConfigDto`, boost/picolog DTOs).
@@ -803,6 +878,11 @@ public static class ReportServiceCollectionExtensions { public static IServiceCo
 ---
 
 ### PLAT-16 — Platform DI composition and shipped config files (system.json, origin.json, versions.json)
+**Summary**
+- **What it is for:** Connects all the platform parts together when the app starts, and defines the read-only config files shipped with the app.
+- **Problem it solves:** Without one central setup, services would be missing or wired wrongly, and the app would not know its default settings.
+- **How we solve it:** One setup method registers storage, platform services, background services and report builders, and the app reads its bundled config files from one folder.
+
 **Project / folder:** `SCureBox.Application.csproj` — `PlatformServiceCollectionExtensions.cs`; repo `config/`
 **Goal:** One extension method that wires persistence, platform services, hosted services and report builders into the host container, and the bundled read-only configuration files the platform and UI read from `DataOptions.ConfigDir`.
 **Depends on:** PLAT-01…PLAT-15. Api (calls `AddSCureBoxPlatform` in `ScureApiHost`), Application-Process (`ICureController` for `MachineStateSource`; registers `NetworkPolicy`, `BofaPolicy`, `FrozenReadingStore`, `PlannedRestart`), Native UI (consumers of system/origin/versions json, `SerialBackup` registration), Domain (`ErrorRegistry.Load`).

@@ -9,6 +9,11 @@ Screenshots in the folder (`run-window.png`, `live-simulation.png`, `simulation-
 ---
 
 ### CLOUD-20 — Page shell, server-call shim and API wrapper
+**Summary**
+- **What it is for:** The base of the sCure Cloud web page: a small layer that lets the page talk to the Google server, plus shared helpers for messages and time formats.
+- **Problem it solves:** The page code is written like a normal website, but Google Apps Script only allows its own call method. Without a bridge the views could not get data or be tested.
+- **How we solve it:** A small script replaces the browser's fetch so each web address is turned into the matching server call, with the sign-in token added. Errors like 'not signed in' or 'not allowed' are handled in one place.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** The page talks to Apps Script only through `google.script.run`, but the app code calls `fetch('/api/...')`. A small shim at the top of `<head>` replaces `window.fetch` and turns REST-like paths into `google.script.run` calls. It adds the session token and returns a fetch-like response with `status`, `ok` and `json()`. This keeps the view code independent of Apps Script, so the browser tests can stub `google.script.run`.
 **Depends on:** CLOUD-01..19 (server)
@@ -62,6 +67,11 @@ Screenshots in the folder (`run-window.png`, `live-simulation.png`, `simulation-
 **Reference (source):** Page.html 1-121, 406-436, 586-590, 628-630, 682-694; Code.gs 1137-1144 (doGet).
 
 ### CLOUD-21 — Design tokens, theme and shared components
+**Summary**
+- **What it is for:** The shared look of the portal: colors, fonts, light and dark mode, and common pieces like cards, pills, tiles, tables and banners.
+- **Problem it solves:** Without one shared style, each screen would look different, status colors would get lost, and dark mode would break.
+- **How we solve it:** All colors are defined once as named values for light and dark mode. Every screen reuses the same small set of building blocks. Green, red and amber mean status; one blue color means action.
+
 **Project / folder:** cloud/google/Page.html (`<style>`)
 **Goal:** A calm, neutral look in which the status colours (green, red, amber) stand out, with a single cobalt accent for actions and progress. The theme follows the system light or dark setting. All views share the same small set of components: card, pill, stat, tile, banner, badge, table and fold.
 **Depends on:** CLOUD-20
@@ -114,6 +124,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 125-301, 402.
 
 ### CLOUD-22 — Sign-in screen and the "who" area of the header
+**Summary**
+- **What it is for:** The sign-in screen and the top-right area that shows who is signed in, their role, a People button for admins and Sign out.
+- **Problem it solves:** The portal must not show data to people who are not signed in, and users need to see who they are and be able to sign out.
+- **How we solve it:** A sign-in card is shown until there is a session, using either a shared password or Sign in with Google in a new window while the page checks back. After sign-in the header shows name, role and buttons.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show a sign-in card until a session exists. It works in one of two modes: a shared password (before Google sign-in is configured) or "Sign in with Google" (a new window, plus polling). After sign-in, the header shows who is signed in, their role pill, a People button for admins and Sign out.
 **Depends on:** CLOUD-20, CLOUD-21, CLOUD-01..19 (server: `portalLoginMode`, `portalLogin`, `portalLoginStart`, `portalLoginPoll`, `portalMe`, `portalLogout`)
@@ -156,6 +171,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 159-173, 296, 438-507; Code.gs 1259-1350.
 
 ### CLOUD-23 — Section navigation, routing, CureBox chooser and search
+**Summary**
+- **What it is for:** The main tab bar (Overview, Machine, DVT, Race, Compare, Errors) and the CureBox chooser with a search box.
+- **Problem it solves:** Users need an easy way to move between screens and to pick which machine they are looking at, without losing their choice.
+- **How we solve it:** One function draws the current screen. Icon tabs switch screens. A machine chooser and search box appear only on screens about one machine, and the chosen machine is remembered in the browser.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** A single `render()` dispatcher. It draws a row of six icon tabs (Overview, Machine, DVT, Race, Compare, Errors), plus People from the header. Under the tabs it shows a CureBox chooser with a search field, but only for the views that are about one CureBox. Routing is in-memory state; there is no URL hash.
 **Depends on:** CLOUD-20, CLOUD-21, CLOUD-22
@@ -203,6 +223,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 175-177, 190-194, 603-608, 1943-2125.
 
 ### CLOUD-24 — Data loading, polling cadence, busy guard, live clocks and the PORTAL_BUILD reload banner
+**Summary**
+- **What it is for:** Keeps the page data fresh: it reloads machine and test data on a timer and shows a banner when the portal was updated.
+- **Problem it solves:** Data goes stale if not refreshed, but a refresh while the user is typing would wipe their input. Users with an old page open might use outdated code.
+- **How we solve it:** The page checks for new data every few seconds, skips the refresh while the user is typing or editing, uses a live wait on the DVT tab, ticks clocks every second, and shows a Reload banner when the version changed.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Keep the page fresh without ever re-rendering under the user's hands. It polls machines every 10 s, polls DVT data on the DVT-related tabs, and long-polls on the DVT tab. When the server was redeployed since the tab was opened, it shows a "This page is out of date" banner with a Reload button.
 **Depends on:** CLOUD-20, CLOUD-23, CLOUD-01..19 (server: `portalMachines`, `portalDvt`, `portalDvtWait`, `PORTAL_BUILD`)
@@ -243,6 +268,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 407-419, 592-601, 610-616, 657-667, 1459-1461, 1804, 1935-1941, 2500-2531; Code.gs 734.
 
 ### CLOUD-25 — Overview: per-unit model, "what now" banner and KPI tiles
+**Summary**
+- **What it is for:** The start screen: a summary of the whole DVT test campaign, with one 'what now' message and key numbers.
+- **Problem it solves:** Managers and engineers need to see at a glance how far testing is and what needs attention, without reading every test.
+- **How we solve it:** The page works out each unit's tests, results and time left, then shows one clear message with a button (for example failed tests or a test running), four main numbers and more numbers under a fold.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** The landing view summarises the whole DVT campaign. It starts with one sentence and one button for what needs attention now, then shows four headline numbers and eleven more numbers under a fold. It needs no CureBox chooser.
 **Depends on:** CLOUD-23, CLOUD-24, CLOUD-01..19 (server: `portalDvt`)
@@ -307,6 +337,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 199-212, 693-703, 720, 1338-1384, 1424-1487, 1497-1502.
 
 ### CLOUD-26 — Overview: "Machines and integrators" unit table (editable registry)
+**Summary**
+- **What it is for:** A table on the Overview with one row per test unit: its machine, integrator, hardware and firmware versions, planned dates, progress, status and time left.
+- **Problem it solves:** The team needs one place to track each unit and to record who owns it and its plan dates, and to see units that are late.
+- **How we solve it:** Each row has small edit fields that save by themselves when the user leaves the field. A failed save shows a red outline. Late units get a 'Delayed' mark.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** One row per DVT unit. Each row shows the CureBox it runs on, editable registry fields (integrator, HW revision, firmware, planned start and end), progress, status and remaining time. A field saves itself when the user leaves it.
 **Depends on:** CLOUD-25, CLOUD-01..19 (server: `portalDvtUnitSave`, sheet `dvt_units` with columns unit, machine, integrator, hwRev, fwVersion, bomRev, planStart, planEnd, note)
@@ -337,6 +372,11 @@ Each `td` has `data-l=<label>` for the phone card layout. The muted footnote rea
 **Reference (source):** Page.html 1462-1473, 1488-1490, 1508-1516; Code.gs 606-665.
 
 ### CLOUD-27 — Overview: Gantt chart (inline SVG)
+**Summary**
+- **What it is for:** A Gantt chart on the Overview that shows each unit's tests in a row, sized by expected time and colored by result.
+- **Problem it solves:** Numbers alone do not show how much work is left per unit or where failures are along the plan.
+- **How we solve it:** The page draws a simple chart with one bar per test, colored pass, fail, running and so on, with a time scale. Clicking a unit opens one line per test.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Draw each unit's tests end to end, scaled by their estimated minutes and coloured by verdict. Clicking a unit row expands one sub-row per test.
 **Depends on:** CLOUD-25
@@ -364,6 +404,11 @@ Each `td` has `data-l=<label>` for the phone card layout. The muted footnote rea
 **Reference (source):** Page.html 1338-1341, 1386-1422, 1491-1494, 1503-1507.
 
 ### CLOUD-28 — Machine view: machine header with live state and the NetBird pill
+**Summary**
+- **What it is for:** The top of each machine card in the Machine screen: name, online or offline, last sync, NetBird remote-access status and live numbers like chamber temperature and lamp and heater hours.
+- **Problem it solves:** Users need to know if a machine is alive, syncing and reachable for remote access, and see its basic state.
+- **How we solve it:** Each machine gets a card header with colored status pills, the time since last sync, a NetBird pill that explains what is down, and three live figures.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** In the Machine view, each CureBox (all of them, or the chosen one) is one card. Its header shows the name, an online/offline pill, the last sync time and pending command count, a NetBird pill, and three live figures (chamber temperature, LED 405 hours, heater hours).
 **Depends on:** CLOUD-21, CLOUD-23, CLOUD-24, CLOUD-01..19 (server: `portalMachines`, `netbirdStatus_`), PLAT-10 (snapshot content), OPS-08 / PLAT-09 (NetBird on the unit)
@@ -397,6 +442,11 @@ The sections in CLOUD-29 follow in the same card.
 **Reference (source):** Page.html 2127-2138, 2158-2195; Code.gs 1428-1484.
 
 ### CLOUD-29 — Machine view: programs, catalog, send print, recent prints, cure runs and reports
+**Summary**
+- **What it is for:** The rest of the machine card: work programs, the built-in program list, sending a test print, recent prints, and cure runs with their reports.
+- **Problem it solves:** Users need to manage programs and prints and get cure reports from far away, without standing at the machine.
+- **How we solve it:** Each change is sent as a simple command that the machine picks up on its next sync. Tables list programs, prints and runs, with links to view or download uploaded reports. NFC tag input is checked first.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** The rest of the machine card. The user's work programs can be edited and deleted. The built-in catalog is read-only. A simulated print can be sent, with an optional NFC tag. Recent prints can be deleted. The last cure runs link to their uploaded reports. Every change is a data-only command that the machine picks up on its next sync.
 **Depends on:** CLOUD-28, CLOUD-01..19 (server: `portalCommand`, `COMMAND_TYPES = upsert_program | delete_program | send_print | delete_print`, `doGet ?report=`), CLOUD-40..59 (program editor: `openEditor`, `stepRow`, `stepErrors`, `saveProgram`), PLAT-10 (machine applies commands, uploads reports), PLAT-14 (report HTML)
@@ -443,6 +493,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 2140-2240, 2456-2498; Code.gs 39-43, 1486-1503.
 
 ### CLOUD-30 — Race view: DVT race against the clock
+**Summary**
+- **What it is for:** A fun 'race' screen where test units compete to finish all their DVT tests, with ranking, medals, clocks and time per test.
+- **Problem it solves:** It is hard to see which unit is fastest, how fast each one works and when each will finish.
+- **How we solve it:** The page works out time, pace and expected finish per unit, ranks them, and shows per-test times against the estimate. Service users can start or reset an official race and choose which units take part.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** A playful view in which every DVT unit races to finish all its owed runs. It shows a ranking with medals, a ticking clock per unit, pace, an ETA, per-test times against the estimate, the fastest unit per test, and a winner banner. Service users can set an official start and choose who takes part.
 **Depends on:** CLOUD-24, CLOUD-25 (`dvtUnitModel`), CLOUD-01..19 (server: `portalRaceSet`, `raceGet_` → `DVT.race = {start, units}`, stored in script property RACE)
@@ -505,6 +560,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 182-189, 1796-1941; Code.gs 690-728.
 
 ### CLOUD-31 — Compare: results table across units or across the runs of one unit
+**Summary**
+- **What it is for:** The Compare screen: a table that shows the measured values of one test side by side, across units or across runs of one unit.
+- **Problem it solves:** Without it, finding a unit or run whose results are far from the others means reading raw data by hand.
+- **How we solve it:** Each value is compared to a chosen reference against a tolerance in percent. Values that are off are tinted amber or red, with range and spread shown per row.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show the recorded values of one test (and variant) side by side. The columns are either the units (latest run, or the mean of repetitions) or the runs of one unit. Each value is compared with a reference column against a tolerance, and cells that stand out are tinted amber or red.
 **Depends on:** CLOUD-24, CLOUD-01..19 (server: `portalDvt` runs with `values` and `files`)
@@ -558,6 +618,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 1519-1586, 1687-1737, 1766-1783.
 
 ### CLOUD-32 — Compare: "All units, all tests" matrix
+**Summary**
+- **What it is for:** A Compare mode that shows a grid of every test against every unit with its result.
+- **Problem it solves:** Users need to quickly spot tests that passed on one unit but failed on another.
+- **How we solve it:** Each cell shows the result. Rows where units finished with different results are highlighted with a 'units differ' mark, and clicking a row opens that test's detailed comparison.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** A grid of every catalog test against every unit, showing each verdict. Rows where the units finished with different results are highlighted, and clicking a row opens that test's comparison.
 **Depends on:** CLOUD-25 (`dvtUnitModel`), CLOUD-31
@@ -585,6 +650,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 1661-1685, 1691-1692, 1773.
 
 ### CLOUD-33 — Compare: curve overlay from the raw sample files
+**Summary**
+- **What it is for:** A chart in Compare that draws the measured curves from the raw data files of the compared units on top of each other.
+- **Problem it solves:** Single numbers can hide differences in how a measurement behaves over time.
+- **How we solve it:** The page loads the CSV files from the server, reads them, and draws one line per unit or run on one chart. The user picks the measurement and column; temperature charts get guide lines.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Overlay the measured curves (CSV sample files) of the compared columns on one SVG chart. The user picks the measurement kind and the Y column. Temperature charts get dashed guide lines at 30, 40, 50 and 60 °C.
 **Depends on:** CLOUD-31, CLOUD-01..19 (server: `portalDvtFiles(token, ids)` → `{ok, files:{id:{name,text}}}`)
@@ -623,6 +693,11 @@ The card is hidden when there are no CSV files.
 **Reference (source):** Page.html 1524-1527, 1588-1658, 1738-1765, 1782-1793.
 
 ### CLOUD-34 — Phone layout (≤ 640 px)
+**Summary**
+- **What it is for:** The phone layout of the portal for screens 640 pixels wide or less.
+- **Problem it solves:** On a phone, wide tables, small buttons and top tabs are hard to use and make the page scroll sideways.
+- **How we solve it:** The tabs move to a bottom bar of icons, tables turn into stacked cards, buttons and fields get bigger, and nothing scrolls sideways.
+
 **Project / folder:** cloud/google/Page.html (`@media (max-width:640px)`)
 **Goal:** One comfortable, thumb-friendly column on a phone. The section tabs become a bottom bar of six icons. Tables become stacked cards. Controls are at least 44px tall with 16px text, and nothing scrolls sideways.
 **Depends on:** CLOUD-21, CLOUD-23, CLOUD-25..33
@@ -675,6 +750,11 @@ In addition:
 **Reference (source):** Page.html 173, 190-194, 302-400; test_phone.cjs 57-241.
 
 ### CLOUD-35 — Headless browser tests for the shell and the views
+**Summary**
+- **What it is for:** Automatic browser tests that check the portal screens work.
+- **Problem it solves:** Without tests, changes could break screens or numbers without anyone noticing, and testing on the real Google server is slow.
+- **How we solve it:** The tests open the page in a hidden Chrome with fake server answers, click and type like a person, and check each result. They also check the phone layout.
+
 **Project / folder:** cloud/google/test_overview.cjs, test_race.cjs, test_compare.cjs, test_phone.cjs
 **Goal:** Prove the views without Apps Script by loading `Page.html` from `file://` in headless Chrome (puppeteer-core) with a stub `google.script.run`. Each test drives the UI like a person and prints `ok:` per check, failing on any page script error.
 **Depends on:** CLOUD-20..34

@@ -49,6 +49,11 @@ Shared conventions:
 ---
 
 ### PROC-01 — Contracts and state DTOs
+**Summary**
+- **What it is for:** Defines the main commands of the process layer and the exact shape of the machine status data that the screen and API read.
+- **Problem it solves:** Without one fixed list of commands and one fixed status shape, the screen could break whenever the data changes, or differ between a real and a simulated machine.
+- **How we solve it:** We write shared interfaces and data records. The status always has the same full set of fields (empty when unknown), and commands return a result with an error code instead of crashing.
+
 
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Contracts/`, `Process/UvState.cs`
 
@@ -244,6 +249,11 @@ Nested records (positional, `[property: JsonPropertyName]`):
 ---
 
 ### PROC-02 — Timing primitives (PeriodicWorker, TimeProvider waits)
+**Summary**
+- **What it is for:** Small timing helpers: a safe wait and a background worker that runs a task every few seconds. All machine loops use them.
+- **Problem it solves:** Loops that use the real clock are slow and hard to test, and one error inside a loop could stop it forever.
+- **How we solve it:** All waits use a replaceable clock, so tests can move time forward instantly. The worker catches errors, logs only the first one, and keeps running.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Devices/`
 
@@ -294,6 +304,11 @@ spins until `FakeHardwareSystem.Activity` changes).
 ---
 
 ### PROC-03 — Heating loop (PI + delta-sigma, heater pre-flight, fan run-on)
+**Summary**
+- **What it is for:** Controls the heater to bring the chamber to the target temperature and keep it there.
+- **Problem it solves:** Heating without checks is unsafe: door open, fan stopped or a broken temperature sensor could overheat the machine. The heater also needs the fan to keep running for a while after it stops.
+- **How we solve it:** Before heating we check the door, the fan and the sensor. A control loop switches the heater on and off to hold the target and keeps checking fan and sensor. When heating stops, the fan keeps cooling for 15 minutes.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Devices/`
 
@@ -414,6 +429,11 @@ Use `FakeHardwareSystem` (ambient 24 C, heat 0.5 C/s when element on, idle drift
 ---
 
 ### PROC-04 — Cooling loop (fixed-fan chamber cooling)
+**Summary**
+- **What it is for:** Cools the chamber down to a target temperature after a heating step.
+- **Problem it solves:** Without a cooling process the parts would cool slowly and unevenly, and the fans and air vent (damper) would not be handled in a safe order.
+- **How we solve it:** We open the damper, run the heater fan and the cooling fan at a fixed speed, and stop everything when the target is reached. We also measure how fast the chamber cools.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Devices/`
 
@@ -478,6 +498,11 @@ Refuses_without_a_valid_thermistor, Retarget_while_running_updates_duty_and_targ
 ---
 
 ### PROC-05 — CureController: process commands, pre-flights, UV, airflow, door, state snapshot
+**Summary**
+- **What it is for:** The central controller of the machine. It turns requests like heat, dry, cure with UV, cool or open door into actions on the hardware, and builds the live status.
+- **Problem it solves:** Many parts (heater, UV lights, fans, damper, door, fume extractor) must work together in the right order. Starting a process with a broken sensor or fan would be unsafe.
+- **How we solve it:** One class combines all parts. Before each process it checks sensors and fans and refuses with a clear error code if something is wrong. It applies each step in a safe order and reports the full machine status.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Process/CureController.cs` (namespace `SCureBox.Application.ProcessControl`)
 
@@ -667,6 +692,11 @@ Shutdown_turns_everything_off. Door tests are in PROC-08. Plus `Platform/BofaPol
 ---
 
 ### PROC-06 — Nitrogen control and N2 interlocks (9008 / 9009 / 9015 / 9016)
+**Summary**
+- **What it is for:** Opens and closes the nitrogen valve that fills the chamber with nitrogen, and watches the gas line pressure.
+- **Problem it solves:** Pressure that is too high, no gas supply, a blocked tube or a broken pressure sensor could damage the machine or give a bad cure without anyone knowing.
+- **How we solve it:** We check the pressure before opening and every second after. Too high pressure closes the valve. Too low pressure or a missing sensor stops opening. If pressure does not drop after opening, the gas is not flowing, so we close the valve and raise an alert.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Process/CureController.cs` (nitrogen section)
 
@@ -764,6 +794,11 @@ Not_reading_is_debounced_20_s_then_raises_9016_and_clears_when_readings_return).
 ---
 
 ### PROC-07 — Diagnostics: fan test and LED heating test
+**Summary**
+- **What it is for:** Service tests: a fan test that measures fan speeds, and an LED test that turns the UV panels on and checks they warm up.
+- **Problem it solves:** Technicians need a quick way to find a weak fan or a dead LED panel before it causes a failed cure.
+- **How we solve it:** The fan test runs fans and compares the measured speed to the expected speed, giving OK, WARN or FAIL. The LED test cools warm panels first, lights them, and checks that each panel temperature rises enough.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Process/CureController.cs` (diagnostics section)
 
@@ -818,6 +853,11 @@ Led_test_precools_a_warm_panel.
 ---
 
 ### PROC-08 — Safety supervision (1 Hz tick, verdict store, door watchdog, 9006 restart)
+**Summary**
+- **What it is for:** A safety watcher that checks the machine every second while it runs: sensors, fans, heater, LEDs, nitrogen and the door.
+- **Problem it solves:** Faults can happen in the middle of a process: a fan stops, a sensor freezes, the heater does not heat, or the door is opened. Without a watcher the machine would keep running in an unsafe state.
+- **How we solve it:** Every second we check all readings and publish active alerts. Each problem has a fixed reaction: stop all outputs, turn the heater off, restart the machine, or abort everything if the door stays open for 10 seconds.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Supervision/`
 
@@ -968,6 +1008,11 @@ A_new_process_clears_the_door_abort_latch, Fan_critical_mid_process_stops_every_
 ---
 
 ### PROC-09 — Recipe runner and program validator
+**Summary**
+- **What it is for:** Runs a full curing program (a list of steps like heat, cure, cool, nitrogen) on the machine by itself, step by step.
+- **Problem it solves:** If the screen drove each step, a screen problem could break a run. Bad programs must be blocked, and each run needs a record of what happened.
+- **How we solve it:** The machine checks the program first, then runs it with a loop every second. It sends each step to the controller, saves temperatures and alerts, and ends the run as completed, aborted or error with a code.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Recipe/`
 
@@ -1090,6 +1135,11 @@ A_program_with_no_heating_at_all_still_runs_the_heater_fan_and_pause_releases_it
 ---
 
 ### PROC-10 — Status strip (RGB ladder, animation, internet watch)
+**Summary**
+- **What it is for:** Shows the machine status on the colored LED strip: green for ready, busy color while running, blinking for faults, door or warnings.
+- **Problem it solves:** Users need to see the machine state from across the room. A strip error must never stop a running process.
+- **How we solve it:** Every second we pick one status from a fixed priority list and paint the matching color or blink. A manual color can override it. Strip errors are ignored. Internet state is checked in the background but not shown on the strip.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Status/`
 
@@ -1165,6 +1215,11 @@ StatusLedService animation loop exists in this test project.
 ---
 
 ### PROC-11 — Process layer DI registration
+**Summary**
+- **What it is for:** One setup method that registers all parts of the process layer so the application can start them together.
+- **Problem it solves:** Without one central setup, parts could be created twice or missing, and real and simulated test devices could get mixed up.
+- **How we solve it:** One method registers every part as a single shared copy, starts the three background services, and picks real or simulated test instruments from settings.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `ProcessServiceCollectionExtensions.cs`
 

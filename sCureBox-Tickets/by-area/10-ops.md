@@ -90,6 +90,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-01 — Repository skeleton, solution and build conventions
+**Summary**
+- **What it is for:** The basic layout of the code repository: the solution file, shared build settings, logos and reference documents.
+- **Problem it solves:** Without one shared setup, projects build differently, warnings slip through, and scripts made on Windows break on the Pi because of wrong line endings.
+- **How we solve it:** Create one solution with shared settings (.NET 10, warnings count as errors), fixed ignore rules so keys and OS images are never committed, and Linux line endings for scripts.
+
 **Project / folder:** repo root (`SCureBox.sln`, `Directory.Build.props`, `global.json`, `.gitignore`, `.gitattributes`, `README.md`, `branding/`, `reference/`, `docs/` except `docs/srs`)
 **Goal:** Create the repository layout, the solution and the shared build settings so that every project builds the same way (net10.0, nullable, warnings as errors) and every script and asset has the right line endings. This ticket gives a clean `dotnet build SCureBox.sln` with no warnings once the other areas add their sources.
 **Depends on:** none (first ticket). The other areas fill `src/` and `tests/`.
@@ -122,6 +127,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-02 — Versioning convention (VERSION, versions.json, GITINFO)
+**Summary**
+- **What it is for:** The rule for how the product version is numbered, recorded and shown on the machine.
+- **Problem it solves:** Without it, nobody knows which version runs on a unit or what changed between releases.
+- **How we solve it:** One VERSION file plus a release-notes list. Every change raises the version and adds notes. Builds also stamp the git commit, and the unit shows it in Settings and through the API.
+
 **Project / folder:** `VERSION`, `config/versions.json`, `CHANGE_SUMMARY.md`; consumed by `src/SCureBox.Api` and `src/SCureBox.Ui`
 **Goal:** One product version string with a release-notes registry. Every change bumps the version and adds an entry. Build scripts stamp the git commit next to the executables, and the running unit reports the version through `/api/system/version` and the Settings > Versions modal.
 **Depends on:** OPS-01. Api (`/api/system/version`, `scurebox --version`), Native UI (Versions dialog).
@@ -153,6 +163,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-03 — Release build: publish.ps1 and the linux-arm64 payload
+**Summary**
+- **What it is for:** The release build script that packs the sCure Box software for the Raspberry Pi into one file.
+- **Problem it solves:** Every install path needs the same complete, clean package; once an OS image left inside made a release too big to install.
+- **How we solve it:** A script runs the tests, builds both programs for the Pi, adds config, install scripts and keys, leaves out images and secrets, fixes line endings and creates one tarball.
+
 **Project / folder:** `deploy/publish.ps1`, `deploy/deploy-to-pi.ps1`, `deploy/keys/`, `deploy/db/`
 **Goal:** Build the self-contained linux-arm64 release, which is both executables plus everything `install.sh` needs, as one tarball. The tarball is the input of every installer path: SSH deploy, image build, and the field installer.
 **Depends on:** OPS-01, OPS-02. Api and Native UI (the projects being published), Hardware (`src/SCureBox.Hardware/native`).
@@ -192,6 +207,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-04 — On-device installer install.sh
+**Summary**
+- **What it is for:** The install script that runs on the machine and sets up the sCure Box software and system.
+- **Problem it solves:** Setting up a unit by hand (files, boot settings, screen, services, remote access, drivers) is slow and error-prone, and must work the same way every time.
+- **How we solve it:** One script, safe to run again, that copies the app, keeps existing machine settings, sets boot and display options, installs services, remote access and drivers, and does not fail just because there is no internet.
+
 **Project / folder:** `deploy/install.sh`, `deploy/networkmanager-scurebox.conf`
 **Goal:** A single idempotent root script, run from an extracted release. It installs the application to `/opt/scurebox`, sets up the boot configuration, display, splash, systemd services, remote access, network tolerance and the DVT drivers, and restarts everything. The image first boot, the SSH deploy and the field installer all use it.
 **Depends on:** OPS-03, OPS-05, OPS-06, OPS-07, OPS-08, OPS-09, OPS-10.
@@ -232,6 +252,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-05 — Firmware systemd units (scurebox-ui.service / scurebox.service)
+**Summary**
+- **What it is for:** The system service files that start and supervise the sCure Box firmware on the Pi.
+- **Problem it solves:** If the firmware crashes or freezes and nothing restarts it, the machine stops working until someone reboots it.
+- **How we solve it:** Run the firmware as a system service that restarts it after a crash, and also when it stops sending 'I am alive' signals for 60 seconds. There are two versions: native screen or browser.
+
 **Project / folder:** `deploy/scurebox-ui.service`, `deploy/scurebox.service`
 **Goal:** Run the firmware as a supervised systemd service with sd_notify readiness and a watchdog. There are two variants: the native UI (one process that owns the display) or the headless API for the browser kiosk.
 **Depends on:** OPS-06. Api (Microsoft.Extensions.Hosting.Systemd: notify and watchdog pings; ASPNETCORE_URLS/PORT), Native UI (DRM/KMS on tty1).
@@ -259,6 +284,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-06 — Early-boot IO safe state (scurebox-io-safe + config.txt fragment)
+**Summary**
+- **What it is for:** Puts the UV LED switches and the LED relay into a safe 'off' state very early during boot.
+- **Problem it solves:** Between power-on and the firmware start, pins could drift and turn on UV outputs by accident.
+- **How we solve it:** Boot settings force those pins low from the start, and a small early-boot script sets the relay chip to safe levels. It never blocks the boot, even on errors.
+
 **Project / folder:** `deploy/scurebox-io-safe.service`, `deploy/io-safe-boot.sh`, `deploy/config-txt-fragment.txt`
 **Goal:** Make sure the UV SSRs, the wavelength routing line and the LED_SWITCH relay are at rest (off) from the firmware stage of boot until the .NET firmware takes over. This closes the window in which pull-ups could engage an output.
 **Depends on:** Hardware (pin map: GPIO16 = 450 nm SSR, GPIO17 = routing / PCA9685 OE, GPIO20 = 405 nm SSR, TCA6424A at i2c-0 0x23, P01 = NFC_RESET, P05 = LED_SWITCH relay K4).
@@ -289,6 +319,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-07 — Output watchdog and DVT bench services
+**Summary**
+- **What it is for:** Two helper services: an output watchdog that guards the heaters and UV LEDs, and the DVT test bench service.
+- **Problem it solves:** If the firmware dies, heaters or UV LEDs could stay on; test runs also need a service that keeps running on its own.
+- **How we solve it:** Both run separately from the firmware. The watchdog turns heaters and UV off if the firmware heartbeat stops for 20 seconds. The bench waits on port 3002 for test runs.
+
 **Project / folder:** `deploy/scurebox-watchdog.service`, `deploy/scurebox-dvt-bench.service`
 **Goal:** Two companion processes, started from the same `scurebox` executable, that must keep running when the firmware dies. The output watchdog cuts the heaters and the UV LEDs when the firmware heartbeat goes silent. The DVT bench runs catalog tests with the TC-08 and the StarBright meter on port 3002.
 **Depends on:** OPS-04. Hardware (`OutputWatchdog`, `HeartbeatFile`), Dvt-Hdt (`DvtBenchHost`), Api (`CommandLine.TryRun`).
@@ -317,6 +352,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-08 — NetBird remote access (enroll script + retry unit)
+**Summary**
+- **What it is for:** Sets up NetBird remote access so each machine can be reached from anywhere.
+- **Problem it solves:** Without remote access, engineers cannot reach units in the field; a setup key left on the device would also be a security risk.
+- **How we solve it:** A script installs NetBird, joins the unit with a one-time key under a name with its serial number, retries every minute until online, then deletes the key.
+
 **Project / folder:** `deploy/netbird-enroll.sh`, `deploy/scurebox-netbird-enroll.service`
 **Goal:** Install the NetBird WireGuard mesh client and enroll the unit with a one-off setup key, named after its eMMC serial, so that every unit can be reached from anywhere over SSH and the API. The script retries until the unit is online and deletes the key after use.
 **Depends on:** OPS-04. Consumers: OPS-12 (key on the boot partition), OPS-13 (key from the PC).
@@ -348,6 +388,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-09 — Branded boot splash and 10.1" display profile
+**Summary**
+- **What it is for:** The branded boot screen and the settings for the 10.1 inch touch display.
+- **Problem it solves:** Without it, the unit shows Linux text at boot and the screen may run in the wrong direction, also on both slots of the factory image.
+- **How we solve it:** A dark splash with the white sCure logo and a progress bar, plus a display profile for landscape 1920x1200. A tool adds this profile to OS images once, without changing anything else.
+
 **Project / folder:** `deploy/plymouth/scurebox/`, `deploy/display-10inch.txt`, `deploy/image/patch-display.py`, `deploy/image/test_patch_display.py`
 **Goal:** The unit boots to a dark screen with the white sCure "S" logo and a thin progress bar. No distro branding and no console text are shown. The Raspberry Pi Touch Display 2 (10.1", ILI79600, 1200x1920 native portrait, DSI-1) runs landscape at 1920x1200 on every image, including both slots of a factory A/B image.
 **Depends on:** OPS-04 (installs the theme and edits cmdline/config), OPS-12, OPS-13.
@@ -388,6 +433,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-10 — Browser kiosk shell (Step A: labwc + Chromium)
+**Summary**
+- **What it is for:** The browser 'kiosk' mode that shows the web UI full screen in a locked Chromium browser.
+- **Problem it solves:** In browser mode, operators could leave the app, or see an empty screen before the software is ready.
+- **How we solve it:** Run Chromium locked to the app on a small window manager, show a branded loading page until the API answers, and block ways out of the app.
+
 **Project / folder:** `deploy/kiosk/`
 **Goal:** In `--ui browser` mode, run the React UI full-screen in a locked Chromium on a minimal Wayland compositor (labwc) on tty1. A branded loading page is shown until the API answers. The operator must not be able to leave the app.
 **Depends on:** OPS-04, OPS-05 (`scurebox.service`), OPS-11.
@@ -430,6 +480,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-11 — Vendored React web UI (ui/dist, served as wwwroot)
+**Summary**
+- **What it is for:** The existing React web UI, shipped as a ready-made build and served by the machine.
+- **Problem it solves:** Browser mode and tools need the web UI available without rebuilding or changing it.
+- **How we solve it:** Keep the finished web build in the repo unchanged; the API server hosts it at the main address, and it uses the same API as the native screen.
+
 **Project / folder:** `ui/dist/` (build output of the separate sCure-A React project), served by `src/SCureBox.Api`
 **Goal:** Ship the existing React kiosk UI (Step A) unchanged, as a vendored build artifact. The API host serves it at `/` with an SPA fallback. The React UI drives the machine through the same `/api` contract as the native UI and the QA tools.
 **Depends on:** OPS-01. Api (StaticUi mapping, CORS open, port 3001), Kiosk-Web (if that area rebuilds the React source).
@@ -472,6 +527,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-12 — OS image builder and CM5 eMMC flashing
+**Summary**
+- **What it is for:** A tool that builds the ready-to-flash sCure Box OS image and writes it to the CM5 memory.
+- **Problem it solves:** Preparing a new unit by hand is slow, and building images normally needs Linux tools or admin rights on the PC.
+- **How we solve it:** On Windows, take the official Raspberry Pi OS image, edit only its boot partition, add a first-boot script that installs everything, then flash it to the CM5 over USB.
+
 **Project / folder:** `deploy/image/` (`build-image.py`, `flash-cm5.ps1`, `unxz.py`, `README.md`), `deploy/prepare-cm5.ps1`, `deploy/install-desktop-shortcut.ps1`
 **Goal:** On a Windows PC, without WSL, Docker or admin rights for the build step, turn an official Raspberry Pi OS arm64 image into a ready-to-flash sCureBox image. Only the FAT boot partition is edited, and a first-boot script installs everything. The image is then written to the CM5 eMMC over rpiboot.
 **Depends on:** OPS-03 (payload), OPS-04, OPS-08, OPS-09.
@@ -518,6 +578,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-13 — Field installer (developer tool, portable bundle and GUI)
+**Summary**
+- **What it is for:** The field installer that puts a release on a unit from a PC.
+- **Problem it solves:** Updating or flashing units needed developer skills, and there was no clear proof that the unit really runs the new version.
+- **How we solve it:** One tool updates over SSH or flashes the memory, with a progress bar and a final health check. A password-protected portable bundle with a simple window lets non-developers use it on any Windows PC.
+
 **Project / folder:** `deploy/install-scurebox.ps1`, `deploy/make-installer.ps1`, `deploy/installer/`
 **Goal:** Take a release from a PC to a working unit, either by SSH update or by flashing the eMMC, with a progress bar and a final health check that only reports success when the unit runs the new version. A portable, password-gated bundle (CLI plus WPF GUI) lets non-developers do the same on any Windows 10/11 PC with no SDK or Python.
 **Depends on:** OPS-03, OPS-04, OPS-08, OPS-09, OPS-12. Api (`/api/system/version`, `/api/state` with `hwSource` and `internetOk`). Application-Platform (device unlock challenge: Supervisor ChallengeSolve).
@@ -594,6 +659,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-14 — Windows PC demo installer (simulator)
+**Summary**
+- **What it is for:** A Windows setup program for a demo version of the sCure Box with simulated hardware.
+- **Problem it solves:** Demos and training need the machine's screen without a real machine, on ordinary PCs without admin rights.
+- **How we solve it:** One setup .exe installs the native UI with the simulator. It needs no .NET install and no admin rights.
+
 **Project / folder:** `deploy/make-demo-installer.ps1`; consumes `src/SCureBox.Ui` (`DemoWinExe`, `Hosting/DemoMode.cs`)
 **Goal:** A single setup `.exe` that installs the native UI with the simulated firmware on any Windows 10/11 x64 PC, with no .NET and no admin rights. It is used for demos and training.
 **Depends on:** OPS-02. Native UI (DemoMode marker, `DemoWinExe` property in `SCureBox.Ui.csproj`).
@@ -629,6 +699,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-15 — Origin application package (.tgz for the factory A/B image)
+**Summary**
+- **What it is for:** Packages sCure Box as an application for the Origin factory image.
+- **Problem it solves:** The factory image has a read-only system and its own supervisor, so the normal installer cannot be used there.
+- **How we solve it:** Build a .tgz app package that the Origin supervisor installs; the firmware with its screen and the output watchdog run as managed services, with saved data in a separate folder.
+
 **Project / folder:** `deploy/package-origin-app.ps1` (canonical), `deploy/package-origin-app.sh`, `deploy/origin-app/`
 **Goal:** Package sCureBox as an application for the Origin supervisor on the factory image (read-only root, .NET 10 runtime installed, labwc session). The firmware with the native UI and the output watchdog become supervisor-managed services, with persistent state in `/opt/data`.
 **Depends on:** OPS-02, OPS-07. Hardware (`native/linux-arm64`: prebuilt `pio_rgb`, `pio_servo`, `lib/libusbtc08.so`). Application-Platform (`SCURE_SUPERVISOR_URL`, default `http://127.0.0.1:8080`). Dvt-Hdt (DVT runner from the sibling sCure-A repo).
@@ -681,6 +756,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-16 — sCure Org Key phone PWA
+**Summary**
+- **What it is for:** A small phone web app that saves the Origin organization ID to a USB drive.
+- **Problem it solves:** The sCure Box links to an organization by reading a CSV file from USB, and users need an easy way to create that file.
+- **How we solve it:** A phone app, which also works offline, writes the organization ID as the right CSV file to USB. No data leaves the phone.
+
 **Project / folder:** `pwa/`
 **Goal:** A static phone web app (installable PWA that also works offline) that writes the Origin organization ID to a USB drive as the CSV the sCure Box reads (Settings > Organization > Link Organization). No data leaves the phone.
 **Depends on:** Native UI (the machine lists `*.csv` on USB and takes the first UUID; the pattern matches SetupViewModel.OrganizationIdPattern).
@@ -722,6 +802,11 @@ Local serve: `python -m http.server 8080 --directory pwa`.
 ---
 
 ### OPS-17 — QA tool (shared test table, headless runner, browser tool, run-all)
+**Summary**
+- **What it is for:** The QA tool: one shared table of API tests that can run automatically or in a browser.
+- **Problem it solves:** Without shared tests, there is no quick way to prove that the simulator or a real machine follows the API contract before a release.
+- **How we solve it:** About 125 tests in one table, run by a command-line runner or a browser page against any machine; one script runs all builds and tests and gives a single PASS or FAIL.
+
 **Project / folder:** `qa/`
 **Goal:** One table of API contract tests (about 125 rows in 15 categories) that runs headless in CI-like runs (`run-qa.mjs`) and interactively in a browser (`qa-tool.html`) against any live firmware: simulation on the PC or the real machine. `run-all.ps1` chains build, unit and integration tests, a simulated API server, the headless QA and the native UI QA into one PASS/FAIL result.
 **Depends on:** OPS-01. Api (every endpoint under test), Native UI (`/api/ui/route|navigate|screenshot|tap|swipe`).
@@ -785,6 +870,11 @@ Local serve: `python -m http.server 8080 --directory pwa`.
 ---
 
 ### OPS-18 — Test strategy across tests/* (projects, conventions, how they run)
+**Summary**
+- **What it is for:** The plan for how automated tests are organized and run across the project.
+- **Problem it solves:** Without shared rules, each area tests differently and gaps appear between layers.
+- **How we solve it:** Fix the test projects, frameworks, helpers and conventions, so each layer is tested alone and together, without hardware, before every release.
+
 **Project / folder:** `tests/SCureBox.Domain.Tests`, `tests/SCureBox.Hardware.Tests`, `tests/SCureBox.Application.Tests`, `tests/SCureBox.Api.Tests`, `tests/SCureBox.Ui.Tests`, plus the non-.NET tests (`pwa/tests`, `deploy/image/test_patch_display.py`, `qa/`)
 **Goal:** Define how the automated tests are organised and run, so that every layer is proven by itself and together, with no hardware, before any release. Each area writes its own test cases; this ticket fixes the projects, frameworks, fixtures and conventions they share.
 **Depends on:** OPS-01, OPS-17. All src areas.

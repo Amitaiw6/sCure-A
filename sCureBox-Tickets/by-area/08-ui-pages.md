@@ -54,6 +54,11 @@ Lateral rule: a TopBar move replaces the current history entry unless the curren
 ---
 
 ### UI-01 — App shell, hosting, DI registration and PC demo mode
+**Summary**
+- **What it is for:** The main frame of the machine's touch screen app. It starts the machine software and the screen in one program and holds every page.
+- **Problem it solves:** Without it the screen and the machine control would run apart, the picture would not fit or rotate on the panel, and a stop or restart could hang for a long time.
+- **How we solve it:** One program starts the machine service, then draws a fixed-size screen that scales and turns to fit the panel. Any stop request ends the program within 10 seconds. A demo file turns it into a PC simulator.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — root (`Program.cs`, `App.axaml(.cs)`, `UiPages.cs`, `UiServiceCollectionExtensions.cs`, `ViewLocator.cs`, `app.manifest`), `Hosting/`, `Views/ShellView.axaml(.cs)`, `Views/ShellScaler.cs`, `Views/ShellWindow.cs`, `ViewModels/ShellViewModel.cs`, `ViewModels/PageViewModel.cs`, `Services/UiRuntime.cs`
 **Goal:** Run the firmware host and the Avalonia UI in one process with one DI container, choose the output (DRM/KMS on the unit, a desktop window elsewhere), guarantee the process exits within 10 s of any stop request with the "Restarting…" frame on the panel, and host every page inside a 1600x1000 shell that scales/rotates to the output, blurs behind dialogs and resets the idle timer on every touch. A `demo.mode` file next to the exe turns the app into the PC simulator.
 **Depends on:** UI-02, UI-05, UI-06, UI-09, UI-10; Api (`ScureApiHost.Build`, `CommandLine.TryRun`, `IApiEndpointMapper`, `ApiJson`), Application-Platform (`PlatformInfo`, `PlannedRestart`, `DataOptions`, `SerialBackup`), Native UI dialogs (`IDialogService`, `DialogService`, `DialogViewModel`)
@@ -119,6 +124,11 @@ Lateral rule: a TopBar move replaces the current history entry unless the curren
 ---
 
 ### UI-02 — Theme, design tokens, global styles and string resources
+**Summary**
+- **What it is for:** The look of the screen app: dark colors, text sizes, corner shapes, button and card styles, and one list of all on-screen texts.
+- **Problem it solves:** Without one shared style, each page would look different, touch targets could be too small, and texts would be scattered and hard to change.
+- **How we solve it:** We define all colors, sizes and button styles once and every page uses only them. All user-visible words live in one text catalogue in US English.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Styles/`, `Resources/`, `branding/` (repo root)
 **Goal:** Provide the dark-only visual language (colours, typography, radii, touch sizes, button/card/pill/toggle themes, touch-sized slider, scroll viewer with the custom touch recognizer) on the 1600x1000 surface, and the single catalogue of user-visible strings. Every view uses only these tokens and classes.
 **Depends on:** UI-03 (control types the themes target), UI-04 (`TouchScrollGestureRecognizer`, `SwipeRow`)
@@ -160,6 +170,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-03 — Reusable controls (Controls/)
+**Summary**
+- **What it is for:** The set of building blocks the pages are made from: buttons with icons, cards, status pills, switches, the logo, progress rings, charts, a QR code maker, drop-down lists and the dialog holder.
+- **Problem it solves:** Without shared blocks each page would rebuild the same parts, and outside icon, chart or QR packages would add weight and risk.
+- **How we solve it:** We draw all these parts ourselves in code, with no outside packages, and reuse them on every page.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Controls/`
 **Goal:** The drawn, dependency-free control set the pages are built from: surfaces (Card, StatusPill, Toggle), the app button with vector icons, the S logo, progress ring and gauges, the phase card of the cure page, the editor step card view, a popup-free drop-down (`FloatingList`), the heating track veil, a tiny QR encoder, two charts and the in-shell modal host. No icon fonts, chart or QR packages.
 **Depends on:** UI-02 (themes), UI-15 (`PhaseKind`, `PhaseStatus`), UI-23 (`StepCardViewModel`), UI-01 (`ShellView.FloatLayer`); Native UI dialogs (`DialogViewModel` with `DesignWidth`, `DockedHeight`, `CloseOnOverlayTap`, `Cancel()`); Domain (`TelemetrySample`), Application (`HdtSample`)
@@ -226,6 +241,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-04 — Touch gestures: SwipeRow and TouchScrollGestureRecognizer
+**Summary**
+- **What it is for:** Touch handling: smooth finger scrolling and list rows you can swipe right to run or left to show actions.
+- **Problem it solves:** On the turned panel, scrolling can feel jumpy or wrong, and a careless swipe could start a cure by accident or fight with page scrolling.
+- **How we solve it:** A custom scroll handler measures the finger correctly, filters panel noise and moves on each drawn frame. The swipe row needs a clear, deliberate gesture before it starts anything.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Controls/SwipeRow.cs`, `Controls/TouchScrollGestureRecognizer.cs`
 **Goal:** Make touch feel right on the rotated portrait panel: a scroll recognizer that measures the finger in the scrolled control's own coordinates, damps panel noise, fits fling velocity robustly and steps all motion on rendered frames; and a swipeable list row (right = run, left = uncover an action tray) that can never start a cure by accident and never fights the page scroll.
 **Depends on:** UI-02 (SwipeRow theme, ScrollViewer theme), UI-05 (`UiMotion` is NOT consulted by the row)
@@ -261,6 +281,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-05 — Core UI services: machine state store, UI settings, alerts, developer mode, idle, motion
+**Summary**
+- **What it is for:** Shared background services all pages use: live machine status, saved screen settings, the alert list, developer mode, the 2-minute screensaver and animation switches.
+- **Problem it solves:** Without them every page would read the machine on its own, settings and alerts could disagree between pages, and the screen could freeze while reading hardware.
+- **How we solve it:** Single shared services read the machine once per second off the screen thread, keep settings and alerts in one place, and tell pages when something changes.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Services/`, `ViewModels/Settings/Debouncer.cs`
 **Goal:** The singletons every page binds to: a 1 Hz observable machine snapshot read off the UI thread; the persisted UI settings layered over `config/system.json` (incl. the serial number and its card backup); the active-alert list mirrored from the machine with acknowledgements; the developer-mode gate; the 2-minute screensaver; a global animation switch and a value tween; a debouncer and a self-reverting label.
 **Depends on:** Application-Process (`ICureController.GetState/ReportUiAlerts/AckFanAlarms/AckWatchdogTrip/AckDoorAbort`, `IRecipeRunner.GetStatus`, `RecipeStatus`, `MachineState`), Application-Platform (`IComponentCounters`, `ICloudSync`, `NetworkPolicy`, `INfcReaderDetector.Decorate`, `IDevEventLog`, `DataOptions`, `SerialBackup`), Domain (`ErrorRegistry`, `ErrorDef`, `ErrorCodes`), UI-09, Native UI dialogs (`IDialogService.Current`)
@@ -321,6 +346,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-06 — Input & remote services: barcode scanner, NFC jobs, remote DVT confirm, boot self-test
+**Summary**
+- **What it is for:** Brings outside inputs to the screen: USB barcode scanners, NFC tags, test requests from sCure Cloud, and the hardware checks run at start-up.
+- **Problem it solves:** Without it scans would need a focused text box, an NFC tag or remote request could start work without the operator, and boot checks would not test real hardware.
+- **How we solve it:** Scanners are read directly from the system. NFC jobs and cloud test requests always wait for the operator to confirm at the machine. Boot checks call the real hardware.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Services/`
 **Goal:** Bring outside events onto the screen safely: USB barcode scanners read straight from Linux input devices (no focused text box on DRM), NFC tags that start a cloud job only after the operator confirms, DVT tests requested from sCure Cloud that wait for Start/Decline at the machine, and the real hardware checks of the boot screen.
 **Depends on:** UI-05, UI-09, UI-14 (`HomeViewModel.StartFromTagAsync`); Application (`INfcTagReader.TagPresented`, `NfcTagRead`, `NfcUid.SameTag/Display`, `IPrintHistoryStore`, `ICureController`, `RemoteConfirm` (Dvt), `HardwareNames.SupervisedSensors/Location`, `FanTestResult`, `LedTestResult`), Native UI dialogs (`MessageDialogViewModel` with `Title, Body, OkText, CancelText, StayUp, Destructive, Cancel()`)
@@ -359,6 +389,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-07 — Origin browser sign-in service (organization from app.origin.io)
+**Summary**
+- **What it is for:** Lets the operator sign in to the Origin website from the machine to link it to their organization.
+- **Problem it solves:** The machine needs the organization ID, but typing it is error-prone and the sign-in must not leave passwords or data behind.
+- **How we solve it:** A hidden browser is shown inside a sign-in dialog. We read only the organization ID from the site's replies, store nothing about the login, and delete the browser profile.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Services/OriginBrowserSignIn.cs`, `Services/CdpSession.cs`, `Services/OriginPageCover.cs`, `Services/OriginPageFrame.cs`, `Services/OriginPageKeyboard.cs`
 **Goal:** Let the operator sign in on the real Origin website from the machine and read ONLY the organization UUID from the site's own API replies. A Chromium is driven over the Chrome DevTools Protocol: headless with its screencast streamed into the sign-in dialog ("embedded", default), or as an app window covered by an sCure frame ("window"). Nothing about the sign-in is stored; the temp profile is deleted.
 **Depends on:** UI-13 / UI-19 (callers through `OriginSignInDialogViewModel`), Native UI dialogs (`OriginSignInDialogViewModel` implements `IOriginSurface`), Application-Platform (`DataOptions.ConfigDir`)
@@ -395,6 +430,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-08 — UI QA endpoints (/api/ui) — the UI's only HTTP surface
+**Summary**
+- **What it is for:** A small web interface so QA scripts, the cloud and engineers can see and control the touch screen remotely.
+- **Problem it solves:** Without it nobody could test or check the screen without standing at the machine.
+- **How we solve it:** We add a few web calls to read the current page, change page, take a screenshot, simulate taps and swipes, inject a barcode, and read or set the organization.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Api/UiEndpoints.cs`
 **Goal:** Let QA scripts, the cloud and engineers over SSH see and drive the native screen: current route, navigate, screenshot PNG, synthetic tap / drag / program swipe on design coordinates, inject a barcode, and read/set the organization remotely. NOTE: the UI has no HTTP *client* — view models call the in-process services; this ticket is the "API" part of the UI.
 **Depends on:** UI-01 (`UiRuntime.ShellRoot/TopLevel`), UI-04 (`SwipeRow`), UI-05 (`UiSettingsStore`), UI-06 (`BarcodeScanner.Inject`), UI-09, UI-14 (`MaterialRowViewModel`); Api (`IApiEndpointMapper.Map(RouteGroupBuilder api)` under `/api`, `ApiJson.Json/Ok/Fail/ReadObjectAsync`)
@@ -428,6 +468,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-09 — Navigation (routes, history, page lifecycle)
+**Summary**
+- **What it is for:** Moves between screens and remembers where you came from, so Back works.
+- **Problem it solves:** Without it pages could keep old data, Back would not work, and page start and stop steps would not run.
+- **How we solve it:** A simple history list of screens. Each move creates a fresh page and tells the old and new page they are leaving or opening. Moves can add to or replace the history.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Navigation/`
 **Goal:** A tiny history-stack navigator: one enum of screens, a fresh page view model from DI on every navigation, `OnNavigatedFrom`/`OnNavigatedTo` lifecycle calls, push or replace, and Back. Gating (setup, dev, curing) is done by the callers and the pages themselves.
 **Depends on:** UI-01 (`UiPages.Get`, `PageViewModel`)
@@ -458,6 +503,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-10 — TopBar (header) view and view model
+**Summary**
+- **What it is for:** The header bar at the top of most pages: Back, logo, machine name, door, chamber temperature, status icons and buttons for history, alerts, settings and network.
+- **Problem it solves:** Without it the operator would not see key machine status at a glance or have a common way to reach main pages.
+- **How we solve it:** One shared header shows live status and quick buttons, colors the alerts and network icons by state, hides a developer entry behind 10 presses, and locks while a cure runs.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Views/TopBar.axaml(.cs)`, `ViewModels/TopBarViewModel.cs`
 **Goal:** The 96 px header on every non-full-screen page: Back, S logo, system name; door button and chamber temperature (with target); DEV / N₂ / NFC indicators; history, alerts (badge + severity colour), settings (with the hidden 10-press developer entry) and network (red when offline unintentionally). Locked while curing.
 **Depends on:** UI-05, UI-09, UI-03, Application-Process (`ICureController.OpenDoor`), Native UI dialogs (`DevAuthDialogViewModel` → bool)
@@ -495,6 +545,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-11 — Boot page (logo → real hardware self-test → Setup / Home)
+**Summary**
+- **What it is for:** The start-up screen that shows the logo and checks the hardware before use.
+- **Problem it solves:** Without it the machine could be used with a broken door, sensor, LED, fan, gas sensor or service, and nobody would know why.
+- **How we solve it:** It runs seven real checks in order with a progress bar. If all pass it moves on by itself; if any fail it shows why and offers Retry or Continue anyway. A planned restart skips the LED and fan tests.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/BootViewModel.cs`, `Views/Pages/BootView.axaml(.cs)`
 **Goal:** On every start show the S logo, then run seven real checks in order (door, thermistors, 405 nm LEDs, 450 nm LEDs, chamber fans, N₂ pressure sensor, API), with a flowing progress bar and per-check glyph cross-fades. All pass → move on by itself; any failure → stay with the reasons and offer Retry / Continue anyway. A planned restart skips the LED and fan tests.
 **Depends on:** UI-05, UI-06 (`IBootSelfTest`, `BootCheckOutcome`), UI-09, UI-03 (`SCureLogo`, `Converters.PercentToWidth`); Application-Platform (`PlannedRestart.Consume()`); Domain (`Wavelength`)
@@ -525,6 +580,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-12 — Wake (screensaver/sleep), Restart and Placeholder pages
+**Summary**
+- **What it is for:** Three simple pages: a black sleep screen, a restart screen, and a 'Coming soon' page for future features.
+- **Problem it solves:** A screen left on can burn in, the panel needs something steady to show during a restart, and unfinished pages need a safe stand-in.
+- **How we solve it:** Sleep shows pure black until tapped, then the logo, and a second tap returns. Restart shows a fixed frame while the machine reboots. Placeholder shows 'Coming soon'.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/{WakeViewModel,RestartViewModel,PlaceholderPageViewModel}.cs`, `Views/Pages/{WakeView,RestartView,PlaceholderView}.axaml(.cs)`
 **Goal:** Wake: pure black (burn-in protection) until a tap, then logo + hint, the second tap returns. Restart: the static frame the panel holds while the machine stops and reboots. Placeholder: a generic "Coming soon" page base kept for future pages.
 **Depends on:** UI-09, UI-03
@@ -549,6 +609,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-13 — Setup page (first-run wizard)
+**Summary**
+- **What it is for:** The first-run setup wizard for a new machine.
+- **Problem it solves:** A new machine needs a serial number, a name and possibly an organization link before use; without guidance these could be wrong or missing.
+- **How we solve it:** Step by step: welcome, serial number by barcode scan only (if missing), device name with the on-screen keyboard, link organization by USB file or Origin sign-in or skip, then Home.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/SetupViewModel.cs`, `Views/Pages/SetupView.axaml(.cs)`
 **Goal:** First-run wizard: Welcome → Serial number (only when the unit has none; barcode scanner only, mandatory, manual typing hidden behind 10 label taps + device password) → Device name (on-screen keyboard) → Link organization (CSV from USB or Origin sign-in, or continue without) → Home.
 **Depends on:** UI-05, UI-06 (`BarcodeScanner`), UI-07 (`OriginOrganization`), UI-09, UI-03; Native UI dialogs (`OnScreenKeyboardViewModel` → string with `Text` init; `DevAuthDialogViewModel` → bool; `UsbFileBrowserDialogViewModel` → string? path with `Title`; `OriginSignInDialogViewModel` → `OriginOrganization?`)
@@ -592,6 +657,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-14 — Home page (Recent Prints + Program List, swipe to start / edit)
+**Summary**
+- **What it is for:** The main screen: recent prints and the list of cure programs.
+- **Problem it solves:** Operators need a fast, safe way to start, re-run, or edit programs without starting a cure by mistake.
+- **How we solve it:** There is no Start button. Swipe a program right to start it after all safety checks and a fan test; swipe left to Duplicate, Edit or Delete. Swipe a recent print right to re-run its program.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/HomeViewModel.cs`, `ViewModels/Pages/MaterialRowViewModel.cs`, `Views/Pages/HomeView.axaml(.cs)`
 **Goal:** The main screen: the three newest prints (when an organization is linked) and the Program List (favourites first, "~N min" estimates, CSV import, + New). There is NO Start button and NO Edit mode: a program row is swiped right to start (through every safety gate and the pre-flight fan test) and swiped left to uncover Duplicate / Edit / Delete; a Recent Print swiped right re-runs its program.
 **Depends on:** UI-04 (`SwipeRow`), UI-05, UI-09, UI-15 (`CureStartRequest`); Application (`IMaterialStore.GetPresets/GetUserMaterials/ReplaceUserMaterials`, `IPrintHistoryStore.GetAll`, `ICureController.SetFanOverride`, `FanTestResult`), Domain (`Material`, `PrintLog`, `ProcessType`, `ProgramEstimator.EstimateProgramMinutes/PrintMinutes`); Native UI dialogs (`MessageDialogViewModel`, `CriticalAlertDialogViewModel` (`Load(AlertService)`, → bool "go to alerts"), `NitrogenOnlyDialogViewModel` → bool, `PreflightDialogViewModel` (`HoldAfterTest`, `Task<FanTestResult?> TestCompleted`, `Finish()`, `Result`) → `FanTestResult?`, `FanFailDialogViewModel` (`Setup(FanFailKind.Fan, FanFailWhen.Preflight, fans)`) → bool, `MaterialEditorDialogViewModel` (`Init(Material?)`) → bool changed, `ImportCsvDialogViewModel` → `IReadOnlyList<Material>`, `PrintHistoryDialogViewModel` → `PrintHistoryResult?` (`MaterialName`, `PrintIds`))
@@ -639,6 +709,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-15 — Cure view-model helpers (ViewModels/Cure)
+**Summary**
+- **What it is for:** Shared helper logic for the cure page and cure history: phase names and icons, phase cards, number and date formats, start settings and report building.
+- **Problem it solves:** Without shared, testable helpers, safety checks like a stuck temperature or LED panels not heating would be duplicated or hard to test.
+- **How we solve it:** We put these pieces in small plain classes, including the temperature-stall and LED-heating checks, that both pages reuse and that can be tested alone.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Cure/`
 **Goal:** Pure, testable pieces the cure page and history share: phase kinds and their labels/icons, the per-step phase card view model, the temperature-stall detector (7004), the client-side LED-panel-heating check (9004 family), number/date formats, the hot-chamber caution, the cure-start navigation parameter and the report builder glue.
 **Depends on:** Domain (`CureStep`, `ProcessType`, `Material`, `CureLog`, `ErrorRegistry`, `ErrorCodes`), Application (`ICureReportBuilder`, `CureReportContext`, `CureReportDocument`, `ReportPersistence.SaveAndExport`, `ReportExportOutcome`, `ICureRunStore`, `ISystemService.Version()`, `IPhaseTimingStore`, `PhaseTiming`), UI-05 (`UiSettingsStore`), UI-03 (`IconKind`)
@@ -672,6 +747,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-16 — Cure process page (run a program on the server-side recipe engine)
+**Summary**
+- **What it is for:** The page shown while a cure program runs, with progress and phase cards.
+- **Problem it solves:** The operator must see progress and control the run, and problems like an open door, bad sensors, fan or LED faults must be caught and shown.
+- **How we solve it:** It starts the program, refreshes every second, offers Pause, Resume, Abort and Skip, and watches for door, sensor, fan, LED and temperature problems. At the end it builds the report and can save it to USB.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/CureProcessViewModel.cs`, `Views/Pages/CureProcessView.axaml(.cs)`
 **Goal:** Start the selected program on `IRecipeRunner` when the page opens, render `RecipeStatus` + `MachineState` on every 1 Hz tick (header with run state and overall progress, status bar, a centred carousel of phase cards), issue Pause / Resume / Abort / Skip, and keep the client-side supervision: door-open countdown, heater sensor fault (9010/9001), frozen reading (9006), fan failure, LED panel not heating, temperature stall (7004), completion with report build + USB export, runner error / external abort.
 **Depends on:** UI-03 (`PhaseCard`, `StatusPill`), UI-05, UI-09, UI-15; Application-Process (`IRecipeRunner.Start(Material, string runId, string? serial)/Pause/Resume/Abort/SkipStep/GetStatus`, `RecipeStatus` {RunId, State, Phase, StepIndex, StepElapsedSec, StepRemainingSec, TotalElapsedSec, EstimatedTotalSec, TargetTemp, Process, Message, ErrorCode}, `ICureController.AckDoorAbort/OpenDoor/SetFanOverride`), Domain (`ProgramEstimator.EstimateProgram/EstimateStepSeconds/EstimateCoolSeconds/AmbientC/DefaultNitrogenSeconds`, `RecipeStateMachine.NitrogenSec`, `ErrorCodes`), Application (`ICureRunStore`, `IPhaseTimingStore`, `ICureReportBuilder`, `ISystemService`, `IPrintHistoryStore.GetAll/ReplaceAll`, `ErrorRegistry`); Native UI dialogs (`DoorOpenDialogViewModel` (`Init()`, `Tick()`, `Dismiss()`), `HeaterFaultDialogViewModel` (`Init(HeaterFaultWhen, detail, showRetry, stopLabel, frozen)` → bool retry), `FanFailDialogViewModel` (`Setup(FanFailKind.Fan|Led, FanFailWhen.Running, items)` → bool continue), `TemperatureWarningDialogViewModel` (`Init(target, current)` → bool continue), `PauseDialogViewModel` (`Init(chamberTemp)` → bool), `PauseOverlayViewModel` (`Init(phaseName)` → bool continue), `AbortDialogViewModel` (`Init(chamberTemp)` → bool yes), `CureCompleteDialogViewModel` (`Init(material, totalSec, steps)`, `ReportMessage`) → bool open door, `MessageDialogViewModel`, `PreflightDialogViewModel.Finish()`)
@@ -725,6 +805,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-17 — Cure History page
+**Summary**
+- **What it is for:** A page listing past cure runs and their details.
+- **Problem it solves:** Without it operators could not review, report on or clean up past runs.
+- **How we solve it:** It lists runs newest first with status, times and issues. A detail panel lets you export the report to USB, delete one run, or delete all finished runs, each after confirmation.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/CureHistoryViewModel.cs`, `Views/Pages/CureHistoryView.axaml(.cs)`
 **Goal:** List recorded cure runs newest first with status, dates, sensor / fan issue lines, duration and steps; a detail panel with the run summary, "Export report" (stored report or freshly built → USB), Delete (one, confirmed) and Delete all (finished runs, confirmed). No chart on the panel (graphs are in the exported report).
 **Depends on:** UI-05, UI-09, UI-15 (`CureFormat`, `CureRunReporter`), UI-03; Application (`ICureRunStore.GetHistory/GetReport`, `IPhaseTimingStore`, `ICureReportBuilder`, `ISystemService`, `IMaterialStore`, `CureHistoryDeletion.Delete(id)/DeleteAll()`, `CureHistoryRetention.KeepRuns`, `ReportPersistence.Export`), Domain (`CureLog`); Native UI dialogs (`MessageDialogViewModel`)
@@ -756,6 +841,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-18 — Alerts page
+**Summary**
+- **What it is for:** A page showing the machine's active alerts.
+- **Problem it solves:** Without it operators would not know what is wrong or how to fix it.
+- **How we solve it:** Alerts are grouped into critical errors and warnings, with an All Clear state. A detail view shows the description, fix steps, QR codes to documents and videos, support contacts and a Dismiss button.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/AlertsViewModel.cs`, `Views/Pages/AlertsView.axaml(.cs)`
 **Goal:** Show the active alerts in two groups (Critical Errors, Warnings) with registry text, time and a QR of the support URL; an "All Clear" state; and a detail view with severity, description, troubleshooting steps, documentation and repair-video QRs, support contacts and a Dismiss button pinned in the header.
 **Depends on:** UI-05 (`AlertService`, `UiAlert`), UI-03 (`QrCodeView`, `StatusPill`, `Card`); Domain (`ErrorDef` {Message, Description, Severity, SupportUrl, VideoUrl, Troubleshooting}, `ErrorSupport` {DocsBase, Email, Phone}, `ErrorRegistry.Support`)
@@ -782,6 +872,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-19 — Settings page
+**Summary**
+- **What it is for:** One page with all machine settings and service actions.
+- **Problem it solves:** Operators and service staff need one place to change fans, heating, gas, network, time, updates, organization and more; scattered controls would be confusing.
+- **How we solve it:** A single scrolling two-column page groups all settings and tests into cards, including power, fans, heating, LED test, nitrogen, date and time, log export, software update and organization.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/SettingsViewModel.cs`, `ViewModels/Settings/FanRowViewModel.cs`, `Views/Pages/SettingsView.axaml(.cs)`
 **Goal:** One scrolling two-column page for the machine's settings and service actions: system name, power (reboot / sleep), damper, three fan groups with speed sliders and tests, chamber heating slider, LED test, component counters, N₂ pressure + Nitrogen Mode, NFC, BOFA, Work Without Network, date & time (auto / manual), serial, log export, software update, compliance, organization (CSV / Origin / unlink), versions card (developer entry) and the developer card.
 **Depends on:** UI-05 (store, settings, alerts, dev, Debouncer/TransientLabel), UI-09, UI-12 (`RestartViewModel`, `WakeViewModel.SleepParameter`), UI-13 (`SetupViewModel.OrganizationIdPattern`), UI-03 (`Toggle`, `TrackDim`, `ScureButton`), UI-07 (`OriginOrganization`); Application (`ICureController.SetDamper/SetFanSpeed(FanGroup,int)/RunFanTest(string)/RunLedTest(int,double,Wavelength)/SetTargetTemperature/StopHeating/SetBofaConnected`, `ISystemService.Version()/Reboot()/SetDateTime(date,time)/SetNetworkTime(bool)/NetworkTimeEnabled()/ExportLogs()`, `INfcReaderDetector.TrySetEnabled(bool, out reader)`, `NetworkPolicy.OfflineMode/Choose(bool)`, `FanGroup { led_cooling, chamber_intake, chamber_heating }`, `FanTestResult` {Status, Rpm, Message, Fans: name→{Status,Rpm}}, `LedTestResult` {Ok, Status, Results: [{Name, Status}]}); Native UI dialogs (`OnScreenKeyboardViewModel`, `MessageDialogViewModel`, `NumberPadViewModel` (`Title, Min, Max, Step, Decimals, Suffix, SetValue(v)` → double?), `SoftwareUpdateDialogViewModel` → bool restart, `ComplianceDialogViewModel`, `UsbFileBrowserDialogViewModel`, `OriginSignInDialogViewModel`, `VersionsDialogViewModel`, `DevAuthDialogViewModel`)
@@ -826,6 +921,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-20 — Network page (STATUS / DIAGNOSTICS)
+**Summary**
+- **What it is for:** A page to view and fix the machine's network connection.
+- **Problem it solves:** Without it nobody could see the network settings or find why the machine is offline.
+- **How we solve it:** A Status tab shows connection details every 3 seconds and switches between fixed IP and automatic IP. A Diagnostics tab runs ping, traceroute or DNS lookup with a 60 second limit.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/NetworkViewModel.cs`, `Views/Pages/NetworkView.axaml(.cs)`
 **Goal:** Two tabs: STATUS (connection card polled every 3 s, IP / MAC / WireGuard IP / connection name / protocol / CIDR / gateway, switch between STATIC IP and DHCP) and DIAGNOSTICS (Ping / Traceroute / DNS Lookup on an address typed with the keyboard, EXECUTE with a 60 s timeout, monospace result box).
 **Depends on:** UI-05, UI-03; Application-Platform (`INetworkService.Status()` → `NetworkStatusDto` {Code?, Connected, Ip, Mac, Gateway, WireguardIp}, `SetStatic(bool dhcp, ip, gateway, subnet, dns)` → OpResult, `Diagnostics(string tool, string address)` → `DiagnosticsResultDto` {Ok, Result, Code?}); Native UI dialogs (`StaticIpDialogViewModel` (`Init(ip, gateway)`) → `StaticIpConfig?` {Ip, Gateway, Subnet, Dns}, `OnScreenKeyboardViewModel`)
@@ -853,6 +953,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-21 — Developer menu and LED intensity calibration pages
+**Summary**
+- **What it is for:** The developer tools menu and the LED brightness calibration page.
+- **Problem it solves:** LED zones are not equally bright, and developer tools must be hidden from normal users.
+- **How we solve it:** The menu only opens in developer mode. Calibration lets you set a factor for each of four LED zones, preview it live on the LEDs, then Save, Reset or Exit.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/DevMenuViewModel.cs`, `ViewModels/Pages/DevLedCalibrationViewModel.cs`, `Views/Pages/DevMenuView.axaml`, `Views/Pages/DevLedCalibrationView.axaml`
 **Goal:** The developer tools entry (guarded by the session dev flag) and the per-zone LED calibration: a requested system power, live preview on the 405 nm LEDs with unsaved factors, four zone factor cards (0–1.5) with the resulting physical output, Save / Reset / Exit.
 **Depends on:** UI-05 (`DevModeService`, Debouncer, TransientLabel), UI-09, UI-03; Application (`ICureController.SetLedFactors(IReadOnlyDictionary<string,double>)/SetUv(bool, double, Wavelength)`, `ILedCalibrationStore.Factors/Save/Reset/ScaledOutputs(power, factors)`, `IHdtCalibration.Running`, `IDevEventLog.Append(string, object?)`); Native UI dialogs (`NumberPadViewModel`)
@@ -881,6 +986,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-22 — Material HDT calibration page
+**Summary**
+- **What it is for:** A developer page that finds the right LED power for a material based on its heat-bending temperature.
+- **Problem it solves:** Without calibration, a material could be over- or under-heated during curing.
+- **How we solve it:** After a setup form and a temperature-logger check, the machine sweeps LED power automatically. The page shows live data, a chart, results and the recommended power, with Abort and USB report export.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/DevHdtViewModel.cs`, `Views/Pages/DevHdtView.axaml`
 **Goal:** Developer page driving the server-side HDT calibration (an automatic LED power sweep against a material's heat-deflection temperature measured on a PicoLog TC-08 CH1): a setup form + PicoLog card gate the Start; while running/finished a 1 Hz poll shows live stats, the temperature chart, the per-power results table, the recommended power and boost; Abort (confirmed), New Calibration, CSV/HTML report export to USB.
 **Depends on:** UI-03 (`HdtChart`), UI-05, UI-09, UI-21 (dev guard pattern); Application (`IHdtCalibration.Status(int sinceSample)` → `HdtStatusDto`, `Start(HdtStartRequest)`, `Abort()`, `Reset()` → bool, `Running`; `ITemperatureProbe.Status()` → {Connected, Ch1Available, Temperature, Error, DeviceInfo}; `ILedCalibrationStore`; `IHdtReportBuilder.BuildHtml(status, factorsLine)/BuildCsv(status)`; `HdtReportBuilder.FileName(now)`, `HdtReportBuilder.ApplyLedFactors(power, factors)`; `ReportPersistence.Export`; `HdtSample` {T, Raw, Avg, Power}); Native UI dialogs (`NumberPadViewModel`, `MessageDialogViewModel`)
@@ -912,6 +1022,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-23 — Program-editor step view models and sequence rules (ViewModels/Editor)
+**Summary**
+- **What it is for:** The logic behind editing each step of a cure program in the program editor.
+- **Problem it solves:** Without rules, users could build steps that make no sense, such as wrong order, impossible temperatures or bad cooling.
+- **How we solve it:** Rules decide which step types are allowed next to each other, set temperature limits and defaults, clean up values and show clear error messages, while each step card is edited inline.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Editor/`
 **Goal:** The per-step editing logic behind the program editor dialog's step strip (the dialog itself — `MaterialEditorDialogViewModel` implementing `IStepCardHost` — belongs to the dialogs area): which processes a step may take given its neighbours, the running minimum temperature and cooling ceiling, defaults for a new step, normalisation, validator message mapping, and the `StepCardViewModel` that edits one step inline with steppers, number pads and floating drop-downs.
 **Depends on:** UI-03 (`StepCard` view binds it), Domain (`CureStep` {Step, Process, Temperature?, Time, UvIntensity?, Intensity?, TimerMode?, UvStartMode?, CoolingMode?, Ventilation?, IsUv, EffectiveUvIntensity}, `ProcessType`, `CoolingMode`, `CoolingModes.Parse`, `TimerMode {OnRamp, OnTarget}`, `UvStartMode {AtStart, AtTarget}`, `ProgramValidator` {HeatMinC, HeatMaxFor(process), CoolMinC, CoolingDropMinC, MaxNitrogenSteps, HoldMinMin, HoldMaxMin, BleacherHoldMaxMin, UvMinPct, UvMaxPct, Validate(steps)}), Native UI dialogs (`IDialogService`, `NumberPadViewModel`, `MaterialEditorDialogViewModel` as host)

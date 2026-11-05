@@ -101,6 +101,11 @@ Servo pulse: logical angle a' = 180 - angle; pulse_us = round(500 + a'/180*1900)
 ---
 
 ### HW-01 — Hardware facade contract (IHardwareSystem, exceptions, PressureReading)
+**Summary**
+- **What it is for:** One shared interface that the rest of the software uses to control and read all hardware in the sCure Box: fans, heater, sensors, UV LEDs, valves, door, damper and lights.
+- **Problem it solves:** Without one clear contract, each part of the app would talk to the hardware in its own way, and the real board and the simulator could behave differently.
+- **How we solve it:** We define one interface plus two error types: one for safety refusals (for example, door not closed) and one for failed writes or bus errors. The real board and the simulator both implement it.
+
 **Project / folder:** `src/SCureBox.Hardware/SCureBox.Hardware.csproj`, project root folder
 **Goal:** Define the single interface the application layer uses for every hardware action and reading, plus the two exception types that signal refusals and verification/bus failures. Both the real board (HW-11/HW-12) and the simulation (HW-15) implement it; `FreezableHardwareSystem` (HW-13) decorates it.
 **Depends on:** HW-02 (IHardwareConfig); Domain (Fan, TempSensor, UvSensor, LedPanel, Wavelength)
@@ -175,6 +180,11 @@ public sealed class HardwareVerifyException : Exception { public HardwareVerifyE
 ---
 
 ### HW-02 — Hardware configuration (components.json, IHardwareConfig, hot reload)
+**Summary**
+- **What it is for:** Reads the machine settings file (components.json) that holds pins, fan speeds, heating values, LED rules, colors and sensor limits.
+- **Problem it solves:** Settings must change without rebuilding or restarting the software, and a missing or broken file must not stop the machine.
+- **How we solve it:** Every setting has a built-in default. The file is checked at most once a second and re-read when it changes. Bad or missing values fall back to the last good settings or the defaults.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root + `Config/`
 **Goal:** Provide a typed, hot-reloaded view of `components.json` with built-in defaults for every key. The file's mtime is checked at most once per second and re-parsed on change, so edits apply without restart; a missing or broken file keeps the last good snapshot (or defaults).
 **Depends on:** Domain (enums, `Wavelength` parse, `CoolingMode.Wire()`, `HardwareNames.LedFan`)
@@ -299,6 +309,11 @@ internal static class JsonSectionExtensions {   // tolerant readers
 ---
 
 ### HW-03 — I2C bus abstraction and set-and-verify helper
+**Summary**
+- **What it is for:** The basic layer that lets the chip drivers talk to the board chips over the I2C bus, plus a helper that writes a value and checks it was really set.
+- **Problem it solves:** Two drivers talking on the bus at the same time can corrupt data, and a write can silently fail.
+- **How we solve it:** All bus traffic goes through one shared lock. Important writes are read back and retried up to 3 times; if they still fail, a clear error lists every part that failed.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Bus/` and `Drivers/`
 **Goal:** Give every chip driver an SMBus-style register interface over Linux `/dev/i2c-N`, serialised on one process-wide lock, plus the generic "apply, read back, retry 3x" and "attempt all, aggregate failures" helpers used by every verified write.
 **Depends on:** HW-01 (HardwareVerifyException)
@@ -344,6 +359,11 @@ internal static class Verify {
 ---
 
 ### HW-04 — GPIO pins and libgpiod tachometer edge counter
+**Summary**
+- **What it is for:** Controls the simple on/off pins of the main computer and counts the pulses from the six fans so their speed can be measured.
+- **Problem it solves:** The standard way to set up the fan speed pins fails on this computer (CM5), so fan speeds could not be read.
+- **How we solve it:** We use the libgpiod library directly and set up each fan pin in one step as an input that counts rising pulses. Plain pins get simple open, read and write calls.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Bus/`
 **Goal:** Provide plain GPIO outputs/inputs over libgpiod (never pinctrl, except the watchdog) and free-running rising-edge counters for the six fan tachometers. The tach lines are requested directly through libgpiod v2 in ONE request (input + pull-up + rising edge) because System.Device.Gpio's open-then-reconfigure fails with EINVAL on the CM5.
 **Depends on:** none in area (System.Device.Gpio 4.2.0)
@@ -390,6 +410,11 @@ internal sealed class LibgpiodEdgeCounter : IDisposable {
 ---
 
 ### HW-05 — PCA9685 PWM driver
+**Summary**
+- **What it is for:** Driver for the 16-channel PWM chip that sets the power level of the fans, heater, chamber light, extraction fan speed and UV LED brightness.
+- **Problem it solves:** Some channels are wired inverted and the heater channel is only on or off, so writing raw values would give wrong outputs.
+- **How we solve it:** The driver takes simple 0-100% values, flips inverted channels, treats the heater as full on or off, remembers the last value and can check each write.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Drivers/`
 **Goal:** Drive the 16-channel 12-bit PWM chip (U15, i2c-0, 0x55) with logical duty percentages, applying the board's per-channel inversion and the digital-only heater channel, remembering the last commanded logical duty, and supporting verified writes.
 **Depends on:** HW-03
@@ -438,6 +463,11 @@ internal sealed class Pca9685 {
 ---
 
 ### HW-06 — TCA6424A IO-expander driver
+**Summary**
+- **What it is for:** Driver for the IO expander chip that switches the UV wavelength relay, door magnet, valves, motor direction and NFC reset.
+- **Problem it solves:** At power-on the relay line could float high and switch the LED path by mistake, and writes might not take effect.
+- **How we solve it:** We write safe output values first, then set pin directions, so nothing switches by accident. Pins are read and written in logical terms and writes are checked.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Drivers/`
 **Goal:** Drive the 24-bit IO expander (U1, i2c-0, 0x23) that switches the LED_SWITCH relay K4, door magnet / valves, motor direction and NFC reset, with a safe initialisation that prevents LED_SWITCH floating high at power-on, logical (inversion-aware) pin access, and verified writes.
 **Depends on:** HW-03
@@ -492,6 +522,11 @@ internal sealed class Tca6424a {
 ---
 
 ### HW-07 — ADS1115 ADC driver
+**Summary**
+- **What it is for:** Driver for the two analog-to-digital converter chips that read the temperature sensors, UV light sensors and nitrogen pressure.
+- **Problem it solves:** The software needs real voltages from these sensors to know temperatures, UV light and gas pressure.
+- **How we solve it:** The driver takes one measurement at a time from a chosen input and converts the raw number to volts.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Drivers/`
 **Goal:** Single-shot, single-ended reads of the 16-bit ADCs U6 (i2c-0) and U7 (i2c-1), both at 0x49, that carry the NTC thermistors, UV photoresistors and the N2 pressure input.
 **Depends on:** HW-03
@@ -528,6 +563,11 @@ internal sealed class Ads1115 {
 ---
 
 ### HW-08 — PIO helper processes (locator, line protocol, native pio_servo / pio_rgb)
+**Summary**
+- **What it is for:** Small helper programs that make precise timed signals for the damper servo and the RGB status light strip.
+- **Problem it solves:** Normal software timing is not exact enough for servo pulses and for the LED strip data signal.
+- **How we solve it:** Small C programs use the chip's dedicated timing block (PIO). The main app starts them and sends them simple one-line text commands.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Helpers/` and `native/`
 **Goal:** Run hardware-timed signals on the RP1 PIO block (damper servo pulses on GPIO8, WS2811 stream on GPIO12) through small C helper programs that the C# side spawns and talks to over stdin/stdout with a one-line-per-command protocol.
 **Depends on:** none in area; Deploy-Ops (packaging the built helpers into the app, `SCURE_NATIVE_DIR`)
@@ -569,6 +609,11 @@ internal sealed class HelperProcess : IDisposable {
 ---
 
 ### HW-09 — Damper servo (pulse maths, PIO and software-PWM drivers, settle/release)
+**Summary**
+- **What it is for:** Moves the damper (an air flap used for cooling) open or closed with a small servo motor.
+- **Problem it solves:** The servo must reach the right angle through an inverted signal, and if pulses keep running it hums under load.
+- **How we solve it:** We convert the angle to the right pulse, send pulses for a short settle time, then stop. We prefer the timed helper and fall back to software pulses.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Servo/`
 **Goal:** Move the MG90S damper servo on GPIO8 (behind the inverting transistor Q16) to a logical angle, keep pulsing for `settle_sec`, then release so a loaded servo does not hum. Prefer the PIO helper; fall back to software PWM.
 **Depends on:** HW-02 (ServoConfig), HW-04 (LibgpiodDrivers), HW-08
@@ -624,6 +669,11 @@ internal sealed class DamperServo : IDisposable {
 ---
 
 ### HW-10 — RGB status strip driver and colours
+**Summary**
+- **What it is for:** Drives the 21-LED RGB status strip that shows the machine state by color.
+- **Problem it solves:** The strip needs a precise data signal, and the status logic needs a simple way to turn color names and brightness into LED values.
+- **How we solve it:** We send colors through the RGB helper program and provide parsing of color names and hex codes plus brightness scaling.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Rgb/`
 **Goal:** Drive the 21-LED TM1903/WS2811 status strip on GPIO12 through the `pio_rgb` helper, and provide the colour-name / hex parsing and brightness scaling used by the status logic (the status ladder itself lives in Application-Platform / Api).
 **Depends on:** HW-08
@@ -668,6 +718,11 @@ public static class RgbColors {
 ---
 
 ### HW-11 — IO board map and real-board system: safe states, fans/tach, heater, sensors, actuators
+**Summary**
+- **What it is for:** The real-board implementation of the hardware interface. It connects all chips, pins, servo and LED strip with the fixed board wiring map.
+- **Problem it solves:** The app needs one working object that safely runs fans, heater, sensors, door, nitrogen, extraction fan, damper and lights on the actual board.
+- **How we solve it:** We wire all drivers together using the board channel map, add safe start and safe stop states, measure fan speeds, filter short sensor glitches and track bus faults.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root (`IoBoardMap.cs`, `IoBoardHardwareSystem.cs`)
 **Goal:** Implement `IHardwareSystem` for the real BRD-74205 board by wiring the PCA9685, TCA6424A, two ADS1115, GPIO pins, damper servo and RGB strip together with the fixed channel map. This ticket covers construction, I2C fault tracking, safe states, fans + RPM, heater element, temperature / UV / pressure reads with glitch hold, door, nitrogen, BOFA, door magnet, damper, light, NFC reset, RGB and disposal. The UV LED power path is HW-12 (same class).
 **Depends on:** HW-01..HW-10, HW-12; Domain (`NtcMath`, `ChamberTempCalibration`, `PressureConversion`, `PressureSensorParameters`, `SensorGlitchHold`, `GlitchVerdict`, `TachRateTracker`)
@@ -733,6 +788,11 @@ internal sealed class IoBoardHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-12 — UV LED power path (SSRs, LED_SWITCH relay, routing GPIO17, gating, LED fans)
+**Summary**
+- **What it is for:** Safely turns the four UV LED panels on and off and selects the 405 nm or 450 nm wavelength.
+- **Problem it solves:** UV must never shine with the door open or on the wrong panel, and powering the LEDs in the wrong order can damage the circuit or fail.
+- **How we solve it:** Before LEDs turn on we check door closed, wavelength and minimum level, then power up in a tested order with read-back checks. Each panel fan runs with its LEDs, and power drops when the last LED is off.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `IoBoardHardwareSystem.cs` (LED region)
 **Goal:** Switch the four UV LED panels safely: enforce min intensity, door confirmed closed and per-LED wavelength gating, apply the LED supply in the bench-verified order (LED_SWITCH relay -> settle -> SSRs + GPIO17 -> GPIO17 read-back -> DIM PWM), auto-run each panel's cooling fan, and drop the supply when the last LED goes off.
 **Depends on:** HW-11 (same class), HW-05, HW-06, HW-02 (`LedPowerConfig`, `LedConfig`)
@@ -769,6 +829,11 @@ internal sealed class IoBoardHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-13 — DVT hang gate (OutputFreeze, FreezableHardwareSystem)
+**Summary**
+- **What it is for:** A test feature that pretends the main software has frozen, used in the DVT safety test.
+- **Problem it solves:** We need to prove that the separate watchdog really cuts the heater and UV when the software hangs.
+- **How we solve it:** While the hang is active, every hardware write is blocked but reads still work. After it ends, blocked writes are dropped and only the recovery safe state may write.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Safety/`
 **Goal:** Let a DVT test (DVT-SAF-010, `POST /api/dvt/hang`) simulate a hung firmware: while hung every hardware OUTPUT write blocks (nothing switches on or off) so the output watchdog must cut; reads keep working. When the hang ends, writes issued during it are dropped and only the recovery safe-state may write.
 **Depends on:** HW-01; used by Application-Process (DvtHang, CureController, RecipeRunner, SupervisionService) and Api (HeartbeatService)
@@ -805,6 +870,11 @@ public sealed class FreezableHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-14 — Output watchdog process (heartbeat, trip record, SafetyCut)
+**Summary**
+- **What it is for:** A separate safety process that watches whether the main software is still alive.
+- **Problem it solves:** If the main software freezes, the heater and UV LEDs could stay on with nothing to stop them.
+- **How we solve it:** If no heartbeat arrives for 20 seconds, the watchdog turns off the heater and UV LEDs itself and records it, so the restarted software shows Err 9017. Fans keep running to cool the chamber.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Safety/`
 **Goal:** A separate process (`scurebox --watchdog`, systemd `scurebox-watchdog.service`) that watches the firmware heartbeat file and, when the firmware has been silent for the timeout (20 s), switches the heater SSR and the UV LEDs off from outside the firmware and records the trip so the restarted firmware raises Err 9017. Fans, damper, valves and BOFA are left alone so the chamber keeps cooling.
 **Depends on:** HW-02, HW-03, HW-05, HW-11 (IoBoardMap); Domain (`WatchdogMonitor`, `WatchdogEvent`); Api (`CommandLine` dispatches `--watchdog`, `HeartbeatService` writes the heartbeat every 1 s); Application-Process (reads the trip file, Err 9017)
@@ -863,6 +933,11 @@ public static class OutputWatchdog {
 ---
 
 ### HW-15 — Simulated hardware system (thermal / fan / N2 / door model)
+**Summary**
+- **What it is for:** A simulated sCure Box used for development, QA and unit tests without the real board.
+- **Problem it solves:** Developers and tests need hardware that behaves like the real machine, including safety rules, when no machine is available.
+- **How we solve it:** A simple time-based model of heat, fans, nitrogen and door, with the same safety rules as the real board, plus hooks to inject faults in tests.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root (`SimulatedHardwareSystem.cs`)
 **Goal:** A deterministic stand-in for the IO board for off-device development, QA and unit tests of the upper layers. It keeps the same gating semantics as the real board (min intensity, door confirmed closed, per-LED wavelength, mode change turns LEDs off) over a simple time-driven model, and offers test hooks for fault injection.
 **Depends on:** HW-01, HW-02, HW-11 (`IoBoardMap.DoorOpenMessage`); Domain (`NtcMath`, `PressureConversion`, `PressureSensorParameters`, `FanHealthEvaluator.ExpectedRpm`, `UvSensor.Panel()`)
@@ -920,6 +995,11 @@ public sealed class SimulatedHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-16 — Hardware selection factory, options and DI registration
+**Summary**
+- **What it is for:** Startup code that picks the real board or the simulator and registers the hardware parts for the rest of the app.
+- **Problem it solves:** The app must know which hardware to use, explain why, and start the real board in a safe state.
+- **How we solve it:** At startup it decides real or simulated and logs the reason, builds the real board with its servo and LED strip, sets it safe, and registers settings, hang gate and hardware as shared services.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root (`HardwareOptions.cs`, `HardwareSystemFactory.cs`, `HardwareServiceCollectionExtensions.cs`)
 **Goal:** Decide at start-up whether to drive the real IO board or the simulation (logging the reason), build the real board with its servo and RGB factories and drive it to the safe state, and register config, hang gate and the (freezable) hardware system as DI singletons.
 **Depends on:** HW-02, HW-04, HW-05, HW-08, HW-09, HW-10, HW-11, HW-13, HW-15; Api (`ScureApiHost` calls `AddSCureBoxHardware` with `ComponentsPath`, `ForceSimulation = settings.Simulate`, `NativeDir` = env `SCURE_NATIVE_DIR`)

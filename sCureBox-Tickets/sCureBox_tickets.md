@@ -3,6 +3,8 @@
 **Source of truth:** sCureBox-CS 1.0.152 (C# / .NET 10, Avalonia 12, ASP.NET Core minimal API, Raspberry Pi CM5 + sCure IO board).
 **Purpose:** this file is the complete brief for a Claude agent to rebuild the whole sCure Box software. Each ticket is one subsystem. Every ticket is self-contained, and its names (types, members, routes, JSON fields, config keys, error codes) must be used EXACTLY as written.
 
+**Every ticket starts with a short plain-English Summary.** It says what the part is for, the problem it solves, and how we solve it. The detailed spec below the Summary is the binding part.
+
 ## How to use this file (instructions to the implementing agent)
 
 1. **Read "Owner decisions & standing rules" first.** These rules are mandatory, and they override any ticket text that conflicts with them.
@@ -1448,6 +1450,11 @@ Source P §12 lists the Open Issues that are still open; closed ones are noted a
 ---
 
 ### DOM-01 — Project scaffold and hardware naming model
+**Summary**
+- **What it is for:** Sets up the core rules library of the sCure Box software and gives one fixed name to every fan, UV LED panel, temperature sensor and UV light sensor in the machine.
+- **Problem it solves:** Without one shared list of names, the screen, the API and the alert texts could call the same part by different names, and links between parts (which fan cools which panel) would be guessed in many places.
+- **How we solve it:** One small file holds all part names and their links (fan groups, the fan of each panel, plain-English labels). Every other part of the software uses these names and never makes up its own.
+
 **Project / folder:** `src/SCureBox.Domain/SCureBox.Domain.csproj`, `src/SCureBox.Domain/Models/HardwareNames.cs`; test project `tests/SCureBox.Domain.Tests/SCureBox.Domain.Tests.csproj`
 **Goal:** Create the domain class library and its test project, and define the physical names of every fan, LED panel, thermistor and UV photoresistor plus the lookups (groups, owning fan, UI zone, operator wording) that all other layers use. These names are the wire IDs used by the API, the UI and the alert texts, so their spelling is part of the contract.
 **Depends on:** none (first ticket of the Domain area). Every other DOM ticket depends on it.
@@ -1509,6 +1516,11 @@ internal static class RepoFiles { public static string Config(string name, [Call
 ---
 
 ### DOM-02 — Error registry, error codes and OpResult
+**Summary**
+- **What it is for:** A central list of every error and warning code the machine can show, with its message, how serious it is, and tips to fix it. It also defines the standard result returned for every command.
+- **Problem it solves:** Without one list, the same fault could get different numbers or messages on the machine, in the cloud and in reports, and the operator would not know what a code means or how to fix it.
+- **How we solve it:** All codes live in one file (errors.json) with a built-in backup copy if the file is missing or broken. Each fan, sensor and panel gets its own code, and old grouped codes stay only so old reports still show a title.
+
 **Project / folder:** `src/SCureBox.Domain/Errors/` (+ `config/errors.json`)
 **Goal:** One central registry of every error/warning code the machine emits, with severity, message, troubleshooting and support links. The numeric code travels unchanged from the hardware layer to every UI; its first digit is the SRS section. Provides per-component code mappers (one code per thermistor / fan / LED panel since 2026-10-21) and the family mapping back to the older grouped codes, plus `OpResult`, the command-result shape the API returns.
 **Depends on:** DOM-01.
@@ -1710,6 +1722,11 @@ public sealed class ErrorRegistry
 ---
 
 ### DOM-03 — Curing program, run-history and job models (wire contracts)
+**Summary**
+- **What it is for:** Defines the data shapes for a curing program (material and its steps), a cure run with its readings and alerts, print jobs with their NFC tag, and measured step timings. It also holds the ready-made preset programs.
+- **Problem it solves:** The machine, the screen, the API and CSV files must all read and write the same data. If field names or spellings differed, programs and reports would break between parts of the system.
+- **How we solve it:** Write each record once, with exact fixed field names and value spellings, and share it with every layer. Presets ship in a read-only file.
+
 **Project / folder:** `src/SCureBox.Domain/Models/CureProgram.cs`, `src/SCureBox.Domain/Models/History.cs` (+ `config/presets.json`)
 **Goal:** The serialisable records that describe a curing program (material + steps), a cure run with its telemetry, alerts and issues, print jobs (with NFC tag) and measured phase timings. JSON property names and enum spellings are the API/UI/CSV contract and must match exactly. Also the bundled read-only preset programs.
 **Depends on:** DOM-01.
@@ -1810,6 +1827,11 @@ preset-deflect-110 | P3 Deflect 110 | 55 | 1 Drying 45 8; 2 Cure 65 12 uv50; 3 C
 ---
 
 ### DOM-04 — Program validation and the program CSV format
+**Summary**
+- **What it is for:** Checks that a curing program written by an operator is valid, and saves or loads programs as CSV files (for the editor and USB import).
+- **Problem it solves:** A bad program (wrong temperature, time or UV level, or wrong nitrogen steps) could run badly or harm parts, and CSV files from other sources could load wrong data.
+- **How we solve it:** Check every rule and collect all failures together, each with its error code, so the operator sees everything at once. Use one fixed 10-column CSV format, and still accept the older 5-column format.
+
 **Project / folder:** `src/SCureBox.Domain/Programs/` (`ProgramValidator.cs`, `ValidationError.cs`, `ValidationResult.cs`, `ProgramCsv.cs`, `CsvParseResult.cs`)
 **Goal:** Pure validation of an operator-authored curing program (temperature/time/intensity ranges, cooling-drop rule, non-decreasing temperature chain, nitrogen block rules), collecting every failure with an error code; plus the 10-column CSV export/import (with legacy 5-column import) used by the editor and USB import.
 **Depends on:** DOM-02 (codes), DOM-03 (CureStep / enums).
@@ -1877,6 +1899,11 @@ public sealed record CsvParseResult(IReadOnlyList<CureStep> Steps, IReadOnlyList
 ---
 
 ### DOM-05 — Program duration estimator
+**Summary**
+- **What it is for:** Estimates how long a program will really take, for the whole program, each step, and the minutes shown for a print job.
+- **Problem it solves:** Just adding up the hold times hides the time spent heating up, cooling down and purging with nitrogen, so the time shown to the operator would be wrong.
+- **How we solve it:** Add heating, cooling and nitrogen time using simple fixed rates measured on the test machine, on top of the hold times.
+
 **Project / folder:** `src/SCureBox.Domain/Programs/ProgramEstimator.cs`, `ProgramEstimate.cs`
 **Goal:** Estimate what a program really takes (holds + heating ramps + cooling + nitrogen purges) from measured phase rates, per program and per step, and the minutes a print job shows. Rates are linear on purpose and come from phase timings collected on the test machine (reviewed 2026-09-07).
 **Depends on:** DOM-03.
@@ -1928,6 +1955,11 @@ public static class ProgramEstimator
 ---
 
 ### DOM-06 — Recipe sequencer state machine
+**Summary**
+- **What it is for:** The step-by-step engine that runs a curing program: it moves through the steps and tells the machine what to do (heat, dry, cure with UV, cool, nitrogen, stop).
+- **Problem it solves:** Without one clear engine, the machine could run steps in a different way than the screen shows, and pause, skip or abort could leave the machine in a confused state.
+- **How we solve it:** A pure state machine gets the time and chamber temperature and returns commands. It follows the same rules as the cure screen and supports pause, resume, skip, abort and fail; another layer carries out the commands.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`RecipeStateMachine.cs`, `RecipeCommand.cs`, `RecipeCommandKind.cs`, `RecipePhase.cs`, `RecipeState.cs`, `RecipeProgress.cs`)
 **Goal:** A pure program sequencer: given wall time and the chamber temperature it walks a `Material`'s steps and emits machine commands (heat, dry, cure with UV, UV-only, cool, nitrogen, stop, phase-ended timing records). It mirrors the UI's cure page rules (ramp band, hold timer modes, cooling band, fixed nitrogen purge, deferred UV) and supports pause/resume, skip, abort and fail. The recipe runner (Application) executes the commands.
 **Depends on:** DOM-03.
@@ -2010,6 +2042,11 @@ public sealed class RecipeStateMachine
 ---
 
 ### DOM-07 — Sensor conversion maths and signal helpers
+**Summary**
+- **What it is for:** Turns raw sensor voltages into real values (temperature in C, nitrogen pressure) and gives small helper tools for signals, like rate of change and fan speed.
+- **Problem it solves:** Raw voltages mean nothing on their own, the chamber reading needs calibration to match the reference meter, and short glitches in readings could trigger false alarms.
+- **How we solve it:** Shared math functions convert each sensor, apply the chamber calibration, measure slope over a short window, count fan speed, and keep the last good value during a short glitch.
+
 **Project / folder:** `src/SCureBox.Domain/Sensors/` (`NtcMath.cs`, `ChamberTempCalibration.cs`, `PressureConversion.cs`, `PressureResult.cs`, `PressureSensorParameters.cs`) and `src/SCureBox.Domain/Control/` (`SlopeEstimator.cs`, `TachRateTracker.cs`, `SensorGlitchHold.cs`)
 **Goal:** Convert raw analog readings into engineering values — NTC tap volts to °C, raw chamber °C to the TC-08-calibrated chamber temperature with rate compensation, N2 sensor volts to MPa/bar — and provide the generic signal helpers used by the hardware and control loops: least-squares slope over a sliding window, a shared-reader tachometer RPM tracker, and a short-glitch hold that keeps the last good value.
 **Depends on:** DOM-01.
@@ -2067,6 +2104,11 @@ public sealed class SensorGlitchHold<TKey, TValue> where TKey : notnull
 ---
 
 ### DOM-08 — Heater PI + delta-sigma controller and HDT calibration maths
+**Summary**
+- **What it is for:** The math that controls the heater power, plus the math used to calibrate the heater (HDT calibration).
+- **Problem it solves:** Without good control, the chamber temperature would overshoot or swing around the target, and calibration results could not be computed the same way every time.
+- **How we solve it:** A PI controller sets a power level from 0 to 1, and a simple modulator turns it into on/off heater cycles. Separate pure functions do the calibration math (stability, slope, time constant).
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`PiDeltaSigmaController.cs`, `PiDeltaSigmaGains.cs`, `HdtModel.cs`)
 **Goal:** The heater control law (PI(D) on a 0..1 power scale streamed as per-cycle ON/OFF by a first-order delta-sigma modulator, port of temperature_control._loop) and the pure maths used by HDT (heat-deflection) calibration: stability test, least-squares slope in °C/min, equilibrium temperature line vs power, first-order time constant and boost time.
 **Depends on:** DOM-01.
@@ -2108,6 +2150,11 @@ public static class HdtModel
 ---
 
 ### DOM-09 — Heater and thermistor safety supervision (9010-9014, 9006, 9007) and output watchdog decision (9017)
+**Summary**
+- **What it is for:** Safety checks for the heater and the temperature sensors, and the logic for a watchdog that cuts power if the software stops responding.
+- **Problem it solves:** A broken or stuck sensor, or a heater that runs but does not warm (wrong voltage switch or blown fuse), could cause overheating or a failed cure. Frozen software could leave heater and UV on.
+- **How we solve it:** Each check watches the readings over time and returns an alert code for the exact sensor or fault. The rest of the system then switches outputs off; the watchdog cuts heater and UV when the heartbeat stops.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`SensorSupervisionEvaluator.cs`, `SensorSupervisionResult.cs`, `SensorState.cs`, `FrozenReadingEvaluator.cs`, `NoHeatEvaluator.cs`, `WatchdogMonitor.cs`)
 **Goal:** The evaluators that protect the heater: open-circuit thermistor supervision with one code per sensor, the plausible-but-frozen chamber reading (a fixed resistor / stuck ADC / stuck reader thread, DVT-SAF-003), the heater that drives without warming the chamber (voltage selector between positions or blown fuse, DVT-SAF-017), and the decision logic of the external output watchdog that cuts heater + UV when the firmware heartbeat goes silent (DVT-SAF-010). Each returns alerts as `code -> detail`; the caller (Application supervision / Hardware watchdog) switches outputs off.
 **Depends on:** DOM-01, DOM-02, DOM-07 (NtcMath constants share the same valid range).
@@ -2178,6 +2225,11 @@ public sealed class WatchdogMonitor
 ---
 
 ### DOM-10 — Fan, LED-panel and UV-light supervision (902x, 903x, 904x, 906x, 9046/9047)
+**Summary**
+- **What it is for:** Health checks for the fans, the UV LED panels and the UV light sensors during and before a cure.
+- **Problem it solves:** A weak or stopped fan, a panel that does not light, or UV that is not really on could overheat parts or give a bad cure without anyone noticing.
+- **How we solve it:** Warn when a fan slows down and stop when it is too slow, test fans before a job, check that each panel warms up and does not cool during a cure, and confirm UV light with the light sensors. Each part has its own code.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`FanHealthEvaluator.cs`, `FanHealthRules.cs`, `FanHealthEntry.cs`, `FanHealthOutcome.cs`, `LedHeatingEvaluator.cs`, `LedHeatingRules.cs`, `LedHealthEntry.cs`, `LedHeatingResult.cs`, `UvLightEvaluator.cs`)
 **Goal:** Per-component supervision of the cooling/heater fans (wear warning, critical stop latch, operator override and acknowledge, pre-flight not-spinning verdicts), of the UV LED panels' thermal proof of current (panel must warm its thermistor; mid-process temperature drop), and of the UV-on light confirmation by the Left/Right photoresistors. One alert code per fan / panel (since 2026-10-21); the grouped codes are never raised.
 **Depends on:** DOM-01, DOM-02, DOM-09 (`SensorSupervisionEvaluator.ReadOk`), DOM-07 (`NtcMath.VRef`).
@@ -2259,6 +2311,11 @@ public sealed class UvLightEvaluator
 ---
 
 ### DOM-11 — RGB status-strip priority ladder and animation maths
+**Summary**
+- **What it is for:** Decides what the machine's RGB light strip shows (fault, door open, warning, heating, busy, no internet, normal) and how it blinks or animates.
+- **Problem it solves:** When several things happen at once, the strip needs one clear rule for which status wins, or the operator would get mixed signals.
+- **How we solve it:** A fixed priority ladder picks the most important status, and simple color math handles blinking, brightness and the moving busy animation.
+
 **Project / folder:** `src/SCureBox.Domain/Control/` (`StripModeLadder.cs`, `StripInputs.cs`)
 **Goal:** Decide which status the RGB LED strip shows (fault, door, warning, manual heat, busy, no internet, normal) from machine flags, and provide the pure colour maths for blinking, brightness scaling and the "comet" busy animation (port of StatusLeds._mode / _paint_chase). The Application status-LED service drives the strip with these.
 **Depends on:** DOM-01.
@@ -2395,6 +2452,11 @@ Servo pulse: logical angle a' = 180 - angle; pulse_us = round(500 + a'/180*1900)
 ---
 
 ### HW-01 — Hardware facade contract (IHardwareSystem, exceptions, PressureReading)
+**Summary**
+- **What it is for:** One shared interface that the rest of the software uses to control and read all hardware in the sCure Box: fans, heater, sensors, UV LEDs, valves, door, damper and lights.
+- **Problem it solves:** Without one clear contract, each part of the app would talk to the hardware in its own way, and the real board and the simulator could behave differently.
+- **How we solve it:** We define one interface plus two error types: one for safety refusals (for example, door not closed) and one for failed writes or bus errors. The real board and the simulator both implement it.
+
 **Project / folder:** `src/SCureBox.Hardware/SCureBox.Hardware.csproj`, project root folder
 **Goal:** Define the single interface the application layer uses for every hardware action and reading, plus the two exception types that signal refusals and verification/bus failures. Both the real board (HW-11/HW-12) and the simulation (HW-15) implement it; `FreezableHardwareSystem` (HW-13) decorates it.
 **Depends on:** HW-02 (IHardwareConfig); Domain (Fan, TempSensor, UvSensor, LedPanel, Wavelength)
@@ -2469,6 +2531,11 @@ public sealed class HardwareVerifyException : Exception { public HardwareVerifyE
 ---
 
 ### HW-02 — Hardware configuration (components.json, IHardwareConfig, hot reload)
+**Summary**
+- **What it is for:** Reads the machine settings file (components.json) that holds pins, fan speeds, heating values, LED rules, colors and sensor limits.
+- **Problem it solves:** Settings must change without rebuilding or restarting the software, and a missing or broken file must not stop the machine.
+- **How we solve it:** Every setting has a built-in default. The file is checked at most once a second and re-read when it changes. Bad or missing values fall back to the last good settings or the defaults.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root + `Config/`
 **Goal:** Provide a typed, hot-reloaded view of `components.json` with built-in defaults for every key. The file's mtime is checked at most once per second and re-parsed on change, so edits apply without restart; a missing or broken file keeps the last good snapshot (or defaults).
 **Depends on:** Domain (enums, `Wavelength` parse, `CoolingMode.Wire()`, `HardwareNames.LedFan`)
@@ -2593,6 +2660,11 @@ internal static class JsonSectionExtensions {   // tolerant readers
 ---
 
 ### HW-03 — I2C bus abstraction and set-and-verify helper
+**Summary**
+- **What it is for:** The basic layer that lets the chip drivers talk to the board chips over the I2C bus, plus a helper that writes a value and checks it was really set.
+- **Problem it solves:** Two drivers talking on the bus at the same time can corrupt data, and a write can silently fail.
+- **How we solve it:** All bus traffic goes through one shared lock. Important writes are read back and retried up to 3 times; if they still fail, a clear error lists every part that failed.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Bus/` and `Drivers/`
 **Goal:** Give every chip driver an SMBus-style register interface over Linux `/dev/i2c-N`, serialised on one process-wide lock, plus the generic "apply, read back, retry 3x" and "attempt all, aggregate failures" helpers used by every verified write.
 **Depends on:** HW-01 (HardwareVerifyException)
@@ -2638,6 +2710,11 @@ internal static class Verify {
 ---
 
 ### HW-04 — GPIO pins and libgpiod tachometer edge counter
+**Summary**
+- **What it is for:** Controls the simple on/off pins of the main computer and counts the pulses from the six fans so their speed can be measured.
+- **Problem it solves:** The standard way to set up the fan speed pins fails on this computer (CM5), so fan speeds could not be read.
+- **How we solve it:** We use the libgpiod library directly and set up each fan pin in one step as an input that counts rising pulses. Plain pins get simple open, read and write calls.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Bus/`
 **Goal:** Provide plain GPIO outputs/inputs over libgpiod (never pinctrl, except the watchdog) and free-running rising-edge counters for the six fan tachometers. The tach lines are requested directly through libgpiod v2 in ONE request (input + pull-up + rising edge) because System.Device.Gpio's open-then-reconfigure fails with EINVAL on the CM5.
 **Depends on:** none in area (System.Device.Gpio 4.2.0)
@@ -2684,6 +2761,11 @@ internal sealed class LibgpiodEdgeCounter : IDisposable {
 ---
 
 ### HW-05 — PCA9685 PWM driver
+**Summary**
+- **What it is for:** Driver for the 16-channel PWM chip that sets the power level of the fans, heater, chamber light, extraction fan speed and UV LED brightness.
+- **Problem it solves:** Some channels are wired inverted and the heater channel is only on or off, so writing raw values would give wrong outputs.
+- **How we solve it:** The driver takes simple 0-100% values, flips inverted channels, treats the heater as full on or off, remembers the last value and can check each write.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Drivers/`
 **Goal:** Drive the 16-channel 12-bit PWM chip (U15, i2c-0, 0x55) with logical duty percentages, applying the board's per-channel inversion and the digital-only heater channel, remembering the last commanded logical duty, and supporting verified writes.
 **Depends on:** HW-03
@@ -2732,6 +2814,11 @@ internal sealed class Pca9685 {
 ---
 
 ### HW-06 — TCA6424A IO-expander driver
+**Summary**
+- **What it is for:** Driver for the IO expander chip that switches the UV wavelength relay, door magnet, valves, motor direction and NFC reset.
+- **Problem it solves:** At power-on the relay line could float high and switch the LED path by mistake, and writes might not take effect.
+- **How we solve it:** We write safe output values first, then set pin directions, so nothing switches by accident. Pins are read and written in logical terms and writes are checked.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Drivers/`
 **Goal:** Drive the 24-bit IO expander (U1, i2c-0, 0x23) that switches the LED_SWITCH relay K4, door magnet / valves, motor direction and NFC reset, with a safe initialisation that prevents LED_SWITCH floating high at power-on, logical (inversion-aware) pin access, and verified writes.
 **Depends on:** HW-03
@@ -2786,6 +2873,11 @@ internal sealed class Tca6424a {
 ---
 
 ### HW-07 — ADS1115 ADC driver
+**Summary**
+- **What it is for:** Driver for the two analog-to-digital converter chips that read the temperature sensors, UV light sensors and nitrogen pressure.
+- **Problem it solves:** The software needs real voltages from these sensors to know temperatures, UV light and gas pressure.
+- **How we solve it:** The driver takes one measurement at a time from a chosen input and converts the raw number to volts.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Drivers/`
 **Goal:** Single-shot, single-ended reads of the 16-bit ADCs U6 (i2c-0) and U7 (i2c-1), both at 0x49, that carry the NTC thermistors, UV photoresistors and the N2 pressure input.
 **Depends on:** HW-03
@@ -2822,6 +2914,11 @@ internal sealed class Ads1115 {
 ---
 
 ### HW-08 — PIO helper processes (locator, line protocol, native pio_servo / pio_rgb)
+**Summary**
+- **What it is for:** Small helper programs that make precise timed signals for the damper servo and the RGB status light strip.
+- **Problem it solves:** Normal software timing is not exact enough for servo pulses and for the LED strip data signal.
+- **How we solve it:** Small C programs use the chip's dedicated timing block (PIO). The main app starts them and sends them simple one-line text commands.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Helpers/` and `native/`
 **Goal:** Run hardware-timed signals on the RP1 PIO block (damper servo pulses on GPIO8, WS2811 stream on GPIO12) through small C helper programs that the C# side spawns and talks to over stdin/stdout with a one-line-per-command protocol.
 **Depends on:** none in area; Deploy-Ops (packaging the built helpers into the app, `SCURE_NATIVE_DIR`)
@@ -2863,6 +2960,11 @@ internal sealed class HelperProcess : IDisposable {
 ---
 
 ### HW-09 — Damper servo (pulse maths, PIO and software-PWM drivers, settle/release)
+**Summary**
+- **What it is for:** Moves the damper (an air flap used for cooling) open or closed with a small servo motor.
+- **Problem it solves:** The servo must reach the right angle through an inverted signal, and if pulses keep running it hums under load.
+- **How we solve it:** We convert the angle to the right pulse, send pulses for a short settle time, then stop. We prefer the timed helper and fall back to software pulses.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Servo/`
 **Goal:** Move the MG90S damper servo on GPIO8 (behind the inverting transistor Q16) to a logical angle, keep pulsing for `settle_sec`, then release so a loaded servo does not hum. Prefer the PIO helper; fall back to software PWM.
 **Depends on:** HW-02 (ServoConfig), HW-04 (LibgpiodDrivers), HW-08
@@ -2918,6 +3020,11 @@ internal sealed class DamperServo : IDisposable {
 ---
 
 ### HW-10 — RGB status strip driver and colours
+**Summary**
+- **What it is for:** Drives the 21-LED RGB status strip that shows the machine state by color.
+- **Problem it solves:** The strip needs a precise data signal, and the status logic needs a simple way to turn color names and brightness into LED values.
+- **How we solve it:** We send colors through the RGB helper program and provide parsing of color names and hex codes plus brightness scaling.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Rgb/`
 **Goal:** Drive the 21-LED TM1903/WS2811 status strip on GPIO12 through the `pio_rgb` helper, and provide the colour-name / hex parsing and brightness scaling used by the status logic (the status ladder itself lives in Application-Platform / Api).
 **Depends on:** HW-08
@@ -2962,6 +3069,11 @@ public static class RgbColors {
 ---
 
 ### HW-11 — IO board map and real-board system: safe states, fans/tach, heater, sensors, actuators
+**Summary**
+- **What it is for:** The real-board implementation of the hardware interface. It connects all chips, pins, servo and LED strip with the fixed board wiring map.
+- **Problem it solves:** The app needs one working object that safely runs fans, heater, sensors, door, nitrogen, extraction fan, damper and lights on the actual board.
+- **How we solve it:** We wire all drivers together using the board channel map, add safe start and safe stop states, measure fan speeds, filter short sensor glitches and track bus faults.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root (`IoBoardMap.cs`, `IoBoardHardwareSystem.cs`)
 **Goal:** Implement `IHardwareSystem` for the real BRD-74205 board by wiring the PCA9685, TCA6424A, two ADS1115, GPIO pins, damper servo and RGB strip together with the fixed channel map. This ticket covers construction, I2C fault tracking, safe states, fans + RPM, heater element, temperature / UV / pressure reads with glitch hold, door, nitrogen, BOFA, door magnet, damper, light, NFC reset, RGB and disposal. The UV LED power path is HW-12 (same class).
 **Depends on:** HW-01..HW-10, HW-12; Domain (`NtcMath`, `ChamberTempCalibration`, `PressureConversion`, `PressureSensorParameters`, `SensorGlitchHold`, `GlitchVerdict`, `TachRateTracker`)
@@ -3027,6 +3139,11 @@ internal sealed class IoBoardHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-12 — UV LED power path (SSRs, LED_SWITCH relay, routing GPIO17, gating, LED fans)
+**Summary**
+- **What it is for:** Safely turns the four UV LED panels on and off and selects the 405 nm or 450 nm wavelength.
+- **Problem it solves:** UV must never shine with the door open or on the wrong panel, and powering the LEDs in the wrong order can damage the circuit or fail.
+- **How we solve it:** Before LEDs turn on we check door closed, wavelength and minimum level, then power up in a tested order with read-back checks. Each panel fan runs with its LEDs, and power drops when the last LED is off.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `IoBoardHardwareSystem.cs` (LED region)
 **Goal:** Switch the four UV LED panels safely: enforce min intensity, door confirmed closed and per-LED wavelength gating, apply the LED supply in the bench-verified order (LED_SWITCH relay -> settle -> SSRs + GPIO17 -> GPIO17 read-back -> DIM PWM), auto-run each panel's cooling fan, and drop the supply when the last LED goes off.
 **Depends on:** HW-11 (same class), HW-05, HW-06, HW-02 (`LedPowerConfig`, `LedConfig`)
@@ -3063,6 +3180,11 @@ internal sealed class IoBoardHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-13 — DVT hang gate (OutputFreeze, FreezableHardwareSystem)
+**Summary**
+- **What it is for:** A test feature that pretends the main software has frozen, used in the DVT safety test.
+- **Problem it solves:** We need to prove that the separate watchdog really cuts the heater and UV when the software hangs.
+- **How we solve it:** While the hang is active, every hardware write is blocked but reads still work. After it ends, blocked writes are dropped and only the recovery safe state may write.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Safety/`
 **Goal:** Let a DVT test (DVT-SAF-010, `POST /api/dvt/hang`) simulate a hung firmware: while hung every hardware OUTPUT write blocks (nothing switches on or off) so the output watchdog must cut; reads keep working. When the hang ends, writes issued during it are dropped and only the recovery safe-state may write.
 **Depends on:** HW-01; used by Application-Process (DvtHang, CureController, RecipeRunner, SupervisionService) and Api (HeartbeatService)
@@ -3099,6 +3221,11 @@ public sealed class FreezableHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-14 — Output watchdog process (heartbeat, trip record, SafetyCut)
+**Summary**
+- **What it is for:** A separate safety process that watches whether the main software is still alive.
+- **Problem it solves:** If the main software freezes, the heater and UV LEDs could stay on with nothing to stop them.
+- **How we solve it:** If no heartbeat arrives for 20 seconds, the watchdog turns off the heater and UV LEDs itself and records it, so the restarted software shows Err 9017. Fans keep running to cool the chamber.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, `Safety/`
 **Goal:** A separate process (`scurebox --watchdog`, systemd `scurebox-watchdog.service`) that watches the firmware heartbeat file and, when the firmware has been silent for the timeout (20 s), switches the heater SSR and the UV LEDs off from outside the firmware and records the trip so the restarted firmware raises Err 9017. Fans, damper, valves and BOFA are left alone so the chamber keeps cooling.
 **Depends on:** HW-02, HW-03, HW-05, HW-11 (IoBoardMap); Domain (`WatchdogMonitor`, `WatchdogEvent`); Api (`CommandLine` dispatches `--watchdog`, `HeartbeatService` writes the heartbeat every 1 s); Application-Process (reads the trip file, Err 9017)
@@ -3157,6 +3284,11 @@ public static class OutputWatchdog {
 ---
 
 ### HW-15 — Simulated hardware system (thermal / fan / N2 / door model)
+**Summary**
+- **What it is for:** A simulated sCure Box used for development, QA and unit tests without the real board.
+- **Problem it solves:** Developers and tests need hardware that behaves like the real machine, including safety rules, when no machine is available.
+- **How we solve it:** A simple time-based model of heat, fans, nitrogen and door, with the same safety rules as the real board, plus hooks to inject faults in tests.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root (`SimulatedHardwareSystem.cs`)
 **Goal:** A deterministic stand-in for the IO board for off-device development, QA and unit tests of the upper layers. It keeps the same gating semantics as the real board (min intensity, door confirmed closed, per-LED wavelength, mode change turns LEDs off) over a simple time-driven model, and offers test hooks for fault injection.
 **Depends on:** HW-01, HW-02, HW-11 (`IoBoardMap.DoorOpenMessage`); Domain (`NtcMath`, `PressureConversion`, `PressureSensorParameters`, `FanHealthEvaluator.ExpectedRpm`, `UvSensor.Panel()`)
@@ -3214,6 +3346,11 @@ public sealed class SimulatedHardwareSystem : IHardwareSystem {
 ---
 
 ### HW-16 — Hardware selection factory, options and DI registration
+**Summary**
+- **What it is for:** Startup code that picks the real board or the simulator and registers the hardware parts for the rest of the app.
+- **Problem it solves:** The app must know which hardware to use, explain why, and start the real board in a safe state.
+- **How we solve it:** At startup it decides real or simulated and logs the reason, builds the real board with its servo and LED strip, sets it safe, and registers settings, hang gate and hardware as shared services.
+
 **Project / folder:** `SCureBox.Hardware.csproj`, root (`HardwareOptions.cs`, `HardwareSystemFactory.cs`, `HardwareServiceCollectionExtensions.cs`)
 **Goal:** Decide at start-up whether to drive the real IO board or the simulation (logging the reason), build the real board with its servo and RGB factories and drive it to the safe state, and register config, hang gate and the (freezable) hardware system as DI singletons.
 **Depends on:** HW-02, HW-04, HW-05, HW-08, HW-09, HW-10, HW-11, HW-13, HW-15; Api (`ScureApiHost` calls `AddSCureBoxHardware` with `ComponentsPath`, `ForceSimulation = settings.Simulate`, `NativeDir` = env `SCURE_NATIVE_DIR`)
@@ -3306,6 +3443,11 @@ Shared conventions:
 ---
 
 ### PROC-01 — Contracts and state DTOs
+**Summary**
+- **What it is for:** Defines the main commands of the process layer and the exact shape of the machine status data that the screen and API read.
+- **Problem it solves:** Without one fixed list of commands and one fixed status shape, the screen could break whenever the data changes, or differ between a real and a simulated machine.
+- **How we solve it:** We write shared interfaces and data records. The status always has the same full set of fields (empty when unknown), and commands return a result with an error code instead of crashing.
+
 
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Contracts/`, `Process/UvState.cs`
 
@@ -3501,6 +3643,11 @@ Nested records (positional, `[property: JsonPropertyName]`):
 ---
 
 ### PROC-02 — Timing primitives (PeriodicWorker, TimeProvider waits)
+**Summary**
+- **What it is for:** Small timing helpers: a safe wait and a background worker that runs a task every few seconds. All machine loops use them.
+- **Problem it solves:** Loops that use the real clock are slow and hard to test, and one error inside a loop could stop it forever.
+- **How we solve it:** All waits use a replaceable clock, so tests can move time forward instantly. The worker catches errors, logs only the first one, and keeps running.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Devices/`
 
@@ -3551,6 +3698,11 @@ spins until `FakeHardwareSystem.Activity` changes).
 ---
 
 ### PROC-03 — Heating loop (PI + delta-sigma, heater pre-flight, fan run-on)
+**Summary**
+- **What it is for:** Controls the heater to bring the chamber to the target temperature and keep it there.
+- **Problem it solves:** Heating without checks is unsafe: door open, fan stopped or a broken temperature sensor could overheat the machine. The heater also needs the fan to keep running for a while after it stops.
+- **How we solve it:** Before heating we check the door, the fan and the sensor. A control loop switches the heater on and off to hold the target and keeps checking fan and sensor. When heating stops, the fan keeps cooling for 15 minutes.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Devices/`
 
@@ -3671,6 +3823,11 @@ Use `FakeHardwareSystem` (ambient 24 C, heat 0.5 C/s when element on, idle drift
 ---
 
 ### PROC-04 — Cooling loop (fixed-fan chamber cooling)
+**Summary**
+- **What it is for:** Cools the chamber down to a target temperature after a heating step.
+- **Problem it solves:** Without a cooling process the parts would cool slowly and unevenly, and the fans and air vent (damper) would not be handled in a safe order.
+- **How we solve it:** We open the damper, run the heater fan and the cooling fan at a fixed speed, and stop everything when the target is reached. We also measure how fast the chamber cools.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Devices/`
 
@@ -3735,6 +3892,11 @@ Refuses_without_a_valid_thermistor, Retarget_while_running_updates_duty_and_targ
 ---
 
 ### PROC-05 — CureController: process commands, pre-flights, UV, airflow, door, state snapshot
+**Summary**
+- **What it is for:** The central controller of the machine. It turns requests like heat, dry, cure with UV, cool or open door into actions on the hardware, and builds the live status.
+- **Problem it solves:** Many parts (heater, UV lights, fans, damper, door, fume extractor) must work together in the right order. Starting a process with a broken sensor or fan would be unsafe.
+- **How we solve it:** One class combines all parts. Before each process it checks sensors and fans and refuses with a clear error code if something is wrong. It applies each step in a safe order and reports the full machine status.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Process/CureController.cs` (namespace `SCureBox.Application.ProcessControl`)
 
@@ -3924,6 +4086,11 @@ Shutdown_turns_everything_off. Door tests are in PROC-08. Plus `Platform/BofaPol
 ---
 
 ### PROC-06 — Nitrogen control and N2 interlocks (9008 / 9009 / 9015 / 9016)
+**Summary**
+- **What it is for:** Opens and closes the nitrogen valve that fills the chamber with nitrogen, and watches the gas line pressure.
+- **Problem it solves:** Pressure that is too high, no gas supply, a blocked tube or a broken pressure sensor could damage the machine or give a bad cure without anyone knowing.
+- **How we solve it:** We check the pressure before opening and every second after. Too high pressure closes the valve. Too low pressure or a missing sensor stops opening. If pressure does not drop after opening, the gas is not flowing, so we close the valve and raise an alert.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Process/CureController.cs` (nitrogen section)
 
@@ -4021,6 +4188,11 @@ Not_reading_is_debounced_20_s_then_raises_9016_and_clears_when_readings_return).
 ---
 
 ### PROC-07 — Diagnostics: fan test and LED heating test
+**Summary**
+- **What it is for:** Service tests: a fan test that measures fan speeds, and an LED test that turns the UV panels on and checks they warm up.
+- **Problem it solves:** Technicians need a quick way to find a weak fan or a dead LED panel before it causes a failed cure.
+- **How we solve it:** The fan test runs fans and compares the measured speed to the expected speed, giving OK, WARN or FAIL. The LED test cools warm panels first, lights them, and checks that each panel temperature rises enough.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Process/CureController.cs` (diagnostics section)
 
@@ -4075,6 +4247,11 @@ Led_test_precools_a_warm_panel.
 ---
 
 ### PROC-08 — Safety supervision (1 Hz tick, verdict store, door watchdog, 9006 restart)
+**Summary**
+- **What it is for:** A safety watcher that checks the machine every second while it runs: sensors, fans, heater, LEDs, nitrogen and the door.
+- **Problem it solves:** Faults can happen in the middle of a process: a fan stops, a sensor freezes, the heater does not heat, or the door is opened. Without a watcher the machine would keep running in an unsafe state.
+- **How we solve it:** Every second we check all readings and publish active alerts. Each problem has a fixed reaction: stop all outputs, turn the heater off, restart the machine, or abort everything if the door stays open for 10 seconds.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Supervision/`
 
@@ -4225,6 +4402,11 @@ A_new_process_clears_the_door_abort_latch, Fan_critical_mid_process_stops_every_
 ---
 
 ### PROC-09 — Recipe runner and program validator
+**Summary**
+- **What it is for:** Runs a full curing program (a list of steps like heat, cure, cool, nitrogen) on the machine by itself, step by step.
+- **Problem it solves:** If the screen drove each step, a screen problem could break a run. Bad programs must be blocked, and each run needs a record of what happened.
+- **How we solve it:** The machine checks the program first, then runs it with a loop every second. It sends each step to the controller, saves temperatures and alerts, and ends the run as completed, aborted or error with a code.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Recipe/`
 
@@ -4347,6 +4529,11 @@ A_program_with_no_heating_at_all_still_runs_the_heater_fan_and_pause_releases_it
 ---
 
 ### PROC-10 — Status strip (RGB ladder, animation, internet watch)
+**Summary**
+- **What it is for:** Shows the machine status on the colored LED strip: green for ready, busy color while running, blinking for faults, door or warnings.
+- **Problem it solves:** Users need to see the machine state from across the room. A strip error must never stop a running process.
+- **How we solve it:** Every second we pick one status from a fixed priority list and paint the matching color or blink. A manual color can override it. Strip errors are ignored. Internet state is checked in the background but not shown on the strip.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `Status/`
 
@@ -4422,6 +4609,11 @@ StatusLedService animation loop exists in this test project.
 ---
 
 ### PROC-11 — Process layer DI registration
+**Summary**
+- **What it is for:** One setup method that registers all parts of the process layer so the application can start them together.
+- **Problem it solves:** Without one central setup, parts could be created twice or missing, and real and simulated test devices could get mixed up.
+- **How we solve it:** One method registers every part as a single shared copy, starts the three background services, and picks real or simulated test instruments from settings.
+
 
 **Project / folder:** `SCureBox.Application.csproj` — `ProcessServiceCollectionExtensions.cs`
 
@@ -4496,6 +4688,11 @@ Ticket list: PLAT-01 persistence foundation · PLAT-02 JSON data stores · PLAT-
 ---
 
 ### PLAT-01 — Persistence foundation (data dir, atomic writes, JSON settings, base store)
+**Summary**
+- **What it is for:** The basic building blocks for saving data on the sCure Box: where data and config files live, and a safe way to write a file.
+- **Problem it solves:** If power is cut during a save, a file can be left half-written and the machine may fail to start or lose data.
+- **How we solve it:** Write to a temporary file, force it to disk, then swap it in. Readers treat a missing or broken file as default values and only log a warning.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Persistence/`
 **Goal:** Provide the common plumbing every durable store uses: where data and bundled config live, a power-cut-safe file write, the shared `System.Text.Json` options, and an abstract one-file JSON store with a lock and a tolerant loader.
 **Depends on:** none in this area. Domain (nothing beyond BCL).
@@ -4553,6 +4750,11 @@ public abstract class JsonFileStore<T> where T : class {
 ---
 
 ### PLAT-02 — JSON data stores (materials, print history, cure runs + telemetry + reports, phase timings)
+**Summary**
+- **What it is for:** The default data storage in plain JSON files: cure programs, print history, cure runs with their sensor data and reports, and measured phase times.
+- **Problem it solves:** Without it the machine cannot remember programs, show history or reports, or improve its time estimates.
+- **How we solve it:** One file per data type. Keep only the newest 25 runs, save sensor data every 15 samples, and mark runs cut off by a power loss as errors.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Persistence/`, interfaces in `Contracts/IStores.cs`
 **Goal:** The default (no-database) implementation of the four data stores the process engine, API and UI use: bundled preset programs + user programs, print history, cure runs with telemetry and saved reports (keeping only the newest 25), and the append-only measured phase timings that feed the program estimate model.
 **Depends on:** PLAT-01. Domain (`Material`, `CureStep`, `PrintLog`, `CureLog`, `TelemetrySample`, `CureRunStart`, `CureRunFinish`, `CureReport`, `SensorIssue`, `FanIssue`, `RunAlert`, `PhaseTiming`).
@@ -4627,6 +4829,11 @@ Presets: `ConfigDir/presets.json` (`Material[]`), read-only.
 ---
 
 ### PLAT-03 — PostgreSQL backend, schema and sticky store selector
+**Summary**
+- **What it is for:** An optional PostgreSQL database that can store the same data as the JSON files.
+- **Problem it solves:** Some setups want the data in a real database, but the machine must still work if the database is missing or down.
+- **How we solve it:** At startup, use the database only if it is set up and reachable, create its tables if needed, and otherwise use the JSON files. The choice does not change until restart.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Persistence/`; schema `deploy/db/schema.sql`, `deploy/db/seed_presets.sql`
 **Goal:** Optional relational backend (port of the Python `db.py`) implementing the same three store interfaces over a normalized ER schema with convenience views that return the UI's JSON shapes. A selector picks Postgres once at startup when configured AND reachable, else JSON — never retried during the process lifetime.
 **Depends on:** PLAT-01, PLAT-02. Deploy-Ops (ships `deploy/db/*.sql` beside the app).
@@ -4694,6 +4901,11 @@ Schema (`schema.sql`, idempotent: `CREATE EXTENSION IF NOT EXISTS pgcrypto`, `CR
 ---
 
 ### PLAT-04 — Restart markers and safety latches on disk (planned restart, heater run-on, frozen reading)
+**Summary**
+- **What it is for:** Three tiny files that remember important state across a restart: planned restart, remaining heater-fan cooling time, and a frozen temperature reading lock.
+- **Problem it solves:** After a restart the machine would forget it should boot quickly, stop cooling too early, or allow a heater that was refused for safety.
+- **How we solve it:** Write a small marker file before the restart and read it once at the next start; old markers are ignored and deleted.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Persistence/`
 **Goal:** Three tiny files that carry state across a firmware stop/start: "this restart was planned" (quick boot, skip self-tests), "the heater fan run-on still has N seconds to go" (resume cooling after a restart), and the Err 9006 frozen-reading latch (a restart must not re-allow a refused heater).
 **Depends on:** PLAT-01. Consumers: Application-Process (registers `FrozenReadingStore`, `PlannedRestart` in `ProcessServiceCollectionExtensions`), Api (`HeaterRunOnMarker` in `ScureApiHost`).
@@ -4743,6 +4955,11 @@ public sealed class FrozenReadingStore : JsonFileStore<FrozenReadingRecord> {
 ---
 
 ### PLAT-05 — Process runner and small platform utilities (platform info, eMMC identity, dev event log)
+**Summary**
+- **What it is for:** Shared helpers: running outside programs safely, knowing the operating system, reading the unit's fixed storage serial number, and a developer event log.
+- **Problem it solves:** Outside programs can hang or crash the app, and the unit needs a stable ID and a simple debug log.
+- **How we solve it:** Run programs without a shell, with a time limit, never throwing errors. Read the serial from the built-in storage only, and append events as one line each.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Safe execution of external tools (no shell, timeouts, never throws), OS detection, reading the unit's immutable eMMC serial, and the append-only Developer Mode event log.
 **Depends on:** PLAT-01.
@@ -4779,6 +4996,11 @@ public sealed class DevEventLog : IDevEventLog { public const int MaxEventLength
 ---
 
 ### PLAT-06 — USB drive discovery and the system service (power, version info, log/CSV/report export)
+**Summary**
+- **What it is for:** Finds a plugged-in USB drive and handles system actions: reboot, shut down, show version info, and export logs, program CSV files or cure reports to USB.
+- **Problem it solves:** Operators need to restart the machine, see what version runs, and take data off the machine.
+- **How we solve it:** Look for a mounted removable drive, write files there with safe names, and return a clear message or error code (for example no USB drive).
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Find a mounted removable USB drive ("Disk-on-Key") on the Pi or a PC, and implement the `/api/system/*` actions: reboot, shutdown, version info, export logs / program CSV / cure report HTML to USB. (Clock/NTP methods are on the same class, specified in PLAT-07.)
 **Depends on:** PLAT-05, PLAT-07 (ISupervisorClient, optional ctor arg). Domain (`OpResult`, `ErrorCodes`).
@@ -4827,6 +5049,11 @@ public sealed record ExportResultDto { bool Ok "ok"; string Message "message" = 
 ---
 
 ### PLAT-07 — Clock and network time (timedatectl) + Origin supervisor client
+**Summary**
+- **What it is for:** Lets the operator set the date and time and turn network time on or off, and talks to the Origin device supervisor.
+- **Problem it solves:** On an Origin image, clock changes made the normal way are lost after a reboot.
+- **How we solve it:** When the Origin supervisor is present, send clock settings to it so it re-applies them at boot; otherwise use the normal system time tool.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/SystemService.cs` (clock part), `Platform/SupervisorClient.cs`
 **Goal:** Let the operator set date/time and switch network time (NTP) on/off such that it survives reboots on an Origin image (where the supervisor owns `/opt/config/clock.conf` and `origin-apply-clock.service` re-applies it at boot). Provide the HTTP client to the Origin device supervisor (ASP.NET service on `127.0.0.1:8080`) used for clock and for software updates (PLAT-08).
 **Depends on:** PLAT-05, PLAT-06.
@@ -4867,6 +5094,11 @@ public sealed class HttpSupervisorClient : ISupervisorClient {
 ---
 
 ### PLAT-08 — Software update: signed `.scu` package from USB, or through the Origin supervisor
+**Summary**
+- **What it is for:** Installs a new software version from a USB stick.
+- **Problem it solves:** Machines need safe updates; a fake or broken package must not be installed, and a failed install must not leave the machine broken.
+- **How we solve it:** Standalone machines check a signed package, run its install script, and roll back on failure. Origin devices hand the update to the supervisor, which checks and switches versions.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Install a new firmware version from a USB stick. Standalone machines use the `.scu` format (outer tar with an RSA-SHA256-signed inner tar.gz carrying `manifest.json` + `install.sh`, run with `--pre`/`--post`, `--rollback` on failure). On an Origin device (supervisor answering) the update is delegated to the supervisor, which verifies SHA256SUMS + manifest of a `.tgz` and switches `current`.
 **Depends on:** PLAT-05, PLAT-06 (IUsbMounts), PLAT-07 (ISupervisorClient). Deploy-Ops (`deploy/keys/scure-update.pub`, package scripts `deploy/package-origin-app.*`, `make-installer.ps1`).
@@ -4926,6 +5158,11 @@ public sealed record UpdateResultDto { bool Ok "ok"; IReadOnlyList<UpdateStepDto
 ---
 
 ### PLAT-09 — Network service (status, diagnostics, static IP, NetBird/WireGuard tunnel IP) and network policy
+**Summary**
+- **What it is for:** Shows network status, runs network tests, sets a fixed or automatic IP address, and decides if having no network is a problem.
+- **Problem it solves:** Operators and support need to see and fix network issues, but units that are offline on purpose should not show a fault.
+- **How we solve it:** Read interface and tunnel status, run ping and similar tools only on checked addresses, apply IP settings through the network manager, and stay green when offline by choice.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Report the wired interface (eth0) state, all interfaces, gateway and the remote-access tunnel IP; run ping/traceroute/nslookup safely against validated addresses; apply DHCP/static IPv4 via NetworkManager; and decide whether "no network" is a fault at all (offline-by-choice / not cloud-enrolled units stay green).
 **Depends on:** PLAT-05, PLAT-10 (`ICloudSync.Status().Enabled` for the policy). Application-Process (registers `NetworkPolicy`, consumes it in `StatusLedService`; supplies `InternetReachability`).
@@ -4979,6 +5216,11 @@ public sealed class NetworkPolicy {
 ---
 
 ### PLAT-10 — Cloud sync agent (outbound-only portal sync, data-only commands, report upload/deletion)
+**Summary**
+- **What it is for:** A background service that keeps the machine in sync with the sCure Cloud portal.
+- **Problem it solves:** Without it the portal cannot see machine status, alerts or reports, and cannot send programs and prints to the machine.
+- **How we solve it:** The machine regularly sends its status to the portal (outbound only), accepts only data commands (never hardware control), uploads each finished report once, and reports deleted runs.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** A background service that, when `data/cloud.json` holds a portal URL and machine key, periodically POSTs a machine snapshot to the sCure Cloud portal (Flask `/api/agent/sync` or a Google Apps Script `/exec` URL), applies the portal's DATA-ONLY commands (programs and prints — never hardware), acks them on the next sync, keeps a 48 h alert log for the portal, uploads each finished run's HTML report once and propagates local run deletions.
 **Depends on:** PLAT-01, PLAT-02, PLAT-11 (`IComponentCounters`), PLAT-14 (`ICureReportBuilder`, `CureReportContext`). Domain (`ProgramEstimator.EstimateProgramMinutes`, `NfcUid`, `Material`, `PrintLog`). Application-Process (`MachineState`, `CloudSyncDto`, `ICureController` via `MachineStateSource`).
@@ -5037,6 +5279,11 @@ Files: `data/cloud.json` (CloudConfig, indented), `data/cloud_reports.json` (sor
 ---
 
 ### PLAT-11 — Component ON-hour counters (wear tracking)
+**Summary**
+- **What it is for:** Counts how many hours each wearing part has been on: the 405 nm and 450 nm LEDs, cooling fan, heater and heater fan.
+- **Problem it solves:** Without on-time counts there is no way to know when parts are worn and need service.
+- **How we solve it:** Add up on-time from the live machine state, save it so it survives reboots and power cuts, and show it in hours in the app and the cloud.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Accumulate the real ON-time of the wear components (405 nm LEDs, 450 nm LEDs, chamber cooling fan, heater, heater fan) from the live machine state and persist it across reboots and power cuts; exposed as hours in `/api/state.counters` and the cloud snapshot.
 **Depends on:** PLAT-01. Application-Process (`MachineState` fields `UvOn`, `UvWavelength`, `HeaterOut`, `HeaterPwm`, `IsHeating`, `FanRpmEach`, `Fans`).
@@ -5073,6 +5320,11 @@ public sealed class ComponentCountersHostedService : BackgroundService { public 
 ---
 
 ### PLAT-12 — Machine setting stores: LED calibration factors, BOFA extractor policy, serial-number backup
+**Summary**
+- **What it is for:** Three small saved settings: LED output calibration per zone, whether a BOFA fume extractor is connected, and a backup copy of the serial number.
+- **Problem it solves:** LED output varies between units, the extractor setting must be remembered, and the serial number can be lost if storage is replaced.
+- **How we solve it:** Save each setting in its own file, and keep a second copy of the serial number on a removable card so it can be restored.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Three small persisted settings: per-zone LED output calibration factors; whether a BOFA fume extractor is connected and its speed reference; and a second copy of the unit's serial number on a removable card so a reinstalled/swapped storage can restore it.
 **Depends on:** PLAT-01. Consumers: Application-Process (`CureController` uses `BofaPolicy` and LED factors; BOFA 24 V supply / Err 9048 logic is there), Dvt-Hdt (HDT uses factors), Native UI (`UiSettingsStore` uses `SerialBackup`).
@@ -5124,6 +5376,11 @@ public sealed class SerialBackup {
 ---
 
 ### PLAT-13 — NFC reader: USB detection, enable setting, Eccel Pepper C2 tag reading
+**Summary**
+- **What it is for:** Supports the USB NFC reader (Eccel Pepper C2) used to read tags that start a job.
+- **Problem it solves:** The machine must know if the reader is there, warn when it is unplugged, and read tags reliably.
+- **How we solve it:** Detect the reader by its USB ID without opening it, refuse to enable NFC without a reader, raise error 9052 when it is unplugged, and send one event per tag.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Platform/`
 **Goal:** Detect the Eccel Pepper C2 USB NFC reader by USB identity (never opening the port for detection), persist the operator's "NFC enabled" setting (refused while no reader is present), raise Err 9052 when an enabled reader is unplugged, and — as a hosted service — read tags over the reader's binary protocol, raising one event per tag arrival (a tag starts the job it was sent with).
 **Depends on:** PLAT-01. Domain (`NfcUid`), Application-Process (`MachineState` with `NfcEnabled`, `NfcReader`, `Alerts`, `AlertDetails`; `NfcReaderDto`).
@@ -5184,6 +5441,11 @@ public sealed class PepperC2TagReader : BackgroundService, INfcTagReader {
 ---
 
 ### PLAT-14 — Cure report builder (self-contained HTML + inline SVG line charts and timing diagram)
+**Summary**
+- **What it is for:** Builds the printable Process Report for one cure run.
+- **Problem it solves:** Users need a clear record of each cure: settings, measured times, alerts and temperature, LED and fan data.
+- **How we solve it:** Create one self-contained HTML page with built-in charts and a timing diagram, plus a short summary saved next to it.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Reports/`
 **Goal:** Build the printable, self-contained HTML "Process Report" of one cure run — a port of the React `src/lib/cure-report.ts` with Chart.js replaced by inline SVG — including metric cards, phase ribbon, program-steps table with measured phase times, a logic-analyser-style timing diagram, run alerts, chamber/LED/fan charts and sensor/fan issue notes; plus the summary object stored next to it.
 **Depends on:** PLAT-02 (`IPhaseTimingStore`). Domain (`CureLog`, `TelemetrySample`, `CureStep`, `ProcessType`, `TimerMode`, `PhaseTiming`, `SensorIssue`, `FanIssue`, `RunAlert`, `ErrorRegistry`, `ErrorCodes.SensorDisconnectedOf/FanFailureOf/FanWearOf`, `HardwareNames.SupervisedSensors`, `Fan` enum).
@@ -5238,6 +5500,11 @@ internal static class ReportText { Esc, N(double), N(int), C1, F(v,decimals), C 
 ---
 
 ### PLAT-15 — HDT calibration report (HTML + CSV) and report persistence / USB export
+**Summary**
+- **What it is for:** Builds the material HDT calibration report and helps save and export cure reports.
+- **Problem it solves:** Calibration results must be readable and exportable, and cure reports must be kept and copied to USB.
+- **How we solve it:** Create an HTML report with a chart plus a CSV file, save the cure report in the run store when possible, and export it to USB with a clear result message.
+
 **Project / folder:** `SCureBox.Application.csproj` — `Reports/`
 **Goal:** Render the Material HDT Calibration report (port of `src/lib/hdt-report.ts` with an inline SVG chart, and the CSV layout of `hdt_calibration.py csv_report`), and provide the helper that persists a built cure report in the run store (best effort) and exports it to the USB drive, returning an outcome the UI shows.
 **Depends on:** PLAT-06 (`ISystemService.ExportReport`), PLAT-02 (`ICureRunStore`), PLAT-14 (`SvgLineChart`, `ReportText`, `CureReportDocument`). Dvt-Hdt (`HdtStatusDto`, `HdtSample`, `HdtLevelResult`, `HdtConfigDto`, boost/picolog DTOs).
@@ -5278,6 +5545,11 @@ public static class ReportServiceCollectionExtensions { public static IServiceCo
 ---
 
 ### PLAT-16 — Platform DI composition and shipped config files (system.json, origin.json, versions.json)
+**Summary**
+- **What it is for:** Connects all the platform parts together when the app starts, and defines the read-only config files shipped with the app.
+- **Problem it solves:** Without one central setup, services would be missing or wired wrongly, and the app would not know its default settings.
+- **How we solve it:** One setup method registers storage, platform services, background services and report builders, and the app reads its bundled config files from one folder.
+
 **Project / folder:** `SCureBox.Application.csproj` — `PlatformServiceCollectionExtensions.cs`; repo `config/`
 **Goal:** One extension method that wires persistence, platform services, hosted services and report builders into the host container, and the bundled read-only configuration files the platform and UI read from `DataOptions.ConfigDir`.
 **Depends on:** PLAT-01…PLAT-15. Api (calls `AddSCureBoxPlatform` in `ScureApiHost`), Application-Process (`ICureController` for `MachineStateSource`; registers `NetworkPolicy`, `BofaPolicy`, `FrozenReadingStore`, `PlannedRestart`), Native UI (consumers of system/origin/versions json, `SerialBackup` registration), Domain (`ErrorRegistry.Load`).
@@ -5344,6 +5616,11 @@ Ticket list:
 ---
 
 ### DVT-01 — DVT bench lock, clock waits and UV meter abstraction (StarBright over libusb + simulated meter)
+**Summary**
+- **What it is for:** The base for all machine tests (DVT): a lock on the shared test tools (the LEDs and the StarBright UV meter), a driver for the UV meter, and a fake meter for tests.
+- **Problem it solves:** If two tests use the LEDs or the meter at the same time, readings are wrong and the meter can freeze. Without a fake meter, nothing can be tested without real hardware.
+- **How we solve it:** Only one owner can hold the lock at a time, with a lease that runs out if not renewed. The meter is opened by one user at a time, talks over USB directly, and stops cleanly if it freezes.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — folders `Dvt/` and `Devices/`
 **Goal:** Lets only one DVT measurement own the shared bench instruments (LEDs + StarBright) at a time. An outside process can hold the lock on a renewable lease. Also defines the UV power meter abstraction, a real driver for the Ophir StarBright (raw libusb vendor control transfers, no Ophir software) and a simulated meter, and gives the blocking, fake-clock-friendly waits that every DVT thread uses.
 **Depends on:** Domain (Wavelength). The consumers are DVT-02, DVT-03, DVT-08, DVT-10 and Api (`/api/dvt/bench*`, `/api/dvt/meter*`).
@@ -5453,6 +5730,11 @@ public sealed class SimulatedUvMeterSource : IUvMeterSource {
 ---
 
 ### DVT-02 — UV linearity sweep (DVT-OPT-001 / DVT-OPT-002) and meter endpoints
+**Summary**
+- **What it is for:** A test that measures UV light power at a series of LED levels (for example 30 to 100 %) to check the light is linear, at 405 nm or 450 nm. It also shows meter status and sets the meter wavelength.
+- **Problem it solves:** We need proof that the LED output matches the set power. Without checks, a test could run with the door open, during a cure, or with the meter on the wrong wavelength and give bad data.
+- **How we solve it:** Check safety and meter settings first, then step the LEDs up level by level, record readings, and compute an average for each level. If the door opens or anything fails, stop and turn the LEDs off.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/`; endpoints in `src/SCureBox.Api` `Endpoints/DvtEndpoints.cs` (Api area hosts the endpoints)
 **Goal:** Measures StarBright irradiance at a ladder of LED intensities on one wavelength, using the machine's own clock. Every lit step gets a mean and standard deviation, plus a dark baseline. Also answers "is a meter present / what does it read" and sets the meter's wavelength. The JSON is identical to the Python `server/uv_sweep.py`.
 **Depends on:** DVT-01, DVT-07 (IHdtCalibration.Running), Application-Process (`ICureController`: `AnyProcessActive`, `GetState()` → `MachineState.DoorClosed/UvOn/LedTemps`, `SetUv(bool, double, Wavelength)`), Domain (`Wavelength`, `WavelengthExtensions.TryParse(int, out Wavelength)`), Api.
@@ -5538,6 +5820,11 @@ Sample row format: `[t_s (3 dp), mW/cm2 (4 dp) | null, intensity %, phase ("base
 ---
 
 ### DVT-03 — UV-off-on-door-open timing (DVT-SAF-008 step 2)
+**Summary**
+- **What it is for:** A safety test that measures how fast the UV light goes off when the door is opened during a cure.
+- **Problem it solves:** We must prove the UV turns off in time when the door opens. If it does not, the user could be exposed to UV.
+- **How we solve it:** Run a real UV cure, wait for a steady reading, then the operator opens the door. Sample the meter quickly and record when the light drops below 10 % and reaches zero, plus the alarms. Always turn UV off at the end.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/`
 **Goal:** Measures, on the machine's clock, how long the UV takes to go dark after the door opens during a cure:
 - dark reading → a real UV-only cure program (or a direct UV command) until the StarBright plateau → the operator opens the door → sampling at `hz` until the reading is below 10 % and back at the dark level → tail → alarm watch.
@@ -5619,6 +5906,11 @@ Sample row: `[t_s (3 dp), mW/cm2 (4 dp) | null, door_open (true/false/null), pha
 ---
 
 ### DVT-04 — Firmware hang on purpose for the watchdog test (DVT-SAF-010)
+**Summary**
+- **What it is for:** A test tool that freezes the firmware on purpose for some seconds, to check that the separate output watchdog turns the heater and UV off.
+- **Problem it solves:** We need proof that if the software hangs, the heater and UV still get cut. We cannot wait for a real hang to test this.
+- **How we solve it:** Freeze outputs and supervision for N seconds while something is on and block other commands. When the hang ends, stop the program, turn everything off, and raise error 9017 if the watchdog cut.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/DvtHang.cs`; endpoint + gate middleware in `src/SCureBox.Api/Endpoints/DvtEndpoints.cs`
 **Goal:** Puts the firmware into a realistic HUNG state for N seconds. During it:
 - no heartbeat is written and every output write blocks (`OutputFreeze`);
@@ -5688,6 +5980,11 @@ public sealed class DvtHang {
 ---
 
 ### DVT-05 — Remote confirmation at the machine (RemoteConfirm)
+**Summary**
+- **What it is for:** A step where a test started from the cloud must be confirmed by a person at the machine before anything turns on.
+- **Problem it solves:** Without it, someone far away could start the heater or UV while nobody is at the machine, which is unsafe.
+- **How we solve it:** The request shows Start / Decline on the machine screen. The test runner checks the answer. Requests expire after a time limit and can be withdrawn.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/RemoteConfirm.cs`; endpoints in `src/SCureBox.Api/Endpoints/DvtEndpoints.cs`
 **Goal:** A DVT test asked for from outside the machine (the sCure Cloud DVT tab, through the local DVT runner) must be confirmed by someone at the CureBox before anything turns on. The screen shows Start / Decline. The runner polls the answer. Requests expire, and the asker can withdraw them.
 **Depends on:** Native UI (`RemoteConfirmPrompter` subscribes to `Requested`/`Closed` and calls `Resolve`), Api.
@@ -5733,6 +6030,11 @@ public sealed class RemoteConfirm {
 ---
 
 ### DVT-06 — PicoLog TC-08 thermocouple probe (native interop, firmware reader, simulation)
+**Summary**
+- **What it is for:** Reads temperatures from the PicoLog TC-08 probe (sample, chamber, and room temperature) for material calibration and test pages.
+- **Problem it solves:** Tests need accurate outside temperature readings. The probe can only be used by one program at a time, and some machines do not have the driver.
+- **How we solve it:** The firmware reads the probe all the time in a safe way. It can hand the probe to the test bench program and take it back. A fake probe is used for tests and machines without the driver.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Hdt/`
 **Goal:** Gives the firmware a continuous, thread-safe reading of the PicoLog TC-08:
 - CH1: the type K thermocouple on the sample or heater body;
@@ -5816,6 +6118,11 @@ public sealed class SimulatedTc08Probe : ITemperatureProbe {
 ---
 
 ### DVT-07 — Material HDT calibration (state machine, thermal model, CSV report)
+**Summary**
+- **What it is for:** A developer tool that finds the highest LED power a material can take without getting too hot (near its heat deflection temperature, HDT), and writes a report.
+- **Problem it solves:** Too much LED power can heat a material past its limit and deform the part. We need a safe power level for each material.
+- **How we solve it:** Step the LED power from 10 to 90 %, wait for stable temperature at each step, and stop at once if the limit is reached. Also estimate a boost time and save the results as a CSV report.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Hdt/`; pure math in `src/SCureBox.Domain` `Control/HdtModel.cs`
 **Goal:** In Developer Mode, finds the highest calibrated SYSTEM LED power (405 nm) a material takes without its averaged CH1 temperature exceeding the material HDT minus a safety margin. It steps 10 → 90 %; at each level it waits for thermal stability or a timeout. Reaching the HDT stops everything at once. It also estimates the "boost" time (time at boost power from a start temperature up to the lower HDT limit) and produces a CSV report.
 **Depends on:** DVT-06 (ITemperatureProbe), Application-Process (`ICureController`: `SetUv(bool,double,Wavelength.Nm405)`, `SetHeaterFan(int)`, `CancelHeaterFanCooldown()`, `LedFactors`, `AnyProcessActive`), Domain (`OpResult`, `HdtModel`), Api (`/api/dev/hdt/*`), Application-Platform (LED calibration store: factors 0..1.5 per zone), Reports (`HdtReportBuilder` consumes `HdtStatusDto` — other area).
@@ -5958,6 +6265,11 @@ public static class HdtModel {   // SCureBox.Domain.Control
 ---
 
 ### DVT-08 — Bench-process contracts, trace math, TC-08 bench source and the generic BenchRecorder
+**Summary**
+- **What it is for:** The common parts of the separate test bench program, including a general recorder that logs the temperature probe, UV meter and machine state together.
+- **Problem it solves:** Tests need one shared, time-aligned record of all readings, and it must keep recording even if the firmware restarts.
+- **How we solve it:** Define clear interfaces to the firmware, the probe and the safety net. Sample everything together 1 to 20 times a second, add marks and automatic events, and keep logging when the firmware is down.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/Bench/`
 **Goal:** Defines what the separate DVT bench process sees of the firmware (an HTTP-shaped interface), of the TC-08 (opened exclusively for one run) and of the safety net. Also provides the generic recorder that any DVT test script uses: TC-08 CH1/CH2/cold junction + StarBright + firmware state, sampled together at 1..20 Hz on the bench clock, with named marks set by the script and firmware state-change events detected automatically. The recording survives a firmware restart (rows with `fw_alive=false`).
 **Depends on:** DVT-01 (DvtBench, IUvMeterSource, MeterIdentity), DVT-06 (UsbTc08Native), DVT-10 (the host wires it in).
@@ -6080,6 +6392,11 @@ Sample row (both recorder and runner): `[t_s (3 dp), ch1_c (2 dp)|null, cold_jun
 ---
 
 ### DVT-09 — BenchRunner (catalog test DVT-SAF-002, heater thermistor open) and SimulatedBenchWorld
+**Summary**
+- **What it is for:** Runs a full test from the catalog: checking that unplugging the heater temperature sensor while heating stops the heater safely. It also includes a full fake machine.
+- **Problem it solves:** We need proof that a broken sensor cuts the heater, raises an alarm, and does not restart by itself. Doing this by hand is slow and error-prone, and hard to test without hardware.
+- **How we solve it:** The bench program guides the operator with prompts, checks each result on its own clock, and always leaves heater and UV off. A simulated machine lets the whole test run without hardware.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/Bench/`
 **Goal:** Runs a whole catalog test from the bench process, with the TC-08 in its own hands and on its own clock. The test checks that pulling the heater thermistor (TEMP_CHAMBER) while heating cuts the heater, raises the alarm, refuses a new heat command, and does not resume by itself after the reconnect. The operator is guided by prompts. Every exit leaves the heater and UV off (through the firmware, else through the watchdog's cut) and gives the TC-08 back. A full simulated machine lets everything run without hardware.
 **Depends on:** DVT-08, DVT-01 (DvtBench, IUvMeterSource), DVT-10 (the host).
@@ -6192,6 +6509,11 @@ public sealed class SimulatedBenchWorld : IFirmwareClient, ITc08Source, IUvMeter
 ---
 
 ### DVT-10 — DVT bench host process (HTTP API :3002, firmware HTTP client, watchdog safety net, systemd unit)
+**Summary**
+- **What it is for:** The separate test bench program that runs next to the firmware and hosts the recorder and test runner, with its own web API.
+- **Problem it solves:** If tests ran inside the firmware, they would stop measuring when the firmware hangs, crashes or restarts, which is exactly what some tests need to see.
+- **How we solve it:** Run it as its own service that talks to the firmware only over HTTP, so it keeps measuring when the firmware fails. It serves the test web page and also works in simulation mode.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Bench/`; `deploy/scurebox-dvt-bench.service`
 **Goal:** Hosts the bench runner and recorder as their own ASP.NET Core process: `scurebox --dvt-bench`. It is separate from the firmware, so it keeps measuring while the firmware is hung, killed or restarting. It serves `/bench/*` to the DVT web page and reaches the firmware only through its HTTP API on :3001. In simulation it runs against `SimulatedBenchWorld`, with `/bench/sim/*` to play the operator.
 **Depends on:** DVT-08, DVT-09, DVT-01, Api (`CommandLine` dispatch of `--dvt-bench`; `ApiJson`, `Query`, `ScureConsoleFormatter`, `CommandLine.ReadAppVersion`), Hardware (the `scurebox --watchdog --cut-now` CLI), Deploy-Ops (install of the unit).
@@ -6420,6 +6742,11 @@ Dvt-Hdt area, not here; API-01 only dispatches to it from the command line.
 ---
 
 ### API-01 — Host bootstrap and composition (`ScureApiHost`, `Program`, `HostSettings`, command-line modes, logging)
+**Summary**
+- **What it is for:** This is the start-up code of the machine software. It builds the one program that runs the web server, connects all software layers, and also offers a few command-line tools (version, watchdog, update package).
+- **Problem it solves:** Without one clear start-up place, settings, logging, layers and routes would be set up in different ways, and the machine would not shut down its outputs and save data safely when it stops.
+- **How we solve it:** One builder reads settings from the environment, sets the port (3001), logs in one simple style, registers every layer in a fixed order, adds all routes, and runs boot and safe-shutdown steps.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — root folder + `Infrastructure/`
 **Goal:** Build the single firmware process: resolve host settings from the environment, configure Kestrel, systemd integration,
 house-style console logging, CORS and JSON options, register all firmware layers in DI, install middleware and map every
@@ -6492,6 +6819,11 @@ Dvt-Hdt (`Bench.DvtBenchHost.Run`); Native UI (consumes `Build(args, configure)`
 ---
 
 ### API-02 — HTTP infrastructure: JSON conventions, envelopes, query parsing, exception envelope, request log
+**Summary**
+- **What it is for:** These are the shared rules that every web route uses: how JSON looks, how replies say ok or failed, how URL values are read, and how requests are logged.
+- **Problem it solves:** If each route did this on its own, the screens would get mixed reply formats, bad input could crash a request, and error codes from the hardware could be lost.
+- **How we solve it:** One small toolbox builds every reply as {ok, code, message}, reads URL values the same way, pulls error codes out of hardware messages, and turns any crash into a clear JSON error. Each request is logged.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Infrastructure/`
 **Goal:** One place for the wire conventions every endpoint uses: serializer options, the lenient body reader, the
 `{ok, code?, message}` envelopes and the hardware-refusal mapping, Flask-compatible query-string parsing, and the middleware that
@@ -6537,6 +6869,11 @@ turns unhandled exceptions into JSON envelopes and logs every request.
 ---
 
 ### API-03 — Liveness services: systemd watchdog keep-alive and output-watchdog heartbeat
+**Summary**
+- **What it is for:** Two background services that tell the system the machine software is still alive: one talks to the Linux service manager, one writes a heartbeat file every second.
+- **Problem it solves:** If the software crashes or freezes, heaters and UV LEDs could stay on with nobody in control. That is a safety risk.
+- **How we solve it:** The software sends regular 'I am alive' signals. A separate watchdog watches the heartbeat file; if it stops for 20 seconds, the watchdog turns heaters and UV off. A clean stop removes the file.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Infrastructure/`
 **Goal:** Keep systemd's `WatchdogSec=` satisfied while the process is healthy, and write the heartbeat file that the separate
 output watchdog (`scurebox --watchdog`, scurebox-watchdog.service) monitors: when the firmware crashes, is killed or hangs, the
@@ -6566,6 +6903,11 @@ heartbeat goes silent and the watchdog switches heaters and UV LEDs off after 20
 ---
 
 ### API-04 — Static kiosk UI, SPA fallback and unknown-route 404
+**Summary**
+- **What it is for:** This part serves the touch-screen web app (the kiosk UI) and its config files from the machine itself.
+- **Problem it solves:** Without it, the screen app could not load, page links inside the app would break on reload, and wrong API addresses would return a web page instead of a clear error.
+- **How we solve it:** Serve the built app files directly, send the main page for any other screen address, and answer unknown API addresses with a JSON 'Not found' (404).
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/StaticUi.cs`
 **Goal:** Serve the built React UI (and its `/config/*.json` assets) from `SCURE_UI_DIR` at `/`, fall back to `index.html` for
 client-side routes, and give unknown `/api` routes a JSON 404 instead of the SPA page.
@@ -6595,6 +6937,11 @@ client-side routes, and give unknown `/api` routes a JSON 404 instead of the SPA
 ---
 
 ### API-05 — Machine state poll and NFC setting
+**Summary**
+- **What it is for:** The main status route that the screens ask once a second to learn everything about the machine, plus routes to read and switch the NFC tag reader.
+- **Problem it solves:** The screens need one full, up-to-date picture of the machine (temperatures, fans, alerts, counters, cloud, NFC, program). Without it they cannot show what is happening.
+- **How we solve it:** Take the machine state and add counters, cloud status, offline mode, NFC info and the running program. During a planned test freeze, return the last saved state. Turning NFC on without a reader is refused with code 9052.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/StateEndpoints.cs`
 **Goal:** `GET /api/state` is the 1 Hz poll of the UIs: the controller's `MachineState` decorated by the host with component
 counters, cloud-sync status, offline mode, NFC reader info and the recipe runner status; during a DVT hang it returns the frozen
@@ -6627,6 +6974,11 @@ pre-hang state. The NFC routes read and switch the NFC feature.
 ---
 
 ### API-06 — Cure process commands (`/api/cure/*`)
+**Summary**
+- **What it is for:** Commands that start each step of a cure: heat, dry, cure with 405 or 450 nm UV, UV only, cool, nitrogen, and stop.
+- **Problem it solves:** The screen drives the cure step by step. Without checked commands, wrong values (like too-high temperature) could reach the machine, and hardware refusals would not be explained.
+- **How we solve it:** One command per step. Values are checked against allowed ranges first, with clear error codes; then the request goes to the machine control, and any refusal comes back with its code.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/CureEndpoints.cs`
 **Goal:** One POST per recipe process (heat, dry, cure-405, cure-450, uv-only, cool, nitrogen, stop) used by the UI's
 phase-by-phase cure flow. The API validates the parameter ranges with registry codes, then forwards to `ICureController`, mapping
@@ -6665,6 +7017,11 @@ refusals through `ApiJson.HwResult`.
 ---
 
 ### API-07 — Direct hardware, acknowledgements, BOFA policy and diagnostics
+**Summary**
+- **What it is for:** Service and settings routes that control single parts directly: door, chamber heating, light strip, fans, damper, UV, fume extractor (BOFA), alarm acknowledgements, and fan and LED tests.
+- **Problem it solves:** Service people and settings screens need to test and control each part alone, clear alarms, and save the extractor settings. Without these routes they could not.
+- **How we solve it:** Simple routes, one per action, that pass the request to the machine control. Some always answer ok for compatibility with the old system. Test routes return fan speed and LED heating results.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/HardwareEndpoints.cs`, `Endpoints/DiagnosticsEndpoints.cs`
 **Goal:** Service / settings-screen routes that drive single outputs (door, manual chamber heating, RGB strip, fans, damper, UV,
 BOFA extractor), operator acknowledgements of latched alarms, the persisted BOFA policy, and the fan RPM and LED heating
@@ -6717,6 +7074,11 @@ diagnostics. Several routes answer `ok:true` unconditionally (Flask fidelity).
 ---
 
 ### API-08 — Data endpoints: materials, print history, cure history, cure runs, reports, phase timings
+**Summary**
+- **What it is for:** Routes that save and read the machine's data: preset and user programs, print history, cure runs with their reports, cure history, and phase-timing statistics.
+- **Problem it solves:** Without stored data, users would lose their programs and history, and there would be no record or report of each cure.
+- **How we solve it:** The screen saves full lists and follows a cure run by its own id: start, send readings, finish, save report. While a run is active, the server also records sensor and fan problems and adds them to the run.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/MaterialEndpoints.cs`, `Endpoints/HistoryEndpoints.cs`, `Endpoints/CureRunEndpoints.cs`, `Infrastructure/RunIssueTracker.cs`
 **Goal:** Persisted data the UI reads and writes: bundled preset programs, user programs and print history (full-replace
 arrays), the cure-run lifecycle keyed by the UI's external id (start → telemetry → finish → report), cure-history listing and
@@ -6769,6 +7131,11 @@ finished run.
 ---
 
 ### API-09 — Server-side recipe runner endpoints and recipe validation wiring
+**Summary**
+- **What it is for:** Routes to run a whole cure program on the machine by itself: start, pause, resume, abort, skip a step, and read the status.
+- **Problem it solves:** If only the screen drives each step, a screen problem can break the cure. Programs also need one shared check before they run.
+- **How we solve it:** The machine runs the whole program itself. A program can be picked by id or sent in full. Before start, one checker combines the range checks and the program rules.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/RecipeEndpoints.cs`, `Infrastructure/RecipeValidation.cs`
 **Goal:** Run a whole program (Material) on the machine without the UI driving each phase: start by preset/user id or inline
 material, pause, resume, abort, skip a step, read the status. The host supplies the recipe validator that combines the API range
@@ -6804,6 +7171,11 @@ checks with the Domain program rules.
 ---
 
 ### API-10 — System, update, network, network policy and cloud configuration
+**Summary**
+- **What it is for:** Settings-screen system actions: restart and power off, clock and network time, version, USB exports, software update from USB, offline mode, cloud settings, and network status and setup.
+- **Problem it solves:** Users and service need to manage the machine, update it safely and set up the network from the screen. Without these routes they would need a computer and command line.
+- **How we solve it:** Thin routes that pass each request to the system services, which do the real work. Errors come back with clear codes (for example USB or network problems). Updates must be signed.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/SystemEndpoints.cs`, `Endpoints/NetworkEndpoints.cs`
 **Goal:** Settings-screen system actions: reboot/shutdown, clock and network time, version, USB exports, signed software update
 from USB, offline/network policy, cloud sync configuration, wired-network status, safe network diagnostics and static IP. The API
@@ -6858,6 +7230,11 @@ is a thin adapter; behaviour lives in Platform services.
 ---
 
 ### API-11 — Developer Mode endpoints (`/api/dev/*`): event log, LED calibration, LED power drive, PicoLog, HDT calibration
+**Summary**
+- **What it is for:** Engineering routes for Developer Mode: an event log, LED power calibration, an LED power test, the PicoLog temperature logger, and material heat-deflection (HDT) calibration.
+- **Problem it solves:** Engineers need to calibrate and test the machine. Without these tools LED output could be uneven and material calibration could not be done or reported.
+- **How we solve it:** Routes that save and apply LED calibration factors for four zones (checked to 0-1.5), drive LEDs with test factors, hand the PicoLog to the test bench, and run HDT calibration with a CSV report.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/DevEndpoints.cs`
 **Goal:** Engineering routes behind the UI's Developer Mode: an append-only event log, the four-zone LED calibration factors
 (persisted and applied to the controller), a calibrated LED power test drive with optional preview factors, the PicoLog TC-08
@@ -6902,6 +7279,11 @@ status and its hand-over to the DVT bench process, and the material HDT calibrat
 ---
 
 ### API-12 — DVT bench endpoints (`/api/dvt/*`), loopback-only switches and the DVT hang gate
+**Summary**
+- **What it is for:** Routes for design-verification (DVT) tests: UV meter control, a bench lock, UV sweep and UV-off timing tests, a planned software freeze test, LED check switch, and 'confirm at the machine' for cloud-started tests.
+- **Problem it solves:** Safety and optical tests must be run and measured in a repeatable way. Some test actions are dangerous, so they must not be started by any remote caller.
+- **How we solve it:** Special test routes run each test and return the measurements. Risky switches only accept calls from the machine itself. During a planned freeze, most changing requests are blocked with 409.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Endpoints/DvtEndpoints.cs`
 **Goal:** Routes used by the DVT console, the DVT web page and the on-machine DVT runner: the Ophir StarBright meter on the
 machine's USB, the bench lock lease, the UV linearity sweep (DVT-OPT-001/002), the UV-off-on-door-open timing (DVT-SAF-008), the
@@ -6953,6 +7335,11 @@ deliberate firmware hang (DVT-SAF-010) with its 409 gate, the in-memory LED pane
 ---
 
 ### API-13 — Integration test harness (`SCureBox.Api.Tests`)
+**Summary**
+- **What it is for:** A test setup that runs the full machine software inside the tests, with simulated hardware and a temporary data folder.
+- **Problem it solves:** Without it, the web routes could only be checked on a real machine, which is slow, risky and hard to repeat.
+- **How we solve it:** Start the whole software in memory with fake hardware and send real web requests to every route. A second variant acts as a local caller to test the machine-only DVT routes.
+
 **Project / folder:** `tests/SCureBox.Api.Tests/SCureBox.Api.Tests.csproj` — root
 **Goal:** Host the complete firmware in-process with simulated hardware and a throw-away data directory so every endpoint ticket
 can be verified over real HTTP, plus a loopback variant for the DVT routes that require a local caller.
@@ -7033,6 +7420,11 @@ Lateral rule: a TopBar move replaces the current history entry unless the curren
 ---
 
 ### UI-01 — App shell, hosting, DI registration and PC demo mode
+**Summary**
+- **What it is for:** The main frame of the machine's touch screen app. It starts the machine software and the screen in one program and holds every page.
+- **Problem it solves:** Without it the screen and the machine control would run apart, the picture would not fit or rotate on the panel, and a stop or restart could hang for a long time.
+- **How we solve it:** One program starts the machine service, then draws a fixed-size screen that scales and turns to fit the panel. Any stop request ends the program within 10 seconds. A demo file turns it into a PC simulator.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — root (`Program.cs`, `App.axaml(.cs)`, `UiPages.cs`, `UiServiceCollectionExtensions.cs`, `ViewLocator.cs`, `app.manifest`), `Hosting/`, `Views/ShellView.axaml(.cs)`, `Views/ShellScaler.cs`, `Views/ShellWindow.cs`, `ViewModels/ShellViewModel.cs`, `ViewModels/PageViewModel.cs`, `Services/UiRuntime.cs`
 **Goal:** Run the firmware host and the Avalonia UI in one process with one DI container, choose the output (DRM/KMS on the unit, a desktop window elsewhere), guarantee the process exits within 10 s of any stop request with the "Restarting…" frame on the panel, and host every page inside a 1600x1000 shell that scales/rotates to the output, blurs behind dialogs and resets the idle timer on every touch. A `demo.mode` file next to the exe turns the app into the PC simulator.
 **Depends on:** UI-02, UI-05, UI-06, UI-09, UI-10; Api (`ScureApiHost.Build`, `CommandLine.TryRun`, `IApiEndpointMapper`, `ApiJson`), Application-Platform (`PlatformInfo`, `PlannedRestart`, `DataOptions`, `SerialBackup`), Native UI dialogs (`IDialogService`, `DialogService`, `DialogViewModel`)
@@ -7098,6 +7490,11 @@ Lateral rule: a TopBar move replaces the current history entry unless the curren
 ---
 
 ### UI-02 — Theme, design tokens, global styles and string resources
+**Summary**
+- **What it is for:** The look of the screen app: dark colors, text sizes, corner shapes, button and card styles, and one list of all on-screen texts.
+- **Problem it solves:** Without one shared style, each page would look different, touch targets could be too small, and texts would be scattered and hard to change.
+- **How we solve it:** We define all colors, sizes and button styles once and every page uses only them. All user-visible words live in one text catalogue in US English.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Styles/`, `Resources/`, `branding/` (repo root)
 **Goal:** Provide the dark-only visual language (colours, typography, radii, touch sizes, button/card/pill/toggle themes, touch-sized slider, scroll viewer with the custom touch recognizer) on the 1600x1000 surface, and the single catalogue of user-visible strings. Every view uses only these tokens and classes.
 **Depends on:** UI-03 (control types the themes target), UI-04 (`TouchScrollGestureRecognizer`, `SwipeRow`)
@@ -7139,6 +7536,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-03 — Reusable controls (Controls/)
+**Summary**
+- **What it is for:** The set of building blocks the pages are made from: buttons with icons, cards, status pills, switches, the logo, progress rings, charts, a QR code maker, drop-down lists and the dialog holder.
+- **Problem it solves:** Without shared blocks each page would rebuild the same parts, and outside icon, chart or QR packages would add weight and risk.
+- **How we solve it:** We draw all these parts ourselves in code, with no outside packages, and reuse them on every page.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Controls/`
 **Goal:** The drawn, dependency-free control set the pages are built from: surfaces (Card, StatusPill, Toggle), the app button with vector icons, the S logo, progress ring and gauges, the phase card of the cure page, the editor step card view, a popup-free drop-down (`FloatingList`), the heating track veil, a tiny QR encoder, two charts and the in-shell modal host. No icon fonts, chart or QR packages.
 **Depends on:** UI-02 (themes), UI-15 (`PhaseKind`, `PhaseStatus`), UI-23 (`StepCardViewModel`), UI-01 (`ShellView.FloatLayer`); Native UI dialogs (`DialogViewModel` with `DesignWidth`, `DockedHeight`, `CloseOnOverlayTap`, `Cancel()`); Domain (`TelemetrySample`), Application (`HdtSample`)
@@ -7205,6 +7607,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-04 — Touch gestures: SwipeRow and TouchScrollGestureRecognizer
+**Summary**
+- **What it is for:** Touch handling: smooth finger scrolling and list rows you can swipe right to run or left to show actions.
+- **Problem it solves:** On the turned panel, scrolling can feel jumpy or wrong, and a careless swipe could start a cure by accident or fight with page scrolling.
+- **How we solve it:** A custom scroll handler measures the finger correctly, filters panel noise and moves on each drawn frame. The swipe row needs a clear, deliberate gesture before it starts anything.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Controls/SwipeRow.cs`, `Controls/TouchScrollGestureRecognizer.cs`
 **Goal:** Make touch feel right on the rotated portrait panel: a scroll recognizer that measures the finger in the scrolled control's own coordinates, damps panel noise, fits fling velocity robustly and steps all motion on rendered frames; and a swipeable list row (right = run, left = uncover an action tray) that can never start a cure by accident and never fights the page scroll.
 **Depends on:** UI-02 (SwipeRow theme, ScrollViewer theme), UI-05 (`UiMotion` is NOT consulted by the row)
@@ -7240,6 +7647,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-05 — Core UI services: machine state store, UI settings, alerts, developer mode, idle, motion
+**Summary**
+- **What it is for:** Shared background services all pages use: live machine status, saved screen settings, the alert list, developer mode, the 2-minute screensaver and animation switches.
+- **Problem it solves:** Without them every page would read the machine on its own, settings and alerts could disagree between pages, and the screen could freeze while reading hardware.
+- **How we solve it:** Single shared services read the machine once per second off the screen thread, keep settings and alerts in one place, and tell pages when something changes.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Services/`, `ViewModels/Settings/Debouncer.cs`
 **Goal:** The singletons every page binds to: a 1 Hz observable machine snapshot read off the UI thread; the persisted UI settings layered over `config/system.json` (incl. the serial number and its card backup); the active-alert list mirrored from the machine with acknowledgements; the developer-mode gate; the 2-minute screensaver; a global animation switch and a value tween; a debouncer and a self-reverting label.
 **Depends on:** Application-Process (`ICureController.GetState/ReportUiAlerts/AckFanAlarms/AckWatchdogTrip/AckDoorAbort`, `IRecipeRunner.GetStatus`, `RecipeStatus`, `MachineState`), Application-Platform (`IComponentCounters`, `ICloudSync`, `NetworkPolicy`, `INfcReaderDetector.Decorate`, `IDevEventLog`, `DataOptions`, `SerialBackup`), Domain (`ErrorRegistry`, `ErrorDef`, `ErrorCodes`), UI-09, Native UI dialogs (`IDialogService.Current`)
@@ -7300,6 +7712,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-06 — Input & remote services: barcode scanner, NFC jobs, remote DVT confirm, boot self-test
+**Summary**
+- **What it is for:** Brings outside inputs to the screen: USB barcode scanners, NFC tags, test requests from sCure Cloud, and the hardware checks run at start-up.
+- **Problem it solves:** Without it scans would need a focused text box, an NFC tag or remote request could start work without the operator, and boot checks would not test real hardware.
+- **How we solve it:** Scanners are read directly from the system. NFC jobs and cloud test requests always wait for the operator to confirm at the machine. Boot checks call the real hardware.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Services/`
 **Goal:** Bring outside events onto the screen safely: USB barcode scanners read straight from Linux input devices (no focused text box on DRM), NFC tags that start a cloud job only after the operator confirms, DVT tests requested from sCure Cloud that wait for Start/Decline at the machine, and the real hardware checks of the boot screen.
 **Depends on:** UI-05, UI-09, UI-14 (`HomeViewModel.StartFromTagAsync`); Application (`INfcTagReader.TagPresented`, `NfcTagRead`, `NfcUid.SameTag/Display`, `IPrintHistoryStore`, `ICureController`, `RemoteConfirm` (Dvt), `HardwareNames.SupervisedSensors/Location`, `FanTestResult`, `LedTestResult`), Native UI dialogs (`MessageDialogViewModel` with `Title, Body, OkText, CancelText, StayUp, Destructive, Cancel()`)
@@ -7338,6 +7755,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-07 — Origin browser sign-in service (organization from app.origin.io)
+**Summary**
+- **What it is for:** Lets the operator sign in to the Origin website from the machine to link it to their organization.
+- **Problem it solves:** The machine needs the organization ID, but typing it is error-prone and the sign-in must not leave passwords or data behind.
+- **How we solve it:** A hidden browser is shown inside a sign-in dialog. We read only the organization ID from the site's replies, store nothing about the login, and delete the browser profile.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Services/OriginBrowserSignIn.cs`, `Services/CdpSession.cs`, `Services/OriginPageCover.cs`, `Services/OriginPageFrame.cs`, `Services/OriginPageKeyboard.cs`
 **Goal:** Let the operator sign in on the real Origin website from the machine and read ONLY the organization UUID from the site's own API replies. A Chromium is driven over the Chrome DevTools Protocol: headless with its screencast streamed into the sign-in dialog ("embedded", default), or as an app window covered by an sCure frame ("window"). Nothing about the sign-in is stored; the temp profile is deleted.
 **Depends on:** UI-13 / UI-19 (callers through `OriginSignInDialogViewModel`), Native UI dialogs (`OriginSignInDialogViewModel` implements `IOriginSurface`), Application-Platform (`DataOptions.ConfigDir`)
@@ -7374,6 +7796,11 @@ Strings: `Strings.AppName = "sCure"`, `DefaultSystemName = "sCure"`, `ComingSoon
 ---
 
 ### UI-08 — UI QA endpoints (/api/ui) — the UI's only HTTP surface
+**Summary**
+- **What it is for:** A small web interface so QA scripts, the cloud and engineers can see and control the touch screen remotely.
+- **Problem it solves:** Without it nobody could test or check the screen without standing at the machine.
+- **How we solve it:** We add a few web calls to read the current page, change page, take a screenshot, simulate taps and swipes, inject a barcode, and read or set the organization.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Api/UiEndpoints.cs`
 **Goal:** Let QA scripts, the cloud and engineers over SSH see and drive the native screen: current route, navigate, screenshot PNG, synthetic tap / drag / program swipe on design coordinates, inject a barcode, and read/set the organization remotely. NOTE: the UI has no HTTP *client* — view models call the in-process services; this ticket is the "API" part of the UI.
 **Depends on:** UI-01 (`UiRuntime.ShellRoot/TopLevel`), UI-04 (`SwipeRow`), UI-05 (`UiSettingsStore`), UI-06 (`BarcodeScanner.Inject`), UI-09, UI-14 (`MaterialRowViewModel`); Api (`IApiEndpointMapper.Map(RouteGroupBuilder api)` under `/api`, `ApiJson.Json/Ok/Fail/ReadObjectAsync`)
@@ -7407,6 +7834,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-09 — Navigation (routes, history, page lifecycle)
+**Summary**
+- **What it is for:** Moves between screens and remembers where you came from, so Back works.
+- **Problem it solves:** Without it pages could keep old data, Back would not work, and page start and stop steps would not run.
+- **How we solve it:** A simple history list of screens. Each move creates a fresh page and tells the old and new page they are leaving or opening. Moves can add to or replace the history.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Navigation/`
 **Goal:** A tiny history-stack navigator: one enum of screens, a fresh page view model from DI on every navigation, `OnNavigatedFrom`/`OnNavigatedTo` lifecycle calls, push or replace, and Back. Gating (setup, dev, curing) is done by the callers and the pages themselves.
 **Depends on:** UI-01 (`UiPages.Get`, `PageViewModel`)
@@ -7437,6 +7869,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-10 — TopBar (header) view and view model
+**Summary**
+- **What it is for:** The header bar at the top of most pages: Back, logo, machine name, door, chamber temperature, status icons and buttons for history, alerts, settings and network.
+- **Problem it solves:** Without it the operator would not see key machine status at a glance or have a common way to reach main pages.
+- **How we solve it:** One shared header shows live status and quick buttons, colors the alerts and network icons by state, hides a developer entry behind 10 presses, and locks while a cure runs.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Views/TopBar.axaml(.cs)`, `ViewModels/TopBarViewModel.cs`
 **Goal:** The 96 px header on every non-full-screen page: Back, S logo, system name; door button and chamber temperature (with target); DEV / N₂ / NFC indicators; history, alerts (badge + severity colour), settings (with the hidden 10-press developer entry) and network (red when offline unintentionally). Locked while curing.
 **Depends on:** UI-05, UI-09, UI-03, Application-Process (`ICureController.OpenDoor`), Native UI dialogs (`DevAuthDialogViewModel` → bool)
@@ -7474,6 +7911,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-11 — Boot page (logo → real hardware self-test → Setup / Home)
+**Summary**
+- **What it is for:** The start-up screen that shows the logo and checks the hardware before use.
+- **Problem it solves:** Without it the machine could be used with a broken door, sensor, LED, fan, gas sensor or service, and nobody would know why.
+- **How we solve it:** It runs seven real checks in order with a progress bar. If all pass it moves on by itself; if any fail it shows why and offers Retry or Continue anyway. A planned restart skips the LED and fan tests.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/BootViewModel.cs`, `Views/Pages/BootView.axaml(.cs)`
 **Goal:** On every start show the S logo, then run seven real checks in order (door, thermistors, 405 nm LEDs, 450 nm LEDs, chamber fans, N₂ pressure sensor, API), with a flowing progress bar and per-check glyph cross-fades. All pass → move on by itself; any failure → stay with the reasons and offer Retry / Continue anyway. A planned restart skips the LED and fan tests.
 **Depends on:** UI-05, UI-06 (`IBootSelfTest`, `BootCheckOutcome`), UI-09, UI-03 (`SCureLogo`, `Converters.PercentToWidth`); Application-Platform (`PlannedRestart.Consume()`); Domain (`Wavelength`)
@@ -7504,6 +7946,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-12 — Wake (screensaver/sleep), Restart and Placeholder pages
+**Summary**
+- **What it is for:** Three simple pages: a black sleep screen, a restart screen, and a 'Coming soon' page for future features.
+- **Problem it solves:** A screen left on can burn in, the panel needs something steady to show during a restart, and unfinished pages need a safe stand-in.
+- **How we solve it:** Sleep shows pure black until tapped, then the logo, and a second tap returns. Restart shows a fixed frame while the machine reboots. Placeholder shows 'Coming soon'.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/{WakeViewModel,RestartViewModel,PlaceholderPageViewModel}.cs`, `Views/Pages/{WakeView,RestartView,PlaceholderView}.axaml(.cs)`
 **Goal:** Wake: pure black (burn-in protection) until a tap, then logo + hint, the second tap returns. Restart: the static frame the panel holds while the machine stops and reboots. Placeholder: a generic "Coming soon" page base kept for future pages.
 **Depends on:** UI-09, UI-03
@@ -7528,6 +7975,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-13 — Setup page (first-run wizard)
+**Summary**
+- **What it is for:** The first-run setup wizard for a new machine.
+- **Problem it solves:** A new machine needs a serial number, a name and possibly an organization link before use; without guidance these could be wrong or missing.
+- **How we solve it:** Step by step: welcome, serial number by barcode scan only (if missing), device name with the on-screen keyboard, link organization by USB file or Origin sign-in or skip, then Home.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/SetupViewModel.cs`, `Views/Pages/SetupView.axaml(.cs)`
 **Goal:** First-run wizard: Welcome → Serial number (only when the unit has none; barcode scanner only, mandatory, manual typing hidden behind 10 label taps + device password) → Device name (on-screen keyboard) → Link organization (CSV from USB or Origin sign-in, or continue without) → Home.
 **Depends on:** UI-05, UI-06 (`BarcodeScanner`), UI-07 (`OriginOrganization`), UI-09, UI-03; Native UI dialogs (`OnScreenKeyboardViewModel` → string with `Text` init; `DevAuthDialogViewModel` → bool; `UsbFileBrowserDialogViewModel` → string? path with `Title`; `OriginSignInDialogViewModel` → `OriginOrganization?`)
@@ -7571,6 +8023,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-14 — Home page (Recent Prints + Program List, swipe to start / edit)
+**Summary**
+- **What it is for:** The main screen: recent prints and the list of cure programs.
+- **Problem it solves:** Operators need a fast, safe way to start, re-run, or edit programs without starting a cure by mistake.
+- **How we solve it:** There is no Start button. Swipe a program right to start it after all safety checks and a fan test; swipe left to Duplicate, Edit or Delete. Swipe a recent print right to re-run its program.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/HomeViewModel.cs`, `ViewModels/Pages/MaterialRowViewModel.cs`, `Views/Pages/HomeView.axaml(.cs)`
 **Goal:** The main screen: the three newest prints (when an organization is linked) and the Program List (favourites first, "~N min" estimates, CSV import, + New). There is NO Start button and NO Edit mode: a program row is swiped right to start (through every safety gate and the pre-flight fan test) and swiped left to uncover Duplicate / Edit / Delete; a Recent Print swiped right re-runs its program.
 **Depends on:** UI-04 (`SwipeRow`), UI-05, UI-09, UI-15 (`CureStartRequest`); Application (`IMaterialStore.GetPresets/GetUserMaterials/ReplaceUserMaterials`, `IPrintHistoryStore.GetAll`, `ICureController.SetFanOverride`, `FanTestResult`), Domain (`Material`, `PrintLog`, `ProcessType`, `ProgramEstimator.EstimateProgramMinutes/PrintMinutes`); Native UI dialogs (`MessageDialogViewModel`, `CriticalAlertDialogViewModel` (`Load(AlertService)`, → bool "go to alerts"), `NitrogenOnlyDialogViewModel` → bool, `PreflightDialogViewModel` (`HoldAfterTest`, `Task<FanTestResult?> TestCompleted`, `Finish()`, `Result`) → `FanTestResult?`, `FanFailDialogViewModel` (`Setup(FanFailKind.Fan, FanFailWhen.Preflight, fans)`) → bool, `MaterialEditorDialogViewModel` (`Init(Material?)`) → bool changed, `ImportCsvDialogViewModel` → `IReadOnlyList<Material>`, `PrintHistoryDialogViewModel` → `PrintHistoryResult?` (`MaterialName`, `PrintIds`))
@@ -7618,6 +8075,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-15 — Cure view-model helpers (ViewModels/Cure)
+**Summary**
+- **What it is for:** Shared helper logic for the cure page and cure history: phase names and icons, phase cards, number and date formats, start settings and report building.
+- **Problem it solves:** Without shared, testable helpers, safety checks like a stuck temperature or LED panels not heating would be duplicated or hard to test.
+- **How we solve it:** We put these pieces in small plain classes, including the temperature-stall and LED-heating checks, that both pages reuse and that can be tested alone.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Cure/`
 **Goal:** Pure, testable pieces the cure page and history share: phase kinds and their labels/icons, the per-step phase card view model, the temperature-stall detector (7004), the client-side LED-panel-heating check (9004 family), number/date formats, the hot-chamber caution, the cure-start navigation parameter and the report builder glue.
 **Depends on:** Domain (`CureStep`, `ProcessType`, `Material`, `CureLog`, `ErrorRegistry`, `ErrorCodes`), Application (`ICureReportBuilder`, `CureReportContext`, `CureReportDocument`, `ReportPersistence.SaveAndExport`, `ReportExportOutcome`, `ICureRunStore`, `ISystemService.Version()`, `IPhaseTimingStore`, `PhaseTiming`), UI-05 (`UiSettingsStore`), UI-03 (`IconKind`)
@@ -7651,6 +8113,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-16 — Cure process page (run a program on the server-side recipe engine)
+**Summary**
+- **What it is for:** The page shown while a cure program runs, with progress and phase cards.
+- **Problem it solves:** The operator must see progress and control the run, and problems like an open door, bad sensors, fan or LED faults must be caught and shown.
+- **How we solve it:** It starts the program, refreshes every second, offers Pause, Resume, Abort and Skip, and watches for door, sensor, fan, LED and temperature problems. At the end it builds the report and can save it to USB.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/CureProcessViewModel.cs`, `Views/Pages/CureProcessView.axaml(.cs)`
 **Goal:** Start the selected program on `IRecipeRunner` when the page opens, render `RecipeStatus` + `MachineState` on every 1 Hz tick (header with run state and overall progress, status bar, a centred carousel of phase cards), issue Pause / Resume / Abort / Skip, and keep the client-side supervision: door-open countdown, heater sensor fault (9010/9001), frozen reading (9006), fan failure, LED panel not heating, temperature stall (7004), completion with report build + USB export, runner error / external abort.
 **Depends on:** UI-03 (`PhaseCard`, `StatusPill`), UI-05, UI-09, UI-15; Application-Process (`IRecipeRunner.Start(Material, string runId, string? serial)/Pause/Resume/Abort/SkipStep/GetStatus`, `RecipeStatus` {RunId, State, Phase, StepIndex, StepElapsedSec, StepRemainingSec, TotalElapsedSec, EstimatedTotalSec, TargetTemp, Process, Message, ErrorCode}, `ICureController.AckDoorAbort/OpenDoor/SetFanOverride`), Domain (`ProgramEstimator.EstimateProgram/EstimateStepSeconds/EstimateCoolSeconds/AmbientC/DefaultNitrogenSeconds`, `RecipeStateMachine.NitrogenSec`, `ErrorCodes`), Application (`ICureRunStore`, `IPhaseTimingStore`, `ICureReportBuilder`, `ISystemService`, `IPrintHistoryStore.GetAll/ReplaceAll`, `ErrorRegistry`); Native UI dialogs (`DoorOpenDialogViewModel` (`Init()`, `Tick()`, `Dismiss()`), `HeaterFaultDialogViewModel` (`Init(HeaterFaultWhen, detail, showRetry, stopLabel, frozen)` → bool retry), `FanFailDialogViewModel` (`Setup(FanFailKind.Fan|Led, FanFailWhen.Running, items)` → bool continue), `TemperatureWarningDialogViewModel` (`Init(target, current)` → bool continue), `PauseDialogViewModel` (`Init(chamberTemp)` → bool), `PauseOverlayViewModel` (`Init(phaseName)` → bool continue), `AbortDialogViewModel` (`Init(chamberTemp)` → bool yes), `CureCompleteDialogViewModel` (`Init(material, totalSec, steps)`, `ReportMessage`) → bool open door, `MessageDialogViewModel`, `PreflightDialogViewModel.Finish()`)
@@ -7704,6 +8171,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-17 — Cure History page
+**Summary**
+- **What it is for:** A page listing past cure runs and their details.
+- **Problem it solves:** Without it operators could not review, report on or clean up past runs.
+- **How we solve it:** It lists runs newest first with status, times and issues. A detail panel lets you export the report to USB, delete one run, or delete all finished runs, each after confirmation.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/CureHistoryViewModel.cs`, `Views/Pages/CureHistoryView.axaml(.cs)`
 **Goal:** List recorded cure runs newest first with status, dates, sensor / fan issue lines, duration and steps; a detail panel with the run summary, "Export report" (stored report or freshly built → USB), Delete (one, confirmed) and Delete all (finished runs, confirmed). No chart on the panel (graphs are in the exported report).
 **Depends on:** UI-05, UI-09, UI-15 (`CureFormat`, `CureRunReporter`), UI-03; Application (`ICureRunStore.GetHistory/GetReport`, `IPhaseTimingStore`, `ICureReportBuilder`, `ISystemService`, `IMaterialStore`, `CureHistoryDeletion.Delete(id)/DeleteAll()`, `CureHistoryRetention.KeepRuns`, `ReportPersistence.Export`), Domain (`CureLog`); Native UI dialogs (`MessageDialogViewModel`)
@@ -7735,6 +8207,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-18 — Alerts page
+**Summary**
+- **What it is for:** A page showing the machine's active alerts.
+- **Problem it solves:** Without it operators would not know what is wrong or how to fix it.
+- **How we solve it:** Alerts are grouped into critical errors and warnings, with an All Clear state. A detail view shows the description, fix steps, QR codes to documents and videos, support contacts and a Dismiss button.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/AlertsViewModel.cs`, `Views/Pages/AlertsView.axaml(.cs)`
 **Goal:** Show the active alerts in two groups (Critical Errors, Warnings) with registry text, time and a QR of the support URL; an "All Clear" state; and a detail view with severity, description, troubleshooting steps, documentation and repair-video QRs, support contacts and a Dismiss button pinned in the header.
 **Depends on:** UI-05 (`AlertService`, `UiAlert`), UI-03 (`QrCodeView`, `StatusPill`, `Card`); Domain (`ErrorDef` {Message, Description, Severity, SupportUrl, VideoUrl, Troubleshooting}, `ErrorSupport` {DocsBase, Email, Phone}, `ErrorRegistry.Support`)
@@ -7761,6 +8238,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-19 — Settings page
+**Summary**
+- **What it is for:** One page with all machine settings and service actions.
+- **Problem it solves:** Operators and service staff need one place to change fans, heating, gas, network, time, updates, organization and more; scattered controls would be confusing.
+- **How we solve it:** A single scrolling two-column page groups all settings and tests into cards, including power, fans, heating, LED test, nitrogen, date and time, log export, software update and organization.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/SettingsViewModel.cs`, `ViewModels/Settings/FanRowViewModel.cs`, `Views/Pages/SettingsView.axaml(.cs)`
 **Goal:** One scrolling two-column page for the machine's settings and service actions: system name, power (reboot / sleep), damper, three fan groups with speed sliders and tests, chamber heating slider, LED test, component counters, N₂ pressure + Nitrogen Mode, NFC, BOFA, Work Without Network, date & time (auto / manual), serial, log export, software update, compliance, organization (CSV / Origin / unlink), versions card (developer entry) and the developer card.
 **Depends on:** UI-05 (store, settings, alerts, dev, Debouncer/TransientLabel), UI-09, UI-12 (`RestartViewModel`, `WakeViewModel.SleepParameter`), UI-13 (`SetupViewModel.OrganizationIdPattern`), UI-03 (`Toggle`, `TrackDim`, `ScureButton`), UI-07 (`OriginOrganization`); Application (`ICureController.SetDamper/SetFanSpeed(FanGroup,int)/RunFanTest(string)/RunLedTest(int,double,Wavelength)/SetTargetTemperature/StopHeating/SetBofaConnected`, `ISystemService.Version()/Reboot()/SetDateTime(date,time)/SetNetworkTime(bool)/NetworkTimeEnabled()/ExportLogs()`, `INfcReaderDetector.TrySetEnabled(bool, out reader)`, `NetworkPolicy.OfflineMode/Choose(bool)`, `FanGroup { led_cooling, chamber_intake, chamber_heating }`, `FanTestResult` {Status, Rpm, Message, Fans: name→{Status,Rpm}}, `LedTestResult` {Ok, Status, Results: [{Name, Status}]}); Native UI dialogs (`OnScreenKeyboardViewModel`, `MessageDialogViewModel`, `NumberPadViewModel` (`Title, Min, Max, Step, Decimals, Suffix, SetValue(v)` → double?), `SoftwareUpdateDialogViewModel` → bool restart, `ComplianceDialogViewModel`, `UsbFileBrowserDialogViewModel`, `OriginSignInDialogViewModel`, `VersionsDialogViewModel`, `DevAuthDialogViewModel`)
@@ -7805,6 +8287,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-20 — Network page (STATUS / DIAGNOSTICS)
+**Summary**
+- **What it is for:** A page to view and fix the machine's network connection.
+- **Problem it solves:** Without it nobody could see the network settings or find why the machine is offline.
+- **How we solve it:** A Status tab shows connection details every 3 seconds and switches between fixed IP and automatic IP. A Diagnostics tab runs ping, traceroute or DNS lookup with a 60 second limit.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/NetworkViewModel.cs`, `Views/Pages/NetworkView.axaml(.cs)`
 **Goal:** Two tabs: STATUS (connection card polled every 3 s, IP / MAC / WireGuard IP / connection name / protocol / CIDR / gateway, switch between STATIC IP and DHCP) and DIAGNOSTICS (Ping / Traceroute / DNS Lookup on an address typed with the keyboard, EXECUTE with a 60 s timeout, monospace result box).
 **Depends on:** UI-05, UI-03; Application-Platform (`INetworkService.Status()` → `NetworkStatusDto` {Code?, Connected, Ip, Mac, Gateway, WireguardIp}, `SetStatic(bool dhcp, ip, gateway, subnet, dns)` → OpResult, `Diagnostics(string tool, string address)` → `DiagnosticsResultDto` {Ok, Result, Code?}); Native UI dialogs (`StaticIpDialogViewModel` (`Init(ip, gateway)`) → `StaticIpConfig?` {Ip, Gateway, Subnet, Dns}, `OnScreenKeyboardViewModel`)
@@ -7832,6 +8319,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-21 — Developer menu and LED intensity calibration pages
+**Summary**
+- **What it is for:** The developer tools menu and the LED brightness calibration page.
+- **Problem it solves:** LED zones are not equally bright, and developer tools must be hidden from normal users.
+- **How we solve it:** The menu only opens in developer mode. Calibration lets you set a factor for each of four LED zones, preview it live on the LEDs, then Save, Reset or Exit.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/DevMenuViewModel.cs`, `ViewModels/Pages/DevLedCalibrationViewModel.cs`, `Views/Pages/DevMenuView.axaml`, `Views/Pages/DevLedCalibrationView.axaml`
 **Goal:** The developer tools entry (guarded by the session dev flag) and the per-zone LED calibration: a requested system power, live preview on the 405 nm LEDs with unsaved factors, four zone factor cards (0–1.5) with the resulting physical output, Save / Reset / Exit.
 **Depends on:** UI-05 (`DevModeService`, Debouncer, TransientLabel), UI-09, UI-03; Application (`ICureController.SetLedFactors(IReadOnlyDictionary<string,double>)/SetUv(bool, double, Wavelength)`, `ILedCalibrationStore.Factors/Save/Reset/ScaledOutputs(power, factors)`, `IHdtCalibration.Running`, `IDevEventLog.Append(string, object?)`); Native UI dialogs (`NumberPadViewModel`)
@@ -7860,6 +8352,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-22 — Material HDT calibration page
+**Summary**
+- **What it is for:** A developer page that finds the right LED power for a material based on its heat-bending temperature.
+- **Problem it solves:** Without calibration, a material could be over- or under-heated during curing.
+- **How we solve it:** After a setup form and a temperature-logger check, the machine sweeps LED power automatically. The page shows live data, a chart, results and the recommended power, with Abort and USB report export.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Pages/DevHdtViewModel.cs`, `Views/Pages/DevHdtView.axaml`
 **Goal:** Developer page driving the server-side HDT calibration (an automatic LED power sweep against a material's heat-deflection temperature measured on a PicoLog TC-08 CH1): a setup form + PicoLog card gate the Start; while running/finished a 1 Hz poll shows live stats, the temperature chart, the per-power results table, the recommended power and boost; Abort (confirmed), New Calibration, CSV/HTML report export to USB.
 **Depends on:** UI-03 (`HdtChart`), UI-05, UI-09, UI-21 (dev guard pattern); Application (`IHdtCalibration.Status(int sinceSample)` → `HdtStatusDto`, `Start(HdtStartRequest)`, `Abort()`, `Reset()` → bool, `Running`; `ITemperatureProbe.Status()` → {Connected, Ch1Available, Temperature, Error, DeviceInfo}; `ILedCalibrationStore`; `IHdtReportBuilder.BuildHtml(status, factorsLine)/BuildCsv(status)`; `HdtReportBuilder.FileName(now)`, `HdtReportBuilder.ApplyLedFactors(power, factors)`; `ReportPersistence.Export`; `HdtSample` {T, Raw, Avg, Power}); Native UI dialogs (`NumberPadViewModel`, `MessageDialogViewModel`)
@@ -7891,6 +8388,11 @@ Endpoints (group `/api/ui`):
 ---
 
 ### UI-23 — Program-editor step view models and sequence rules (ViewModels/Editor)
+**Summary**
+- **What it is for:** The logic behind editing each step of a cure program in the program editor.
+- **Problem it solves:** Without rules, users could build steps that make no sense, such as wrong order, impossible temperatures or bad cooling.
+- **How we solve it:** Rules decide which step types are allowed next to each other, set temperature limits and defaults, clean up values and show clear error messages, while each step card is edited inline.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Editor/`
 **Goal:** The per-step editing logic behind the program editor dialog's step strip (the dialog itself — `MaterialEditorDialogViewModel` implementing `IStepCardHost` — belongs to the dialogs area): which processes a step may take given its neighbours, the running minimum temperature and cooling ceiling, defaults for a new step, normalisation, validator message mapping, and the `StepCardViewModel` that edits one step inline with steppers, number pads and floating drop-downs.
 **Depends on:** UI-03 (`StepCard` view binds it), Domain (`CureStep` {Step, Process, Temperature?, Time, UvIntensity?, Intensity?, TimerMode?, UvStartMode?, CoolingMode?, Ventilation?, IsUv, EffectiveUvIntensity}, `ProcessType`, `CoolingMode`, `CoolingModes.Parse`, `TimerMode {OnRamp, OnTarget}`, `UvStartMode {AtStart, AtTarget}`, `ProgramValidator` {HeatMinC, HeatMaxFor(process), CoolMinC, CoolingDropMinC, MaxNitrogenSteps, HoldMinMin, HoldMaxMin, BleacherHoldMaxMin, UvMinPct, UvMaxPct, Validate(steps)}), Native UI dialogs (`IDialogService`, `NumberPadViewModel`, `MaterialEditorDialogViewModel` as host)
@@ -7961,6 +8463,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-01 — Dialog infrastructure (base view model, dialog service stack, DialogHost, view mapping)
+**Summary**
+- **What it is for:** The shared system that shows every pop-up window (dialog) on the machine's touch screen, inside the app itself.
+- **Problem it solves:** Without one common mechanism, each screen would build its own pop-ups, they would look and behave differently, and pop-ups opened over other pop-ups would be hard to manage.
+- **How we solve it:** Each dialog returns an answer the caller waits for. Dialogs sit on a stack, only the top one is drawn over a blurred, dimmed page, with a short fade. Page changes close them, and the screensaver stays off.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Dialogs/`, `Controls/DialogHost.axaml(.cs)`, `UiPages.cs`, `ViewLocator.cs`, `ViewModels/ShellViewModel.cs`, `Views/ShellView.axaml(.cs)` (dialog parts only)
 **Goal:** Provide a single in-shell modal mechanism: dialog view models that resolve a typed `Task<TResult>`, a stack-based dialog service (a dialog can open over another, e.g. a keyboard over a form), and a host control that renders the top dialog as a centred card, full screen, or docked to the bottom half with the dialog below it still visible. Opening/closing fades in 240 ms and the page behind is shown as a blurred still.
 **Depends on:** Native UI (shell, `ShellScaler`, navigation service, `IdleService`, theme tokens, `UiMotion`), DI container (`Microsoft.Extensions.DependencyInjection`), CommunityToolkit.Mvvm.
@@ -8008,6 +8515,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-02 — Generic message / confirm dialog (MessageDialog) and its call sites
+**Summary**
+- **What it is for:** One reusable pop-up for yes/no questions and simple messages, such as 'Delete this run?' or 'Reboot device?'.
+- **Problem it solves:** Many screens need to confirm risky actions or show a short notice. A DVT test request from sCure Cloud must never be dismissed by accident.
+- **How we solve it:** A single card with title, text, OK and optional Cancel, with red styling for destructive actions. A 'stay up' mode ignores outside taps and page changes, used for the cloud Start/Decline request.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/MessageDialogViewModel.cs`, `Views/Dialogs/MessageDialogView.axaml`
 **Goal:** One reusable confirm/info card (replaces browser `confirm()`): title, body, optional Cancel, OK, destructive styling. It also carries the "must be answered on purpose" mode used for the sCure Cloud DVT Start/Decline request.
 **Depends on:** UIDLG-01; Native UI (Home, CureProcess, CureHistory, Settings, DevHdt pages, `NfcJobService`, `RemoteConfirmPrompter`), Dvt-Hdt (RemoteConfirm request source).
@@ -8042,6 +8554,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-03 — On-screen QWERTY keyboard
+**Summary**
+- **What it is for:** The on-screen keyboard used to type text, like names, serial numbers and passwords, on the touch screen.
+- **Problem it solves:** The machine has no physical keyboard and no system keyboard, so users could not type into text fields.
+- **How we solve it:** A full-screen or half-screen keyboard with letters, a numbers/symbols layer and Shift. Password fields can be hidden with Show/Hide. Closing it always returns the typed text.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/OnScreenKeyboardViewModel.cs`, `Views/Dialogs/OnScreenKeyboardView.axaml`
 **Goal:** Touch text entry for every text field (no OS keyboard). Full-screen by default, or docked to the bottom half so the form/page behind stays visible; optional password masking with Show/Hide. There is no cancel — the current text is always the result.
 **Depends on:** UIDLG-01.
@@ -8072,6 +8589,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-04 — Number pad
+**Summary**
+- **What it is for:** A number keypad for entering values like temperature, time and UV power.
+- **Problem it solves:** Users could enter numbers outside the allowed range or with the wrong number of decimals.
+- **How we solve it:** The keypad knows the minimum, maximum, step and decimals. It blocks digits that go over the limit, has +/- buttons, and returns a clamped, rounded value, or nothing on Cancel.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/NumberPadViewModel.cs`, `Views/Dialogs/NumberPadView.axaml`
 **Goal:** Numeric entry with min/max/step, optional decimals and a unit suffix; it refuses keys that would exceed the range's digit count or the maximum, and returns the clamped, rounded value (null on cancel).
 **Depends on:** UIDLG-01.
@@ -8103,6 +8625,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-05 — Developer Mode PIN pad (DevAuth)
+**Summary**
+- **What it is for:** A 4-digit PIN pad that unlocks Developer Mode.
+- **Problem it solves:** Developer tools must not be open to normal operators, but engineers need a quick way in on the machine.
+- **How we solve it:** After 10 taps on a hidden spot, a PIN pad opens. The right PIN turns on Developer Mode; a wrong PIN shows 'Incorrect password' and clears the entry.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/DevAuthDialogViewModel.cs`, `Views/Dialogs/DevAuthDialogView.axaml`
 **Goal:** Four-digit PIN entry that unlocks Developer Mode through `DevModeService.TryPassword`. Wrong PIN shows "Incorrect password" and clears.
 **Depends on:** UIDLG-01; Native UI (`DevModeService`, TopBar, Settings, Setup pages).
@@ -8123,6 +8650,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-06 — USB file browser
+**Summary**
+- **What it is for:** A simple file picker that shows matching files (for example CSV files) on plugged-in USB drives.
+- **Problem it solves:** There is no normal file dialog on the machine, so users could not choose a file from a USB stick.
+- **How we solve it:** It scans all USB drives, the top folder and two levels down, skipping hidden folders, lists up to 200 matching files, and returns the full path of the file the user taps.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/UsbFileBrowserDialogViewModel.cs`, `Views/Dialogs/UsbFileBrowserDialogView.axaml`
 **Goal:** Minimal file picker (replaces the browser file dialog) listing files that match a pattern on every mounted USB drive, root plus two directory levels; result is the chosen full path or null.
 **Depends on:** UIDLG-01; Application-Platform (`IUsbMounts`).
@@ -8144,6 +8676,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-07 — Start Cure gate dialogs: Critical alert, Nitrogen-only, System pre-check spinner
+**Summary**
+- **What it is for:** The checks shown when the user presses Start Cure: critical alerts, nitrogen-only programs and the system pre-check.
+- **Problem it solves:** A cure must not start with a critical alert active, or with a nitrogen-only program while nitrogen is off. The fans must be tested first, without the screen freezing.
+- **How we solve it:** Start Cure shows the critical alerts or a nitrogen warning and stops. Otherwise a spinning-fan screen runs the fan test and stays up until the cure screen gets its first real status, at most 45 seconds.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/{CriticalAlertDialogViewModel,NitrogenOnlyDialogViewModel,PreflightDialogViewModel}.cs`, matching views
 **Goal:** The dialogs Home's Start Cure passes through: refuse with a list of critical alerts, refuse an N₂-only program when nitrogen is off, then show a spinning-fan "Running System Pre-Check" while the all-fans test runs; the pre-check can stay up across the page change until CureProcess has the run's first real status.
 **Depends on:** UIDLG-01, UIDLG-08; Native UI (Home, CureProcess, `AlertService`, navigation); Application-Process (`ICureController.RunFanTest`, `FanTestResult`).
@@ -8171,6 +8708,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-08 — Fan / LED-panel failure dialog
+**Summary**
+- **What it is for:** A warning that shows which fans are not turning or which LED panels are not heating, before or during a cure.
+- **Problem it solves:** Broken fans or LED panels can harm the machine or ruin the cure, and the operator needs to know what failed.
+- **How we solve it:** The dialog lists the failed parts, explains what happened and what it means, and lets the operator stop or choose 'Continue anyway', which is saved as an override.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/FanFailDialogViewModel.cs`, `Views/Dialogs/FanFailDialogView.axaml`
 **Goal:** Tell the operator which fans did not rotate (before or during a cure) or which LED panels did not heat, and let them stop or explicitly continue anyway (recorded as an override).
 **Depends on:** UIDLG-01; Native UI (Home, CureProcess, LED heat check); Application-Process (`SetFanOverride`); Domain (error codes 9002/9003, 9040/9041/9044/9045).
@@ -8194,6 +8736,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-09 — Heater fault dialog (chamber thermistor not reading / reading frozen)
+**Summary**
+- **What it is for:** A warning that the chamber heater was not started or was turned off because the temperature sensor is not reading or is stuck.
+- **Problem it solves:** Heating with a broken or frozen temperature sensor is unsafe, because the machine cannot see how hot the chamber is.
+- **How we solve it:** The dialog explains the sensor fault (Err 9010 or 9006), offers Retry where it makes sense, and never offers 'continue anyway'.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/HeaterFaultDialogViewModel.cs`, `Views/Dialogs/HeaterFaultDialogView.axaml`
 **Goal:** Explain that the heater was not started / was switched off because the chamber thermistor is open (Err 9010; `ErrorCodes.IsA(code, TempSensorDisconnected=9001)` matches 9001 and 9010-9012) or its reading is frozen (Err 9006); offer Retry where it makes sense, never "continue anyway".
 **Depends on:** UIDLG-01; Native UI (CureProcess); Domain (ErrorCodes 9001 family, 9006).
@@ -8216,6 +8763,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-10 — Pause, Pause overlay (door-gated Continue) and Abort dialogs with hot-chamber caution
+**Summary**
+- **What it is for:** The dialogs for pausing or aborting a running cure, plus the 'paused' screen.
+- **Problem it solves:** Users could pause or abort by mistake, continue with the door open, or touch hot parts inside the chamber.
+- **How we solve it:** Pause and Abort ask for confirmation. The paused screen allows Continue only while the door is closed. All show a hot-surface warning that turns red at 40 C or more.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/{PauseDialogViewModel,PauseOverlayViewModel,AbortDialogViewModel}.cs`, views; `Views/Dialogs/AbortDialogView.axaml.cs` (contains `HotSurfaceSign`); `ViewModels/Cure/HotChamber.cs`
 **Goal:** Confirm pause (heating/UV/gas stop, door released), then show a full-screen paused overlay whose Continue is enabled only while the door reads closed; confirm abort. All three show a hot-surface caution that turns red at ≥ 40 °C.
 **Depends on:** UIDLG-01; Native UI (CureProcess page, `MachineStateStore`); Application-Process (runner pause/resume/abort, `OpenDoor`).
@@ -8241,6 +8793,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-11 — Cure-run overlays: Door open countdown, Temperature warning, Cure complete
+**Summary**
+- **What it is for:** Full-screen messages during a cure: door opened, temperature not reached, and cure finished.
+- **Problem it solves:** The operator must know when the door is open mid-run, when the chamber cannot reach its target temperature, and when the cure is done.
+- **How we solve it:** A 10-second countdown asks to close the door. A temperature warning (Err 7004) asks Continue or Abort. A completion screen shows time, steps, report status and an Open Door button.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/{DoorOpenDialogViewModel,TemperatureWarningDialogViewModel,CureCompleteDialogViewModel}.cs`, views
 **Goal:** Full-screen overlays the CureProcess page drives: a 10-second door-open countdown (no buttons), a temperature-stall warning (Err 7004) asking Continue/Abort, and the completion screen with an Open Door button and a report-saved line.
 **Depends on:** UIDLG-01; Native UI (CureProcess, `CureFormat`, cure report builder); Domain (ErrorCodes 7004, 6016).
@@ -8264,6 +8821,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-12 — Print history dialog (filters, multi-select, Cure Together)
+**Summary**
+- **What it is for:** A list of the organization's print jobs, used to pick what to cure next.
+- **Problem it solves:** Users need to find the right print quickly, choose the right program for it, and cure several prints together only when they use the same material.
+- **How we solve it:** The list shows newest first with material, printer and date filters. A tap picks the print's material; a multi-selection of one material can be cured together.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/PrintHistoryDialogViewModel.cs`, `Views/Dialogs/PrintHistoryDialogView.axaml`
 **Goal:** Show the organization's print jobs newest first with material / printer / date filters; a tap picks a print's material; a multi-selection restricted to one material can be cured together.
 **Depends on:** UIDLG-01, UIDLG-03; Application (`IPrintHistoryStore`, `IMaterialStore`); Domain (`PrintLog`, `Material`, `ProgramEstimator.PrintMinutes`); Native UI (`UiSettingsStore.HasOrganization`, `CureFormat`, Home).
@@ -8293,6 +8855,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-13 — Program (material) editor dialog
+**Summary**
+- **What it is for:** The editor where users build or change a cure program (material): its name and its steps.
+- **Problem it solves:** Users need an easy touch way to create and edit programs, and must not save programs that are not valid.
+- **How we solve it:** A pop-up with a name field, a sliding row of step cards with an Add Step tile, a summary, a check before saving, and export of the program to USB as CSV.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/MaterialEditorDialogViewModel.cs`, `Views/Dialogs/MaterialEditorDialogView.axaml(.cs)`
 **Goal:** Modal over Home to build or edit a cure program: name (keyboard), a horizontal strip of inline-edited step cards plus an "Add Step" tile, CSV export to USB, a summary line, validation message and Save/Update Program. Result true when the material list changed.
 **Depends on:** UIDLG-01, UIDLG-03, UIDLG-04; Native UI (`StepCardViewModel`, `IStepCardHost`, `StepCard` control, `EditorRules`, `Tween`, `AlertService`); Domain (`CureStep`, `Material`, `ProgramCsv`, `ProgramValidator`, `ProgramEstimator`, `ErrorCodes` 9081/9082); Application (`IMaterialStore`, `ISystemService.ExportCsv`).
@@ -8325,6 +8892,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-14 — Import programs from CSV dialog
+**Summary**
+- **What it is for:** A dialog to import cure programs from CSV files on a USB drive.
+- **Problem it solves:** Typing programs by hand is slow, and bad files must not create broken programs.
+- **How we solve it:** The user picks CSV files one at a time. Each valid file becomes a program named after the file; bad files are listed with their errors.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/ImportCsvDialogViewModel.cs`, `Views/Dialogs/ImportCsvDialogView.axaml`
 **Goal:** Pick CSV files from USB one at a time; each valid file becomes a user material immediately (name = file name without ".csv"); invalid files are listed with their parser/validator errors.
 **Depends on:** UIDLG-01, UIDLG-06; Domain (`ProgramCsv.Parse`, `ProgramValidator.Validate`, `ProgramEstimator`); Native UI (`EditorRules.Normalize`); Application (`IMaterialStore`).
@@ -8344,6 +8916,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-15 — Static IP configuration dialog
+**Summary**
+- **What it is for:** A form to set a fixed (static) network address for the machine.
+- **Problem it solves:** Some sites need a fixed IP address, and a wrong address could cut the machine off the network.
+- **How we solve it:** The form has fields for IP, Gateway, Subnet and DNS with a built-in number keypad. Apply works only when IP and Gateway are valid addresses.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/StaticIpDialogViewModel.cs`, `Views/Dialogs/StaticIpDialogView.axaml`
 **Goal:** Enter IP, Gateway (both required), Subnet and DNS with an on-dialog numeric keypad; Apply only when IP and Gateway are valid dotted quads.
 **Depends on:** UIDLG-01; Native UI (Network page); Application-Platform (`INetworkService.SetStatic`).
@@ -8362,6 +8939,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-16 — Software update dialog
+**Summary**
+- **What it is for:** The dialog that installs a software update from a USB drive.
+- **Problem it solves:** Updates must come from a checked package, and the user must not close the window in the middle of installing.
+- **How we solve it:** It shows four steps: find the USB, find the package, check its SHA-256 fingerprint, install. Closing is blocked while it runs. Then it offers Restart Now, or Retry on error.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/SoftwareUpdateDialogViewModel.cs`, `Views/Dialogs/SoftwareUpdateDialogView.axaml`
 **Goal:** Install a `.scu` update from USB: idle plan → four running steps (find USB, find package, verify SHA-256, install) → success ("Restart Now" returns true) or error (Retry). Closing is blocked while running.
 **Depends on:** UIDLG-01; Application-Platform (`IUpdateService`: `FindPackage`, `Manifest`, `RunUpdate`; DTOs `UpdatePackageDto`, `UpdateManifestDto`, `UpdateResultDto`); Native UI (Settings, Restart page).
@@ -8383,6 +8965,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-17 — Versions dialog
+**Summary**
+- **What it is for:** A window that shows the machine's software and system versions and the version history.
+- **Problem it solves:** Support and engineers need to see exactly what software is installed and what changed.
+- **How we solve it:** It shows live software, build, OS, kernel, runtime and last-boot details, plus the history read from the versions file.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/VersionsDialogViewModel.cs`, `Views/Dialogs/VersionsDialogView.axaml`
 **Goal:** Show the live software/build/OS/kernel/runtime/last-boot block and the version history parsed from `config/versions.json`.
 **Depends on:** UIDLG-01; Application-Platform (`ISystemService.Version()`, `VersionInfoDto`); Application (`DataOptions.ConfigDir`).
@@ -8400,6 +8987,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-18 — Cybersecurity compliance dialog
+**Summary**
+- **What it is for:** An information window about the machine's cybersecurity compliance.
+- **Problem it solves:** Users and auditors need to see which security standards apply and what protection is in place or planned.
+- **How we solve it:** A fixed panel lists the standards (CRA, EN 18031, EN 40000), the security controls marked Active or Planned, and the SRS requirements with their dates.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/ComplianceDialogViewModel.cs`, `Views/Dialogs/ComplianceDialogView.axaml`
 **Goal:** Static information panel listing the standards (CRA, EN 18031, EN 40000), code-level controls (ACTIVE/PLANNED) and the SRS §22 requirements with effective dates.
 **Depends on:** UIDLG-01; Native UI (Settings).
@@ -8417,6 +9009,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-19 — Origin sign-in dialog (embedded web page or in-window browser)
+**Summary**
+- **What it is for:** A window where the operator signs in to the Origin website to link the machine to their organization.
+- **Problem it solves:** The machine needs the user's Origin organization, but must not keep any sign-in details.
+- **How we solve it:** The real Origin site is shown inside the dialog as live pictures; taps and drags are passed to it, and text fields open the keyboard. Only the organization is returned; nothing else is saved.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/OriginSignInDialogViewModel.cs`, `Views/Dialogs/OriginSignInDialogView.axaml(.cs)`
 **Goal:** Let the operator sign in to the real Origin site (app.origin.io: email / Google / Microsoft) inside the dialog — the page is streamed as JPEG frames, finger taps/drags are forwarded, tapping a text field opens the docked keyboard — and return only the organization. Nothing about the sign-in is stored.
 **Depends on:** UIDLG-01, UIDLG-03; Native UI service `OriginBrowserSignIn` (`IOriginBrowserSignIn`, `IOriginSurface`, `IOriginInput`, `OriginField`, `OriginPhase`, `OriginOrganization`, `OriginSignInResult`; headless browser, `config/origin.json`); Setup and Settings pages.
@@ -8535,6 +9132,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-01 — Repository skeleton, solution and build conventions
+**Summary**
+- **What it is for:** The basic layout of the code repository: the solution file, shared build settings, logos and reference documents.
+- **Problem it solves:** Without one shared setup, projects build differently, warnings slip through, and scripts made on Windows break on the Pi because of wrong line endings.
+- **How we solve it:** Create one solution with shared settings (.NET 10, warnings count as errors), fixed ignore rules so keys and OS images are never committed, and Linux line endings for scripts.
+
 **Project / folder:** repo root (`SCureBox.sln`, `Directory.Build.props`, `global.json`, `.gitignore`, `.gitattributes`, `README.md`, `branding/`, `reference/`, `docs/` except `docs/srs`)
 **Goal:** Create the repository layout, the solution and the shared build settings so that every project builds the same way (net10.0, nullable, warnings as errors) and every script and asset has the right line endings. This ticket gives a clean `dotnet build SCureBox.sln` with no warnings once the other areas add their sources.
 **Depends on:** none (first ticket). The other areas fill `src/` and `tests/`.
@@ -8567,6 +9169,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-02 — Versioning convention (VERSION, versions.json, GITINFO)
+**Summary**
+- **What it is for:** The rule for how the product version is numbered, recorded and shown on the machine.
+- **Problem it solves:** Without it, nobody knows which version runs on a unit or what changed between releases.
+- **How we solve it:** One VERSION file plus a release-notes list. Every change raises the version and adds notes. Builds also stamp the git commit, and the unit shows it in Settings and through the API.
+
 **Project / folder:** `VERSION`, `config/versions.json`, `CHANGE_SUMMARY.md`; consumed by `src/SCureBox.Api` and `src/SCureBox.Ui`
 **Goal:** One product version string with a release-notes registry. Every change bumps the version and adds an entry. Build scripts stamp the git commit next to the executables, and the running unit reports the version through `/api/system/version` and the Settings > Versions modal.
 **Depends on:** OPS-01. Api (`/api/system/version`, `scurebox --version`), Native UI (Versions dialog).
@@ -8598,6 +9205,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-03 — Release build: publish.ps1 and the linux-arm64 payload
+**Summary**
+- **What it is for:** The release build script that packs the sCure Box software for the Raspberry Pi into one file.
+- **Problem it solves:** Every install path needs the same complete, clean package; once an OS image left inside made a release too big to install.
+- **How we solve it:** A script runs the tests, builds both programs for the Pi, adds config, install scripts and keys, leaves out images and secrets, fixes line endings and creates one tarball.
+
 **Project / folder:** `deploy/publish.ps1`, `deploy/deploy-to-pi.ps1`, `deploy/keys/`, `deploy/db/`
 **Goal:** Build the self-contained linux-arm64 release, which is both executables plus everything `install.sh` needs, as one tarball. The tarball is the input of every installer path: SSH deploy, image build, and the field installer.
 **Depends on:** OPS-01, OPS-02. Api and Native UI (the projects being published), Hardware (`src/SCureBox.Hardware/native`).
@@ -8637,6 +9249,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-04 — On-device installer install.sh
+**Summary**
+- **What it is for:** The install script that runs on the machine and sets up the sCure Box software and system.
+- **Problem it solves:** Setting up a unit by hand (files, boot settings, screen, services, remote access, drivers) is slow and error-prone, and must work the same way every time.
+- **How we solve it:** One script, safe to run again, that copies the app, keeps existing machine settings, sets boot and display options, installs services, remote access and drivers, and does not fail just because there is no internet.
+
 **Project / folder:** `deploy/install.sh`, `deploy/networkmanager-scurebox.conf`
 **Goal:** A single idempotent root script, run from an extracted release. It installs the application to `/opt/scurebox`, sets up the boot configuration, display, splash, systemd services, remote access, network tolerance and the DVT drivers, and restarts everything. The image first boot, the SSH deploy and the field installer all use it.
 **Depends on:** OPS-03, OPS-05, OPS-06, OPS-07, OPS-08, OPS-09, OPS-10.
@@ -8677,6 +9294,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-05 — Firmware systemd units (scurebox-ui.service / scurebox.service)
+**Summary**
+- **What it is for:** The system service files that start and supervise the sCure Box firmware on the Pi.
+- **Problem it solves:** If the firmware crashes or freezes and nothing restarts it, the machine stops working until someone reboots it.
+- **How we solve it:** Run the firmware as a system service that restarts it after a crash, and also when it stops sending 'I am alive' signals for 60 seconds. There are two versions: native screen or browser.
+
 **Project / folder:** `deploy/scurebox-ui.service`, `deploy/scurebox.service`
 **Goal:** Run the firmware as a supervised systemd service with sd_notify readiness and a watchdog. There are two variants: the native UI (one process that owns the display) or the headless API for the browser kiosk.
 **Depends on:** OPS-06. Api (Microsoft.Extensions.Hosting.Systemd: notify and watchdog pings; ASPNETCORE_URLS/PORT), Native UI (DRM/KMS on tty1).
@@ -8704,6 +9326,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-06 — Early-boot IO safe state (scurebox-io-safe + config.txt fragment)
+**Summary**
+- **What it is for:** Puts the UV LED switches and the LED relay into a safe 'off' state very early during boot.
+- **Problem it solves:** Between power-on and the firmware start, pins could drift and turn on UV outputs by accident.
+- **How we solve it:** Boot settings force those pins low from the start, and a small early-boot script sets the relay chip to safe levels. It never blocks the boot, even on errors.
+
 **Project / folder:** `deploy/scurebox-io-safe.service`, `deploy/io-safe-boot.sh`, `deploy/config-txt-fragment.txt`
 **Goal:** Make sure the UV SSRs, the wavelength routing line and the LED_SWITCH relay are at rest (off) from the firmware stage of boot until the .NET firmware takes over. This closes the window in which pull-ups could engage an output.
 **Depends on:** Hardware (pin map: GPIO16 = 450 nm SSR, GPIO17 = routing / PCA9685 OE, GPIO20 = 405 nm SSR, TCA6424A at i2c-0 0x23, P01 = NFC_RESET, P05 = LED_SWITCH relay K4).
@@ -8734,6 +9361,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-07 — Output watchdog and DVT bench services
+**Summary**
+- **What it is for:** Two helper services: an output watchdog that guards the heaters and UV LEDs, and the DVT test bench service.
+- **Problem it solves:** If the firmware dies, heaters or UV LEDs could stay on; test runs also need a service that keeps running on its own.
+- **How we solve it:** Both run separately from the firmware. The watchdog turns heaters and UV off if the firmware heartbeat stops for 20 seconds. The bench waits on port 3002 for test runs.
+
 **Project / folder:** `deploy/scurebox-watchdog.service`, `deploy/scurebox-dvt-bench.service`
 **Goal:** Two companion processes, started from the same `scurebox` executable, that must keep running when the firmware dies. The output watchdog cuts the heaters and the UV LEDs when the firmware heartbeat goes silent. The DVT bench runs catalog tests with the TC-08 and the StarBright meter on port 3002.
 **Depends on:** OPS-04. Hardware (`OutputWatchdog`, `HeartbeatFile`), Dvt-Hdt (`DvtBenchHost`), Api (`CommandLine.TryRun`).
@@ -8762,6 +9394,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-08 — NetBird remote access (enroll script + retry unit)
+**Summary**
+- **What it is for:** Sets up NetBird remote access so each machine can be reached from anywhere.
+- **Problem it solves:** Without remote access, engineers cannot reach units in the field; a setup key left on the device would also be a security risk.
+- **How we solve it:** A script installs NetBird, joins the unit with a one-time key under a name with its serial number, retries every minute until online, then deletes the key.
+
 **Project / folder:** `deploy/netbird-enroll.sh`, `deploy/scurebox-netbird-enroll.service`
 **Goal:** Install the NetBird WireGuard mesh client and enroll the unit with a one-off setup key, named after its eMMC serial, so that every unit can be reached from anywhere over SSH and the API. The script retries until the unit is online and deletes the key after use.
 **Depends on:** OPS-04. Consumers: OPS-12 (key on the boot partition), OPS-13 (key from the PC).
@@ -8793,6 +9430,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-09 — Branded boot splash and 10.1" display profile
+**Summary**
+- **What it is for:** The branded boot screen and the settings for the 10.1 inch touch display.
+- **Problem it solves:** Without it, the unit shows Linux text at boot and the screen may run in the wrong direction, also on both slots of the factory image.
+- **How we solve it:** A dark splash with the white sCure logo and a progress bar, plus a display profile for landscape 1920x1200. A tool adds this profile to OS images once, without changing anything else.
+
 **Project / folder:** `deploy/plymouth/scurebox/`, `deploy/display-10inch.txt`, `deploy/image/patch-display.py`, `deploy/image/test_patch_display.py`
 **Goal:** The unit boots to a dark screen with the white sCure "S" logo and a thin progress bar. No distro branding and no console text are shown. The Raspberry Pi Touch Display 2 (10.1", ILI79600, 1200x1920 native portrait, DSI-1) runs landscape at 1920x1200 on every image, including both slots of a factory A/B image.
 **Depends on:** OPS-04 (installs the theme and edits cmdline/config), OPS-12, OPS-13.
@@ -8833,6 +9475,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-10 — Browser kiosk shell (Step A: labwc + Chromium)
+**Summary**
+- **What it is for:** The browser 'kiosk' mode that shows the web UI full screen in a locked Chromium browser.
+- **Problem it solves:** In browser mode, operators could leave the app, or see an empty screen before the software is ready.
+- **How we solve it:** Run Chromium locked to the app on a small window manager, show a branded loading page until the API answers, and block ways out of the app.
+
 **Project / folder:** `deploy/kiosk/`
 **Goal:** In `--ui browser` mode, run the React UI full-screen in a locked Chromium on a minimal Wayland compositor (labwc) on tty1. A branded loading page is shown until the API answers. The operator must not be able to leave the app.
 **Depends on:** OPS-04, OPS-05 (`scurebox.service`), OPS-11.
@@ -8875,6 +9522,11 @@ Paths: version folder `/opt/app/versions/<version>/` (read-only); persistent sta
 ---
 
 ### OPS-11 — Vendored React web UI (ui/dist, served as wwwroot)
+**Summary**
+- **What it is for:** The existing React web UI, shipped as a ready-made build and served by the machine.
+- **Problem it solves:** Browser mode and tools need the web UI available without rebuilding or changing it.
+- **How we solve it:** Keep the finished web build in the repo unchanged; the API server hosts it at the main address, and it uses the same API as the native screen.
+
 **Project / folder:** `ui/dist/` (build output of the separate sCure-A React project), served by `src/SCureBox.Api`
 **Goal:** Ship the existing React kiosk UI (Step A) unchanged, as a vendored build artifact. The API host serves it at `/` with an SPA fallback. The React UI drives the machine through the same `/api` contract as the native UI and the QA tools.
 **Depends on:** OPS-01. Api (StaticUi mapping, CORS open, port 3001), Kiosk-Web (if that area rebuilds the React source).
@@ -8917,6 +9569,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-12 — OS image builder and CM5 eMMC flashing
+**Summary**
+- **What it is for:** A tool that builds the ready-to-flash sCure Box OS image and writes it to the CM5 memory.
+- **Problem it solves:** Preparing a new unit by hand is slow, and building images normally needs Linux tools or admin rights on the PC.
+- **How we solve it:** On Windows, take the official Raspberry Pi OS image, edit only its boot partition, add a first-boot script that installs everything, then flash it to the CM5 over USB.
+
 **Project / folder:** `deploy/image/` (`build-image.py`, `flash-cm5.ps1`, `unxz.py`, `README.md`), `deploy/prepare-cm5.ps1`, `deploy/install-desktop-shortcut.ps1`
 **Goal:** On a Windows PC, without WSL, Docker or admin rights for the build step, turn an official Raspberry Pi OS arm64 image into a ready-to-flash sCureBox image. Only the FAT boot partition is edited, and a first-boot script installs everything. The image is then written to the CM5 eMMC over rpiboot.
 **Depends on:** OPS-03 (payload), OPS-04, OPS-08, OPS-09.
@@ -8963,6 +9620,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-13 — Field installer (developer tool, portable bundle and GUI)
+**Summary**
+- **What it is for:** The field installer that puts a release on a unit from a PC.
+- **Problem it solves:** Updating or flashing units needed developer skills, and there was no clear proof that the unit really runs the new version.
+- **How we solve it:** One tool updates over SSH or flashes the memory, with a progress bar and a final health check. A password-protected portable bundle with a simple window lets non-developers use it on any Windows PC.
+
 **Project / folder:** `deploy/install-scurebox.ps1`, `deploy/make-installer.ps1`, `deploy/installer/`
 **Goal:** Take a release from a PC to a working unit, either by SSH update or by flashing the eMMC, with a progress bar and a final health check that only reports success when the unit runs the new version. A portable, password-gated bundle (CLI plus WPF GUI) lets non-developers do the same on any Windows 10/11 PC with no SDK or Python.
 **Depends on:** OPS-03, OPS-04, OPS-08, OPS-09, OPS-12. Api (`/api/system/version`, `/api/state` with `hwSource` and `internetOk`). Application-Platform (device unlock challenge: Supervisor ChallengeSolve).
@@ -9039,6 +9701,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-14 — Windows PC demo installer (simulator)
+**Summary**
+- **What it is for:** A Windows setup program for a demo version of the sCure Box with simulated hardware.
+- **Problem it solves:** Demos and training need the machine's screen without a real machine, on ordinary PCs without admin rights.
+- **How we solve it:** One setup .exe installs the native UI with the simulator. It needs no .NET install and no admin rights.
+
 **Project / folder:** `deploy/make-demo-installer.ps1`; consumes `src/SCureBox.Ui` (`DemoWinExe`, `Hosting/DemoMode.cs`)
 **Goal:** A single setup `.exe` that installs the native UI with the simulated firmware on any Windows 10/11 x64 PC, with no .NET and no admin rights. It is used for demos and training.
 **Depends on:** OPS-02. Native UI (DemoMode marker, `DemoWinExe` property in `SCureBox.Ui.csproj`).
@@ -9074,6 +9741,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-15 — Origin application package (.tgz for the factory A/B image)
+**Summary**
+- **What it is for:** Packages sCure Box as an application for the Origin factory image.
+- **Problem it solves:** The factory image has a read-only system and its own supervisor, so the normal installer cannot be used there.
+- **How we solve it:** Build a .tgz app package that the Origin supervisor installs; the firmware with its screen and the output watchdog run as managed services, with saved data in a separate folder.
+
 **Project / folder:** `deploy/package-origin-app.ps1` (canonical), `deploy/package-origin-app.sh`, `deploy/origin-app/`
 **Goal:** Package sCureBox as an application for the Origin supervisor on the factory image (read-only root, .NET 10 runtime installed, labwc session). The firmware with the native UI and the output watchdog become supervisor-managed services, with persistent state in `/opt/data`.
 **Depends on:** OPS-02, OPS-07. Hardware (`native/linux-arm64`: prebuilt `pio_rgb`, `pio_servo`, `lib/libusbtc08.so`). Application-Platform (`SCURE_SUPERVISOR_URL`, default `http://127.0.0.1:8080`). Dvt-Hdt (DVT runner from the sibling sCure-A repo).
@@ -9126,6 +9798,11 @@ Total about 1.9 MB.
 ---
 
 ### OPS-16 — sCure Org Key phone PWA
+**Summary**
+- **What it is for:** A small phone web app that saves the Origin organization ID to a USB drive.
+- **Problem it solves:** The sCure Box links to an organization by reading a CSV file from USB, and users need an easy way to create that file.
+- **How we solve it:** A phone app, which also works offline, writes the organization ID as the right CSV file to USB. No data leaves the phone.
+
 **Project / folder:** `pwa/`
 **Goal:** A static phone web app (installable PWA that also works offline) that writes the Origin organization ID to a USB drive as the CSV the sCure Box reads (Settings > Organization > Link Organization). No data leaves the phone.
 **Depends on:** Native UI (the machine lists `*.csv` on USB and takes the first UUID; the pattern matches SetupViewModel.OrganizationIdPattern).
@@ -9167,6 +9844,11 @@ Local serve: `python -m http.server 8080 --directory pwa`.
 ---
 
 ### OPS-17 — QA tool (shared test table, headless runner, browser tool, run-all)
+**Summary**
+- **What it is for:** The QA tool: one shared table of API tests that can run automatically or in a browser.
+- **Problem it solves:** Without shared tests, there is no quick way to prove that the simulator or a real machine follows the API contract before a release.
+- **How we solve it:** About 125 tests in one table, run by a command-line runner or a browser page against any machine; one script runs all builds and tests and gives a single PASS or FAIL.
+
 **Project / folder:** `qa/`
 **Goal:** One table of API contract tests (about 125 rows in 15 categories) that runs headless in CI-like runs (`run-qa.mjs`) and interactively in a browser (`qa-tool.html`) against any live firmware: simulation on the PC or the real machine. `run-all.ps1` chains build, unit and integration tests, a simulated API server, the headless QA and the native UI QA into one PASS/FAIL result.
 **Depends on:** OPS-01. Api (every endpoint under test), Native UI (`/api/ui/route|navigate|screenshot|tap|swipe`).
@@ -9230,6 +9912,11 @@ Local serve: `python -m http.server 8080 --directory pwa`.
 ---
 
 ### OPS-18 — Test strategy across tests/* (projects, conventions, how they run)
+**Summary**
+- **What it is for:** The plan for how automated tests are organized and run across the project.
+- **Problem it solves:** Without shared rules, each area tests differently and gaps appear between layers.
+- **How we solve it:** Fix the test projects, frameworks, helpers and conventions, so each layer is tested alone and together, without hardware, before every release.
+
 **Project / folder:** `tests/SCureBox.Domain.Tests`, `tests/SCureBox.Hardware.Tests`, `tests/SCureBox.Application.Tests`, `tests/SCureBox.Api.Tests`, `tests/SCureBox.Ui.Tests`, plus the non-.NET tests (`pwa/tests`, `deploy/image/test_patch_display.py`, `qa/`)
 **Goal:** Define how the automated tests are organised and run, so that every layer is proven by itself and together, with no hardware, before any release. Each area writes its own test cases; this ticket fixes the projects, frameworks, fixtures and conventions they share.
 **Depends on:** OPS-01, OPS-17. All src areas.
@@ -9343,6 +10030,11 @@ Cross-cutting server rules (every ticket):
 ---
 
 ### CLOUD-01 — Apps Script project, manifest, clasp deploy and the build-reload handshake
+**Summary**
+- **What it is for:** The base Google Apps Script project that hosts the sCure Cloud portal as a web page anyone can reach, plus the steps to publish a new version.
+- **Problem it solves:** Without it there is no portal at all, machines could not post data without a login, and open browser tabs would not know a newer version was published.
+- **How we solve it:** Set up the project settings and the list of files to upload, publish to one fixed address, and keep a build number in both server and page so an old tab shows a Reload banner.
+
 **Project / folder:** cloud/google/appsscript.json, .clasp.json, .claspignore, Code.gs (`PORTAL_BUILD`, `setup`), Page.html (`PORTAL_BUILD`)
 **Goal:** Create the Apps Script project that hosts the portal as a public web app executing as the deployer, define the push allow-list and the deploy procedure, and give open browser tabs a way to learn that a newer build was deployed.
 **Depends on:** none
@@ -9374,6 +10066,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** cloud/google/appsscript.json 1-17; .clasp.json; .claspignore; Code.gs 734, 1505-1510; Page.html 611, 1167-1169, 1459-1461; .claude/skills/scure-cloud-ux/SKILL.md 10; build_errors.py 1-9.
 
 ### CLOUD-02 — Configuration and secrets (script properties, Secrets.gs fallback, build_secrets.py)
+**Summary**
+- **What it is for:** One place that reads all passwords, machine keys and other settings the portal needs.
+- **Problem it solves:** Secrets could leak into git, and each part of the code could read settings in a different way.
+- **How we solve it:** Read each value from the project's private settings first, else from a generated Secrets file that is never committed. A small script builds that file from a local text file and never prints the values.
+
 **Project / folder:** cloud/google/Code.gs (`cfg_`, `googleCfg_`, `execUrl_`, `ownerEmail_`), build_secrets.py, Secrets.gs (generated)
 **Goal:** One place that resolves every secret and setting: Apps Script script properties win, a generated `Secrets.gs` is the fallback, and nothing secret is ever in git.
 **Depends on:** CLOUD-01
@@ -9402,6 +10099,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 24-33, 47-58, 1166-1182; build_secrets.py 1-43; .gitignore 35-39.
 
 ### CLOUD-03 — Google Sheets storage, schema and in-place migrations
+**Summary**
+- **What it is for:** The storage layer: one Google Sheet with 12 tabs that holds all portal data.
+- **Problem it solves:** Without it there is nowhere to save data, old sheets would break after changes, and long text does not fit in one cell.
+- **How we solve it:** Open or create the sheet automatically, make sure every tab and header exists, upgrade older tabs in place without losing data, and split long text over several cells.
+
 **Project / folder:** cloud/google/Code.gs (`book_`, `sheet_`, chunk helpers, `now_`, `json_`)
 **Goal:** Open (or create) the single data spreadsheet, guarantee every sheet with its header exists, migrate older sheets in place without moving data, and provide the "long value over several cells" convention.
 **Depends on:** CLOUD-02
@@ -9425,6 +10127,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 9-19, 39, 60-108, 608; test_code.cjs 4-33, 81-85, 109-113, 494-506.
 
 ### CLOUD-04 — Request routing (doGet / doPost) and the page↔server call map
+**Summary**
+- **What it is for:** The front door of the server: it decides where each incoming request goes and lists every server function the page calls.
+- **Problem it solves:** Apps Script has limits (no paths, no headers, no error codes), so the page and machines need one clear, agreed way to talk to the server.
+- **How we solve it:** Route GET and POST requests by their parameters and the kind of message, check the right key for machines or the DVT tool, and swap the page's network calls for a small adapter that calls server functions.
+
 **Project / folder:** cloud/google/Code.gs (`doGet`, `doPost`), Page.html (first `<script>`: the Apps Script shim)
 **Goal:** Route every incoming HTTP request and define the exact list of server functions the page calls, through a `window.fetch` shim that keeps the page's REST-style code while calling `google.script.run`.
 **Depends on:** CLOUD-03, CLOUD-09
@@ -9478,6 +10185,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 1-8, 146-202, 1137-1145; Page.html 1-118.
 
 ### CLOUD-05 — Machine sync endpoint: snapshot storage and command delivery/ack (contract with PLAT-10)
+**Summary**
+- **What it is for:** The endpoint each sCure Box calls every few seconds to send its current state and pick up waiting commands.
+- **Problem it solves:** Without it the portal would not know each machine's state, and changes made on the site could not reach the machine reliably.
+- **How we solve it:** Find the machine by its key, save its latest snapshot, and return its queued commands. A command is sent again on every sync until the machine confirms it.
+
 **Project / folder:** cloud/google/Code.gs (`doPost` machine branch, `machines_`, `writeMachine_`, `commands_`)
 **Goal:** Accept the periodic snapshot each CureBox posts, store it as that machine's latest state, merge its alert log, and hand back the data-only commands queued for it, marking them delivered and acknowledged.
 **Depends on:** CLOUD-03, CLOUD-04, CLOUD-06
@@ -9506,6 +10218,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 39-44, 110-143, 170-202; sCureBox-CS src/SCureBox.Application/Platform/CloudSyncAgent.cs 110-158, 301-350, 400-460 (machine side, PLAT-10).
 
 ### CLOUD-06 — Machine alert log storage and the "Errors today" query
+**Summary**
+- **What it is for:** Stores each machine's error and alert history and gives the Errors screen today's and still-active alerts.
+- **Problem it solves:** Without it, alerts would be lost or saved twice on every sync, and staff could not see what went wrong today.
+- **How we solve it:** Save each alert once by machine, code and start time, update it when it clears, delete old ones after 30 days, and add the error title and repair video to each one.
+
 **Project / folder:** cloud/google/Code.gs (`alerts_`, `saveAlerts_`, `portalAlerts`)
 **Goal:** Keep each machine's alert history (raised / cleared transitions) in its own sheet, deduplicated across syncs, and answer the Errors view with today's and still-active alerts enriched with the registry title and repair video.
 **Depends on:** CLOUD-03, CLOUD-07, CLOUD-09
@@ -9529,6 +10246,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 44, 182-185, 204-257.
 
 ### CLOUD-07 — Error registry for the portal (build_errors.py → ErrorRegistry.gs)
+**Summary**
+- **What it is for:** Gives the portal the title and optional repair video of every error code.
+- **Problem it solves:** Without it the Errors screen would show bare numbers, or words different from what the machine shows.
+- **How we solve it:** A script reads the machine's master error list and writes a small file the server uses. Only safe web links are kept as videos.
+
 **Project / folder:** cloud/google/build_errors.py, ErrorRegistry.gs, Code.gs (`errorDef_`)
 **Goal:** Give the server the title and optional repair-video link of every error code, generated from the firmware's master `errors.json`, so the Errors view shows the same wording the machine uses.
 **Depends on:** CLOUD-01; DOM-02 (errors.json format)
@@ -9551,6 +10273,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** build_errors.py 1-41; ErrorRegistry.gs 1-2; Code.gs 253-257.
 
 ### CLOUD-08 — Cure report storage and serving
+**Summary**
+- **What it is for:** Stores the HTML cure report each machine uploads after a finished run and shows it to signed-in users.
+- **Problem it solves:** Without it, staff could not see or download cure reports remotely, and reports deleted on the machine would stay online.
+- **How we solve it:** Save or replace reports by run, keep the newest 25 per machine, delete what the machine deletes, and open a report as a page or download only for signed-in users.
+
 **Project / folder:** cloud/google/Code.gs (`reports_`, `saveReport_`, `deleteReports_`, `reportHtml_`, `serveReport_`)
 **Goal:** Store the self-contained HTML cure report each machine uploads after a finished run, mirror deletions done on the machine, keep the newest 25 per machine, and serve a report to signed-in browsers as a page or a download.
 **Depends on:** CLOUD-03, CLOUD-04, CLOUD-05, CLOUD-09; PLAT-14 (report content)
@@ -9576,6 +10303,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 43, 175-176, 259-331.
 
 ### CLOUD-09 — Sessions, shared-password sign-in and the role gate
+**Summary**
+- **What it is for:** Handles portal sign-in sessions and checks each person's role before every action.
+- **Problem it solves:** Without it anyone could see or change data, and there would be no record of who did what.
+- **How we solve it:** Give each sign-in a token that lasts 6 hours, allow a shared password only until Google sign-in is set up, check the role (Viewer, Service, Admin) on every call, and log refusals and actions.
+
 **Project / folder:** cloud/google/Code.gs (`newSession_`, `authed_`, `need_`, `portalLoginMode`, `portalLogin`, `portalMe`, `portalLogout`)
 **Goal:** Issue and check portal session tokens, support the shared password until Google sign-in is configured, and gate every action by role with a uniform refusal and audit trail.
 **Depends on:** CLOUD-02, CLOUD-11 (users / audit helpers)
@@ -9604,6 +10336,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 41, 1147-1165, 1224-1269, 1336-1349.
 
 ### CLOUD-10 — Google account sign-in (OAuth code flow in a popup, polled by the page)
+**Summary**
+- **What it is for:** Lets people sign in to the portal with their Google account.
+- **Problem it solves:** A shared password cannot tell people apart, and the portal must only let in people on its list.
+- **How we solve it:** Open Google sign-in in a new window, let Google send the user back to the portal, check the account details and the people list, and let the waiting page pick up the session by asking again and again.
+
 **Project / folder:** cloud/google/Code.gs (`portalLoginStart`, `portalLoginPoll`, `googleCallback_`)
 **Goal:** Let people sign in with their Google account: the page opens Google in a new window, Google returns to the web app's `/exec`, the server swaps the code for an ID token, checks the claims and the people list, and the waiting page collects a session token by polling.
 **Depends on:** CLOUD-02, CLOUD-04, CLOUD-09, CLOUD-11
@@ -9629,6 +10366,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 1163, 1271-1334.
 
 ### CLOUD-11 — People list, owner / last-admin rules and the audit log
+**Summary**
+- **What it is for:** Keeps the list of people allowed to use the portal, each with a role, and a log of important actions.
+- **Problem it solves:** Without it you could not control who gets in, someone could lock everyone out, and nobody could check who changed what.
+- **How we solve it:** Store people and roles in a sheet, always keep the owner as admin, refuse removing the last admin, and log sign-ins, refusals, role changes and service actions.
+
 **Project / folder:** cloud/google/Code.gs (`users_`, `userOf_`, `lastAdmin_`, `audit_`, `portalUsers`, `portalUserSave`, `portalUserRemove`, `portalAudit`)
 **Goal:** Keep the list of who may use the portal with a role each, guarantee the list can never lock everyone out, and record every sign-in, refusal, role change and service/admin action.
 **Depends on:** CLOUD-03, CLOUD-09
@@ -9657,6 +10399,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 1160-1222, 1351-1426.
 
 ### CLOUD-12 — Machines API for the page and the data-only command queue
+**Summary**
+- **What it is for:** Gives the page the list of machines with their latest state, and lets service users send data to a machine.
+- **Problem it solves:** Without it the page could not show machines, and there would be no safe way to send programs or test prints.
+- **How we solve it:** Return every machine's snapshot, online flag, pending commands, reports and NetBird status. Allow only four data-only commands (add or delete a program, send or delete a print), never hardware actions.
+
 **Project / folder:** cloud/google/Code.gs (`portalMachines`, `portalCommand`)
 **Goal:** Give the page every machine's latest snapshot, online flag, pending command count, report list and NetBird status, and let service users queue the four data-only commands (programs, simulated prints).
 **Depends on:** CLOUD-05, CLOUD-08, CLOUD-09, CLOUD-13
@@ -9679,6 +10426,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 42, 1463-1503; Page.html 2440-2497.
 
 ### CLOUD-13 — NetBird reachability status per CureBox (read-only)
+**Summary**
+- **What it is for:** Shows on each machine card if the sCure Box is connected to the NetBird remote-access network.
+- **Problem it solves:** Without it you cannot tell a machine that syncs but cannot be reached remotely from one that has no power or network.
+- **How we solve it:** Ask the NetBird service for its list of devices (read-only), keep it for 30 seconds, and match each machine to its device, picking the connected or most recent one.
+
 **Project / folder:** cloud/google/Code.gs (`netbirdStatus_`)
 **Goal:** Show on each machine card whether the CureBox is connected to the NetBird mesh and when NetBird last saw it, so a person can tell "syncing but not remotely reachable" from "no power / no network".
 **Depends on:** CLOUD-02, CLOUD-12; OPS-08 (enrolment)
@@ -9698,6 +10450,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 29-31, 1428-1461.
 
 ### CLOUD-14 — DVT tool ingest: runs, raw files, deletions, CureBox list and the catalog
+**Summary**
+- **What it is for:** Receives DVT test campaign data from the DVT tool and the machine runners: test runs, raw files, deletions and the test catalog.
+- **Problem it solves:** Without it test results and measurement files would not be stored centrally, and an old runner could put an older test list back.
+- **How we solve it:** Accept posts signed with the DVT key, save runs and files (files in Google Drive), refuse catalogs older than the stored one, and apply one-time test renames to existing data.
+
 **Project / folder:** cloud/google/Code.gs (`saveDvtRun_`, `dvtFolder_`, `saveDvtFile_`, `dvtFiles_`, `deleteDvtRuns_`, `dvtMachineNames_`, `saveDvtCatalog_`, `catalogCmp_`, `dvtApplyRenames_`, `dvtCatalog_`)
 **Goal:** Receive the DVT campaign data posted with the DVT key by the DVT tool and the CureBox runners: recorded runs (upsert), raw measurement files into Drive, deletions, the list of CureBoxes, and the test catalog with version guard and one-time test renames.
 **Depends on:** CLOUD-03, CLOUD-04, CLOUD-18 (`bumpVer_`)
@@ -9729,6 +10486,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 14-22, 154-169, 333-511, 560-565.
 
 ### CLOUD-15 — DVT read API for the page (portalDvt, detail, sample files, raw file download)
+**Summary**
+- **What it is for:** Gives the DVT, Overview, Race and Compare screens all their data, plus sample CSV text and raw files.
+- **Problem it solves:** Without it the screens have no data, and sending all test details on every refresh would be too slow.
+- **How we solve it:** Send everything in one call but leave out the big test details, which the page loads separately only when they change. Hand out files only to signed-in users, within size limits.
+
 **Project / folder:** cloud/google/Code.gs (`portalDvt`, `stripDetail_`, `portalDvtDetail`, `portalDvtFiles`, `serveDvtFile_`, `dvtRuns_`, cache helpers)
 **Goal:** Serve everything the DVT, Overview, Race and Compare views need in one polled call, keep it small by splitting off the per-test detail, and hand out sample CSV text and raw files to signed-in users.
 **Depends on:** CLOUD-14, CLOUD-16, CLOUD-17, CLOUD-09
@@ -9755,6 +10517,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 334-343, 513-603, 662-685, 1123-1134.
 
 ### CLOUD-16 — DVT units registry and the race between machines
+**Summary**
+- **What it is for:** Stores facts about each test unit in the campaign (who builds it, versions, planned dates) and the race between machines.
+- **Problem it solves:** Without it there is no shared place for unit plans, and the Race screen has no start time or list of units.
+- **How we solve it:** Save unit details with simple checks (valid names, dates as YYYY-MM-DD), and store only the race start time and unit list. The page works out the ranking and clocks.
+
 **Project / folder:** cloud/google/Code.gs (`DVT_UNIT_COLS`, `dvtUnits_`, `portalDvtUnitSave`, `dvtUnitRow_`, `raceGet_`, `portalRaceSet`)
 **Goal:** Store, per DVT unit of the campaign, who integrates it, its revisions and planned dates; and store the two facts of the race (official start and participating units) — ranking and clocks are computed in the page.
 **Depends on:** CLOUD-03, CLOUD-09, CLOUD-18 (`bumpVer_`)
@@ -9777,6 +10544,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 605-660, 687-722.
 
 ### CLOUD-17 — DVT runner protocol: hello, long-poll for work, command channel, progress updates
+**Summary**
+- **What it is for:** The way the test runner on each sCure Box gets test requests from the portal and reports its progress back.
+- **Problem it solves:** Without it tests requested on the site would not reach the machine fast, progress would not show, and tests cut by a restart would look stuck.
+- **How we solve it:** The runner says hello, waits for work with held requests and cheap cache checks, and sends progress, questions and results. The portal only passes messages; the machine still needs Start pressed on its screen.
+
 **Project / folder:** cloud/google/Code.gs (`dvtRunnerHello_`, `dvtCloseOrphans_`, `dvtNext_`, `dvtNextFull_`, `dvtEvents_`, `dvtUpdate_`, `runners_`, `touchRunner_`, `dvtRequests_`, `writeRequest_`, `pruneRequests_`, `dvtReadiness_`, `dvtWatching_`)
 **Goal:** Relay DVT test requests to the runner on each CureBox (`DVT/runner/dvt-runner.cjs`) cheaply and quickly, and record its progress, prompts, steps, results and live machine state — the portal only queues and relays; the machine's own interlocks and the at-machine Start confirmation stay in charge.
 **Depends on:** CLOUD-04, CLOUD-14, CLOUD-18; DVT-05 (RemoteConfirm at the machine)
@@ -9809,6 +10581,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 724-963; DVT/runner/dvt-runner.cjs 127-166, 449-450 (client).
 
 ### CLOUD-18 — DVT actions from the site and change notification (request, cancel, answer, acted, approve, long poll)
+**Summary**
+- **What it is for:** The actions people take on DVT tests from the site (request, stop, answer, confirm, approve) and the fast 'something changed' alert.
+- **Problem it solves:** Without it staff could not drive tests remotely, wrong or duplicate requests could be queued, and open screens would be slow to update.
+- **How we solve it:** Check roles and rules before each action, skip duplicates, keep a change counter, and let pages and runners wait on it so they update within about a second. Requests never start hardware by themselves.
+
 **Project / folder:** cloud/google/Code.gs (`portalDvtRequest`, `dvtOpenOthers_`, `portalDvtCancel`, `portalDvtActed`, `portalDvtAnswer`, `portalDvtApprove`, `portalDvtWait`, `waitFor_`, `bumpVer_`, `bumpCmd_`, `bump_`)
 **Goal:** Let service users queue DVT tests on a CureBox, stop them, answer the runner's questions and confirm manual steps; let admins approve hand-made electrical-safety tests; and push "something changed" to open DVT tabs and runners within a second through version counters and long polls.
 **Depends on:** CLOUD-09, CLOUD-14, CLOUD-17
@@ -9842,6 +10619,11 @@ Cross-cutting server rules (every ticket):
 **Reference (source):** Code.gs 558, 894-917, 965-1121; Page.html 2499-2531.
 
 ### CLOUD-19 — Test harness for the server and the page (Node vm fakes, headless-browser stubs)
+**Summary**
+- **What it is for:** The automated tests for the portal server and page.
+- **Problem it solves:** Without tests, changes could break the portal, and testing against real Google services is slow and risky.
+- **How we solve it:** Run the server code on a computer with fake copies of every Google service, and test the page in a headless browser with stand-in server functions. No network is used.
+
 **Project / folder:** cloud/google/test_code.cjs, test_page.py, test_*.cjs (browser tests), conventions
 **Goal:** Test Code.gs locally without Google by running it in a Node `vm` against in-memory fakes of every Apps Script service, and give the page tests one shared way to stand in for `google.script.run`.
 **Depends on:** CLOUD-01..18; UI ranges CLOUD-20..59 own the page assertions
@@ -9877,6 +10659,11 @@ Screenshots in the folder (`run-window.png`, `live-simulation.png`, `simulation-
 ---
 
 ### CLOUD-20 — Page shell, server-call shim and API wrapper
+**Summary**
+- **What it is for:** The base of the sCure Cloud web page: a small layer that lets the page talk to the Google server, plus shared helpers for messages and time formats.
+- **Problem it solves:** The page code is written like a normal website, but Google Apps Script only allows its own call method. Without a bridge the views could not get data or be tested.
+- **How we solve it:** A small script replaces the browser's fetch so each web address is turned into the matching server call, with the sign-in token added. Errors like 'not signed in' or 'not allowed' are handled in one place.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** The page talks to Apps Script only through `google.script.run`, but the app code calls `fetch('/api/...')`. A small shim at the top of `<head>` replaces `window.fetch` and turns REST-like paths into `google.script.run` calls. It adds the session token and returns a fetch-like response with `status`, `ok` and `json()`. This keeps the view code independent of Apps Script, so the browser tests can stub `google.script.run`.
 **Depends on:** CLOUD-01..19 (server)
@@ -9930,6 +10717,11 @@ Screenshots in the folder (`run-window.png`, `live-simulation.png`, `simulation-
 **Reference (source):** Page.html 1-121, 406-436, 586-590, 628-630, 682-694; Code.gs 1137-1144 (doGet).
 
 ### CLOUD-21 — Design tokens, theme and shared components
+**Summary**
+- **What it is for:** The shared look of the portal: colors, fonts, light and dark mode, and common pieces like cards, pills, tiles, tables and banners.
+- **Problem it solves:** Without one shared style, each screen would look different, status colors would get lost, and dark mode would break.
+- **How we solve it:** All colors are defined once as named values for light and dark mode. Every screen reuses the same small set of building blocks. Green, red and amber mean status; one blue color means action.
+
 **Project / folder:** cloud/google/Page.html (`<style>`)
 **Goal:** A calm, neutral look in which the status colours (green, red, amber) stand out, with a single cobalt accent for actions and progress. The theme follows the system light or dark setting. All views share the same small set of components: card, pill, stat, tile, banner, badge, table and fold.
 **Depends on:** CLOUD-20
@@ -9982,6 +10774,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 125-301, 402.
 
 ### CLOUD-22 — Sign-in screen and the "who" area of the header
+**Summary**
+- **What it is for:** The sign-in screen and the top-right area that shows who is signed in, their role, a People button for admins and Sign out.
+- **Problem it solves:** The portal must not show data to people who are not signed in, and users need to see who they are and be able to sign out.
+- **How we solve it:** A sign-in card is shown until there is a session, using either a shared password or Sign in with Google in a new window while the page checks back. After sign-in the header shows name, role and buttons.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show a sign-in card until a session exists. It works in one of two modes: a shared password (before Google sign-in is configured) or "Sign in with Google" (a new window, plus polling). After sign-in, the header shows who is signed in, their role pill, a People button for admins and Sign out.
 **Depends on:** CLOUD-20, CLOUD-21, CLOUD-01..19 (server: `portalLoginMode`, `portalLogin`, `portalLoginStart`, `portalLoginPoll`, `portalMe`, `portalLogout`)
@@ -10024,6 +10821,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 159-173, 296, 438-507; Code.gs 1259-1350.
 
 ### CLOUD-23 — Section navigation, routing, CureBox chooser and search
+**Summary**
+- **What it is for:** The main tab bar (Overview, Machine, DVT, Race, Compare, Errors) and the CureBox chooser with a search box.
+- **Problem it solves:** Users need an easy way to move between screens and to pick which machine they are looking at, without losing their choice.
+- **How we solve it:** One function draws the current screen. Icon tabs switch screens. A machine chooser and search box appear only on screens about one machine, and the chosen machine is remembered in the browser.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** A single `render()` dispatcher. It draws a row of six icon tabs (Overview, Machine, DVT, Race, Compare, Errors), plus People from the header. Under the tabs it shows a CureBox chooser with a search field, but only for the views that are about one CureBox. Routing is in-memory state; there is no URL hash.
 **Depends on:** CLOUD-20, CLOUD-21, CLOUD-22
@@ -10071,6 +10873,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 175-177, 190-194, 603-608, 1943-2125.
 
 ### CLOUD-24 — Data loading, polling cadence, busy guard, live clocks and the PORTAL_BUILD reload banner
+**Summary**
+- **What it is for:** Keeps the page data fresh: it reloads machine and test data on a timer and shows a banner when the portal was updated.
+- **Problem it solves:** Data goes stale if not refreshed, but a refresh while the user is typing would wipe their input. Users with an old page open might use outdated code.
+- **How we solve it:** The page checks for new data every few seconds, skips the refresh while the user is typing or editing, uses a live wait on the DVT tab, ticks clocks every second, and shows a Reload banner when the version changed.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Keep the page fresh without ever re-rendering under the user's hands. It polls machines every 10 s, polls DVT data on the DVT-related tabs, and long-polls on the DVT tab. When the server was redeployed since the tab was opened, it shows a "This page is out of date" banner with a Reload button.
 **Depends on:** CLOUD-20, CLOUD-23, CLOUD-01..19 (server: `portalMachines`, `portalDvt`, `portalDvtWait`, `PORTAL_BUILD`)
@@ -10111,6 +10918,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 407-419, 592-601, 610-616, 657-667, 1459-1461, 1804, 1935-1941, 2500-2531; Code.gs 734.
 
 ### CLOUD-25 — Overview: per-unit model, "what now" banner and KPI tiles
+**Summary**
+- **What it is for:** The start screen: a summary of the whole DVT test campaign, with one 'what now' message and key numbers.
+- **Problem it solves:** Managers and engineers need to see at a glance how far testing is and what needs attention, without reading every test.
+- **How we solve it:** The page works out each unit's tests, results and time left, then shows one clear message with a button (for example failed tests or a test running), four main numbers and more numbers under a fold.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** The landing view summarises the whole DVT campaign. It starts with one sentence and one button for what needs attention now, then shows four headline numbers and eleven more numbers under a fold. It needs no CureBox chooser.
 **Depends on:** CLOUD-23, CLOUD-24, CLOUD-01..19 (server: `portalDvt`)
@@ -10175,6 +10987,11 @@ Classes: `.card`, `.pill(.on|.off|.bad|.warn)`, `.badge(.safety)`, `.stat`, `.dv
 **Reference (source):** Page.html 199-212, 693-703, 720, 1338-1384, 1424-1487, 1497-1502.
 
 ### CLOUD-26 — Overview: "Machines and integrators" unit table (editable registry)
+**Summary**
+- **What it is for:** A table on the Overview with one row per test unit: its machine, integrator, hardware and firmware versions, planned dates, progress, status and time left.
+- **Problem it solves:** The team needs one place to track each unit and to record who owns it and its plan dates, and to see units that are late.
+- **How we solve it:** Each row has small edit fields that save by themselves when the user leaves the field. A failed save shows a red outline. Late units get a 'Delayed' mark.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** One row per DVT unit. Each row shows the CureBox it runs on, editable registry fields (integrator, HW revision, firmware, planned start and end), progress, status and remaining time. A field saves itself when the user leaves it.
 **Depends on:** CLOUD-25, CLOUD-01..19 (server: `portalDvtUnitSave`, sheet `dvt_units` with columns unit, machine, integrator, hwRev, fwVersion, bomRev, planStart, planEnd, note)
@@ -10205,6 +11022,11 @@ Each `td` has `data-l=<label>` for the phone card layout. The muted footnote rea
 **Reference (source):** Page.html 1462-1473, 1488-1490, 1508-1516; Code.gs 606-665.
 
 ### CLOUD-27 — Overview: Gantt chart (inline SVG)
+**Summary**
+- **What it is for:** A Gantt chart on the Overview that shows each unit's tests in a row, sized by expected time and colored by result.
+- **Problem it solves:** Numbers alone do not show how much work is left per unit or where failures are along the plan.
+- **How we solve it:** The page draws a simple chart with one bar per test, colored pass, fail, running and so on, with a time scale. Clicking a unit opens one line per test.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Draw each unit's tests end to end, scaled by their estimated minutes and coloured by verdict. Clicking a unit row expands one sub-row per test.
 **Depends on:** CLOUD-25
@@ -10232,6 +11054,11 @@ Each `td` has `data-l=<label>` for the phone card layout. The muted footnote rea
 **Reference (source):** Page.html 1338-1341, 1386-1422, 1491-1494, 1503-1507.
 
 ### CLOUD-28 — Machine view: machine header with live state and the NetBird pill
+**Summary**
+- **What it is for:** The top of each machine card in the Machine screen: name, online or offline, last sync, NetBird remote-access status and live numbers like chamber temperature and lamp and heater hours.
+- **Problem it solves:** Users need to know if a machine is alive, syncing and reachable for remote access, and see its basic state.
+- **How we solve it:** Each machine gets a card header with colored status pills, the time since last sync, a NetBird pill that explains what is down, and three live figures.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** In the Machine view, each CureBox (all of them, or the chosen one) is one card. Its header shows the name, an online/offline pill, the last sync time and pending command count, a NetBird pill, and three live figures (chamber temperature, LED 405 hours, heater hours).
 **Depends on:** CLOUD-21, CLOUD-23, CLOUD-24, CLOUD-01..19 (server: `portalMachines`, `netbirdStatus_`), PLAT-10 (snapshot content), OPS-08 / PLAT-09 (NetBird on the unit)
@@ -10265,6 +11092,11 @@ The sections in CLOUD-29 follow in the same card.
 **Reference (source):** Page.html 2127-2138, 2158-2195; Code.gs 1428-1484.
 
 ### CLOUD-29 — Machine view: programs, catalog, send print, recent prints, cure runs and reports
+**Summary**
+- **What it is for:** The rest of the machine card: work programs, the built-in program list, sending a test print, recent prints, and cure runs with their reports.
+- **Problem it solves:** Users need to manage programs and prints and get cure reports from far away, without standing at the machine.
+- **How we solve it:** Each change is sent as a simple command that the machine picks up on its next sync. Tables list programs, prints and runs, with links to view or download uploaded reports. NFC tag input is checked first.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** The rest of the machine card. The user's work programs can be edited and deleted. The built-in catalog is read-only. A simulated print can be sent, with an optional NFC tag. Recent prints can be deleted. The last cure runs link to their uploaded reports. Every change is a data-only command that the machine picks up on its next sync.
 **Depends on:** CLOUD-28, CLOUD-01..19 (server: `portalCommand`, `COMMAND_TYPES = upsert_program | delete_program | send_print | delete_print`, `doGet ?report=`), CLOUD-40..59 (program editor: `openEditor`, `stepRow`, `stepErrors`, `saveProgram`), PLAT-10 (machine applies commands, uploads reports), PLAT-14 (report HTML)
@@ -10311,6 +11143,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 2140-2240, 2456-2498; Code.gs 39-43, 1486-1503.
 
 ### CLOUD-30 — Race view: DVT race against the clock
+**Summary**
+- **What it is for:** A fun 'race' screen where test units compete to finish all their DVT tests, with ranking, medals, clocks and time per test.
+- **Problem it solves:** It is hard to see which unit is fastest, how fast each one works and when each will finish.
+- **How we solve it:** The page works out time, pace and expected finish per unit, ranks them, and shows per-test times against the estimate. Service users can start or reset an official race and choose which units take part.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** A playful view in which every DVT unit races to finish all its owed runs. It shows a ranking with medals, a ticking clock per unit, pace, an ETA, per-test times against the estimate, the fastest unit per test, and a winner banner. Service users can set an official start and choose who takes part.
 **Depends on:** CLOUD-24, CLOUD-25 (`dvtUnitModel`), CLOUD-01..19 (server: `portalRaceSet`, `raceGet_` → `DVT.race = {start, units}`, stored in script property RACE)
@@ -10373,6 +11210,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 182-189, 1796-1941; Code.gs 690-728.
 
 ### CLOUD-31 — Compare: results table across units or across the runs of one unit
+**Summary**
+- **What it is for:** The Compare screen: a table that shows the measured values of one test side by side, across units or across runs of one unit.
+- **Problem it solves:** Without it, finding a unit or run whose results are far from the others means reading raw data by hand.
+- **How we solve it:** Each value is compared to a chosen reference against a tolerance in percent. Values that are off are tinted amber or red, with range and spread shown per row.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show the recorded values of one test (and variant) side by side. The columns are either the units (latest run, or the mean of repetitions) or the runs of one unit. Each value is compared with a reference column against a tolerance, and cells that stand out are tinted amber or red.
 **Depends on:** CLOUD-24, CLOUD-01..19 (server: `portalDvt` runs with `values` and `files`)
@@ -10426,6 +11268,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 1519-1586, 1687-1737, 1766-1783.
 
 ### CLOUD-32 — Compare: "All units, all tests" matrix
+**Summary**
+- **What it is for:** A Compare mode that shows a grid of every test against every unit with its result.
+- **Problem it solves:** Users need to quickly spot tests that passed on one unit but failed on another.
+- **How we solve it:** Each cell shows the result. Rows where units finished with different results are highlighted with a 'units differ' mark, and clicking a row opens that test's detailed comparison.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** A grid of every catalog test against every unit, showing each verdict. Rows where the units finished with different results are highlighted, and clicking a row opens that test's comparison.
 **Depends on:** CLOUD-25 (`dvtUnitModel`), CLOUD-31
@@ -10453,6 +11300,11 @@ DOM hooks: `[data-edit="i:id"]`, `[data-del]`, `[data-delprint]`, `[data-new=i]`
 **Reference (source):** Page.html 1661-1685, 1691-1692, 1773.
 
 ### CLOUD-33 — Compare: curve overlay from the raw sample files
+**Summary**
+- **What it is for:** A chart in Compare that draws the measured curves from the raw data files of the compared units on top of each other.
+- **Problem it solves:** Single numbers can hide differences in how a measurement behaves over time.
+- **How we solve it:** The page loads the CSV files from the server, reads them, and draws one line per unit or run on one chart. The user picks the measurement and column; temperature charts get guide lines.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Overlay the measured curves (CSV sample files) of the compared columns on one SVG chart. The user picks the measurement kind and the Y column. Temperature charts get dashed guide lines at 30, 40, 50 and 60 °C.
 **Depends on:** CLOUD-31, CLOUD-01..19 (server: `portalDvtFiles(token, ids)` → `{ok, files:{id:{name,text}}}`)
@@ -10491,6 +11343,11 @@ The card is hidden when there are no CSV files.
 **Reference (source):** Page.html 1524-1527, 1588-1658, 1738-1765, 1782-1793.
 
 ### CLOUD-34 — Phone layout (≤ 640 px)
+**Summary**
+- **What it is for:** The phone layout of the portal for screens 640 pixels wide or less.
+- **Problem it solves:** On a phone, wide tables, small buttons and top tabs are hard to use and make the page scroll sideways.
+- **How we solve it:** The tabs move to a bottom bar of icons, tables turn into stacked cards, buttons and fields get bigger, and nothing scrolls sideways.
+
 **Project / folder:** cloud/google/Page.html (`@media (max-width:640px)`)
 **Goal:** One comfortable, thumb-friendly column on a phone. The section tabs become a bottom bar of six icons. Tables become stacked cards. Controls are at least 44px tall with 16px text, and nothing scrolls sideways.
 **Depends on:** CLOUD-21, CLOUD-23, CLOUD-25..33
@@ -10543,6 +11400,11 @@ In addition:
 **Reference (source):** Page.html 173, 190-194, 302-400; test_phone.cjs 57-241.
 
 ### CLOUD-35 — Headless browser tests for the shell and the views
+**Summary**
+- **What it is for:** Automatic browser tests that check the portal screens work.
+- **Problem it solves:** Without tests, changes could break screens or numbers without anyone noticing, and testing on the real Google server is slow.
+- **How we solve it:** The tests open the page in a hidden Chrome with fake server answers, click and type like a person, and check each result. They also check the phone layout.
+
 **Project / folder:** cloud/google/test_overview.cjs, test_race.cjs, test_compare.cjs, test_phone.cjs
 **Goal:** Prove the views without Apps Script by loading `Page.html` from `file://` in headless Chrome (puppeteer-core) with a stub `google.script.run`. Each test drives the UI like a person and prints `ok:` per check, failing on any page script error.
 **Depends on:** CLOUD-20..34
@@ -10583,6 +11445,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 ---
 
 ### CLOUD-40 — Errors view: "Errors today" (alerts log)
+**Summary**
+- **What it is for:** The Errors screen in the sCure Cloud portal. It lists every error raised today on any CureBox, plus older errors that are still active.
+- **Problem it solves:** Without it, service staff cannot see in one place which machines had errors today, what each error means, or how long it lasted.
+- **How we solve it:** The page asks the server for today's alerts and shows them in a table with a clear title, an optional repair video link, and an active or cleared status. It can be filtered by machine and search.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show every alert raised since local midnight on any CureBox, plus any older alert that is still active, with its registry title, an optional repair-video link and how long it lasted. This is the portal's read-only alerts log. It is filtered by the CureBox chooser and the search box.
 **Depends on:** CLOUD-20..39 (shell), CLOUD-41, server `portalAlerts`
@@ -10632,6 +11499,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 603-655 (state, CODE_TITLES, loadErrors, errorsCard), 1981, 1988, 2022-2023; Code.gs 203-258 (alerts_, saveAlerts_, portalAlerts, errorDef_); test_errors_page.cjs 1-62.
 
 ### CLOUD-41 — Error registry feed for the portal (ErrorRegistry.gs + build_errors.py)
+**Summary**
+- **What it is for:** A small build script that copies the machine's error list (titles and repair videos) into the portal code.
+- **Problem it solves:** Without it, the portal would show bare error numbers, or its titles would drift from the ones the machine uses.
+- **How we solve it:** A Python script reads errors.json and writes a generated file with each code's title and video link. The team runs it after editing errors, then deploys the portal.
+
 **Project / folder:** cloud/google/ErrorRegistry.gs, cloud/google/build_errors.py
 **Goal:** Give the portal the same error titles and repair-video links as the firmware's error registry, without a network fetch. A build script turns `errors.json` into a committed `.gs` constant that `portalAlerts` reads.
 **Depends on:** DOM-02 (error registry, errors.json); CLOUD-40 consumes it.
@@ -10665,6 +11537,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** build_errors.py 1-50; ErrorRegistry.gs 1-2; Code.gs 253-258.
 
 ### CLOUD-42 — DVT data on the page: loading, detail cache, long poll, refresh cadence, stale-build banner
+**Summary**
+- **What it is for:** The data loading behind the DVT (design verification testing) tab of the portal.
+- **Problem it solves:** The tab must show changes within a second or two, without downloading large data again and again, and an old open tab must know the portal was updated.
+- **How we solve it:** The page loads the main DVT data, fetches the large test descriptions only once per catalog version, and waits on a long poll that reports changes. A banner asks to reload when the portal version changed.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Keep the DVT tab current within 1–2 s of any change (runner update, queued request, new result) while sending as little data as possible. The test descriptions (~100 KB) are fetched once per catalog version, and an open tab is told to reload after a deploy.
 **Depends on:** CLOUD-20..39 (shell); server `portalDvt`, `portalDvtDetail`, `portalDvtWait`.
@@ -10706,6 +11583,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 611-616, 657-680, 1165-1169, 2500-2531; Code.gs 513-539, 568-604, 895-911, 730-737.
 
 ### CLOUD-43 — DVT tab frame: CureBox picker, unit chips, summary tiles, progress bar, legacy run list
+**Summary**
+- **What it is for:** The top part of the DVT tab: choose a CureBox and a test unit, and see how many test runs are owed, passed, failed or still open.
+- **Problem it solves:** Without it, nobody can quickly see the test campaign's progress for one machine and unit, or see uploaded runs before a test catalog exists.
+- **How we solve it:** A machine picker and unit chips choose what to show. Summary tiles and a progress bar count the runs the catalog requires. A simple run list is shown when there is no catalog.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Frame the DVT campaign for one CureBox and one unit (UUT): which CureBox, which unit, how many runs are owed and passed. It also keeps a flat run list for the case where no catalog has been uploaded yet.
 **Depends on:** CLOUD-42, CLOUD-20..39 (shell chooser)
@@ -10754,6 +11636,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 616-618, 682-716, 1165-1204, 1251-1260, 1271-1333, 1969-1972, 2013-2021, 2034-2038.
 
 ### CLOUD-44 — DVT catalog phases and test rows (verdict icons, badges, expand, owed-run table)
+**Summary**
+- **What it is for:** The list of DVT test phases and tests for the chosen unit, like in the DVT desktop tool.
+- **Problem it solves:** Engineers need to see each test's result, what is still missing, and start or approve tests from one place.
+- **How we solve it:** Each phase is a collapsible box with result counts. Each test row shows a result icon, badges, a run count and a Run or Approve control, and opens to show its runs.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** List every phase and test of the DVT catalog for the chosen unit, laid out like the DVT tool. Each test row carries a verdict icon, badges, a run count, its Run / Approve control, and opens to show its runs.
 **Depends on:** CLOUD-43, CLOUD-45, CLOUD-46, CLOUD-47, CLOUD-50
@@ -10800,6 +11687,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 689-703, 1183-1250, 1262-1267, 2058-2062, 2099-2114; CSS 209-227, 384-387.
 
 ### CLOUD-45 — DVT test detail panel and bench readiness card
+**Summary**
+- **What it is for:** The detail panel shown when a DVT test is opened: purpose, safety plan, equipment, steps and pass criteria, plus a live readiness check for bench tests.
+- **Problem it solves:** Without it, a person would run a test without knowing how to do it safely, or start a bench test before the machine and instruments are ready.
+- **How we solve it:** The page shows the test description from the catalog in clear sections. For bench tests, a card shows five live checks from the machine, and Run turns on only when all are green.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** When a test is opened, show what the DVT tool shows: purpose, sample rationale, safety plan, equipment and preconditions side by side, dependencies, the numbered procedure and the pass criteria. A bench test also gets a live readiness card from the CureBox's runner, whose Run button turns on only when every check is green.
 **Depends on:** CLOUD-42, CLOUD-44; DVT-08..10 (bench runner readiness on the machine side)
@@ -10846,6 +11738,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 751-804, 2039-2042; CSS 228-242, 282-286; Code.gs 550-556, 836-848.
 
 ### CLOUD-46 — DVT run panel: runner state, instruments, Run all / Stop all, request queue
+**Summary**
+- **What it is for:** The DVT run panel for one CureBox: is its test runner online, which instruments it sees, and the queue of tests requested from the site.
+- **Problem it solves:** Engineers need to start, stop and follow many tests remotely, and answer questions a test asks, without being confused about what is running.
+- **How we solve it:** The panel shows the runner state and instruments, offers Run all and Stop all with a confirm, lists the request queue with Cancel or Force stop, and shows answer buttons for test questions.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** For the chosen CureBox and unit, show whether its DVT runner is online, which USB instruments it sees, and the queue of tests requested from the site. The panel offers Run all, Stop all, per-request Cancel / Force stop, and inline answers to the questions a run asks.
 **Depends on:** CLOUD-42, CLOUD-49; server `portalDvtRequest`, `portalDvtCancel`, `portalDvtAnswer`
@@ -10900,6 +11797,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 718-749, 1127-1163, 2063-2098; CSS 225-227, 351-357, 397-399; Code.gs 736-737, 982-1047, 1104-1122.
 
 ### CLOUD-47 — DVT guide window (modal opened by Run): explain the test, then Queue
+**Summary**
+- **What it is for:** A pop-up guide window that opens when someone presses Run on a DVT test.
+- **Problem it solves:** Queuing a test straight away with one click is risky; the person must first understand the test, its safety plan and what to prepare.
+- **How we solve it:** The window explains the test and offers a practice simulation. The test is queued only when the person presses Queue, and it still starts only after Start is pressed at the machine.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Pressing Run on a test never queues it straight away. A modal window first explains the test (purpose, safety plan, equipment, "Before you start", procedure, pass criteria) and offers a dry-run simulation. Only "▶ Queue on <CureBox>" requests it, after which the same window follows the run (CLOUD-48). See live-simulation.png and run-window.png.
 **Depends on:** CLOUD-42, CLOUD-46, CLOUD-48, CLOUD-52
@@ -10943,6 +11845,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 806-863, 1125, 2058-2062; CSS 243-251, 272, 389-396.
 
 ### CLOUD-48 — Following a requested run in the guide window: status, "What to do now", I did it, questions, live machine chips, run log
+**Summary**
+- **What it is for:** The live follow-up inside the guide window after a test is queued.
+- **Problem it solves:** During a run, the person must know exactly what to do now (wait, press Start, do a step, answer) and see the machine state, or the test may stall or be unsafe.
+- **How we solve it:** The window shows the run status, one plain 'What to do now' instruction, an 'I did it' button for manual steps, live machine status chips, a run log, and a Stop button.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** After Queue, the guide window shows the run as it happens:
 - its status and verdict, and the runner's current line;
@@ -11000,6 +11907,11 @@ It also offers Stop. See run-window.png.
 **Reference (source):** Page.html 1025-1124; CSS 252-271; Code.gs 923-960, 1084-1102.
 
 ### CLOUD-49 — Run-from-site safety contract (Start only at the machine, roles, unit lock, run-last rule, orphan cleanup)
+**Summary**
+- **What it is for:** The safety rules for running DVT tests from the website.
+- **Problem it solves:** A remote click must never turn on heat or UV by itself, and wrong users, wrong units, out-of-order tests or crashed runs must not cause harm or confusion.
+- **How we solve it:** The site only queues requests; a person must press Start at the machine. The server checks roles, unit and order, skips duplicates, closes runs cut off by a restart, and Stop always turns everything off.
+
 **Project / folder:** cloud/google/Page.html (+ server rules in Code.gs, ticketed in CLOUD-01..19)
 **Goal:** Pin down the rules that make running DVT from the website safe. Queuing a test from the site never turns anything on. A person at the CureBox must press Start on its screen. Wrong-unit, wrong-role and out-of-order requests are refused, and cut-off runs do not stay "running" forever.
 **Depends on:** CLOUD-46, CLOUD-47, CLOUD-57; DVT-05 (RemoteConfirm prompter on the machine), PLAT-10
@@ -11035,6 +11947,11 @@ It also offers Stop. See run-window.png.
 **Reference (source):** Page.html 718-724, 834, 1158, 2066; Code.gs 965-1018, 809-833, 1020-1047, 1240-1250.
 
 ### CLOUD-50 — Hand-made (electrical safety) test approval from the site
+**Summary**
+- **What it is for:** Approval of hand-made electrical safety tests from the portal.
+- **Problem it solves:** Electrical safety tests are done by hand, so no machine records their result; without this they would stay open forever.
+- **How we solve it:** An admin presses Approve, types their name, and the result is saved as passed for every required run. Withdraw takes the approval back.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Electrical-safety tests (catalog group `ELE`) are done by hand on UUT-01. An admin records them as passed from the site with ✓ Approve, or takes the approval back with Withdraw.
 **Depends on:** CLOUD-44, CLOUD-57; server `portalDvtApprove`
@@ -11066,6 +11983,11 @@ It also offers Stop. See run-window.png.
 **Reference (source):** Page.html 659-660, 1215-1217, 1244-1246, 2043-2057; Code.gs 1049-1082.
 
 ### CLOUD-51 — Pass-criteria evaluator for the simulation (critParse / critEval / critLeaves / critReadings / critText)
+**Summary**
+- **What it is for:** A small safe calculator that reads a test's pass criteria text and checks values against it.
+- **Problem it solves:** The practice simulation needs to know if made-up readings pass or fail, without running unsafe code from the catalog.
+- **How we solve it:** A custom parser turns the criteria into a tree, evaluates it, and builds readings that pass, or that break exactly one check so the test fails.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Read a catalog pass-criteria expression safely (never `eval`) and make up readings that pass it, or that break exactly one check so the test fails. This drives the dry-run simulation.
 **Depends on:** none (pure functions); used by CLOUD-52
@@ -11108,6 +12030,11 @@ The inputs `x <= `, `a AND AND b`, `x <= 1 ; drop` and `f(1` all throw.
 **Reference (source):** Page.html 864-944; test_sim.cjs 1-32.
 
 ### CLOUD-52 — Live simulation panel in the guide window (dry run)
+**Summary**
+- **What it is for:** A practice (dry run) simulation inside the guide window.
+- **Problem it solves:** Engineers want to rehearse a test, its steps and its questions before using the real machine.
+- **How we solve it:** The steps light up one by one, the same questions are asked, and the pass criteria are checked against made-up readings and the person's answers. Nothing is sent to the machine or saved.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Let an engineer rehearse a test before queuing it, inside the guide window only:
 - the procedure steps light up one after another;
@@ -11162,6 +12089,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 823-826, 860, 945-1024; CSS 273-281.
 
 ### CLOUD-53 — Work Programs and Machine Catalog lists on the machine card
+**Summary**
+- **What it is for:** The program lists on each machine card: the user's own curing programs and the machine's built-in program catalog.
+- **Problem it solves:** Users need to see, edit and delete their curing programs remotely, and see which built-in programs a machine has.
+- **How we solve it:** A table of user programs with Edit, Delete and New, and a read-only table of built-in programs. Changes are sent as commands that the machine applies on its next sync.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** On each machine card (the card frame is the shell's Machines view), list the user's own curing programs, each with Edit and Delete, plus a "+ New Program" button. Below them, list the read-only built-in catalog the machine reports.
 **Depends on:** CLOUD-20..39 (shell, machine card frame), CLOUD-54; PLAT-10 (machine applies `upsert_program` / `delete_program`, snapshot includes `programs` and `presets`, OD-52)
@@ -11198,6 +12130,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 2148-2156, 2158-2168, 2177-2203, 2456-2466, 2476-2477; Code.gs 42, 1487-1503.
 
 ### CLOUD-54 — Program editor (step rows per process, UV-only switch, process switch)
+**Summary**
+- **What it is for:** An editor in the portal to create or change a curing program and its steps.
+- **Problem it solves:** Without it, programs could only be changed at the machine, and remote edits could have wrong fields for a step type.
+- **How we solve it:** A table of steps where the fields change with the chosen process, just like the machine's editor. Cure and Bleaching steps can be set to UV only, with no heating.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** An inline editor to create or change a curing program for a machine. It has a name and a table of steps; each step's fields follow the process chosen, mirroring the machine UI's step editor (StepModal). Cure and Bleaching steps can be UV only (no heating).
 **Depends on:** CLOUD-53, CLOUD-55; DOM-03/DOM-04 (program and step wire contract)
@@ -11250,6 +12187,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 2242-2314, 2370-2429; CSS 297-298, 369-375.
 
 ### CLOUD-55 — Program validation and "Save to machine" (upsert_program)
+**Summary**
+- **What it is for:** Checking a program and saving it to the machine.
+- **Problem it solves:** A program with wrong temperatures, times or step order could be sent to the machine and fail or be unsafe.
+- **How we solve it:** The page checks the same limits and order rules as the machine, shows up to four clear errors, and only then queues a save command that the machine applies on its next sync.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Before sending a program, check it against the same limits and sequence rules the machine UI enforces (MaterialContext), show up to four errors inline, then queue an `upsert_program` command that the machine applies on its next sync.
 **Depends on:** CLOUD-54; DOM-04 (program validation rules); PLAT-10 (command delivery)
@@ -11286,6 +12228,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 2316-2368, 2431-2454.
 
 ### CLOUD-56 — Sign-in screen (shared password or Google) on the page
+**Summary**
+- **What it is for:** The sign-in screen of the sCure Cloud portal.
+- **Problem it solves:** Only allowed people may open the portal, first with a shared password and later with their Google account.
+- **How we solve it:** The page shows a password box until Google sign-in is set up, then only a 'Sign in with Google' button that opens Google in a new window while the page waits for it to finish.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show the right sign-in screen:
 - the shared portal password until Google sign-in is configured;
@@ -11329,6 +12276,11 @@ Any 401 brings this screen back.
 **Reference (source):** Page.html 4-55, 438-487; Code.gs 1259-1335.
 
 ### CLOUD-57 — Signed-in identity in the header, role gating on the page, flash toast
+**Summary**
+- **What it is for:** The header showing who is signed in and their access level, plus short pop-up messages.
+- **Problem it solves:** People need to know who they are signed in as, and why an action was refused.
+- **How we solve it:** The header shows the name, the access level, People for admins and Sign out. When the server refuses an action, a short toast says which access is needed.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show who is signed in and with what access (Viewer / Service / Admin), offer People to admins and Sign out to everyone, and turn server refusals into a short toast that names the access needed.
 **Depends on:** CLOUD-20..39 (header region `#who`), CLOUD-56; server `portalMe`, `portalLogout`, `need_`
@@ -11369,6 +12321,11 @@ Any 401 brings this screen back.
 **Reference (source):** Page.html 421-436, 488-507, 592-597; Code.gs 1150-1257, 1337-1350.
 
 ### CLOUD-58 — People screen (admins): who may sign in, access, recent activity
+**Summary**
+- **What it is for:** The People screen where admins manage who may sign in to the portal.
+- **Problem it solves:** Admins need a simple way to add people, set or change their access, remove them, and see recent activity, without locking out the owner.
+- **How we solve it:** A screen to add people by email with an access level, change access in place, and remove people (never the owner), plus a folded recent activity log and setup help for Google sign-in.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Give admins one screen to add people by Google account email with an access level, change a person's access in place, and remove someone, with the owner protected. The screen also explains how to turn Google sign-in on, and shows recent activity (sign-ins, refusals, changes).
 **Depends on:** CLOUD-57; server `portalUsers`, `portalUserSave`, `portalUserRemove`, `portalAudit`
@@ -11415,6 +12372,11 @@ Any 401 brings this screen back.
 **Reference (source):** Page.html 509-584, 1983, 1995-1997; CSS 159-169; Code.gs 1150-1432.
 
 ### CLOUD-59 — Confirmations, prompts, toasts and empty states (dialog inventory outside Overview / Machines / Race / Compare)
+**Summary**
+- **What it is for:** A list of all the small confirm boxes, prompts, toasts and empty messages in these portal screens.
+- **Problem it solves:** In a rebuild, the exact wording and cancel behaviour of these small dialogs could easily be lost or changed by mistake.
+- **How we solve it:** One inventory lists each dialog's exact text and behaviour, so the rebuild keeps them the same. Cancel on any confirm sends nothing.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** List every small dialog the tool views use, so the rebuild keeps the exact wording and the exact cancel behaviour. The page uses the browser's native `confirm()`/`prompt()` (no custom modal) except for the DVT guide window (CLOUD-47).
 **Depends on:** CLOUD-46, CLOUD-50, CLOUD-57, CLOUD-58; CLOUD-20..39 (shell) for Machines-only dialogs

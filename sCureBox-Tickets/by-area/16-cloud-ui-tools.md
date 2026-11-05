@@ -16,6 +16,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 ---
 
 ### CLOUD-40 — Errors view: "Errors today" (alerts log)
+**Summary**
+- **What it is for:** The Errors screen in the sCure Cloud portal. It lists every error raised today on any CureBox, plus older errors that are still active.
+- **Problem it solves:** Without it, service staff cannot see in one place which machines had errors today, what each error means, or how long it lasted.
+- **How we solve it:** The page asks the server for today's alerts and shows them in a table with a clear title, an optional repair video link, and an active or cleared status. It can be filtered by machine and search.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show every alert raised since local midnight on any CureBox, plus any older alert that is still active, with its registry title, an optional repair-video link and how long it lasted. This is the portal's read-only alerts log. It is filtered by the CureBox chooser and the search box.
 **Depends on:** CLOUD-20..39 (shell), CLOUD-41, server `portalAlerts`
@@ -65,6 +70,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 603-655 (state, CODE_TITLES, loadErrors, errorsCard), 1981, 1988, 2022-2023; Code.gs 203-258 (alerts_, saveAlerts_, portalAlerts, errorDef_); test_errors_page.cjs 1-62.
 
 ### CLOUD-41 — Error registry feed for the portal (ErrorRegistry.gs + build_errors.py)
+**Summary**
+- **What it is for:** A small build script that copies the machine's error list (titles and repair videos) into the portal code.
+- **Problem it solves:** Without it, the portal would show bare error numbers, or its titles would drift from the ones the machine uses.
+- **How we solve it:** A Python script reads errors.json and writes a generated file with each code's title and video link. The team runs it after editing errors, then deploys the portal.
+
 **Project / folder:** cloud/google/ErrorRegistry.gs, cloud/google/build_errors.py
 **Goal:** Give the portal the same error titles and repair-video links as the firmware's error registry, without a network fetch. A build script turns `errors.json` into a committed `.gs` constant that `portalAlerts` reads.
 **Depends on:** DOM-02 (error registry, errors.json); CLOUD-40 consumes it.
@@ -98,6 +108,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** build_errors.py 1-50; ErrorRegistry.gs 1-2; Code.gs 253-258.
 
 ### CLOUD-42 — DVT data on the page: loading, detail cache, long poll, refresh cadence, stale-build banner
+**Summary**
+- **What it is for:** The data loading behind the DVT (design verification testing) tab of the portal.
+- **Problem it solves:** The tab must show changes within a second or two, without downloading large data again and again, and an old open tab must know the portal was updated.
+- **How we solve it:** The page loads the main DVT data, fetches the large test descriptions only once per catalog version, and waits on a long poll that reports changes. A banner asks to reload when the portal version changed.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Keep the DVT tab current within 1–2 s of any change (runner update, queued request, new result) while sending as little data as possible. The test descriptions (~100 KB) are fetched once per catalog version, and an open tab is told to reload after a deploy.
 **Depends on:** CLOUD-20..39 (shell); server `portalDvt`, `portalDvtDetail`, `portalDvtWait`.
@@ -139,6 +154,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 611-616, 657-680, 1165-1169, 2500-2531; Code.gs 513-539, 568-604, 895-911, 730-737.
 
 ### CLOUD-43 — DVT tab frame: CureBox picker, unit chips, summary tiles, progress bar, legacy run list
+**Summary**
+- **What it is for:** The top part of the DVT tab: choose a CureBox and a test unit, and see how many test runs are owed, passed, failed or still open.
+- **Problem it solves:** Without it, nobody can quickly see the test campaign's progress for one machine and unit, or see uploaded runs before a test catalog exists.
+- **How we solve it:** A machine picker and unit chips choose what to show. Summary tiles and a progress bar count the runs the catalog requires. A simple run list is shown when there is no catalog.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Frame the DVT campaign for one CureBox and one unit (UUT): which CureBox, which unit, how many runs are owed and passed. It also keeps a flat run list for the case where no catalog has been uploaded yet.
 **Depends on:** CLOUD-42, CLOUD-20..39 (shell chooser)
@@ -187,6 +207,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 616-618, 682-716, 1165-1204, 1251-1260, 1271-1333, 1969-1972, 2013-2021, 2034-2038.
 
 ### CLOUD-44 — DVT catalog phases and test rows (verdict icons, badges, expand, owed-run table)
+**Summary**
+- **What it is for:** The list of DVT test phases and tests for the chosen unit, like in the DVT desktop tool.
+- **Problem it solves:** Engineers need to see each test's result, what is still missing, and start or approve tests from one place.
+- **How we solve it:** Each phase is a collapsible box with result counts. Each test row shows a result icon, badges, a run count and a Run or Approve control, and opens to show its runs.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** List every phase and test of the DVT catalog for the chosen unit, laid out like the DVT tool. Each test row carries a verdict icon, badges, a run count, its Run / Approve control, and opens to show its runs.
 **Depends on:** CLOUD-43, CLOUD-45, CLOUD-46, CLOUD-47, CLOUD-50
@@ -233,6 +258,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 689-703, 1183-1250, 1262-1267, 2058-2062, 2099-2114; CSS 209-227, 384-387.
 
 ### CLOUD-45 — DVT test detail panel and bench readiness card
+**Summary**
+- **What it is for:** The detail panel shown when a DVT test is opened: purpose, safety plan, equipment, steps and pass criteria, plus a live readiness check for bench tests.
+- **Problem it solves:** Without it, a person would run a test without knowing how to do it safely, or start a bench test before the machine and instruments are ready.
+- **How we solve it:** The page shows the test description from the catalog in clear sections. For bench tests, a card shows five live checks from the machine, and Run turns on only when all are green.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** When a test is opened, show what the DVT tool shows: purpose, sample rationale, safety plan, equipment and preconditions side by side, dependencies, the numbered procedure and the pass criteria. A bench test also gets a live readiness card from the CureBox's runner, whose Run button turns on only when every check is green.
 **Depends on:** CLOUD-42, CLOUD-44; DVT-08..10 (bench runner readiness on the machine side)
@@ -279,6 +309,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 751-804, 2039-2042; CSS 228-242, 282-286; Code.gs 550-556, 836-848.
 
 ### CLOUD-46 — DVT run panel: runner state, instruments, Run all / Stop all, request queue
+**Summary**
+- **What it is for:** The DVT run panel for one CureBox: is its test runner online, which instruments it sees, and the queue of tests requested from the site.
+- **Problem it solves:** Engineers need to start, stop and follow many tests remotely, and answer questions a test asks, without being confused about what is running.
+- **How we solve it:** The panel shows the runner state and instruments, offers Run all and Stop all with a confirm, lists the request queue with Cancel or Force stop, and shows answer buttons for test questions.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** For the chosen CureBox and unit, show whether its DVT runner is online, which USB instruments it sees, and the queue of tests requested from the site. The panel offers Run all, Stop all, per-request Cancel / Force stop, and inline answers to the questions a run asks.
 **Depends on:** CLOUD-42, CLOUD-49; server `portalDvtRequest`, `portalDvtCancel`, `portalDvtAnswer`
@@ -333,6 +368,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 718-749, 1127-1163, 2063-2098; CSS 225-227, 351-357, 397-399; Code.gs 736-737, 982-1047, 1104-1122.
 
 ### CLOUD-47 — DVT guide window (modal opened by Run): explain the test, then Queue
+**Summary**
+- **What it is for:** A pop-up guide window that opens when someone presses Run on a DVT test.
+- **Problem it solves:** Queuing a test straight away with one click is risky; the person must first understand the test, its safety plan and what to prepare.
+- **How we solve it:** The window explains the test and offers a practice simulation. The test is queued only when the person presses Queue, and it still starts only after Start is pressed at the machine.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Pressing Run on a test never queues it straight away. A modal window first explains the test (purpose, safety plan, equipment, "Before you start", procedure, pass criteria) and offers a dry-run simulation. Only "▶ Queue on <CureBox>" requests it, after which the same window follows the run (CLOUD-48). See live-simulation.png and run-window.png.
 **Depends on:** CLOUD-42, CLOUD-46, CLOUD-48, CLOUD-52
@@ -376,6 +416,11 @@ Shared look rules for every ticket below (from the `:root` tokens, Page.html 127
 **Reference (source):** Page.html 806-863, 1125, 2058-2062; CSS 243-251, 272, 389-396.
 
 ### CLOUD-48 — Following a requested run in the guide window: status, "What to do now", I did it, questions, live machine chips, run log
+**Summary**
+- **What it is for:** The live follow-up inside the guide window after a test is queued.
+- **Problem it solves:** During a run, the person must know exactly what to do now (wait, press Start, do a step, answer) and see the machine state, or the test may stall or be unsafe.
+- **How we solve it:** The window shows the run status, one plain 'What to do now' instruction, an 'I did it' button for manual steps, live machine status chips, a run log, and a Stop button.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** After Queue, the guide window shows the run as it happens:
 - its status and verdict, and the runner's current line;
@@ -433,6 +478,11 @@ It also offers Stop. See run-window.png.
 **Reference (source):** Page.html 1025-1124; CSS 252-271; Code.gs 923-960, 1084-1102.
 
 ### CLOUD-49 — Run-from-site safety contract (Start only at the machine, roles, unit lock, run-last rule, orphan cleanup)
+**Summary**
+- **What it is for:** The safety rules for running DVT tests from the website.
+- **Problem it solves:** A remote click must never turn on heat or UV by itself, and wrong users, wrong units, out-of-order tests or crashed runs must not cause harm or confusion.
+- **How we solve it:** The site only queues requests; a person must press Start at the machine. The server checks roles, unit and order, skips duplicates, closes runs cut off by a restart, and Stop always turns everything off.
+
 **Project / folder:** cloud/google/Page.html (+ server rules in Code.gs, ticketed in CLOUD-01..19)
 **Goal:** Pin down the rules that make running DVT from the website safe. Queuing a test from the site never turns anything on. A person at the CureBox must press Start on its screen. Wrong-unit, wrong-role and out-of-order requests are refused, and cut-off runs do not stay "running" forever.
 **Depends on:** CLOUD-46, CLOUD-47, CLOUD-57; DVT-05 (RemoteConfirm prompter on the machine), PLAT-10
@@ -468,6 +518,11 @@ It also offers Stop. See run-window.png.
 **Reference (source):** Page.html 718-724, 834, 1158, 2066; Code.gs 965-1018, 809-833, 1020-1047, 1240-1250.
 
 ### CLOUD-50 — Hand-made (electrical safety) test approval from the site
+**Summary**
+- **What it is for:** Approval of hand-made electrical safety tests from the portal.
+- **Problem it solves:** Electrical safety tests are done by hand, so no machine records their result; without this they would stay open forever.
+- **How we solve it:** An admin presses Approve, types their name, and the result is saved as passed for every required run. Withdraw takes the approval back.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Electrical-safety tests (catalog group `ELE`) are done by hand on UUT-01. An admin records them as passed from the site with ✓ Approve, or takes the approval back with Withdraw.
 **Depends on:** CLOUD-44, CLOUD-57; server `portalDvtApprove`
@@ -499,6 +554,11 @@ It also offers Stop. See run-window.png.
 **Reference (source):** Page.html 659-660, 1215-1217, 1244-1246, 2043-2057; Code.gs 1049-1082.
 
 ### CLOUD-51 — Pass-criteria evaluator for the simulation (critParse / critEval / critLeaves / critReadings / critText)
+**Summary**
+- **What it is for:** A small safe calculator that reads a test's pass criteria text and checks values against it.
+- **Problem it solves:** The practice simulation needs to know if made-up readings pass or fail, without running unsafe code from the catalog.
+- **How we solve it:** A custom parser turns the criteria into a tree, evaluates it, and builds readings that pass, or that break exactly one check so the test fails.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Read a catalog pass-criteria expression safely (never `eval`) and make up readings that pass it, or that break exactly one check so the test fails. This drives the dry-run simulation.
 **Depends on:** none (pure functions); used by CLOUD-52
@@ -541,6 +601,11 @@ The inputs `x <= `, `a AND AND b`, `x <= 1 ; drop` and `f(1` all throw.
 **Reference (source):** Page.html 864-944; test_sim.cjs 1-32.
 
 ### CLOUD-52 — Live simulation panel in the guide window (dry run)
+**Summary**
+- **What it is for:** A practice (dry run) simulation inside the guide window.
+- **Problem it solves:** Engineers want to rehearse a test, its steps and its questions before using the real machine.
+- **How we solve it:** The steps light up one by one, the same questions are asked, and the pass criteria are checked against made-up readings and the person's answers. Nothing is sent to the machine or saved.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Let an engineer rehearse a test before queuing it, inside the guide window only:
 - the procedure steps light up one after another;
@@ -595,6 +660,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 823-826, 860, 945-1024; CSS 273-281.
 
 ### CLOUD-53 — Work Programs and Machine Catalog lists on the machine card
+**Summary**
+- **What it is for:** The program lists on each machine card: the user's own curing programs and the machine's built-in program catalog.
+- **Problem it solves:** Users need to see, edit and delete their curing programs remotely, and see which built-in programs a machine has.
+- **How we solve it:** A table of user programs with Edit, Delete and New, and a read-only table of built-in programs. Changes are sent as commands that the machine applies on its next sync.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** On each machine card (the card frame is the shell's Machines view), list the user's own curing programs, each with Edit and Delete, plus a "+ New Program" button. Below them, list the read-only built-in catalog the machine reports.
 **Depends on:** CLOUD-20..39 (shell, machine card frame), CLOUD-54; PLAT-10 (machine applies `upsert_program` / `delete_program`, snapshot includes `programs` and `presets`, OD-52)
@@ -631,6 +701,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 2148-2156, 2158-2168, 2177-2203, 2456-2466, 2476-2477; Code.gs 42, 1487-1503.
 
 ### CLOUD-54 — Program editor (step rows per process, UV-only switch, process switch)
+**Summary**
+- **What it is for:** An editor in the portal to create or change a curing program and its steps.
+- **Problem it solves:** Without it, programs could only be changed at the machine, and remote edits could have wrong fields for a step type.
+- **How we solve it:** A table of steps where the fields change with the chosen process, just like the machine's editor. Cure and Bleaching steps can be set to UV only, with no heating.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** An inline editor to create or change a curing program for a machine. It has a name and a table of steps; each step's fields follow the process chosen, mirroring the machine UI's step editor (StepModal). Cure and Bleaching steps can be UV only (no heating).
 **Depends on:** CLOUD-53, CLOUD-55; DOM-03/DOM-04 (program and step wire contract)
@@ -683,6 +758,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 2242-2314, 2370-2429; CSS 297-298, 369-375.
 
 ### CLOUD-55 — Program validation and "Save to machine" (upsert_program)
+**Summary**
+- **What it is for:** Checking a program and saving it to the machine.
+- **Problem it solves:** A program with wrong temperatures, times or step order could be sent to the machine and fail or be unsafe.
+- **How we solve it:** The page checks the same limits and order rules as the machine, shows up to four clear errors, and only then queues a save command that the machine applies on its next sync.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Before sending a program, check it against the same limits and sequence rules the machine UI enforces (MaterialContext), show up to four errors inline, then queue an `upsert_program` command that the machine applies on its next sync.
 **Depends on:** CLOUD-54; DOM-04 (program validation rules); PLAT-10 (command delivery)
@@ -719,6 +799,11 @@ Nothing is sent to the CureBox and nothing is recorded. See live-simulation.png 
 **Reference (source):** Page.html 2316-2368, 2431-2454.
 
 ### CLOUD-56 — Sign-in screen (shared password or Google) on the page
+**Summary**
+- **What it is for:** The sign-in screen of the sCure Cloud portal.
+- **Problem it solves:** Only allowed people may open the portal, first with a shared password and later with their Google account.
+- **How we solve it:** The page shows a password box until Google sign-in is set up, then only a 'Sign in with Google' button that opens Google in a new window while the page waits for it to finish.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show the right sign-in screen:
 - the shared portal password until Google sign-in is configured;
@@ -762,6 +847,11 @@ Any 401 brings this screen back.
 **Reference (source):** Page.html 4-55, 438-487; Code.gs 1259-1335.
 
 ### CLOUD-57 — Signed-in identity in the header, role gating on the page, flash toast
+**Summary**
+- **What it is for:** The header showing who is signed in and their access level, plus short pop-up messages.
+- **Problem it solves:** People need to know who they are signed in as, and why an action was refused.
+- **How we solve it:** The header shows the name, the access level, People for admins and Sign out. When the server refuses an action, a short toast says which access is needed.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Show who is signed in and with what access (Viewer / Service / Admin), offer People to admins and Sign out to everyone, and turn server refusals into a short toast that names the access needed.
 **Depends on:** CLOUD-20..39 (header region `#who`), CLOUD-56; server `portalMe`, `portalLogout`, `need_`
@@ -802,6 +892,11 @@ Any 401 brings this screen back.
 **Reference (source):** Page.html 421-436, 488-507, 592-597; Code.gs 1150-1257, 1337-1350.
 
 ### CLOUD-58 — People screen (admins): who may sign in, access, recent activity
+**Summary**
+- **What it is for:** The People screen where admins manage who may sign in to the portal.
+- **Problem it solves:** Admins need a simple way to add people, set or change their access, remove them, and see recent activity, without locking out the owner.
+- **How we solve it:** A screen to add people by email with an access level, change access in place, and remove people (never the owner), plus a folded recent activity log and setup help for Google sign-in.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** Give admins one screen to add people by Google account email with an access level, change a person's access in place, and remove someone, with the owner protected. The screen also explains how to turn Google sign-in on, and shows recent activity (sign-ins, refusals, changes).
 **Depends on:** CLOUD-57; server `portalUsers`, `portalUserSave`, `portalUserRemove`, `portalAudit`
@@ -848,6 +943,11 @@ Any 401 brings this screen back.
 **Reference (source):** Page.html 509-584, 1983, 1995-1997; CSS 159-169; Code.gs 1150-1432.
 
 ### CLOUD-59 — Confirmations, prompts, toasts and empty states (dialog inventory outside Overview / Machines / Race / Compare)
+**Summary**
+- **What it is for:** A list of all the small confirm boxes, prompts, toasts and empty messages in these portal screens.
+- **Problem it solves:** In a rebuild, the exact wording and cancel behaviour of these small dialogs could easily be lost or changed by mistake.
+- **How we solve it:** One inventory lists each dialog's exact text and behaviour, so the rebuild keeps them the same. Cancel on any confirm sends nothing.
+
 **Project / folder:** cloud/google/Page.html
 **Goal:** List every small dialog the tool views use, so the rebuild keeps the exact wording and the exact cancel behaviour. The page uses the browser's native `confirm()`/`prompt()` (no custom modal) except for the DVT guide window (CLOUD-47).
 **Depends on:** CLOUD-46, CLOUD-50, CLOUD-57, CLOUD-58; CLOUD-20..39 (shell) for Machines-only dialogs

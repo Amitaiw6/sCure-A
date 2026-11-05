@@ -34,6 +34,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-01 — Dialog infrastructure (base view model, dialog service stack, DialogHost, view mapping)
+**Summary**
+- **What it is for:** The shared system that shows every pop-up window (dialog) on the machine's touch screen, inside the app itself.
+- **Problem it solves:** Without one common mechanism, each screen would build its own pop-ups, they would look and behave differently, and pop-ups opened over other pop-ups would be hard to manage.
+- **How we solve it:** Each dialog returns an answer the caller waits for. Dialogs sit on a stack, only the top one is drawn over a blurred, dimmed page, with a short fade. Page changes close them, and the screensaver stays off.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `Dialogs/`, `Controls/DialogHost.axaml(.cs)`, `UiPages.cs`, `ViewLocator.cs`, `ViewModels/ShellViewModel.cs`, `Views/ShellView.axaml(.cs)` (dialog parts only)
 **Goal:** Provide a single in-shell modal mechanism: dialog view models that resolve a typed `Task<TResult>`, a stack-based dialog service (a dialog can open over another, e.g. a keyboard over a form), and a host control that renders the top dialog as a centred card, full screen, or docked to the bottom half with the dialog below it still visible. Opening/closing fades in 240 ms and the page behind is shown as a blurred still.
 **Depends on:** Native UI (shell, `ShellScaler`, navigation service, `IdleService`, theme tokens, `UiMotion`), DI container (`Microsoft.Extensions.DependencyInjection`), CommunityToolkit.Mvvm.
@@ -81,6 +86,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-02 — Generic message / confirm dialog (MessageDialog) and its call sites
+**Summary**
+- **What it is for:** One reusable pop-up for yes/no questions and simple messages, such as 'Delete this run?' or 'Reboot device?'.
+- **Problem it solves:** Many screens need to confirm risky actions or show a short notice. A DVT test request from sCure Cloud must never be dismissed by accident.
+- **How we solve it:** A single card with title, text, OK and optional Cancel, with red styling for destructive actions. A 'stay up' mode ignores outside taps and page changes, used for the cloud Start/Decline request.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/MessageDialogViewModel.cs`, `Views/Dialogs/MessageDialogView.axaml`
 **Goal:** One reusable confirm/info card (replaces browser `confirm()`): title, body, optional Cancel, OK, destructive styling. It also carries the "must be answered on purpose" mode used for the sCure Cloud DVT Start/Decline request.
 **Depends on:** UIDLG-01; Native UI (Home, CureProcess, CureHistory, Settings, DevHdt pages, `NfcJobService`, `RemoteConfirmPrompter`), Dvt-Hdt (RemoteConfirm request source).
@@ -115,6 +125,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-03 — On-screen QWERTY keyboard
+**Summary**
+- **What it is for:** The on-screen keyboard used to type text, like names, serial numbers and passwords, on the touch screen.
+- **Problem it solves:** The machine has no physical keyboard and no system keyboard, so users could not type into text fields.
+- **How we solve it:** A full-screen or half-screen keyboard with letters, a numbers/symbols layer and Shift. Password fields can be hidden with Show/Hide. Closing it always returns the typed text.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/OnScreenKeyboardViewModel.cs`, `Views/Dialogs/OnScreenKeyboardView.axaml`
 **Goal:** Touch text entry for every text field (no OS keyboard). Full-screen by default, or docked to the bottom half so the form/page behind stays visible; optional password masking with Show/Hide. There is no cancel — the current text is always the result.
 **Depends on:** UIDLG-01.
@@ -145,6 +160,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-04 — Number pad
+**Summary**
+- **What it is for:** A number keypad for entering values like temperature, time and UV power.
+- **Problem it solves:** Users could enter numbers outside the allowed range or with the wrong number of decimals.
+- **How we solve it:** The keypad knows the minimum, maximum, step and decimals. It blocks digits that go over the limit, has +/- buttons, and returns a clamped, rounded value, or nothing on Cancel.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/NumberPadViewModel.cs`, `Views/Dialogs/NumberPadView.axaml`
 **Goal:** Numeric entry with min/max/step, optional decimals and a unit suffix; it refuses keys that would exceed the range's digit count or the maximum, and returns the clamped, rounded value (null on cancel).
 **Depends on:** UIDLG-01.
@@ -176,6 +196,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-05 — Developer Mode PIN pad (DevAuth)
+**Summary**
+- **What it is for:** A 4-digit PIN pad that unlocks Developer Mode.
+- **Problem it solves:** Developer tools must not be open to normal operators, but engineers need a quick way in on the machine.
+- **How we solve it:** After 10 taps on a hidden spot, a PIN pad opens. The right PIN turns on Developer Mode; a wrong PIN shows 'Incorrect password' and clears the entry.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/DevAuthDialogViewModel.cs`, `Views/Dialogs/DevAuthDialogView.axaml`
 **Goal:** Four-digit PIN entry that unlocks Developer Mode through `DevModeService.TryPassword`. Wrong PIN shows "Incorrect password" and clears.
 **Depends on:** UIDLG-01; Native UI (`DevModeService`, TopBar, Settings, Setup pages).
@@ -196,6 +221,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-06 — USB file browser
+**Summary**
+- **What it is for:** A simple file picker that shows matching files (for example CSV files) on plugged-in USB drives.
+- **Problem it solves:** There is no normal file dialog on the machine, so users could not choose a file from a USB stick.
+- **How we solve it:** It scans all USB drives, the top folder and two levels down, skipping hidden folders, lists up to 200 matching files, and returns the full path of the file the user taps.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/UsbFileBrowserDialogViewModel.cs`, `Views/Dialogs/UsbFileBrowserDialogView.axaml`
 **Goal:** Minimal file picker (replaces the browser file dialog) listing files that match a pattern on every mounted USB drive, root plus two directory levels; result is the chosen full path or null.
 **Depends on:** UIDLG-01; Application-Platform (`IUsbMounts`).
@@ -217,6 +247,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-07 — Start Cure gate dialogs: Critical alert, Nitrogen-only, System pre-check spinner
+**Summary**
+- **What it is for:** The checks shown when the user presses Start Cure: critical alerts, nitrogen-only programs and the system pre-check.
+- **Problem it solves:** A cure must not start with a critical alert active, or with a nitrogen-only program while nitrogen is off. The fans must be tested first, without the screen freezing.
+- **How we solve it:** Start Cure shows the critical alerts or a nitrogen warning and stops. Otherwise a spinning-fan screen runs the fan test and stays up until the cure screen gets its first real status, at most 45 seconds.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/{CriticalAlertDialogViewModel,NitrogenOnlyDialogViewModel,PreflightDialogViewModel}.cs`, matching views
 **Goal:** The dialogs Home's Start Cure passes through: refuse with a list of critical alerts, refuse an N₂-only program when nitrogen is off, then show a spinning-fan "Running System Pre-Check" while the all-fans test runs; the pre-check can stay up across the page change until CureProcess has the run's first real status.
 **Depends on:** UIDLG-01, UIDLG-08; Native UI (Home, CureProcess, `AlertService`, navigation); Application-Process (`ICureController.RunFanTest`, `FanTestResult`).
@@ -244,6 +279,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-08 — Fan / LED-panel failure dialog
+**Summary**
+- **What it is for:** A warning that shows which fans are not turning or which LED panels are not heating, before or during a cure.
+- **Problem it solves:** Broken fans or LED panels can harm the machine or ruin the cure, and the operator needs to know what failed.
+- **How we solve it:** The dialog lists the failed parts, explains what happened and what it means, and lets the operator stop or choose 'Continue anyway', which is saved as an override.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/FanFailDialogViewModel.cs`, `Views/Dialogs/FanFailDialogView.axaml`
 **Goal:** Tell the operator which fans did not rotate (before or during a cure) or which LED panels did not heat, and let them stop or explicitly continue anyway (recorded as an override).
 **Depends on:** UIDLG-01; Native UI (Home, CureProcess, LED heat check); Application-Process (`SetFanOverride`); Domain (error codes 9002/9003, 9040/9041/9044/9045).
@@ -267,6 +307,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-09 — Heater fault dialog (chamber thermistor not reading / reading frozen)
+**Summary**
+- **What it is for:** A warning that the chamber heater was not started or was turned off because the temperature sensor is not reading or is stuck.
+- **Problem it solves:** Heating with a broken or frozen temperature sensor is unsafe, because the machine cannot see how hot the chamber is.
+- **How we solve it:** The dialog explains the sensor fault (Err 9010 or 9006), offers Retry where it makes sense, and never offers 'continue anyway'.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/HeaterFaultDialogViewModel.cs`, `Views/Dialogs/HeaterFaultDialogView.axaml`
 **Goal:** Explain that the heater was not started / was switched off because the chamber thermistor is open (Err 9010; `ErrorCodes.IsA(code, TempSensorDisconnected=9001)` matches 9001 and 9010-9012) or its reading is frozen (Err 9006); offer Retry where it makes sense, never "continue anyway".
 **Depends on:** UIDLG-01; Native UI (CureProcess); Domain (ErrorCodes 9001 family, 9006).
@@ -289,6 +334,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-10 — Pause, Pause overlay (door-gated Continue) and Abort dialogs with hot-chamber caution
+**Summary**
+- **What it is for:** The dialogs for pausing or aborting a running cure, plus the 'paused' screen.
+- **Problem it solves:** Users could pause or abort by mistake, continue with the door open, or touch hot parts inside the chamber.
+- **How we solve it:** Pause and Abort ask for confirmation. The paused screen allows Continue only while the door is closed. All show a hot-surface warning that turns red at 40 C or more.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/{PauseDialogViewModel,PauseOverlayViewModel,AbortDialogViewModel}.cs`, views; `Views/Dialogs/AbortDialogView.axaml.cs` (contains `HotSurfaceSign`); `ViewModels/Cure/HotChamber.cs`
 **Goal:** Confirm pause (heating/UV/gas stop, door released), then show a full-screen paused overlay whose Continue is enabled only while the door reads closed; confirm abort. All three show a hot-surface caution that turns red at ≥ 40 °C.
 **Depends on:** UIDLG-01; Native UI (CureProcess page, `MachineStateStore`); Application-Process (runner pause/resume/abort, `OpenDoor`).
@@ -314,6 +364,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-11 — Cure-run overlays: Door open countdown, Temperature warning, Cure complete
+**Summary**
+- **What it is for:** Full-screen messages during a cure: door opened, temperature not reached, and cure finished.
+- **Problem it solves:** The operator must know when the door is open mid-run, when the chamber cannot reach its target temperature, and when the cure is done.
+- **How we solve it:** A 10-second countdown asks to close the door. A temperature warning (Err 7004) asks Continue or Abort. A completion screen shows time, steps, report status and an Open Door button.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/{DoorOpenDialogViewModel,TemperatureWarningDialogViewModel,CureCompleteDialogViewModel}.cs`, views
 **Goal:** Full-screen overlays the CureProcess page drives: a 10-second door-open countdown (no buttons), a temperature-stall warning (Err 7004) asking Continue/Abort, and the completion screen with an Open Door button and a report-saved line.
 **Depends on:** UIDLG-01; Native UI (CureProcess, `CureFormat`, cure report builder); Domain (ErrorCodes 7004, 6016).
@@ -337,6 +392,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-12 — Print history dialog (filters, multi-select, Cure Together)
+**Summary**
+- **What it is for:** A list of the organization's print jobs, used to pick what to cure next.
+- **Problem it solves:** Users need to find the right print quickly, choose the right program for it, and cure several prints together only when they use the same material.
+- **How we solve it:** The list shows newest first with material, printer and date filters. A tap picks the print's material; a multi-selection of one material can be cured together.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/PrintHistoryDialogViewModel.cs`, `Views/Dialogs/PrintHistoryDialogView.axaml`
 **Goal:** Show the organization's print jobs newest first with material / printer / date filters; a tap picks a print's material; a multi-selection restricted to one material can be cured together.
 **Depends on:** UIDLG-01, UIDLG-03; Application (`IPrintHistoryStore`, `IMaterialStore`); Domain (`PrintLog`, `Material`, `ProgramEstimator.PrintMinutes`); Native UI (`UiSettingsStore.HasOrganization`, `CureFormat`, Home).
@@ -366,6 +426,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-13 — Program (material) editor dialog
+**Summary**
+- **What it is for:** The editor where users build or change a cure program (material): its name and its steps.
+- **Problem it solves:** Users need an easy touch way to create and edit programs, and must not save programs that are not valid.
+- **How we solve it:** A pop-up with a name field, a sliding row of step cards with an Add Step tile, a summary, a check before saving, and export of the program to USB as CSV.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/MaterialEditorDialogViewModel.cs`, `Views/Dialogs/MaterialEditorDialogView.axaml(.cs)`
 **Goal:** Modal over Home to build or edit a cure program: name (keyboard), a horizontal strip of inline-edited step cards plus an "Add Step" tile, CSV export to USB, a summary line, validation message and Save/Update Program. Result true when the material list changed.
 **Depends on:** UIDLG-01, UIDLG-03, UIDLG-04; Native UI (`StepCardViewModel`, `IStepCardHost`, `StepCard` control, `EditorRules`, `Tween`, `AlertService`); Domain (`CureStep`, `Material`, `ProgramCsv`, `ProgramValidator`, `ProgramEstimator`, `ErrorCodes` 9081/9082); Application (`IMaterialStore`, `ISystemService.ExportCsv`).
@@ -398,6 +463,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-14 — Import programs from CSV dialog
+**Summary**
+- **What it is for:** A dialog to import cure programs from CSV files on a USB drive.
+- **Problem it solves:** Typing programs by hand is slow, and bad files must not create broken programs.
+- **How we solve it:** The user picks CSV files one at a time. Each valid file becomes a program named after the file; bad files are listed with their errors.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/ImportCsvDialogViewModel.cs`, `Views/Dialogs/ImportCsvDialogView.axaml`
 **Goal:** Pick CSV files from USB one at a time; each valid file becomes a user material immediately (name = file name without ".csv"); invalid files are listed with their parser/validator errors.
 **Depends on:** UIDLG-01, UIDLG-06; Domain (`ProgramCsv.Parse`, `ProgramValidator.Validate`, `ProgramEstimator`); Native UI (`EditorRules.Normalize`); Application (`IMaterialStore`).
@@ -417,6 +487,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-15 — Static IP configuration dialog
+**Summary**
+- **What it is for:** A form to set a fixed (static) network address for the machine.
+- **Problem it solves:** Some sites need a fixed IP address, and a wrong address could cut the machine off the network.
+- **How we solve it:** The form has fields for IP, Gateway, Subnet and DNS with a built-in number keypad. Apply works only when IP and Gateway are valid addresses.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/StaticIpDialogViewModel.cs`, `Views/Dialogs/StaticIpDialogView.axaml`
 **Goal:** Enter IP, Gateway (both required), Subnet and DNS with an on-dialog numeric keypad; Apply only when IP and Gateway are valid dotted quads.
 **Depends on:** UIDLG-01; Native UI (Network page); Application-Platform (`INetworkService.SetStatic`).
@@ -435,6 +510,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-16 — Software update dialog
+**Summary**
+- **What it is for:** The dialog that installs a software update from a USB drive.
+- **Problem it solves:** Updates must come from a checked package, and the user must not close the window in the middle of installing.
+- **How we solve it:** It shows four steps: find the USB, find the package, check its SHA-256 fingerprint, install. Closing is blocked while it runs. Then it offers Restart Now, or Retry on error.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/SoftwareUpdateDialogViewModel.cs`, `Views/Dialogs/SoftwareUpdateDialogView.axaml`
 **Goal:** Install a `.scu` update from USB: idle plan → four running steps (find USB, find package, verify SHA-256, install) → success ("Restart Now" returns true) or error (Retry). Closing is blocked while running.
 **Depends on:** UIDLG-01; Application-Platform (`IUpdateService`: `FindPackage`, `Manifest`, `RunUpdate`; DTOs `UpdatePackageDto`, `UpdateManifestDto`, `UpdateResultDto`); Native UI (Settings, Restart page).
@@ -456,6 +536,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-17 — Versions dialog
+**Summary**
+- **What it is for:** A window that shows the machine's software and system versions and the version history.
+- **Problem it solves:** Support and engineers need to see exactly what software is installed and what changed.
+- **How we solve it:** It shows live software, build, OS, kernel, runtime and last-boot details, plus the history read from the versions file.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/VersionsDialogViewModel.cs`, `Views/Dialogs/VersionsDialogView.axaml`
 **Goal:** Show the live software/build/OS/kernel/runtime/last-boot block and the version history parsed from `config/versions.json`.
 **Depends on:** UIDLG-01; Application-Platform (`ISystemService.Version()`, `VersionInfoDto`); Application (`DataOptions.ConfigDir`).
@@ -473,6 +558,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-18 — Cybersecurity compliance dialog
+**Summary**
+- **What it is for:** An information window about the machine's cybersecurity compliance.
+- **Problem it solves:** Users and auditors need to see which security standards apply and what protection is in place or planned.
+- **How we solve it:** A fixed panel lists the standards (CRA, EN 18031, EN 40000), the security controls marked Active or Planned, and the SRS requirements with their dates.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/ComplianceDialogViewModel.cs`, `Views/Dialogs/ComplianceDialogView.axaml`
 **Goal:** Static information panel listing the standards (CRA, EN 18031, EN 40000), code-level controls (ACTIVE/PLANNED) and the SRS §22 requirements with effective dates.
 **Depends on:** UIDLG-01; Native UI (Settings).
@@ -490,6 +580,11 @@ Note: there are **no** Wi-Fi, NetBird, settings-sub-page or DVT-tool dialog clas
 ---
 
 ### UIDLG-19 — Origin sign-in dialog (embedded web page or in-window browser)
+**Summary**
+- **What it is for:** A window where the operator signs in to the Origin website to link the machine to their organization.
+- **Problem it solves:** The machine needs the user's Origin organization, but must not keep any sign-in details.
+- **How we solve it:** The real Origin site is shown inside the dialog as live pictures; taps and drags are passed to it, and text fields open the keyboard. Only the organization is returned; nothing else is saved.
+
 **Project / folder:** `src/SCureBox.Ui/SCureBox.Ui.csproj` — `ViewModels/Dialogs/OriginSignInDialogViewModel.cs`, `Views/Dialogs/OriginSignInDialogView.axaml(.cs)`
 **Goal:** Let the operator sign in to the real Origin site (app.origin.io: email / Google / Microsoft) inside the dialog — the page is streamed as JPEG frames, finger taps/drags are forwarded, tapping a text field opens the docked keyboard — and return only the organization. Nothing about the sign-in is stored.
 **Depends on:** UIDLG-01, UIDLG-03; Native UI service `OriginBrowserSignIn` (`IOriginBrowserSignIn`, `IOriginSurface`, `IOriginInput`, `OriginField`, `OriginPhase`, `OriginOrganization`, `OriginSignInResult`; headless browser, `config/origin.json`); Setup and Settings pages.

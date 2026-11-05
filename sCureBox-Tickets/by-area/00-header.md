@@ -3,6 +3,8 @@
 **Source of truth:** sCureBox-CS 1.0.152 (C# / .NET 10, Avalonia 12, ASP.NET Core minimal API, Raspberry Pi CM5 + sCure IO board).
 **Purpose:** this file is the complete brief for a Claude agent to rebuild the whole sCure Box software. Each ticket is one subsystem. Every ticket is self-contained, and its names (types, members, routes, JSON fields, config keys, error codes) must be used EXACTLY as written.
 
+**Every ticket starts with a short plain-English Summary.** It says what the part is for, the problem it solves, and how we solve it. The detailed spec below the Summary is the binding part.
+
 ## How to use this file (instructions to the implementing agent)
 
 1. **Read "Owner decisions & standing rules" first.** These rules are mandatory, and they override any ticket text that conflicts with them.

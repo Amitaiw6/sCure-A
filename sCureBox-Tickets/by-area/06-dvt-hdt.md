@@ -38,6 +38,11 @@ Ticket list:
 ---
 
 ### DVT-01 — DVT bench lock, clock waits and UV meter abstraction (StarBright over libusb + simulated meter)
+**Summary**
+- **What it is for:** The base for all machine tests (DVT): a lock on the shared test tools (the LEDs and the StarBright UV meter), a driver for the UV meter, and a fake meter for tests.
+- **Problem it solves:** If two tests use the LEDs or the meter at the same time, readings are wrong and the meter can freeze. Without a fake meter, nothing can be tested without real hardware.
+- **How we solve it:** Only one owner can hold the lock at a time, with a lease that runs out if not renewed. The meter is opened by one user at a time, talks over USB directly, and stops cleanly if it freezes.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — folders `Dvt/` and `Devices/`
 **Goal:** Lets only one DVT measurement own the shared bench instruments (LEDs + StarBright) at a time. An outside process can hold the lock on a renewable lease. Also defines the UV power meter abstraction, a real driver for the Ophir StarBright (raw libusb vendor control transfers, no Ophir software) and a simulated meter, and gives the blocking, fake-clock-friendly waits that every DVT thread uses.
 **Depends on:** Domain (Wavelength). The consumers are DVT-02, DVT-03, DVT-08, DVT-10 and Api (`/api/dvt/bench*`, `/api/dvt/meter*`).
@@ -147,6 +152,11 @@ public sealed class SimulatedUvMeterSource : IUvMeterSource {
 ---
 
 ### DVT-02 — UV linearity sweep (DVT-OPT-001 / DVT-OPT-002) and meter endpoints
+**Summary**
+- **What it is for:** A test that measures UV light power at a series of LED levels (for example 30 to 100 %) to check the light is linear, at 405 nm or 450 nm. It also shows meter status and sets the meter wavelength.
+- **Problem it solves:** We need proof that the LED output matches the set power. Without checks, a test could run with the door open, during a cure, or with the meter on the wrong wavelength and give bad data.
+- **How we solve it:** Check safety and meter settings first, then step the LEDs up level by level, record readings, and compute an average for each level. If the door opens or anything fails, stop and turn the LEDs off.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/`; endpoints in `src/SCureBox.Api` `Endpoints/DvtEndpoints.cs` (Api area hosts the endpoints)
 **Goal:** Measures StarBright irradiance at a ladder of LED intensities on one wavelength, using the machine's own clock. Every lit step gets a mean and standard deviation, plus a dark baseline. Also answers "is a meter present / what does it read" and sets the meter's wavelength. The JSON is identical to the Python `server/uv_sweep.py`.
 **Depends on:** DVT-01, DVT-07 (IHdtCalibration.Running), Application-Process (`ICureController`: `AnyProcessActive`, `GetState()` → `MachineState.DoorClosed/UvOn/LedTemps`, `SetUv(bool, double, Wavelength)`), Domain (`Wavelength`, `WavelengthExtensions.TryParse(int, out Wavelength)`), Api.
@@ -232,6 +242,11 @@ Sample row format: `[t_s (3 dp), mW/cm2 (4 dp) | null, intensity %, phase ("base
 ---
 
 ### DVT-03 — UV-off-on-door-open timing (DVT-SAF-008 step 2)
+**Summary**
+- **What it is for:** A safety test that measures how fast the UV light goes off when the door is opened during a cure.
+- **Problem it solves:** We must prove the UV turns off in time when the door opens. If it does not, the user could be exposed to UV.
+- **How we solve it:** Run a real UV cure, wait for a steady reading, then the operator opens the door. Sample the meter quickly and record when the light drops below 10 % and reaches zero, plus the alarms. Always turn UV off at the end.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/`
 **Goal:** Measures, on the machine's clock, how long the UV takes to go dark after the door opens during a cure:
 - dark reading → a real UV-only cure program (or a direct UV command) until the StarBright plateau → the operator opens the door → sampling at `hz` until the reading is below 10 % and back at the dark level → tail → alarm watch.
@@ -313,6 +328,11 @@ Sample row: `[t_s (3 dp), mW/cm2 (4 dp) | null, door_open (true/false/null), pha
 ---
 
 ### DVT-04 — Firmware hang on purpose for the watchdog test (DVT-SAF-010)
+**Summary**
+- **What it is for:** A test tool that freezes the firmware on purpose for some seconds, to check that the separate output watchdog turns the heater and UV off.
+- **Problem it solves:** We need proof that if the software hangs, the heater and UV still get cut. We cannot wait for a real hang to test this.
+- **How we solve it:** Freeze outputs and supervision for N seconds while something is on and block other commands. When the hang ends, stop the program, turn everything off, and raise error 9017 if the watchdog cut.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/DvtHang.cs`; endpoint + gate middleware in `src/SCureBox.Api/Endpoints/DvtEndpoints.cs`
 **Goal:** Puts the firmware into a realistic HUNG state for N seconds. During it:
 - no heartbeat is written and every output write blocks (`OutputFreeze`);
@@ -382,6 +402,11 @@ public sealed class DvtHang {
 ---
 
 ### DVT-05 — Remote confirmation at the machine (RemoteConfirm)
+**Summary**
+- **What it is for:** A step where a test started from the cloud must be confirmed by a person at the machine before anything turns on.
+- **Problem it solves:** Without it, someone far away could start the heater or UV while nobody is at the machine, which is unsafe.
+- **How we solve it:** The request shows Start / Decline on the machine screen. The test runner checks the answer. Requests expire after a time limit and can be withdrawn.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/RemoteConfirm.cs`; endpoints in `src/SCureBox.Api/Endpoints/DvtEndpoints.cs`
 **Goal:** A DVT test asked for from outside the machine (the sCure Cloud DVT tab, through the local DVT runner) must be confirmed by someone at the CureBox before anything turns on. The screen shows Start / Decline. The runner polls the answer. Requests expire, and the asker can withdraw them.
 **Depends on:** Native UI (`RemoteConfirmPrompter` subscribes to `Requested`/`Closed` and calls `Resolve`), Api.
@@ -427,6 +452,11 @@ public sealed class RemoteConfirm {
 ---
 
 ### DVT-06 — PicoLog TC-08 thermocouple probe (native interop, firmware reader, simulation)
+**Summary**
+- **What it is for:** Reads temperatures from the PicoLog TC-08 probe (sample, chamber, and room temperature) for material calibration and test pages.
+- **Problem it solves:** Tests need accurate outside temperature readings. The probe can only be used by one program at a time, and some machines do not have the driver.
+- **How we solve it:** The firmware reads the probe all the time in a safe way. It can hand the probe to the test bench program and take it back. A fake probe is used for tests and machines without the driver.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Hdt/`
 **Goal:** Gives the firmware a continuous, thread-safe reading of the PicoLog TC-08:
 - CH1: the type K thermocouple on the sample or heater body;
@@ -510,6 +540,11 @@ public sealed class SimulatedTc08Probe : ITemperatureProbe {
 ---
 
 ### DVT-07 — Material HDT calibration (state machine, thermal model, CSV report)
+**Summary**
+- **What it is for:** A developer tool that finds the highest LED power a material can take without getting too hot (near its heat deflection temperature, HDT), and writes a report.
+- **Problem it solves:** Too much LED power can heat a material past its limit and deform the part. We need a safe power level for each material.
+- **How we solve it:** Step the LED power from 10 to 90 %, wait for stable temperature at each step, and stop at once if the limit is reached. Also estimate a boost time and save the results as a CSV report.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Hdt/`; pure math in `src/SCureBox.Domain` `Control/HdtModel.cs`
 **Goal:** In Developer Mode, finds the highest calibrated SYSTEM LED power (405 nm) a material takes without its averaged CH1 temperature exceeding the material HDT minus a safety margin. It steps 10 → 90 %; at each level it waits for thermal stability or a timeout. Reaching the HDT stops everything at once. It also estimates the "boost" time (time at boost power from a start temperature up to the lower HDT limit) and produces a CSV report.
 **Depends on:** DVT-06 (ITemperatureProbe), Application-Process (`ICureController`: `SetUv(bool,double,Wavelength.Nm405)`, `SetHeaterFan(int)`, `CancelHeaterFanCooldown()`, `LedFactors`, `AnyProcessActive`), Domain (`OpResult`, `HdtModel`), Api (`/api/dev/hdt/*`), Application-Platform (LED calibration store: factors 0..1.5 per zone), Reports (`HdtReportBuilder` consumes `HdtStatusDto` — other area).
@@ -652,6 +687,11 @@ public static class HdtModel {   // SCureBox.Domain.Control
 ---
 
 ### DVT-08 — Bench-process contracts, trace math, TC-08 bench source and the generic BenchRecorder
+**Summary**
+- **What it is for:** The common parts of the separate test bench program, including a general recorder that logs the temperature probe, UV meter and machine state together.
+- **Problem it solves:** Tests need one shared, time-aligned record of all readings, and it must keep recording even if the firmware restarts.
+- **How we solve it:** Define clear interfaces to the firmware, the probe and the safety net. Sample everything together 1 to 20 times a second, add marks and automatic events, and keep logging when the firmware is down.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/Bench/`
 **Goal:** Defines what the separate DVT bench process sees of the firmware (an HTTP-shaped interface), of the TC-08 (opened exclusively for one run) and of the safety net. Also provides the generic recorder that any DVT test script uses: TC-08 CH1/CH2/cold junction + StarBright + firmware state, sampled together at 1..20 Hz on the bench clock, with named marks set by the script and firmware state-change events detected automatically. The recording survives a firmware restart (rows with `fw_alive=false`).
 **Depends on:** DVT-01 (DvtBench, IUvMeterSource, MeterIdentity), DVT-06 (UsbTc08Native), DVT-10 (the host wires it in).
@@ -774,6 +814,11 @@ Sample row (both recorder and runner): `[t_s (3 dp), ch1_c (2 dp)|null, cold_jun
 ---
 
 ### DVT-09 — BenchRunner (catalog test DVT-SAF-002, heater thermistor open) and SimulatedBenchWorld
+**Summary**
+- **What it is for:** Runs a full test from the catalog: checking that unplugging the heater temperature sensor while heating stops the heater safely. It also includes a full fake machine.
+- **Problem it solves:** We need proof that a broken sensor cuts the heater, raises an alarm, and does not restart by itself. Doing this by hand is slow and error-prone, and hard to test without hardware.
+- **How we solve it:** The bench program guides the operator with prompts, checks each result on its own clock, and always leaves heater and UV off. A simulated machine lets the whole test run without hardware.
+
 **Project / folder:** `src/SCureBox.Application/SCureBox.Application.csproj` — `Dvt/Bench/`
 **Goal:** Runs a whole catalog test from the bench process, with the TC-08 in its own hands and on its own clock. The test checks that pulling the heater thermistor (TEMP_CHAMBER) while heating cuts the heater, raises the alarm, refuses a new heat command, and does not resume by itself after the reconnect. The operator is guided by prompts. Every exit leaves the heater and UV off (through the firmware, else through the watchdog's cut) and gives the TC-08 back. A full simulated machine lets everything run without hardware.
 **Depends on:** DVT-08, DVT-01 (DvtBench, IUvMeterSource), DVT-10 (the host).
@@ -886,6 +931,11 @@ public sealed class SimulatedBenchWorld : IFirmwareClient, ITc08Source, IUvMeter
 ---
 
 ### DVT-10 — DVT bench host process (HTTP API :3002, firmware HTTP client, watchdog safety net, systemd unit)
+**Summary**
+- **What it is for:** The separate test bench program that runs next to the firmware and hosts the recorder and test runner, with its own web API.
+- **Problem it solves:** If tests ran inside the firmware, they would stop measuring when the firmware hangs, crashes or restarts, which is exactly what some tests need to see.
+- **How we solve it:** Run it as its own service that talks to the firmware only over HTTP, so it keeps measuring when the firmware fails. It serves the test web page and also works in simulation mode.
+
 **Project / folder:** `src/SCureBox.Api/SCureBox.Api.csproj` — `Bench/`; `deploy/scurebox-dvt-bench.service`
 **Goal:** Hosts the bench runner and recorder as their own ASP.NET Core process: `scurebox --dvt-bench`. It is separate from the firmware, so it keeps measuring while the firmware is hung, killed or restarting. It serves `/bench/*` to the DVT web page and reaches the firmware only through its HTTP API on :3001. In simulation it runs against `SimulatedBenchWorld`, with `/bench/sim/*` to play the operator.
 **Depends on:** DVT-08, DVT-09, DVT-01, Api (`CommandLine` dispatch of `--dvt-bench`; `ApiJson`, `Query`, `ScureConsoleFormatter`, `CommandLine.ReadAppVersion`), Hardware (the `scurebox --watchdog --cut-now` CLI), Deploy-Ops (install of the unit).
