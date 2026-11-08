@@ -1,169 +1,67 @@
 <mxfile host="app.diagrams.net">
   <diagram id="view-all-flow" name="sCure View All / Print History Flow">
-    <mxGraphModel dx="1638" dy="705" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1250" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1">
-          <mxGeometry height="1130" width="560" as="geometry" />
-        </mxCell>
-        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1">
-          <mxGeometry height="1130" width="440" x="560" as="geometry" />
-        </mxCell>
-        <mxCell id="d_same" parent="laneF" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="All selected prints same material?" vertex="1">
-          <mxGeometry height="84" width="200" x="90" y="680" as="geometry" />
-        </mxCell>
-        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1">
-          <mxGeometry height="1130" width="420" x="1000" as="geometry" />
-        </mxCell>
-        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
-          <mxGeometry height="30" width="30" x="225" y="40" as="geometry" />
-        </mxCell>
-        <mxCell id="n_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap &#39;View All&#39; (shown only when an organization is connected)" vertex="1">
-          <mxGeometry height="50" width="230" x="125" y="92" as="geometry" />
-        </mxCell>
-        <mxCell id="n_load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Read print_history(/api/print-history) — same local store as Recent Prints" vertex="1">
-          <mxGeometry height="72" width="260" x="1080" y="82" as="geometry" />
-        </mxCell>
-        <mxCell id="n_modal" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Print History (full-screen modal) — list ALL prints" vertex="1">
-          <mxGeometry height="58" width="240" x="630" y="168" as="geometry" />
-        </mxCell>
-        <mxCell id="n_list" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show all prints + filter bar; header count &#39;filtered / total&#39;" vertex="1">
-          <mxGeometry height="58" width="250" x="120" y="169" as="geometry" />
-        </mxCell>
-        <mxCell id="n_filter" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Filter by Material ▾, Printer ▾, Date range (From / To) — optional" vertex="1">
-          <mxGeometry height="62" width="250" x="120" y="266" as="geometry" />
-        </mxCell>
-        <mxCell id="n_recompute" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Recompute visible list; update filtered / total count" vertex="1">
-          <mxGeometry height="58" width="240" x="630" y="268" as="geometry" />
-        </mxCell>
-        <mxCell id="d_mode" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Multi-select prints?" vertex="1">
-          <mxGeometry height="76" width="190" x="655" y="368" as="geometry" />
-        </mxCell>
-        <mxCell id="n_pick" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap one row → pick its material" vertex="1">
-          <mxGeometry height="48" width="240" x="120" y="380" as="geometry" />
-        </mxCell>
-        <mxCell id="n_resolve" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Resolve material by name (first match)" vertex="1">
-          <mxGeometry height="54" width="230" x="635" y="484" as="geometry" />
-        </mxCell>
-        <mxCell id="n_close" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Cure Process&amp;nbsp;" vertex="1">
-          <mxGeometry height="50" width="240" x="120" y="485" as="geometry" />
-        </mxCell>
-        <mxCell id="e_pick" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
-          <mxGeometry height="26" width="26" x="227" y="565" as="geometry" />
-        </mxCell>
-        <mxCell id="n_multi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Toggle prints into selection (checkboxes)" vertex="1">
-          <mxGeometry height="50" width="240" x="120" y="646" as="geometry" />
-        </mxCell>
-        <mxCell id="n_diff" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show &#39;⚠ Cannot cure different materials together&#39;; Cure Together hidden" vertex="1">
-          <mxGeometry height="62" width="260" x="110" y="738" as="geometry" />
-        </mxCell>
-        <mxCell id="e_diff" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#cc0000;fontColor=#cc0000;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="✗" vertex="1">
-          <mxGeometry height="28" width="28" x="226" y="822" as="geometry" />
-        </mxCell>
-        <mxCell id="lbl_diff" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#cc0000;fontStyle=1;" value="Err 6012" vertex="1">
-          <mxGeometry height="26" width="64" x="258" y="822" as="geometry" />
-        </mxCell>
-        <mxCell id="n_curetog" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Cure Together available: &#39;Ready to cure N× &lt;material&gt;&#39; — press it" vertex="1">
-          <mxGeometry height="60" width="250" x="120" y="900" as="geometry" />
-        </mxCell>
-        <mxCell id="n_setactive" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Set active program (by name); record selected print IDs (sessionStorage)" vertex="1">
-          <mxGeometry height="64" width="250" x="630" y="898" as="geometry" />
-        </mxCell>
-        <mxCell id="n_opencure" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Cure Process (→ §6.8)" vertex="1">
-          <mxGeometry height="48" width="240" x="120" y="996" as="geometry" />
-        </mxCell>
-        <mxCell id="e_cure" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
-          <mxGeometry height="26" width="26" x="227" y="1078" as="geometry" />
-        </mxCell>
-        <mxCell id="re1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_open">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re2" edge="1" parent="1" source="n_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_load" value="load">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re3" edge="1" parent="1" source="n_load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_modal">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re4" edge="1" parent="1" source="n_modal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_list">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re5" edge="1" parent="1" source="n_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_filter">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re6" edge="1" parent="1" source="n_filter" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_recompute" value="apply">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re7" edge="1" parent="1" source="n_recompute" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_mode">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re8" edge="1" parent="1" source="d_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_pick" value="no (single tap)">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re9" edge="1" parent="1" source="n_pick" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_resolve">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="240" y="460" />
-              <mxPoint x="750" y="460" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="re10" edge="1" parent="1" source="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_close">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re11" edge="1" parent="1" source="n_close" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_pick">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re12" edge="1" parent="1" source="d_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_multi" value="yes (checkbox)">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="945" y="406" />
-              <mxPoint x="945" y="620" />
-              <mxPoint x="240" y="620" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="re13" edge="1" parent="1" source="n_multi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="d_same">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="750" y="670" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="re14" edge="1" parent="1" source="d_same" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_diff" value="no (mixed)">
-          <mxGeometry relative="1" x="-0.1459" as="geometry">
-            <mxPoint as="offset" />
-            <Array as="points">
-              <mxPoint x="240" y="720" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="re15" edge="1" parent="1" source="n_diff" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_diff">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re16" edge="1" parent="1" source="d_same" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_curetog" value="yes (1 / all same)">
-          <mxGeometry relative="1" x="0.1731" y="-10" as="geometry">
-            <mxPoint as="offset" />
-            <Array as="points">
-              <mxPoint x="750" y="870" />
-              <mxPoint x="245" y="870" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="re17" edge="1" parent="1" source="n_curetog" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_setactive">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="re18" edge="1" parent="1" source="n_setactive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="n_opencure">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="755" y="970" />
-              <mxPoint x="240" y="970" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="re19" edge="1" parent="1" source="n_opencure" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" target="e_cure">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
+        <mxCell id="laneU" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="UI" vertex="1"><mxGeometry height="1210" width="700" x="0" as="geometry" /></mxCell>
+        <mxCell id="laneF" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="FW" vertex="1"><mxGeometry height="1210" width="520" x="700" as="geometry" /></mxCell>
+        <mxCell id="laneS" parent="1" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" value="Storage" vertex="1"><mxGeometry height="1210" width="460" x="1220" as="geometry" /></mxCell>
+        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1"><mxGeometry height="30" width="30" x="335" y="40" as="geometry" /></mxCell>
+        <mxCell id="tap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap 'View All' (shown only when an organization is linked)" vertex="1"><mxGeometry height="54" width="260" x="220" y="90" as="geometry" /></mxCell>
+        <mxCell id="load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Read all prints (same store as Recent Prints)" vertex="1"><mxGeometry height="54" width="240" x="1330" y="90" as="geometry" /></mxCell>
+        <mxCell id="sort" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Sort newest first by date; build the Material and Printer filter options from the data" vertex="1"><mxGeometry height="66" width="280" x="820" y="180" as="geometry" /></mxCell>
+        <mxCell id="modal" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Print History: 'Print History (n)', or '(shown/total)' when filtered" vertex="1"><mxGeometry height="54" width="270" x="215" y="270" as="geometry" /></mxCell>
+        <mxCell id="filt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Optional filters: Material, Printer, From / To (yyyy-mm-dd, on-screen keyboard); Clear" vertex="1"><mxGeometry height="66" width="270" x="215" y="350" as="geometry" /></mxCell>
+        <mxCell id="apply" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Apply filters (AND; To includes the whole day); the selection is kept" vertex="1"><mxGeometry height="54" width="260" x="830" y="356" as="geometry" /></mxCell>
+        <mxCell id="d_close" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Close pressed?" vertex="1"><mxGeometry height="64" width="170" x="265" y="450" as="geometry" /></mxCell>
+        <mxCell id="closed" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Return to Home unchanged" vertex="1"><mxGeometry height="44" width="170" x="35" y="500" as="geometry" /></mxCell>
+        <mxCell id="f_closed" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1"><mxGeometry height="26" width="26" x="107" y="570" as="geometry" /></mxCell>
+        <mxCell id="d_sel" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Selection empty?" vertex="1"><mxGeometry height="70" width="190" x="255" y="545" as="geometry" /></mxCell>
+        <mxCell id="pick" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap a row: close with that print's material and print id" vertex="1"><mxGeometry height="66" width="200" x="490" y="640" as="geometry" /></mxCell>
+        <mxCell id="multi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap / checkbox toggles rows in the selection" vertex="1"><mxGeometry height="54" width="220" x="240" y="655" as="geometry" /></mxCell>
+        <mxCell id="d_same" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="All selected prints the same material?" vertex="1"><mxGeometry height="84" width="240" x="230" y="745" as="geometry" /></mxCell>
+        <mxCell id="mix" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#cc0000;fontSize=12;" value="'Cannot cure different materials together!' — Cure Together disabled" vertex="1"><mxGeometry height="66" width="200" x="20" y="870" as="geometry" /></mxCell>
+        <mxCell id="l_mix" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontColor=#cc0000;fontStyle=1;" value="Err 6012" vertex="1"><mxGeometry height="24" width="90" x="22" y="844" as="geometry" /></mxCell>
+        <mxCell id="x_mix" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#cc0000;fontColor=#cc0000;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="&#10007;" vertex="1"><mxGeometry height="26" width="26" x="107" y="960" as="geometry" /></mxCell>
+        <mxCell id="ready" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="'Ready to cure [N×] material' — press Cure Together" vertex="1"><mxGeometry height="66" width="200" x="490" y="870" as="geometry" /></mxCell>
+        <mxCell id="res" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Resolve the program by name; select it on Home; keep the print ids" vertex="1"><mxGeometry height="60" width="260" x="830" y="645" as="geometry" /></mxCell>
+        <mxCell id="d_found" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Program found?" vertex="1"><mxGeometry height="70" width="200" x="860" y="740" as="geometry" /></mxCell>
+        <mxCell id="nf" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Nothing selected" vertex="1"><mxGeometry height="44" width="120" x="1080" y="840" as="geometry" /></mxCell>
+        <mxCell id="f_nf" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1"><mxGeometry height="26" width="26" x="1127" y="910" as="geometry" /></mxCell>
+        <mxCell id="d_auto" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="2 or more prints and Start Cure gates open?" vertex="1"><mxGeometry height="100" width="260" x="800" y="855" as="geometry" /></mxCell>
+        <mxCell id="sel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Program selected on Home only; a later Start Cure carries the print ids" vertex="1"><mxGeometry height="60" width="250" x="805" y="990" as="geometry" /></mxCell>
+        <mxCell id="f_sel" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1"><mxGeometry height="26" width="26" x="917" y="1080" as="geometry" /></mxCell>
+        <mxCell id="go" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Run the Start Cure sequence (Section 6.8) with the print ids" vertex="1"><mxGeometry height="54" width="250" x="1325" y="990" as="geometry" /></mxCell>
+        <mxCell id="del" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="When the cure completes: remove those print rows from the history" vertex="1"><mxGeometry height="54" width="250" x="1325" y="1080" as="geometry" /></mxCell>
+        <mxCell id="f_del" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1"><mxGeometry height="26" width="26" x="1437" y="1160" as="geometry" /></mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="start" target="tap" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="tap" target="load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" value="read"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="load" target="sort" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" value=""><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1450" y="213" /></Array></mxGeometry></mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="sort" target="modal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" value=""><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="960" y="297" /></Array></mxGeometry></mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="modal" target="filt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="filt" target="apply" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" value="apply"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="apply" target="d_close" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" value=""><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="960" y="482" /></Array></mxGeometry></mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="d_close" target="closed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="closed" target="f_closed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="d_close" target="d_sel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="d_sel" target="pick" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="d_sel" target="multi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="multi" target="d_same" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="d_same" target="mix" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="mix" target="x_mix" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="d_same" target="ready" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="pick" target="res" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="ready" target="res" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" value=""><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="760" y="903" /><mxPoint x="760" y="687" /></Array></mxGeometry></mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="res" target="d_found" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" edge="1" parent="1" source="d_found" target="nf" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e21" edge="1" parent="1" source="nf" target="f_nf" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e22" edge="1" parent="1" source="d_found" target="d_auto" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="yes"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="960" y="835" /><mxPoint x="930" y="835" /></Array></mxGeometry></mxCell>
+        <mxCell id="e23" edge="1" parent="1" source="d_auto" target="sel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e24" edge="1" parent="1" source="sel" target="f_sel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e25" edge="1" parent="1" source="d_auto" target="go" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="yes"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1450" y="902" /></Array></mxGeometry></mxCell>
+        <mxCell id="e26" edge="1" parent="1" source="go" target="del" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="on completion"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e27" edge="1" parent="1" source="del" target="f_del" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value=""><mxGeometry relative="1" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

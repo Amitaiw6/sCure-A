@@ -1,77 +1,121 @@
 <mxfile host="app.diagrams.net">
-  <diagram id="alerts-flow" name="sCure Alerts Screen Flow">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1169" math="0" shadow="0">
+  <diagram id="alerts-flow" name="sCure Alerts Screen Flow (sCure CS 1.0.106)">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="laneU" parent="1" value="UI" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" vertex="1">
-          <mxGeometry x="0" y="0" width="560" height="960" as="geometry" />
+        <mxCell id="laneM" parent="1" value="Machine" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" vertex="1">
+          <mxGeometry x="0" y="0" width="420" height="1320" as="geometry" />
+        </mxCell>
+        <mxCell id="laneU" parent="1" value="UI sCure" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" vertex="1">
+          <mxGeometry x="420" y="0" width="580" height="1320" as="geometry" />
         </mxCell>
         <mxCell id="laneS" parent="1" value="Storage" style="swimlane;html=1;startSize=30;horizontal=1;fillColor=none;strokeColor=#888888;fontSize=15;fontStyle=1;align=center;verticalAlign=top;collapsible=0;swimlaneFillColor=none;" vertex="1">
-          <mxGeometry x="560" y="0" width="440" height="960" as="geometry" />
+          <mxGeometry x="1000" y="0" width="400" height="1320" as="geometry" />
         </mxCell>
 
-        <mxCell id="start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
-          <mxGeometry x="255" y="40" width="30" height="30" as="geometry" />
+        <!-- Machine lane -->
+        <mxCell id="m_start" parent="1" style="ellipse;shape=doubleEllipse;html=1;dashed=0;whiteSpace=wrap;aspect=fixed;fillColor=#FFFFFF;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry x="195" y="45" width="30" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="n_bell" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap the Bell (top bar) — badge = active count; red if any critical, orange if only warnings" vertex="1">
-          <mxGeometry x="130" y="92" width="280" height="56" as="geometry" />
+        <mxCell id="m_raise" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Condition detected (1 s supervision tick, step / start refusal, door watchdog, NFC reader) - raise its code + a detail line naming the component" vertex="1">
+          <mxGeometry x="40" y="100" width="340" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="n_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open Alerts screen (/alerts)" vertex="1">
-          <mxGeometry x="160" y="180" width="220" height="44" as="geometry" />
+        <mxCell id="m_list" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Machine alert list (code + detail). A code clears by itself when its condition clears; latched codes wait for their release rule (fan stop, 9006, 6016)" vertex="1">
+          <mxGeometry x="40" y="196" width="340" height="72" as="geometry" />
         </mxCell>
-
-        <mxCell id="n_loadreg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Load Error Registry — fetch /config/errors.json (fallback: bundled copy)" vertex="1">
-          <mxGeometry x="600" y="90" width="360" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="n_load" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Read active alerts (localStorage 'scure-active-alerts'); drop any code not in the registry" vertex="1">
-          <mxGeometry x="600" y="250" width="380" height="68" as="geometry" />
+        <mxCell id="m_ack" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Acknowledge: 6016 - release the door-abort latch; fan code - release the stop latch of every fan not failing now and the not-spinning verdicts" vertex="1">
+          <mxGeometry x="40" y="1112" width="340" height="76" as="geometry" />
         </mxCell>
 
+        <!-- UI lane -->
+        <mxCell id="u_mirror" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Mirror every listed code into the active set (an active code only refreshes its detail); skip a code the operator deleted while code + detail are unchanged; state unreadable - raise 9089" vertex="1">
+          <mxGeometry x="450" y="190" width="420" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="u_bell" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Top-bar bell: badge = active alerts that resolve in the registry; red if any critical, orange if only warnings" vertex="1">
+          <mxGeometry x="460" y="296" width="400" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="d_cure" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Cure screen open?" vertex="1">
+          <mxGeometry x="560" y="376" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="u_inert" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Bell inert - the Alerts screen is not opened during a cure" vertex="1">
+          <mxGeometry x="800" y="386" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inert" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry x="877" y="466" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="u_open" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Tap the bell - open the Alerts screen" vertex="1">
+          <mxGeometry x="520" y="506" width="280" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="u_home" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Home: Start Cure with a critical alert active - 'Critical alert active' dialog - Go to alerts" vertex="1">
+          <mxGeometry x="830" y="500" width="160" height="80" as="geometry" />
+        </mxCell>
         <mxCell id="d_any" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Any active alerts?" vertex="1">
-          <mxGeometry x="185" y="350" width="200" height="84" as="geometry" />
+          <mxGeometry x="560" y="590" width="200" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="n_clear" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Show 'All Clear — No active alerts'" vertex="1">
-          <mxGeometry x="6" y="452" width="140" height="54" as="geometry" />
+        <mxCell id="u_clear" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="'All Clear - No active alerts.'" vertex="1">
+          <mxGeometry x="436" y="700" width="150" height="54" as="geometry" />
         </mxCell>
         <mxCell id="e_clear" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
-          <mxGeometry x="63" y="556" width="26" height="26" as="geometry" />
+          <mxGeometry x="498" y="790" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="u_list" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="List, newest first: Critical Errors / Warnings - each row: code - message - time raised - QR (supportUrl)" vertex="1">
+          <mxGeometry x="620" y="700" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="u_detail" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Open a row - detail: code: message, Status, Problem Description (machine detail + description), Troubleshooting Steps, QR docs (+ QR video when set), Need Help" vertex="1">
+          <mxGeometry x="620" y="796" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="d_dismiss" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Dismiss Alert?" vertex="1">
+          <mxGeometry x="660" y="918" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="u_dismiss" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Mark dismissed; remember the machine's code + detail (not shown again until it changes or clears)" vertex="1">
+          <mxGeometry x="620" y="1020" width="280" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="d_ack" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="6016 or fan code (902x / 903x / 906x)?" vertex="1">
+          <mxGeometry x="650" y="1110" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="u_recount" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Recompute lists, badge and bell; report critical / warning counts to the status strip" vertex="1">
+          <mxGeometry x="620" y="1226" width="280" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="n_list" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="List grouped: Critical Errors / Non-Critical Errors — each row: code · message · severity badge" vertex="1">
-          <mxGeometry x="170" y="470" width="290" height="72" as="geometry" />
+        <!-- Storage lane -->
+        <mxCell id="s_reg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Error registry - config/errors.json, read once at application start (fallback: built-in minimal registry)" vertex="1">
+          <mxGeometry x="1030" y="96" width="340" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="n_resolve" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Resolve each code → registry record (message · severity · troubleshooting)" vertex="1">
-          <mxGeometry x="150" y="566" width="300" height="56" as="geometry" />
+        <mxCell id="s_alerts" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Active alerts - data/ui-alerts.json (id, code, time, detail, dismissed); on load drop codes not in the registry and an undismissed 9052" vertex="1">
+          <mxGeometry x="1030" y="196" width="340" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="n_select" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Operator selects an alert" vertex="1">
-          <mxGeometry x="185" y="646" width="220" height="40" as="geometry" />
-        </mxCell>
-        <mxCell id="n_detail" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Detail: description · troubleshooting steps · QR (supportUrl) · support (email / phone / chat)" vertex="1">
-          <mxGeometry x="140" y="708" width="300" height="84" as="geometry" />
-        </mxCell>
-        <mxCell id="n_dismiss" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Dismiss alert (or Clear all)" vertex="1">
-          <mxGeometry x="185" y="816" width="220" height="44" as="geometry" />
-        </mxCell>
-        <mxCell id="n_update" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Update active set; persist; recompute count &amp; bell badge" vertex="1">
-          <mxGeometry x="600" y="812" width="380" height="58" as="geometry" />
+        <mxCell id="s_save" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="Persist the active set (data/ui-alerts.json)" vertex="1">
+          <mxGeometry x="1030" y="1022" width="340" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="a1" parent="1" edge="1" source="start" target="n_bell" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a2" parent="1" edge="1" source="n_bell" target="n_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a3" parent="1" edge="1" source="n_open" target="n_load" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="load"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a4" parent="1" edge="1" source="n_load" target="d_any" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a5" parent="1" edge="1" source="d_any" target="n_clear" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a6" parent="1" edge="1" source="n_clear" target="e_clear" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a7" parent="1" edge="1" source="d_any" target="n_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a8" parent="1" edge="1" source="n_list" target="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a9" parent="1" edge="1" source="n_loadreg" target="n_resolve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#888888;dashed=1;endArrow=open;fontSize=11;fontColor=#666666;" value="resolve text by code"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="594" /></Array></mxGeometry></mxCell>
-        <mxCell id="a10" parent="1" edge="1" source="n_resolve" target="n_select" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a11" parent="1" edge="1" source="n_select" target="n_detail" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a12" parent="1" edge="1" source="n_detail" target="n_dismiss" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a13" parent="1" edge="1" source="n_dismiss" target="n_update" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="a14" parent="1" edge="1" source="n_update" target="d_any" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="recompute"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="520" y="841" /><mxPoint x="520" y="392" /></Array></mxGeometry></mxCell>
+        <!-- edges -->
+        <mxCell id="a1" parent="1" edge="1" source="m_start" target="m_raise" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a2" parent="1" edge="1" source="m_raise" target="m_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a3" parent="1" edge="1" source="m_list" target="u_mirror" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="state update"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a4" parent="1" edge="1" source="u_mirror" target="s_alerts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#888888;dashed=1;endArrow=open;fontSize=11;fontColor=#666666;" value="persist"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a5" parent="1" edge="1" source="u_mirror" target="u_bell" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a6" parent="1" edge="1" source="u_bell" target="d_cure" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a7" parent="1" edge="1" source="d_cure" target="u_inert" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a8" parent="1" edge="1" source="u_inert" target="e_inert" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a9" parent="1" edge="1" source="d_cure" target="u_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a10" parent="1" edge="1" source="u_home" target="u_open" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a11" parent="1" edge="1" source="u_open" target="d_any" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a12" parent="1" edge="1" source="d_any" target="u_clear" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a13" parent="1" edge="1" source="u_clear" target="e_clear" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a14" parent="1" edge="1" source="d_any" target="u_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a15" parent="1" edge="1" source="s_reg" target="u_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#888888;dashed=1;endArrow=open;fontSize=11;fontColor=#666666;" value="resolve text by code"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1200" y="736" /></Array></mxGeometry></mxCell>
+        <mxCell id="a16" parent="1" edge="1" source="u_list" target="u_detail" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a17" parent="1" edge="1" source="u_detail" target="d_dismiss" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a18" parent="1" edge="1" source="d_dismiss" target="u_list" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" value="no (Back)"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="940" y="958" /><mxPoint x="940" y="736" /></Array></mxGeometry></mxCell>
+        <mxCell id="a19" parent="1" edge="1" source="d_dismiss" target="u_dismiss" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a20" parent="1" edge="1" source="u_dismiss" target="s_save" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#888888;dashed=1;endArrow=open;fontSize=11;fontColor=#666666;" value="persist"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a21" parent="1" edge="1" source="u_dismiss" target="d_ack" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a22" parent="1" edge="1" source="d_ack" target="m_ack" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a23" parent="1" edge="1" source="d_ack" target="u_recount" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;" value="no"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a24" parent="1" edge="1" source="m_ack" target="u_recount" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=0.5;exitY=1;entryX=0;entryY=0.5;"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="210" y="1256" /></Array></mxGeometry></mxCell>
+        <mxCell id="a25" parent="1" edge="1" source="u_recount" target="d_any" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=block;fontSize=11;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" value=""><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="980" y="1256" /><mxPoint x="980" y="630" /></Array></mxGeometry></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
