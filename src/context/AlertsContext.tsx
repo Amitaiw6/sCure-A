@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import { ackDoorAbort } from '@/services/hardware-api'
+import { ackDoorAbort, reportAlertSummary } from '@/services/hardware-api'
 // Bundled sample catalog — last-resort fallback when offline (single-file design build).
 import bundledErrors from '../../public/config/errors.json'
 
@@ -32,6 +32,8 @@ export interface ActiveAlert {
   code: number
   timestamp: string
   dismissed: boolean
+  /** Optional specifics from the raising layer (e.g. which fan, measured vs expected RPM) */
+  detail?: string
 }
 
 interface AlertsContextType {
@@ -41,7 +43,7 @@ interface AlertsContextType {
   criticalAlerts: ActiveAlert[]
   warningAlerts: ActiveAlert[]
   alertCount: number
-  triggerAlert: (code: number) => void
+  triggerAlert: (code: number, detail?: string) => void
   dismissAlert: (id: string) => void
   clearAll: () => void
   getErrorDef: (code: number) => ErrorDef | undefined
@@ -90,7 +92,9 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       const parsed: ActiveAlert[] = JSON.parse(stored)
       // Drop any alert whose code is no longer in the registry (e.g. pre-2.0 E-/W- codes)
       // so a stale localStorage entry can't leave the bell badge counting unresolvable alerts.
-      const known = parsed.filter(a => errorDefs.some(e => e.code === a.code))
+      // 9052 (NFC reader unplugged) is a live condition: the machine raises it again if the reader disappears
+      // during use, and a machine that boots without a reader must not show a leftover warning
+      const known = parsed.filter(a => errorDefs.some(e => e.code === a.code) && !(a.code === 9052 && !a.dismissed))
       const hasActive = known.some(a => !a.dismissed)
       if (hasActive) {
         setActiveAlerts(known)
@@ -117,11 +121,12 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     }
   }, [activeAlerts])
 
-  const triggerAlert = useCallback((code: number) => {
+  const triggerAlert = useCallback((code: number, detail?: string) => {
     setActiveAlerts(prev => {
-      // Don't duplicate same code
-      if (prev.some(a => a.code === code && !a.dismissed)) return prev
-      return [...prev, { id: crypto.randomUUID(), code, timestamp: new Date().toISOString(), dismissed: false }]
+      // Don't duplicate same code (but keep its detail text fresh)
+      const live = prev.find(a => a.code === code && !a.dismissed)
+      if (live) return detail && live.detail !== detail ? prev.map(a => a === live ? { ...a, detail } : a) : prev
+      return [...prev, { id: crypto.randomUUID(), code, timestamp: new Date().toISOString(), dismissed: false, detail }]
     })
   }, [])
 
@@ -129,8 +134,8 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   // dispatching 'scure-alert' with a registry code — decoupled from provider order.
   useEffect(() => {
     const onAlert = (e: Event) => {
-      const code = (e as CustomEvent<{ code?: number }>).detail?.code
-      if (typeof code === 'number') triggerAlert(code)
+      const d = (e as CustomEvent<{ code?: number; detail?: string }>).detail
+      if (typeof d?.code === 'number') triggerAlert(d.code, d.detail)
     }
     window.addEventListener('scure-alert', onAlert)
     return () => window.removeEventListener('scure-alert', onAlert)
@@ -165,6 +170,13 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const undismissed = activeAlerts.filter(a => !a.dismissed)
   const criticalAlerts = undismissed.filter(a => getErrorDef(a.code)?.severity === 'critical')
   const warningAlerts = undismissed.filter(a => getErrorDef(a.code)?.severity === 'warning')
+  // the RGB status strip follows these counts: reported on every change and every 30 s (the machine ignores a report older than 90 s)
+  const nCritical = criticalAlerts.length, nWarning = warningAlerts.length
+  useEffect(() => {
+    reportAlertSummary(nCritical, nWarning)
+    const iv = setInterval(() => reportAlertSummary(nCritical, nWarning), 30000)
+    return () => clearInterval(iv)
+  }, [nCritical, nWarning])
   // Only count alerts that resolve to a registry definition, so the bell badge
   // always matches what the Alerts screen can actually display.
   const alertCount = undismissed.filter(a => getErrorDef(a.code)).length

@@ -165,9 +165,12 @@ class HardwareController:
             'fans': self.fans,
             'fanRpm': {k: (2850 if v > 0 else 0) for k, v in self.fans.items()},
             'ledTemps': {'left': round(base + 1.5, 1), 'right': round(base + 2.0, 1),
-                         'door': round(base + 0.5, 1), 'back': round(base + 1.0, 1)},
+                         'door': round(base + 0.5, 1), 'back': round(base + 1.0, 1),
+                         'left2': round(base + 1.4, 1), 'right2': round(base + 2.1, 1)},
             'nitrogenActive': self.nitrogen_on,
-            'n2LinePressure': 6.0,        # simulated line pressure (no sensor off-Pi)
+            'n2LinePressure': 6.0,        # simulated line pressure (bar)
+            'n2Pressure': {'volts': 1.75, 'mpa': 0.6, 'bar': 6.0, 'on': True, 'saturated': False,
+                           'mode': 'analog_voltage', 'setPointMPa': 0.6},   # simulated ISE20 (2:1 divider)
             'bofaOn': self.bofa_on,
             'faults': {'heater': None, 'cooling': None, 'led': None},
             'hwSource': 'simulation',
@@ -379,9 +382,9 @@ class HardwareController:
             return hw_driver.run_fan_test()
         return {'rpm': 2850, 'status': 'OK'}
 
-    def run_led_test(self):
+    def run_led_test(self, **kw):
         if self.bridge:
-            return self.bridge.run_led_test()
+            return self.bridge.run_led_test(**kw)
         if HW_AVAILABLE:
             return hw_driver.run_led_test()
         return {
@@ -395,6 +398,9 @@ class HardwareController:
 
 
 hw = HardwareController(io_bridge)
+# DVT UV linearity sweep (Ophir StarBright on the machine's USB): /api/dvt/meter, /api/dvt/uv-sweep
+import uv_sweep as _uv_sweep  # noqa: E402
+_uv_sweep.configure(hw); app.register_blueprint(_uv_sweep.bp)
 
 # ============================================================
 # Developer Mode subsystems: LED calibration layer, PicoLog TC-08
@@ -516,6 +522,130 @@ counters = ComponentCounters(
 import atexit
 atexit.register(lambda: counters.flush())
 
+
+# ============================================================
+# NFC reader (Eccel Pepper C2 on USB): presence detection + enable guard
+# ============================================================
+ERR_NFC_READER_NOT_DETECTED = 9052
+NFC_USB_IDS = {('0483', '5740')}          # STM32 virtual COM port used by the Pepper C2
+NFC_NAME_HINTS = ('eccel', 'pepper')
+
+
+class NfcReader:
+    """Presence of the USB NFC reader + the persisted "NFC enabled" setting.
+
+    Detection is by USB identity (udev by-id name / sysfs vendor+product),
+    NOT by opening the serial port, so it never disturbs a client that is
+    talking to the reader. NFC can only be switched ON while a reader is
+    detected (Err 9052 otherwise); the flag survives reboots in data/nfc.json.
+    Set SCURE_SIM_NFC=1 to simulate a connected reader off-device.
+    """
+    CACHE_SEC = 2.0
+
+    def __init__(self, path):
+        self.path = path
+        self._lock = threading.Lock()
+        self._cache = None
+        self._cache_at = 0.0
+        self._sim = os.environ.get('SCURE_SIM_NFC') == '1'
+        self._seen_connected = False      # a reader was detected at some point since boot -> its disappearance is a warning
+        self.enabled = False
+        try:
+            with open(path, encoding='utf-8') as f:
+                self.enabled = bool(json.load(f).get('enabled'))
+        except (OSError, ValueError):
+            pass
+
+    @staticmethod
+    def _read(base, name):
+        try:
+            with open(os.path.join(base, name), encoding='utf-8') as f:
+                return f.read().strip()
+        except OSError:
+            return None
+
+    def _scan(self):
+        none = {'detected': False, 'port': None, 'model': None, 'serial': None, 'usbId': None}
+        if self._sim:
+            return {'detected': True, 'port': '/dev/ttyACM0', 'model': 'Simulated NFC reader',
+                    'serial': 'SIM', 'usbId': '0483:5740'}
+        # 1. udev by-id link: "usb-Eccel_Eccel_C2_Virtual_ComPort_<serial>-if00" -> the tty node
+        try:
+            for name in sorted(os.listdir('/dev/serial/by-id')):
+                if any(h in name.lower() for h in NFC_NAME_HINTS):
+                    m = re.search(r'_([0-9A-Za-z]+)-if\d+$', name)
+                    return {'detected': True,
+                            'port': os.path.realpath(os.path.join('/dev/serial/by-id', name)),
+                            'model': 'Eccel Pepper C2', 'serial': m.group(1) if m else None,
+                            'usbId': '0483:5740'}
+        except OSError:
+            pass
+        # 2. sysfs USB identity (reader present but its tty not up yet)
+        try:
+            for dev in sorted(os.listdir('/sys/bus/usb/devices')):
+                base = os.path.join('/sys/bus/usb/devices', dev)
+                vid, pid = self._read(base, 'idVendor'), self._read(base, 'idProduct')
+                if (vid, pid) not in NFC_USB_IDS:
+                    continue
+                product = self._read(base, 'product') or ''
+                if not any(h in product.lower() for h in NFC_NAME_HINTS):
+                    continue
+                return {'detected': True, 'port': None, 'model': product,
+                        'serial': self._read(base, 'serial'), 'usbId': f'{vid}:{pid}'}
+        except OSError:
+            pass
+        return none
+
+    def status(self):
+        now = time.monotonic()
+        with self._lock:
+            if self._cache is None or now - self._cache_at > self.CACHE_SEC:
+                self._cache = self._scan()
+                self._cache_at = now
+            return dict(self._cache)
+
+    def set_enabled(self, on):
+        """Returns (ok, code, message). Switching ON needs a detected reader."""
+        if on and not self.status()['detected']:
+            return (False, ERR_NFC_READER_NOT_DETECTED,
+                    'No NFC reader detected - connect the reader (data USB cable) and try again')
+        with self._lock:
+            self.enabled = bool(on)
+        try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            tmp = self.path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump({'enabled': self.enabled}, f)
+            os.replace(tmp, self.path)
+        except OSError as e:
+            print(f"[NFC] could not persist the setting: {e}")
+        return True, None, f'NFC {"enabled" if on else "disabled"}'
+
+    def decorate_state(self, state):
+        """Publish nfcEnabled + nfcReader in /api/state. Err 9052 is raised only
+        when a reader that WAS connected since boot disappears while NFC is
+        enabled (unplugged during use); a machine that boots without a reader
+        raises no warning at all."""
+        reader = self.status()
+        state['nfcEnabled'] = self.enabled
+        state['nfcReader'] = reader
+        if reader['detected']:
+            self._seen_connected = True
+        reader['seenSinceBoot'] = self._seen_connected
+        if self.enabled and not reader['detected'] and self._seen_connected:
+            alerts = list(state.get('alerts') or [])
+            if ERR_NFC_READER_NOT_DETECTED not in alerts:
+                alerts.append(ERR_NFC_READER_NOT_DETECTED)
+            state['alerts'] = alerts
+            details = dict(state.get('alertDetails') or {})
+            details[str(ERR_NFC_READER_NOT_DETECTED)] = 'The NFC reader was disconnected from USB while in use'
+            state['alertDetails'] = details
+        return state
+
+
+nfc = NfcReader(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'nfc.json'))
+
+
 # ============================================================
 # API Endpoints
 # (Print data, released materials and cure data are managed in PostgreSQL — db.py.)
@@ -527,7 +657,24 @@ def get_state():
     state = hw.get_state()
     state['counters'] = counters.hours()
     state['cloudSync'] = cloud_sync.status()
+    nfc.decorate_state(state)
     return jsonify(state)
+
+
+@app.route('/api/nfc', methods=['GET'])
+def nfc_status():
+    """NFC setting + reader presence (USB identity, no port access)."""
+    return jsonify({'ok': True, 'enabled': nfc.enabled, 'reader': nfc.status()})
+
+
+@app.route('/api/nfc', methods=['POST'])
+def set_nfc():
+    """NFC on/off. ?on=1|0 - ON is refused with Err 9052 while no reader is detected."""
+    on = request.args.get('on', '1') not in ('0', 'false', 'off')
+    ok, code, msg = nfc.set_enabled(on)
+    if ok:
+        return jsonify({'ok': True, 'message': msg, 'enabled': nfc.enabled, 'reader': nfc.status()})
+    return jsonify({'ok': False, 'code': code, 'message': msg, 'enabled': nfc.enabled, 'reader': nfc.status()})
 
 
 @app.route('/api/network/status', methods=['GET'])
@@ -824,7 +971,7 @@ class _CureFileStore:
                 self._unflushed = 0
             return True
 
-    def finish(self, ext_id, status, steps_completed, sensor_issues=None):
+    def finish(self, ext_id, status, steps_completed, sensor_issues=None, fan_issues=None):
         with _history_lock:
             r = self._find(ext_id)
             if r is None:
@@ -836,6 +983,8 @@ class _CureFileStore:
             # temperature sensors that read open-circuit at any point of the
             # run (history indication; [] = every sensor read the whole run)
             r['sensorIssues'] = list(sensor_issues or [])
+            # fans that ran below nominal at any point of the run (worst deficit)
+            r['fanIssues'] = list(fan_issues or [])
             try:
                 t0 = time.mktime(time.strptime(r['startedAt'], '%Y-%m-%dT%H:%M:%S'))
                 r['duration'] = int(time.time() - t0)
@@ -861,7 +1010,7 @@ _cure_files = _CureFileStore()
 
 
 # ============================================================
-# Cloud sync agent (sCure Cloud portal, cloud/portal.py)
+# Cloud sync agent (sCure Cloud portal, cloud/google - Apps Script web app)
 # ============================================================
 class CloudSync:
     """Connects the machine OUT to the sCure Cloud portal.
@@ -1084,6 +1233,7 @@ def cure_run_start(ext_id):
 # Sampled on every telemetry post from the hardware supervision and written
 # into the run record at finish as its 'sensorIssues' history indication.
 _run_sensor_issues = {}
+_run_fan_issues = {}      # ext_id -> {fan: {deficitPct, critical}} (worst seen)
 
 
 def _note_open_sensors(ext_id):
@@ -1094,6 +1244,12 @@ def _note_open_sensors(ext_id):
         for key, v in bridge.sensors_state().items():
             if not v.get('ok'):
                 _run_sensor_issues.setdefault(ext_id, {})[key] = bool(v.get('critical'))
+        if hasattr(bridge, 'fan_issues_now'):
+            for f in bridge.fan_issues_now():
+                cur = _run_fan_issues.setdefault(ext_id, {}).get(f['fan'])
+                if cur is None or (f.get('deficitPct') or 0) > (cur.get('deficitPct') or 0):
+                    _run_fan_issues[ext_id][f['fan']] = {'deficitPct': f.get('deficitPct'),
+                                                         'critical': bool(f.get('critical'))}
     except Exception:  # noqa: BLE001 - never break telemetry on this
         pass
 
@@ -1115,13 +1271,14 @@ def cure_run_finish(ext_id):
     _note_open_sensors(ext_id)
     issues = [{'sensor': k, 'critical': c}
               for k, c in sorted(_run_sensor_issues.pop(ext_id, {}).items())]
+    fan_issues = [{'fan': k, **v} for k, v in sorted(_run_fan_issues.pop(ext_id, {}).items())]
     if _db_on():
         ok = db.finish_cure_run(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'),
-                                sensor_issues=issues)
+                                sensor_issues=issues, fan_issues=fan_issues)
     else:
         ok = _cure_files.finish(ext_id, d.get('status', 'completed'), d.get('stepsCompleted'),
-                                sensor_issues=issues)
-    return jsonify({'ok': ok, 'sensorIssues': issues})
+                                sensor_issues=issues, fan_issues=fan_issues)
+    return jsonify({'ok': ok, 'sensorIssues': issues, 'fanIssues': fan_issues})
 
 
 @app.route('/api/cure-runs/<ext_id>/report', methods=['POST'])
@@ -1242,6 +1399,27 @@ def set_temperature():
 def stop_heating():
     hw.stop_heating()
     return jsonify({'ok': True, 'message': 'Heating stopped'})
+
+
+@app.route('/api/rgb/alerts', methods=['POST'])
+def rgb_alerts():
+    """The UI reports its undismissed notification counts: ?critical=N&warning=M. The RGB strip follows them
+    (critical -> pulsing red, warning -> pulsing yellow, none -> solid green)."""
+    critical = int(request.args.get('critical', 0)); warning = int(request.args.get('warning', 0))
+    if getattr(hw, 'bridge', None):
+        hw.bridge.set_ui_alerts(critical, warning)
+    return jsonify({'ok': True, 'critical': critical, 'warning': warning})
+
+
+@app.route('/api/fans/override', methods=['POST'])
+def fan_override():
+    """Operator's "continue anyway" after a fan failure: ?fan=FAN_DOOR|led_cooling|all&on=1|0.
+    The fan is still measured and shown, but no longer stops outputs, blocks a start or fails the LED pre-flight."""
+    fan = request.args.get('fan', '')
+    on = request.args.get('on', '1') not in ('0', 'false', 'off')
+    # HardwareController wraps the IO bridge with explicit methods; the override lives on the bridge (simulation: nothing to override)
+    ok, why = hw.bridge.set_fan_override(fan, on) if getattr(hw, 'bridge', None) else (True, None)
+    return jsonify({'ok': ok, 'message': why or f"fan override {'on' if on else 'off'}: {fan}"})
 
 
 @app.route('/api/fans/<fan>', methods=['POST'])
@@ -1428,7 +1606,12 @@ def fan_test():
 
 @app.route('/api/diagnostics/led-test', methods=['POST'])
 def led_test():
-    result = hw.run_led_test()
+    # Settings LED test: ?seconds=15&min_rise=0.8 (defaults live in io_bridge.run_led_test)
+    kw = {}
+    if request.args.get('seconds'): kw['seconds'] = float(request.args['seconds'])
+    if request.args.get('min_rise'): kw['min_rise_c'] = float(request.args['min_rise'])
+    if request.args.get('wavelength'): kw['wavelength'] = int(request.args['wavelength'])   # 405 (cure) or 450 (bleaching) strings
+    result = hw.run_led_test(**kw) if kw else hw.run_led_test()
     return jsonify({'ok': True, **result})
 
 

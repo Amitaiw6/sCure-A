@@ -132,8 +132,18 @@
         if (cur === undefined || cur === null) throw new Missing(node.path);
         return cur;
       }
-      case 'and': { const vs = node.parts.map((x) => run(x, values, thresholds)); return vs.every(Boolean); }
-      case 'or': { const vs = node.parts.map((x) => run(x, values, thresholds)); return vs.some(Boolean); }
+      // AND / OR short-circuit, exactly like criteria.py: one part that is definitely false decides
+      // an AND whatever is missing after it, so a recorded failure is a FAIL and not a BLOCKED
+      case 'and': case 'or': {
+        const decided = node.k === 'or', out = decided;
+        let missing = null;
+        for (const part of node.parts) {
+          try { if (Boolean(run(part, values, thresholds)) === decided) return out; }
+          catch (e) { if (e instanceof Missing) missing = missing || e; else throw e; }
+        }
+        if (missing) throw missing;
+        return !out;
+      }
       case 'not': return !run(node.a, values, thresholds);
       case 'neg': return -num(run(node.a, values, thresholds));
       case 'bin': {

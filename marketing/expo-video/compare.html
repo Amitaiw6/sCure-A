@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>compare</title>
+<style>html,body{margin:0;background:#fff}canvas{width:1920px;height:1080px}</style>
+<script src="vendor/three.min.js"></script><script src="vendor/RoundedBoxGeometry.js"></script>
+<script src="vendor/CopyShader.js"></script><script src="vendor/LuminosityHighPassShader.js"></script>
+<script src="vendor/EffectComposer.js"></script><script src="vendor/RenderPass.js"></script>
+<script src="vendor/ShaderPass.js"></script><script src="vendor/MaskPass.js"></script><script src="vendor/UnrealBloomPass.js"></script>
+<script src="machine3d.js"></script></head><body>
+<canvas id="gl" width="1920" height="1080"></canvas><img id="home" src="shots/ui-home.png" style="display:none">
+<script>
+// fixed views matching the reference sheet; machine is 1.58 tall, centre ~0.79
+const pw=(t,k)=>k[0][1];
+const base={T:60,uv:0,bl:0,heat:0,n2:0,dmp:0,aW:0,aC:0,cure:0,fan:0,door:0,xray:0,show:0,mode:'Ready',modeCol:'#4ade80',temp:24,ledCol:'#2f7bff',step:-1,prog:0,total:0,screenImg:'home'};
+const d=9, y=0.79, a=35*Math.PI/180;
+const VIEWS={
+  front:{cam:{pos:[0,y,d],at:[0,y,0],fov:11}},
+  right:{cam:{pos:[d,y,0],at:[0,y,0],fov:11}},
+  left:{cam:{pos:[-d,y,0],at:[0,y,0],fov:11}},
+  p34:{cam:{pos:[-Math.sin(a)*d,2.3,Math.cos(a)*d],at:[0,y,0],fov:12}},
+  open:{cam:{pos:[1.2,1.0,5.2],at:[-0.15,y,0],fov:22},door:1},
+};
+window.view=n=>M3D.render(Object.assign({},base,VIEWS[n]));
+document.getElementById('home').onload=()=>{M3D.init(document.getElementById('gl'),{home:document.getElementById('home')});window.READY=true};
+</script></body></html>

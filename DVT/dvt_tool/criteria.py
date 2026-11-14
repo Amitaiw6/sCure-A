@@ -67,8 +67,24 @@ class _Evaluator(ast.NodeVisitor):
     def visit_Expression(self, n): return self.visit(n.body)
 
     def visit_BoolOp(self, n):
-        vals = [self.visit(v) for v in n.values]
-        return all(vals) if isinstance(n.op, ast.And) else any(vals)
+        """`and` / `or`, short-circuiting like Python - a decided criterion is not BLOCKED.
+
+        One conjunct that is definitely false makes the whole criterion false whatever the
+        rest holds, so the run is a FAIL even when a later field was never recorded: the
+        machine raised no alarm (`alarm_raised == false`) is a result, not missing data.
+        Only an undecided criterion still raises _Missing and lands on BLOCKED.
+        """
+        decided, out = (False, False) if isinstance(n.op, ast.And) else (True, True)
+        missing = None
+        for v in n.values:
+            try:
+                if bool(self.visit(v)) is decided:
+                    return out                      # decided: the missing values no longer matter
+            except _Missing as m:
+                missing = missing or m
+        if missing is not None:
+            raise missing
+        return not out
 
     def visit_UnaryOp(self, n):
         v = self.visit(n.operand)

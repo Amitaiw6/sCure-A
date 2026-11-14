@@ -53,6 +53,9 @@ export default function AlertsPage() {
               <FileText size={16} className="text-muted-foreground" />
               <span className="text-foreground text-sm font-bold">Problem Description</span>
             </div>
+            {alert.detail && (
+              <p className="text-foreground text-xs font-medium mb-1">{alert.detail}</p>
+            )}
             <p className="text-muted-foreground text-xs leading-relaxed">{def.description}</p>
           </div>
 

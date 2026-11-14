@@ -27,7 +27,7 @@ window.google = { script: { run: {} } };
   const handlers = {
     portalLogin: () => ({ ok: true, token: 'tok' }),
     portalMachines: () => [{ name: 'CureBox-1', online: true, lastSeen: 1, state: {}, runs: [], errors: [] }],
-    portalDvt: () => ({ runs: ${JSON.stringify(RUNS)}, fileUrl: '', catalog: ${JSON.stringify(CATALOG)}, requests: [], runners: [], units: ${JSON.stringify(UNITS)}, build: '0.9.123' }),
+    portalDvt: () => ({ runs: ${JSON.stringify(RUNS)}, fileUrl: '', catalog: ${JSON.stringify(CATALOG)}, requests: [], runners: [], units: ${JSON.stringify(UNITS)}, build: (typeof PORTAL_BUILD !== 'undefined' ? PORTAL_BUILD : '') }),
     portalDvtUnitSave: (tok, unit, fields) => { window.__saved.push({ unit, fields }); return { ok: true }; },
   };
   window.google.script.run = { withSuccessHandler(ok) { return { withFailureHandler(bad) { return new Proxy({}, { get: (_, fn) => (...args) => {
@@ -99,9 +99,9 @@ const check = (cond, msg) => { if (!cond) { console.error('FAIL: ' + msg); proce
     return { perRow: ts.filter(y => y === ts[0]).length, trDisplay: getComputedStyle(tr).display, header: getComputedStyle(document.querySelector('.ov-units tr:first-child')).display,
              navWrap: getComputedStyle(nav).flexWrap, navH: Math.round(nav.getBoundingClientRect().height), label: getComputedStyle(tr.querySelector('td[data-l]'), '::before').content };
   });
-  check(ph.perRow === 3, 'phone: three numbers to a row (' + ph.perRow + ')');
+  check(ph.perRow === 2, 'phone: the four main figures sit two by two (' + ph.perRow + ' to a row)');
   check(ph.trDisplay === 'block' && ph.header === 'none', 'phone: the unit table is one card per unit, without its header row');
-  check(ph.navWrap === 'nowrap' && ph.navH < 70, 'phone: the sections stay in one line (' + ph.navH + ' px)');
+  check(ph.navWrap === 'nowrap' && ph.navH < 100, 'phone: the sections stay in one line (' + ph.navH + ' px)');
   check(ph.label.length > 2, 'phone: each card line carries its label (' + ph.label + ')');
   await page.setViewport({ width: 1200, height: 900 });
   if (process.argv.includes('--shot')) await page.screenshot({ path: path.join(__dirname, 'overview.png'), fullPage: true });

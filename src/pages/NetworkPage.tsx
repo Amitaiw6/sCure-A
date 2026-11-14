@@ -72,6 +72,11 @@ export default function NetworkPage() {
             ip: data.ip && data.ip !== '0.0.0.0' ? data.ip : '—',
             mac: data.mac || prev.mac,
             gateway: data.gateway || '—',
+            // NetBird / WireGuard tunnel address (reachable from anywhere): the API's wireguardIp, else the
+            // wt0 / wg0 interface (a backend that predates the field)
+            wireguardIp: data.wireguardIp
+              || data.interfaces?.find((i: { name: string; status: string; ip: string }) => /^(wt|wg)\d+$/.test(i.name) && i.status === 'UP' && i.ip)?.ip
+              || '—',
             interfaces: data.interfaces?.length ? data.interfaces : prev.interfaces,
             lanConnected: data.connected ?? null,
             internet: data.internet ?? null,

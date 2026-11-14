@@ -115,7 +115,7 @@ export default function TopBar() {
             <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${hw.nitrogenActive ? 'bg-green-400 animate-pulse' : 'bg-white'}`} />
           </button>
         )}
-        {hw.nfcEnabled && <CircledIcon><Nfc size={22} /></CircledIcon>}
+        {hw.nfcEnabled && (hw.nfcReader?.detected ?? true) && <CircledIcon><Nfc size={22} /></CircledIcon>}
         <TouchIcon active={location.pathname === '/cure-history'} onClick={() => { if (!isCuring && location.pathname !== '/cure-history') navigate('/cure-history', { replace: location.pathname !== '/' }) }}>
           <History size={24} className={isCuring ? 'opacity-30' : undefined} />
         </TouchIcon>

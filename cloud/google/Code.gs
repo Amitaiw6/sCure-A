@@ -22,7 +22,8 @@
  *   kind "dvt_delete_runs" -> runs the operator removed        the portal shows them in the DVT tab (portalDvt)
  *
  * Script properties (Project Settings > Script properties):
- *   PORTAL_PASSWORD  the portal login password
+ *   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET  Google sign-in (see "people and roles"); when set the password is off
+ *   PORTAL_PASSWORD  the shared login password, used only until Google sign-in is set up
  *   MACHINE_KEYS     {"CureBox-1": "<key>", ...}
  *   DVT_KEY          the key the DVT tool posts with (any string; set it in the tool's Cloud box)
  *   NETBIRD_TOKEN    a NetBird management-API token (read-only use: GET /api/peers) - the machine card shows whether the
@@ -38,7 +39,7 @@
 var CELL_MAX = 45000;            // a Sheets cell holds 50,000 characters
 var ONLINE_SEC = 90;             // a machine syncing every 30 s is online if seen in the last 90 s
 var SESSION_SEC = 6 * 60 * 60;   // portal login lasts 6 h
-var COMMAND_TYPES = ['upsert_program', 'delete_program', 'send_print'];
+var COMMAND_TYPES = ['upsert_program', 'delete_program', 'send_print', 'delete_print'];   // delete_print: firmware 1.0.147+
 var REPORTS_KEEP = 25;            // newest reports kept per machine (the machine's history keeps its last 25 runs)
 var ALERTS_KEEP_DAYS = 30;        // alert log rows kept
 
@@ -77,10 +78,14 @@ function book_() {
   }
   sheet_(ss, 'dvt_files', ['unit', 'runId', 'kind', 'fileName', 'fileId', 'size', 'uploaded']);
   sheet_(ss, 'dvt_catalog', ['updated', 'catalog']);
-  sheet_(ss, 'dvt_requests', ['id', 'machine', 'unit', 'testId', 'status', 'requested', 'started', 'finished',
-                              'line', 'prompt', 'answer', 'runIds', 'verdict']);
+  var dq = sheet_(ss, 'dvt_requests', ['id', 'machine', 'unit', 'testId', 'status', 'requested', 'started', 'finished',
+                                      'line', 'prompt', 'answer', 'runIds', 'verdict', 'act']);
+  // sheets made before the step column (0.9.145): it goes at the end, so nothing moves
+  if (String(dq.getRange(1, 14, 1, 1).getValues()[0][0]) !== 'act') dq.getRange(1, 14, 1, 1).setValues([['act']]);
   sheet_(ss, 'dvt_runners', ['machine', 'lastSeen', 'version', 'unit', 'catalog']);
   sheet_(ss, 'dvt_units', DVT_UNIT_COLS.concat(['updated']));
+  sheet_(ss, 'users', ['email', 'role', 'name', 'added', 'addedBy', 'lastLogin']);
+  sheet_(ss, 'audit', ['time', 'unix', 'email', 'action', 'detail']);
   return ss;
 }
 
@@ -435,12 +440,63 @@ function deleteDvtRuns_(runIds) {
 }
 
 /** The DVT tool's catalog (one row): phases with their gate, every test with its units and the runs it owes. */
+/**
+ * Tests renumbered in the catalog ({id, map: {old test id: new test id}}): the recorded runs, their files and the
+ * requests move to the new ids ONCE per rename set (script property dvt_renames_<id>). Old ids go in ascending order.
+ */
+function dvtApplyRenames_(rn) {
+  if (Array.isArray(rn)) return rn.reduce(function (n, x) { return n + dvtApplyRenames_(x); }, 0);   // the sets in order, each once
+  if (!rn || !rn.id || !rn.map) return 0;
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('dvt_renames_' + rn.id)) return 0;
+  var olds = Object.keys(rn.map).sort();
+  var to = function (id) {
+    id = String(id || '');
+    for (var i = 0; i < olds.length; i++) if (id === olds[i] || id.indexOf(olds[i] + '|') === 0) return rn.map[olds[i]] + id.substring(olds[i].length);
+    return id;
+  };
+  var ss = book_(), moved = 0;
+  var rsh = ss.getSheetByName('dvt_runs');
+  dvtRuns_(rsh).forEach(function (r) {
+    if (to(r.runId) === r.runId) return;
+    rsh.getRange(r.row, 2).setValue(to(r.testId));
+    rsh.getRange(r.row, 5).setValue(to(r.runId));
+    moved++;
+  });
+  var fsh = ss.getSheetByName('dvt_files');
+  dvtFiles_(fsh).forEach(function (f) { if (to(f.runId) !== f.runId) fsh.getRange(f.row, 2).setValue(to(f.runId)); });
+  var qsh = ss.getSheetByName('dvt_requests');
+  dvtRequests_(qsh).forEach(function (r) {
+    var ids = (r.runIds || []).map(to);
+    if (to(r.testId) === r.testId && JSON.stringify(ids) === JSON.stringify(r.runIds || [])) return;
+    r.testId = to(r.testId); r.runIds = ids;
+    writeRequest_(qsh, r);
+  });
+  props.setProperty('dvt_renames_' + rn.id, String(moved));
+  return moved;
+}
+
+/** -1 / 0 / 1 for catalog versions like '0.24' and '0.29' (numbers per dotted part; anything else compares equal). */
+function catalogCmp_(a, b) {
+  var x = String(a || '').split('.'), y = String(b || '').split('.');
+  for (var i = 0; i < Math.max(x.length, y.length); i++) {
+    var p = Number(x[i] || 0), q = Number(y[i] || 0);
+    if (isNaN(p) || isNaN(q)) return 0;
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  return 0;
+}
+
 function saveDvtCatalog_(cat) {
   if (!cat || !Array.isArray(cat.phases) || !cat.tests) return { ok: false, message: 'a DVT catalog needs phases and tests' };
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var sh = book_().getSheetByName('dvt_catalog');
+    // a CureBox runner that was not updated yet must not put an older catalog back over a newer one (user, 2026-10-25)
+    var have = dvtCatalog_(book_());
+    if (have && catalogCmp_(cat.version, have.version) < 0) return { ok: true, kept: have.version };
+    dvtApplyRenames_(cat.renames);
     var text = JSON.stringify(cat);
     var chunks = [];
     for (var i = 0; i < text.length; i += CELL_MAX) chunks.push(text.substring(i, i + CELL_MAX));
@@ -532,12 +588,16 @@ function portalDvt(token) {
   var t = now_();
   var requests = dvtRequests_(ss.getSheetByName('dvt_requests')).sort(function (a, b) { return b.id - a.id; }).slice(0, 200)
     .map(function (r) { return { id: r.id, machine: r.machine, unit: r.unit, testId: r.testId, status: r.status, requested: r.requested,
-                                 started: r.started, finished: r.finished, line: r.line, prompt: r.prompt, verdict: r.verdict, runIds: r.runIds }; });
+                                 started: r.started, finished: r.finished, line: r.line, prompt: r.prompt, verdict: r.verdict, runIds: r.runIds,
+                                 act: r.act }; });
   var runners = runners_(ss.getSheetByName('dvt_runners')).map(function (r) {
     var ready = dvtReadiness_(r.machine);
     var seen = Math.max(r.lastSeen, Number(cacheGet_('dvt_seen_' + r.machine)) || 0);
+    var live = null;
+    try { live = JSON.parse(cacheGet_('dvt_live_' + r.machine) || 'null'); } catch (e) { live = null; }
     return { machine: r.machine, lastSeen: seen, online: t - seen < DVT_RUNNER_ONLINE_SEC, version: r.version, unit: r.unit,
-             readiness: ready && t - ready.at < DVT_READY_FRESH_SEC ? ready.tests : null };
+             readiness: ready && t - ready.at < DVT_READY_FRESH_SEC ? ready.tests : null,
+             live: live && t - live.at < DVT_READY_FRESH_SEC ? live : null };
   });
   return { runs: runs, fileUrl: url, catalog: stripDetail_(dvtCatalog_(ss)), requests: requests, runners: runners, units: dvtUnits_(ss.getSheetByName('dvt_units')), race: raceGet_(), now: now_(), build: PORTAL_BUILD };
 }
@@ -560,7 +620,8 @@ function dvtUnits_(sh) {
 
 /** Save the registry fields of one unit (only the fields sent change). null = not signed in. */
 function portalDvtUnitSave(token, unit, fields) {
-  if (!authed_(token)) return null;
+  var gate = need_(token, 'service', 'Editing a DVT unit');
+  if (!gate.me) return gate.stop;
   unit = String(unit || '').trim();
   if (!/^[A-Za-z0-9._-]{1,40}$/.test(unit)) return { ok: false, message: 'a unit name is letters, digits, . _ - (up to 40)' };
   fields = fields || {};
@@ -634,7 +695,8 @@ function raceGet_() {
 
 /** Set the official start ({start: 'now' | 0 | seconds}) and / or who is in the race ({units: [...]}). null = not signed in. */
 function portalRaceSet(token, d) {
-  if (!authed_(token)) return null;
+  var gate = need_(token, 'service', 'Changing the race');
+  if (!gate.me) return gate.stop;
   d = d || {};
   var cur = raceGet_();
   if (d.start !== undefined) {
@@ -669,7 +731,7 @@ var DVT_RUNNER_ONLINE_SEC = 60;       // the runner polls every 10 s
 var DVT_HOLD_MAX_SEC = 20;            // a long poll is held at most this long (an Apps Script execution may run minutes; the limit is 30 at once)
 var DVT_WATCH_SEC = 45;               // the DVT tab was read within this: the runner polls fast
 var DVT_READY_FRESH_SEC = 45;         // a readiness report older than this is not shown (the runner sends one with every poll)
-var PORTAL_BUILD = '0.9.123';         // the page compares it with its own: a tab left open across a deploy is told to reload
+var PORTAL_BUILD = '0.9.149';         // the page compares it with its own: a tab left open across a deploy is told to reload
 var DVT_REQUESTS_KEEP = 300;          // finished requests kept, newest first
 var DVT_ACTIVE = ['queued', 'running', 'waiting', 'cancel_requested'];
 var DVT_FINAL = ['done', 'failed', 'cancelled', 'blocked'];   // blocked = could not begin (an instrument missing): nothing was measured
@@ -678,18 +740,19 @@ function dvtRequests_(sh) {
   var n = sh.getLastRow() - 1;
   if (n < 1) return [];
   var j = function (x) { try { return x === '' || x === null || x === undefined ? null : JSON.parse(x); } catch (e) { return null; } };
-  return sh.getRange(2, 1, n, 13).getValues().map(function (v, i) {
+  return sh.getRange(2, 1, n, 14).getValues().map(function (v, i) {
     return { row: i + 2, id: Number(v[0]) || 0, machine: String(v[1]), unit: String(v[2]), testId: String(v[3]),
              status: String(v[4]), requested: Number(v[5]) || 0, started: Number(v[6]) || 0, finished: Number(v[7]) || 0,
-             line: String(v[8] || ''), prompt: j(v[9]), answer: j(v[10]), runIds: j(v[11]) || [], verdict: String(v[12] || '') };
+             line: String(v[8] || ''), prompt: j(v[9]), answer: j(v[10]), runIds: j(v[11]) || [], verdict: String(v[12] || ''),
+             act: j(v[13]) };
   }).filter(function (r) { return r.id; });
 }
 
 function writeRequest_(sh, r) {
   bumpVer_();
-  sh.getRange(r.row, 1, 1, 13).setValues([[r.id, r.machine, r.unit, r.testId, r.status, r.requested, r.started || '', r.finished || '',
+  sh.getRange(r.row, 1, 1, 14).setValues([[r.id, r.machine, r.unit, r.testId, r.status, r.requested, r.started || '', r.finished || '',
     r.line || '', r.prompt ? JSON.stringify(r.prompt) : '', r.answer ? JSON.stringify(r.answer) : '', JSON.stringify(r.runIds || []),
-    r.verdict || '']]);
+    r.verdict || '', r.act ? JSON.stringify(r.act) : '']]);
 }
 
 /** Keep the newest DVT_REQUESTS_KEEP finished requests; active ones are never pruned. */
@@ -732,10 +795,33 @@ function dvtRunnerHello_(d) {
     var width = Math.max(sh.getLastColumn(), values.length);
     while (values.length < width) values.push('');
     sh.getRange(row, 1, 1, values.length).setValues([values]);
-    return { ok: true };
+    return { ok: true, closed: dvtCloseOrphans_(book_().getSheetByName('dvt_requests'), String(d.machine)) };
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * The runner says hello only between requests (it handles one at a time), so a request of its CureBox that is still
+ * running / waiting / cancel_requested then was cut off - the app or the machine restarted under it - and nobody would
+ * ever finish it: it stayed "running" on the site for good (user, 2026-10-28). Close those; queued ones stay queued.
+ */
+function dvtCloseOrphans_(sh, machine) {
+  var n = 0;
+  dvtRequests_(sh).forEach(function (r) {
+    if (r.machine !== machine || ['running', 'waiting', 'cancel_requested'].indexOf(r.status) < 0) return;
+    var wasCancel = r.status === 'cancel_requested';
+    r.status = wasCancel ? 'cancelled' : 'failed';
+    r.finished = now_();
+    r.prompt = null;
+    r.answer = null;
+    r.line = wasCancel ? 'cancelled - the runner restarted before it could stop the test'
+                       : 'interrupted - the machine or its app restarted during the test; run it again';
+    writeRequest_(sh, r);
+    n++;
+  });
+  if (n) pruneRequests_(sh);
+  return n;
 }
 
 /** The runner asks for work: the oldest queued request of its CureBox, handed over once and marked running. */
@@ -755,6 +841,7 @@ function dvtNext_(d) {
     if (cacheGet_('dvt_readysig_' + machine) !== sig) { cachePut_('dvt_readysig_' + machine, sig, 300); bumpVer_(); }   // the card's rows changed: the page looks again
     cachePut_('dvt_ready_' + machine, JSON.stringify({ at: now_(), tests: d.readiness }), 300);
   }
+  if (d.live && typeof d.live === 'object') cachePut_('dvt_live_' + machine, JSON.stringify(Object.assign({}, d.live, { at: now_() })), 300);
   var end = Date.now() + Math.min(Math.max(Number(d.wait) || 0, 0), DVT_HOLD_MAX_SEC) * 1000;
   for (;;) {
     var t = now_();
@@ -844,15 +931,28 @@ function dvtUpdate_(d) {
     if (!r) return { ok: false, message: 'no such request' };
     if (d.machine && r.machine !== String(d.machine)) return { ok: false, message: 'that request belongs to another CureBox' };
     touchRunner_(ss.getSheetByName('dvt_runners'), r.machine);
-    var cancel = r.status === 'cancel_requested';
+    cachePut_('dvt_seen_' + r.machine, now_(), 300);
+    // the machine's live state rides on every progress report: the site's status chips during a run (heater, UV, chamber)
+    if (d.live && typeof d.live === 'object') cachePut_('dvt_live_' + r.machine, JSON.stringify(Object.assign({}, d.live, { at: now_() })), 300);
+    // force-stopped from the site while the runner was still on it: it is told to stop, and its reports do not revive the row
+    var forced = r.status === 'cancelled';
+    var cancel = r.status === 'cancel_requested' || forced;
     var out = { ok: true, cancel: cancel };
-    if ('line' in d) r.line = String(d.line || '');
-    if ('prompt' in d) r.prompt = d.prompt || null;
+    if ('line' in d && !forced) r.line = String(d.line || '');
+    if ('prompt' in d && !forced) r.prompt = d.prompt || null;
+    // act = what the person must do right now (c.act in dvt-auto.js): the site shows it as the step
+    var pressed = !!(r.act && r.act.pressed);          // "I did it" since the last report
+    if ('act' in d && !forced) r.act = d.act || null;
+    if (pressed && !forced) {
+      out.acted = true;                                 // handed over once, like an answer
+      if (r.act) r.act.acked = true;
+    }
     if (Array.isArray(d.runIds)) r.runIds = d.runIds.map(String);
     if (d.verdict) r.verdict = String(d.verdict);
     if (r.answer) { out.hasAnswer = true; out.answer = r.answer.v; r.answer = null; r.prompt = null; }
     var st = String(d.status || '');
-    if (DVT_FINAL.indexOf(st) >= 0) { r.status = st; r.finished = now_(); r.prompt = null; }
+    if (forced) { r.prompt = null; r.act = null; }
+    else if (DVT_FINAL.indexOf(st) >= 0) { r.status = st; r.finished = now_(); r.prompt = null; r.act = null; }
     else if ((st === 'running' || st === 'waiting') && !cancel) r.status = st;       // a pending cancel is not overwritten
     writeRequest_(sh, r);
     if (DVT_FINAL.indexOf(st) >= 0) pruneRequests_(sh);
@@ -863,8 +963,25 @@ function dvtUpdate_(d) {
 }
 
 /** Queue tests on a CureBox; null = not signed in. A test already queued or running there for that unit is not doubled. */
+/** The refusal text when a requested test runs last and other tests on the unit still have no result, else ''. */
+function dvtOpenOthers_(unit, testIds) {
+  var cat = dvtCatalog_(book_());
+  if (!cat || !cat.tests) return '';
+  var last = testIds.filter(function (tid) { return cat.tests[tid] && cat.tests[tid].afterAll; });
+  if (!last.length) return '';
+  var done = {};
+  dvtRuns_(book_().getSheetByName('dvt_runs')).forEach(function (r) { if (['PASS', 'FAIL', 'BLOCKED', 'WAIVED'].indexOf(r.verdict) >= 0) done[r.runId] = true; });
+  var open = Object.keys(cat.tests).filter(function (tid) {
+    var t = cat.tests[tid];
+    if (last.indexOf(tid) >= 0 || (t.units || []).indexOf(unit) < 0) return false;
+    return (t.runs && t.runs.length ? t.runs : ['|1']).some(function (k) { return !done[tid + '|' + unit + '|' + k]; });
+  });
+  return open.length ? last.join(', ') + ' runs last - ' + open.length + ' other test(s) on ' + unit + ' have no result yet' : '';
+}
+
 function portalDvtRequest(token, machine, unit, testIds) {
-  if (!authed_(token)) return null;
+  var gate = need_(token, 'service', 'Requesting DVT tests');
+  if (!gate.me) return gate.stop;
   if (!machine || !unit || !Array.isArray(testIds) || !testIds.length) return { ok: false, message: 'choose a CureBox, a unit and at least one test' };
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -876,6 +993,9 @@ function portalDvtRequest(token, machine, unit, testIds) {
     var runner = runners_(book_().getSheetByName('dvt_runners')).filter(function (x) { return x.machine === String(machine); })[0];
     if (runner && runner.unit && runner.unit !== String(unit))
       return { ok: false, message: String(machine) + ' is unit ' + runner.unit + ' - the request was for ' + unit + '. Reload the page.' };
+    // a test that runs last (afterAll - the fault-alarm review) is refused while any other test on the unit has no result
+    var lastOnly = dvtOpenOthers_(String(unit), testIds.map(String));
+    if (lastOnly) return { ok: false, message: lastOnly };
     var busy = rows.filter(function (r) { return r.machine === String(machine) && r.unit === String(unit) && DVT_ACTIVE.indexOf(r.status) >= 0; })
       .map(function (r) { return r.testId; });
     var id = rows.length ? Math.max.apply(null, rows.map(function (r) { return r.id; })) + 1 : 1;
@@ -892,28 +1012,98 @@ function portalDvtRequest(token, machine, unit, testIds) {
   }
 }
 
-/** Stop a request: a queued one never starts; a running one is stopped by the runner on its next report. */
-function portalDvtCancel(token, id) {
-  if (!authed_(token)) return null;
+/**
+ * Stop a request: a queued one never starts; a running one is stopped by the runner on its next report.
+ * `id` may be a list (Stop all). `force` closes it on the site at once (user, 2026-10-28: runs cut off by a restart stayed
+ * "running" / "stopping" for good) - a runner that IS still on it is told to stop on its next report (dvtUpdate_).
+ */
+function portalDvtCancel(token, id, force) {
+  var gate = need_(token, 'service', 'Cancelling a DVT request');
+  if (!gate.me) return gate.stop;
+  var ids = (Array.isArray(id) ? id : [id]).map(Number);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = book_().getSheetByName('dvt_requests');
+    var hit = dvtRequests_(sh).filter(function (x) { return ids.indexOf(x.id) >= 0 && DVT_ACTIVE.indexOf(x.status) >= 0; });
+    if (!hit.length) return { ok: false, message: ids.length > 1 ? 'none of those requests is active' : 'that request is not active' };
+    var machines = {};
+    hit.forEach(function (r) {
+      if (r.status === 'queued') { r.status = 'cancelled'; r.finished = now_(); r.line = 'cancelled from the site before it started'; }
+      else if (force) { r.status = 'cancelled'; r.finished = now_(); r.prompt = null; r.act = null; r.answer = null; r.line = 'stopped from the site (forced)'; }
+      else { r.status = 'cancel_requested'; r.line = 'stopping - the CureBox turns everything off'; }
+      writeRequest_(sh, r);
+      machines[r.machine] = true;
+    });
+    Object.keys(machines).forEach(bumpCmd_);
+    return { ok: true, stopped: hit.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * The engineer's approval of a hand-made test (electrical safety, group ELE): approve = one PASS row per run the test owes,
+ * recorded under the name given; withdraw = those rows go again. Only rows that were approved here can be withdrawn.
+ */
+function portalDvtApprove(token, unit, testId, runIds, who, approve) {
+  var gate = need_(token, 'admin', 'Approving electrical-safety runs');
+  if (!gate.me) return gate.stop;
+  var catT = ((dvtCatalog_(book_()) || {}).tests || {})[String(testId || '')] || {};
+  if (catT.group !== 'ELE') return { ok: false, message: 'only the hand-made electrical safety tests are approved from the site' };
+  if (!Array.isArray(runIds) || !runIds.length) return { ok: false, message: 'no runs to approve' };
+  var ids = runIds.map(String);
+  for (var i = 0; i < ids.length; i++) {
+    var p = ids[i].split('|');
+    if (p[0] !== testId || p[1] !== String(unit)) return { ok: false, message: 'run ' + ids[i] + ' does not belong to ' + testId + ' on ' + unit };
+  }
+  if (!approve) {
+    var mine = dvtRuns_(book_().getSheetByName('dvt_runs')).filter(function (r) { return ids.indexOf(r.runId) >= 0 && /^Approved on the site/.test(r.note); })
+      .map(function (r) { return r.runId; });
+    return mine.length ? deleteDvtRuns_(mine) : { ok: true, deleted: 0 };
+  }
+  var name = (gate.me.via === 'google' ? (gate.me.name ? gate.me.name + ' <' + gate.me.email + '>' : gate.me.email) : String(who || ''))
+    .replace(/\s+/g, ' ').trim().substring(0, 60);
+  if (!name) return { ok: false, message: 'write who approves' };
+  var stamp = new Date().toISOString();
+  var existing = dvtRuns_(book_().getSheetByName('dvt_runs'));
+  var done = 0;
+  ids.forEach(function (id) {
+    var p = id.split('|');
+    var same = existing.filter(function (r) { return r.runId === id; })[0];
+    if (same && same.verdict === 'PASS') return;
+    var res = saveDvtRun_({ runId: id, unit: unit, testId: testId, variant: p[2] || '', rep: Number(p[3]) || 1, verdict: 'PASS',
+                            operator: name, startedAt: stamp, values: {}, note: 'Approved on the site by ' + name, machine: '' });
+    if (res.ok) done++;
+  });
+  return { ok: true, approved: done };
+}
+
+/** Answer the step the runner waits on: true = Done / Yes, false = No, null = Skip, or the value typed. */
+/** "I did it" on the run card: the person confirms the step the runner is waiting on. */
+function portalDvtActed(token, id) {
+  var gate = need_(token, 'service', 'Confirming a DVT step');
+  if (!gate.me) return gate.stop;
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var sh = book_().getSheetByName('dvt_requests');
     var r = dvtRequests_(sh).filter(function (x) { return x.id === Number(id); })[0];
-    if (!r || DVT_ACTIVE.indexOf(r.status) < 0) return { ok: false, message: 'that request is not active' };
-    if (r.status === 'queued') { r.status = 'cancelled'; r.finished = now_(); r.line = 'cancelled from the site before it started'; }
-    else { r.status = 'cancel_requested'; r.line = 'stopping - the CureBox turns everything off'; }
+    if (!r || !r.act) return { ok: false, message: 'that request is not waiting for you to do anything' };
+    if (r.act.ack === false) return { ok: false, message: 'that step is watched by the machine itself - nothing to press' };
+    r.act.pressed = true;
+    r.act.acked = true;
     writeRequest_(sh, r);
-    bumpCmd_(r.machine);
+    bumpCmd_(r.machine);                                 // the runner wakes at once instead of on its next poll
     return { ok: true };
   } finally {
     lock.releaseLock();
   }
 }
 
-/** Answer the step the runner waits on: true = Done / Yes, false = No, null = Skip, or the value typed. */
 function portalDvtAnswer(token, id, value) {
-  if (!authed_(token)) return null;
+  var gate = need_(token, 'service', 'Answering a DVT question');
+  if (!gate.me) return gate.stop;
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -947,22 +1137,292 @@ function serveDvtFile_(p) {
 function doGet(e) {
   if (e && e.parameter && e.parameter.report) return serveReport_(e.parameter);
   if (e && e.parameter && e.parameter.dvtfile) return serveDvtFile_(e.parameter);
+  if (e && e.parameter && e.parameter.state && (e.parameter.code || e.parameter.error)) return googleCallback_(e.parameter);
   return HtmlService.createHtmlOutputFromFile('Page')
     .setTitle('sCure Cloud')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);   // shown inside Google Sites
 }
 
+// ---------------------------------------------------------------------------------------------- people and roles
+/*
+ * Sign-in with Google accounts and a list of who may use the portal, each with a role (user, 2026-10-30):
+ *   view     sees everything: machines, errors, DVT, reports, measurement files
+ *   service  + acts: machine commands, DVT requests / cancel / answers, the unit registry, the race
+ *   admin    + approves electrical-safety runs, manages the people list, reads the audit log
+ * The owner (script property OWNER_EMAIL) is always an admin and cannot be removed; the last admin cannot be removed or
+ * demoted either, so the list can never lock everyone out. With no owner set, add yourself as Admin before turning Google on.
+ * Google sign-in is on once the script properties GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET are set (a Google Cloud OAuth
+ * "Web application" client whose authorized redirect URI is this web app's /exec URL). Until then the shared
+ * PORTAL_PASSWORD signs in, as an admin; once Google sign-in is on, the password no longer works.
+ * Every sign-in, refusal, role change and service / admin action is written to the "audit" sheet.
+ */
+var ROLES = ['view', 'service', 'admin'];
+var ROLE_LABEL = { view: 'Viewer', service: 'Service', admin: 'Admin' };
+var USERS_CACHE_SEC = 60;
+var LOGIN_WAIT_SEC = 600;          // a started Google sign-in must finish within 10 min
+var AUDIT_KEEP = 5000;             // audit rows kept (oldest dropped in blocks of 500)
+
+function googleCfg_() {
+  var p = PropertiesService.getScriptProperties();
+  var id = p.getProperty('GOOGLE_CLIENT_ID') || '', secret = p.getProperty('GOOGLE_CLIENT_SECRET') || '';
+  return id && secret ? { id: id, secret: secret } : null;
+}
+function execUrl_() {
+  var o = PropertiesService.getScriptProperties().getProperty('OAUTH_REDIRECT_URL');
+  if (o) return o;
+  try { return ScriptApp.getService().getUrl(); } catch (e) { return ''; }
+}
+/** The owner (always admin): the OWNER_EMAIL script property, else the deploying account when the script may read it. */
+function ownerEmail_() {
+  var o = PropertiesService.getScriptProperties().getProperty('OWNER_EMAIL');
+  if (o) return String(o).trim().toLowerCase();
+  // needs the userinfo.email scope, which the manifest does not ask for (adding one stops the web app until re-authorized)
+  try { return String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) { return ''; }
+}
+/** True when `email` is the only admin left (the owner counts) - it may not be removed or demoted. */
+function lastAdmin_(email) {
+  var owner = ownerEmail_();
+  if (owner && owner !== email) return false;
+  var admins = users_().filter(function (u) { return u.role === 'admin' && u.email !== email; });
+  return !owner && admins.length === 0;
+}
+function usersSheet_() { return sheet_(book_(), 'users', ['email', 'role', 'name', 'added', 'addedBy', 'lastLogin']); }
+function auditSheet_() { return sheet_(book_(), 'audit', ['time', 'unix', 'email', 'action', 'detail']); }
+
+/** The people list as [{row, email, role, name, added, addedBy, lastLogin}] (cached 60 s). */
+function users_() {
+  var cache = CacheService.getScriptCache();
+  try { var hit = JSON.parse(cache.get('users:list') || 'null'); if (hit) return hit; } catch (e) { /* read the sheet */ }
+  var sh = usersSheet_(), n = sh.getLastRow() - 1;
+  var list = n < 1 ? [] : sh.getRange(2, 1, n, 6).getValues().map(function (v, i) {
+    return { row: i + 2, email: String(v[0]).trim().toLowerCase(), role: ROLES.indexOf(String(v[1])) >= 0 ? String(v[1]) : 'view',
+             name: String(v[2] || ''), added: Number(v[3]) || 0, addedBy: String(v[4] || ''), lastLogin: Number(v[5]) || 0 };
+  }).filter(function (u) { return u.email; });
+  cache.put('users:list', JSON.stringify(list), USERS_CACHE_SEC);
+  return list;
+}
+function usersChanged_() { CacheService.getScriptCache().put('users:list', '', 1); }
+
+/** The person behind an email: the owner (always admin), someone on the list, or null. */
+function userOf_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) return null;
+  var u = users_().filter(function (x) { return x.email === email; })[0];
+  if (email === ownerEmail_()) return { email: email, role: 'admin', name: (u && u.name) || 'Owner', owner: true };
+  return u ? { email: u.email, role: u.role, name: u.name, owner: false } : null;
+}
+
+function audit_(email, action, detail) {
+  try {
+    var sh = auditSheet_();
+    sh.appendRow([new Date().toISOString(), Math.floor(now_()), String(email || ''), String(action), String(detail || '').substring(0, 500)]);
+    if (sh.getLastRow() > AUDIT_KEEP + 500) sh.deleteRows(2, 500);
+  } catch (e) { /* the audit log never blocks the action */ }
+}
+
+/** The signed-in person of a session token ({email, role, name, owner, via}), or null. */
 function authed_(token) {
-  return !!token && CacheService.getScriptCache().get('tok:' + token) === '1';
+  if (!token) return null;
+  var raw = CacheService.getScriptCache().get('tok:' + token);
+  if (!raw) return null;
+  var s = null;
+  try { s = JSON.parse(raw); } catch (e) { s = null; }
+  if (!s || !s.e) return null;
+  if (s.m === 'password') return googleCfg_() ? null : { email: '', role: 'admin', name: 'Shared password', owner: false, via: 'password' };
+  var u = userOf_(s.e);                  // removed from the list or role changed: takes effect on the next call
+  if (!u) return null;
+  u.via = 'google';
+  return u;
+}
+
+/** Role gate of an action: {me} when allowed; else {stop} - null (not signed in) or a refusal naming the role it needs. */
+function need_(token, role, what) {
+  var me = authed_(token);
+  if (!me) return { stop: null };
+  if (ROLES.indexOf(me.role) < ROLES.indexOf(role)) {
+    audit_(me.email, 'refused', what + ' (role ' + me.role + ')');
+    return { stop: { ok: false, denied: true,
+      message: what + ' needs ' + ROLE_LABEL[role] + ' access - you are signed in as ' + ROLE_LABEL[me.role] + '. Ask an admin.' } };
+  }
+  if (role !== 'view') audit_(me.email, what, '');
+  return { me: me };
+}
+
+function newSession_(email, mode) {
+  var token = Utilities.getUuid() + Utilities.getUuid();
+  CacheService.getScriptCache().put('tok:' + token, JSON.stringify({ e: email, m: mode }), SESSION_SEC);
+  return token;
+}
+
+/** How the sign-in screen asks: Google once it is set up, else the shared password. */
+function portalLoginMode() {
+  return { google: !!googleCfg_() };
 }
 
 function portalLogin(password) {
+  if (googleCfg_()) return { ok: false, message: 'Sign in with your Google account' };
   var want = cfg_().password;
-  if (!want || password !== want) return { ok: false };
-  var token = Utilities.getUuid() + Utilities.getUuid();
-  CacheService.getScriptCache().put('tok:' + token, '1', SESSION_SEC);
-  return { ok: true, token: token };
+  if (!want || password !== want) { audit_('', 'password sign-in refused', ''); return { ok: false }; }
+  audit_('', 'signed in with the shared password', '');
+  return { ok: true, token: newSession_('password', 'password') };
+}
+
+/** Start a Google sign-in: the page opens `url` in a new window and asks portalLoginPoll(state) until it is done. */
+function portalLoginStart() {
+  var g = googleCfg_();
+  if (!g) return { ok: false, message: 'Google sign-in is not set up' };
+  var state = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('login:' + state, 'pending', LOGIN_WAIT_SEC);
+  var q = { client_id: g.id, redirect_uri: execUrl_(), response_type: 'code', scope: 'openid email profile',
+            state: state, prompt: 'select_account' };
+  var url = 'https://accounts.google.com/o/oauth2/v2/auth?' + Object.keys(q).map(function (k) {
+    return k + '=' + encodeURIComponent(q[k]); }).join('&');
+  return { ok: true, url: url, state: state };
+}
+
+/** {pending} while the person is at Google; then once {ok, token} or {ok:false, message} (the answer is used up). */
+function portalLoginPoll(state) {
+  var key = 'login:' + String(state || '');
+  var cache = CacheService.getScriptCache();
+  var raw = state ? cache.get(key) : null;
+  if (!raw) return { ok: false, message: 'The sign-in took too long - press Sign in again.' };
+  if (raw === 'pending') return { pending: true };
+  cache.put(key, '', 1);
+  try { return JSON.parse(raw); } catch (e) { return { ok: false, message: 'Sign-in failed - press Sign in again.' }; }
+}
+
+/** Google sends the browser back here (?code=&state=): swap the code for the account's email and settle the sign-in. */
+function googleCallback_(p) {
+  var page = function (title, text) {
+    return HtmlService.createHtmlOutput('<div style="font-family:system-ui,sans-serif;max-width:30rem;margin:3rem auto;padding:0 1rem">' +
+      '<h2>' + title + '</h2><p>' + text + '</p></div><script>try{window.top.close()}catch(e){}</script>')
+      .setTitle('sCure Cloud sign-in').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  };
+  var key = 'login:' + String(p.state || '');
+  var cache = CacheService.getScriptCache();
+  if (cache.get(key) !== 'pending') return page('Sign-in expired', 'Go back to sCure Cloud and press Sign in again.');
+  var settle = function (result) { cache.put(key, JSON.stringify(result), LOGIN_WAIT_SEC); };
+  var g = googleCfg_();
+  if (p.error || !g) { settle({ ok: false, message: 'Google sign-in was cancelled.' }); return page('Sign-in cancelled', 'You can close this window.'); }
+  var claims = null;
+  try {
+    var r = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', { method: 'post', muteHttpExceptions: true,
+      payload: { code: String(p.code), client_id: g.id, client_secret: g.secret, redirect_uri: execUrl_(), grant_type: 'authorization_code' } });
+    var body = JSON.parse(r.getContentText());
+    // the ID token comes straight from Google over TLS, so its claims are read without checking the signature
+    var part = String(body.id_token || '').split('.')[1] || '';
+    claims = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(part + '===='.substring(0, (4 - part.length % 4) % 4))).getDataAsString());
+  } catch (e) { claims = null; }
+  var email = claims && String(claims.email || '').toLowerCase();
+  if (!claims || claims.aud !== g.id || ['accounts.google.com', 'https://accounts.google.com'].indexOf(claims.iss) < 0 ||
+      !claims.email_verified || !email || Number(claims.exp) < now_()) {
+    settle({ ok: false, message: 'Google did not confirm the account - press Sign in again.' });
+    return page('Sign-in failed', 'Go back to sCure Cloud and press Sign in again.');
+  }
+  var u = userOf_(email);
+  if (!u) {
+    audit_(email, 'sign-in refused: not on the list', '');
+    settle({ ok: false, message: email + ' is not on the sCure Cloud list. Ask an admin to add you.' });
+    return page('Not on the list', email + ' may not use sCure Cloud yet. Ask an admin to add you, then sign in again.');
+  }
+  audit_(email, 'signed in with Google', u.role);
+  var row = users_().filter(function (x) { return x.email === email; })[0];
+  if (row) { usersSheet_().getRange(row.row, 6, 1, 1).setValues([[Math.floor(now_())]]); usersChanged_(); }
+  settle({ ok: true, token: newSession_(email, 'google') });
+  return page('Signed in', 'Signed in as ' + email + '. Close this window - sCure Cloud continues in the other one.');
+}
+
+/** Who is signed in, for the header; null = not signed in. */
+function portalMe(token) {
+  var me = authed_(token);
+  if (!me) return null;
+  return { email: me.email, name: me.name, role: me.role, roleLabel: ROLE_LABEL[me.role], owner: !!me.owner, via: me.via,
+           canService: ROLES.indexOf(me.role) >= 1, canAdmin: me.role === 'admin' };
+}
+
+function portalLogout(token) {
+  var me = authed_(token);
+  if (me) audit_(me.email, 'signed out', '');
+  if (token) CacheService.getScriptCache().put('tok:' + token, '', 1);
+  return { ok: true };
+}
+
+/** Admin: the people list, the owner and what to register at Google. */
+function portalUsers(token) {
+  var g = need_(token, 'admin', 'Seeing the people list');
+  if (!g.me) return g.stop;
+  var owner = ownerEmail_();
+  var list = users_().map(function (u) {
+    return { email: u.email, role: u.role, name: u.name, added: u.added, addedBy: u.addedBy, lastLogin: u.lastLogin, owner: u.email === owner };
+  });
+  if (owner && !list.some(function (u) { return u.owner; })) list.unshift({ email: owner, role: 'admin', name: 'Owner', added: 0, addedBy: '', lastLogin: 0, owner: true });
+  return { ok: true, users: list, google: !!googleCfg_(), redirectUri: execUrl_() };
+}
+
+/** Admin: add someone or change their role / name. */
+function portalUserSave(token, email, role, name) {
+  var g = need_(token, 'admin', 'Changing the people list');
+  if (!g.me) return g.stop;
+  email = String(email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, message: 'Write a full email address' };
+  if (ROLES.indexOf(role) < 0) return { ok: false, message: 'Choose Viewer, Service or Admin' };
+  if (email === ownerEmail_() && role !== 'admin') return { ok: false, message: 'The owner is always an admin' };
+  name = String(name || '').replace(/\s+/g, ' ').trim().substring(0, 60);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    usersChanged_();
+    var u = users_().filter(function (x) { return x.email === email; })[0];
+    if (u && u.role === 'admin' && role !== 'admin' && lastAdmin_(email)) return { ok: false, message: email + ' is the last admin - make someone else an admin first' };
+    if (u) {
+      usersSheet_().getRange(u.row, 2, 1, 2).setValues([[role, name || u.name]]);
+      audit_(g.me.email, 'changed a person', email + ': ' + u.role + ' -> ' + role);
+    } else {
+      usersSheet_().appendRow([email, role, name, Math.floor(now_()), g.me.email || 'shared password', '']);
+      audit_(g.me.email, 'added a person', email + ' as ' + role);
+    }
+    usersChanged_();
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+/** Admin: take someone off the list - their open sessions stop working at once. */
+function portalUserRemove(token, email) {
+  var g = need_(token, 'admin', 'Changing the people list');
+  if (!g.me) return g.stop;
+  email = String(email || '').trim().toLowerCase();
+  if (email === ownerEmail_()) return { ok: false, message: 'The owner cannot be removed' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    usersChanged_();
+    var u = users_().filter(function (x) { return x.email === email; })[0];
+    if (!u) return { ok: false, message: email + ' is not on the list' };
+    if (u.role === 'admin' && lastAdmin_(email)) return { ok: false, message: email + ' is the last admin - make someone else an admin first' };
+    usersSheet_().deleteRow(u.row);
+    usersChanged_();
+    audit_(g.me.email, 'removed a person', email + ' (was ' + u.role + ')');
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+/** Admin: the newest audit rows (who did what, when). */
+function portalAudit(token, limit) {
+  var g = need_(token, 'admin', 'Reading the audit log');
+  if (!g.me) return g.stop;
+  var sh = auditSheet_(), n = sh.getLastRow() - 1;
+  limit = Math.max(1, Math.min(500, Number(limit) || 200));
+  if (n < 1) return { ok: true, rows: [] };
+  var take = Math.min(n, limit);
+  var rows = sh.getRange(n + 2 - take, 1, take, 5).getValues().map(function (v) {
+    return { unix: Number(v[1]) || 0, email: String(v[2] || ''), action: String(v[3]), detail: String(v[4] || '') };
+  }).reverse();
+  return { ok: true, rows: rows };
 }
 
 /**
@@ -1010,12 +1470,14 @@ function portalMachines(token) {
   try { url = ScriptApp.getService().getUrl(); } catch (e) { url = ''; }
   var t = now_();
   var nb = netbirdStatus_();
+  var keys = cfg_().keys;
   return machines_(ss.getSheetByName('machines')).sort(function (a, b) { return a.name < b.name ? -1 : 1; }).map(function (m) {
     var s = m.snapshot || {};
     return {
       name: m.name, lastSeen: m.lastSeen, online: t - m.lastSeen < ONLINE_SEC,
+      retired: !Object.prototype.hasOwnProperty.call(keys, m.name),   // no key maps to it any more: it can be removed
       pending: cmds.filter(function (c) { return c.machine === m.name && !c.acked; }).length,
-      state: s.state || {}, programs: s.programs || [], prints: s.prints || [], cures: s.cures || [],
+      state: s.state || {}, programs: s.programs || [], presets: s.presets || [], prints: s.prints || [], cures: s.cures || [],
       reports: reps.filter(function (r) { return r.machine === m.name; }).map(function (r) { return r.runId; }),
       reportUrl: url,
       netbird: nb ? (nb.peers ? nb.peers[m.name] || null : { error: nb.error }) : null
@@ -1023,9 +1485,44 @@ function portalMachines(token) {
   });
 }
 
+/**
+ * Admin: take a retired machine off the portal (user, 2026-11-11: SC0003 was renamed CureBox-3 and its card stayed).
+ * Only a name that no key maps to any more - a machine that still has a key would come back at its next sync. Needs the
+ * portal password as well (user: "make the button require a password to delete"). Removes its card, its commands, its
+ * cure reports and its alert log; DVT runs are kept (they belong to the unit, not to the machine name).
+ */
+function portalMachineRemove(token, name, password) {
+  var g = need_(token, 'admin', 'Removing a machine');
+  if (!g.me) return g.stop;
+  name = String(name || '');
+  var c = cfg_();
+  if (!c.password || String(password || '') !== c.password) return { ok: false, message: 'Wrong password - the machine was not removed' };
+  if (Object.prototype.hasOwnProperty.call(c.keys, name)) return { ok: false, message: name + ' still has a machine key - it would come back at its next sync' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  var removed = {};
+  try {
+    var ss = book_();
+    var m = machines_(ss.getSheetByName('machines')).filter(function (x) { return x.name === name; })[0];
+    if (!m) return { ok: false, message: name + ' is not on the machine list' };
+    [['machines', 1], ['commands', 2], ['reports', 1], ['alerts', 1]].forEach(function (t) {
+      var sh = ss.getSheetByName(t[0]), n = sh.getLastRow() - 1;
+      removed[t[0]] = 0;
+      if (n < 1) return;
+      var col = sh.getRange(2, t[1], n, 1).getValues();
+      for (var i = n - 1; i >= 0; i--) if (String(col[i][0]) === name) { sh.deleteRow(i + 2); removed[t[0]]++; }
+    });
+    audit_(g.me.email, 'removed a machine', name + ' (' + removed.commands + ' commands, ' + removed.reports + ' reports, ' + removed.alerts + ' alerts)');
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true, removed: removed };
+}
+
 /** Queue a data-only command for a machine; null = not signed in. */
 function portalCommand(token, name, d) {
-  if (!authed_(token)) return null;
+  var gate = need_(token, 'service', 'Sending to a machine');
+  if (!gate.me) return gate.stop;
   d = d || {};
   if (COMMAND_TYPES.indexOf(d.type) < 0) return { ok: false, message: 'unknown command type' };
   var lock = LockService.getScriptLock();

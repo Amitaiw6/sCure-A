@@ -5,7 +5,7 @@
 Structure (Word navigation pane = the test list):
     Title, key figures, what the DVT proves, method
     1 … 5  one Heading 1 per phase, one Heading 2 per test
-           ("DVT-SAF-012 — Door interlock — UV inhibited with the door open")
+           ("DVT-SAF-008 — Door interlock — UV inhibited with the door open")
            with one line: applicability · repetitions · what it verifies
     Units, instrumentation, the console, status, decisions needed
 """
@@ -160,7 +160,7 @@ def build(cat: Catalog, d: dict, out: Path) -> Path:
 
     doc.add_heading("Instrumentation", level=1)
     _bullets(doc, [
-        ("PicoLog TC-08 ×2", "— 16 type-K thermocouples on a fixed 3-D grid (THM-001), heater-body and LED MCPCB bonds; the TC-08 clock is the time base of every shutdown test."),
+        ("PicoLog TC-08 ×2", "— 16 type-K thermocouples on a fixed 3-D grid (DVT-THM-001), heater-body and LED MCPCB bonds; the TC-08 clock is the time base of every shutdown test."),
         ("Ophir StarBright", "UV power meter (PD300-UV head) read directly by the console: LEDs at maximum → trigger → irradiance vs time, graph and CSV attached to the run."),
         ("Oxygen analyser", "(centre + worst corner), inline N₂ flow meter, chamber manometer — purge to 95 % N₂, hold through the cure, inlet over-pressure, venting, room O₂ at the operator."),
         ("Programmable AC source", "100 / 110 / 230 / 240 V, true-RMS meter, clamp on the heater branch, current probe with single-shot scope for the fuse tests."),
@@ -180,11 +180,11 @@ def build(cat: Catalog, d: dict, out: Path) -> Path:
     nulls = ", ".join(f"{k.replace('_thresholds', '')}.{kk}" for k, kk in d["null_thresholds"])
     _p(doc, f"Limits still null in the catalog: {nulls}. The tests that reference them evaluate as BLOCKED until set.", 9.5, bold=True)
     _bullets(doc, [
-        ("Fan and LED feedback.", "No tach on the second fan of each pair and no per-panel LED output feedback: SAF-008 / 019 / 020 need a hardware or firmware decision (tach lead, per-panel current sense on the spare ADS1115 inputs, or a thermistor rise-rate rule)."),
+        ("Fan and LED feedback.", "No tach on the second fan of each pair and no per-panel LED output feedback: DVT-SAF-005 / 015 / 016 need a hardware or firmware decision (tach lead, per-panel current sense on the spare ADS1115 inputs, or a thermistor rise-rate rule)."),
         ("Nitrogen sensing.", "No line-pressure sensor on the board; the 6 bar enable guard and the pre-cure N₂ check cannot work, and the Settings guard blocks nitrogen mode on real hardware. Fit an inlet pressure switch or drop the guard."),
         ("Voltage selector.", "A mid position is an open circuit; only the 25-minute stall rule can catch it and its text does not mention the selector. A \"no rise at all\" rule with customer guidance is recommended."),
-        ("REQ-48 heat-up ≤ 20 min", "already fails at EVT (27–33 min); decide the number or a documented waiver before Phase 3. Low line at 100 V is now in THM-001; 207 V still open."),
-        ("Campaign logistics", "— the destructive unit (UUT-05), the shipped unit for ENV-001, witnessing of Phases 1 and 5, a climate-controlled room for THM-003."),
+        ("REQ-48 heat-up ≤ 20 min", "already fails at EVT (27–33 min); decide the number or a documented waiver before Phase 3. Low line at 100 V is now in DVT-THM-001; 207 V still open."),
+        ("Campaign logistics", "— the destructive unit (UUT-05), the shipped unit for DVT-ENV-001, witnessing of Phases 1 and 5, a climate-controlled room for DVT-THM-003."),
     ])
 
     # footer

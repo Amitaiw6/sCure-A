@@ -104,7 +104,7 @@ _el("fan_intake", "fan", "Intake fan", cx=52, cy=300, r=10)
 _el("damper", "smallbox", "Damper", x=70, y=300, w=30, h=8)
 _el("vents", "vents", "Seams and vents")
 _el("ui", "smallbox", "UI", x=150, y=318, w=50, h=16)
-# nitrogen purge (DVT-GAS-001)
+# nitrogen purge (DVT-GAS-007)
 _el("n2_valve", "smallbox", "N2 valve", x=34, y=232, w=24, h=12)
 _el("n2_nozzle", "dot", "N2 nozzle", cx=76, cy=238, r=4)
 _el("bofa", "smallbox", "Extraction (BOFA)", x=392, y=44, w=26, h=12)
@@ -178,7 +178,7 @@ UV_ON = dict(inlet="on", ssr_led="on", drivers="on", wire_led="on", led_left="on
 TC = dict(tc_heater="instr", tc08="instr")
 TRACE_TURN = dict(tc_heater="focus", tc08="focus", ssr_heater="off", heater="off", wire_heater="off")
 
-F["DVT-SAF-001"] = fig(
+F["DVT-SAF-018"] = fig(
     "230 V mains into the 110 V selector position — the 5 A heater branch fuse must open first, and nothing else",
     {**HEAT_ON, "selector": "fault", "fuse_inlet": "focus", "fuse_heater": "focus", "ac_source": "instr", "current_probe": "instr", "scope": "instr", "thermal_cam": "instr"},
     {0: dict(fuse_inlet="focus", fuse_heater="focus", selector="fault", heater=None, ssr_heater=None, wire_heater=None, inlet=None),
@@ -187,38 +187,31 @@ F["DVT-SAF-001"] = fig(
      3: dict(ui="focus", heater="on"),
      4: dict(fuse_heater="fault", heater="off", wire_heater="off", ssr_heater="off", thermal_cam="focus"),
      5: dict(inlet="off", heater="off", wire_heater="off", ssr_heater="off", fuse_heater="fault", enclosure="focus"),
-     6: dict(fuse_heater="ok", selector="ok", heater="on")},
+     6: dict(inlet="off", heater="off", fuse_heater="fault"),
+     7: dict(fuse_heater="ok", selector="ok", heater="on")},
     selector="110", mains="230 V")
 
-F["DVT-SAF-002"] = fig(
+F["DVT-SAF-019"] = fig(
     "A dead short across the mains inlet — the 15 A inlet fuse interrupts it; inlet, filter and earth survive",
     {"inlet": "focus", "short": "fault", "fuse_inlet": "focus", "pe": "instr", "ac_source": "instr", "current_probe": "instr", "scope": "instr"},
     {0: dict(ac_source="focus", pe="focus", short=None), 1: dict(inlet="on", short=None, controller="on", ui="on"),
      2: dict(short="fault", fuse_inlet="fault", scope="focus", current_probe="focus"),
      3: dict(inlet="off", short="off", enclosure="focus", fuse_inlet="fault"), 4: dict(pe="focus", short=None, earth_tester="instr", megger="instr", ac_source=None)})
 
-F["DVT-SAF-003"] = fig(
+F["DVT-SAF-001"] = fig(
     "Circulation fan supply opened while the heater is at full output — the software must cut the heater; the cut is read on the heater-body thermocouple",
     {**HEAT_ON, **TC, "fan_circ": "fault", "ui": "focus"},
     {0: dict(fan_circ="fault", tc08="focus", tc_heater="focus"), 1: dict(ui="focus", log="instr"), 2: TRACE_TURN,
      3: dict(ui="focus"), 4: dict(fan_circ="ok", ui="focus", heater="off", ssr_heater="off", wire_heater="off"), 5: dict(tc08="focus")})
 
-F["DVT-SAF-004"] = fig(
+F["DVT-SAF-002"] = fig(
     "Heater control NTC unplugged during heat-up — heating must stop; the de-energisation is the rise-to-fall turn on the TC-08 trace",
     {**HEAT_ON, **TC, "ntc_heater": "fault"},
     {0: dict(ntc_heater="fault", tc08="focus"), 1: TRACE_TURN, 2: dict(ui="focus"),
      3: dict(ui="focus", ssr_heater="off", heater="off", wire_heater="off", tc_heater="focus"),
      4: dict(ntc_heater="ok", ui="focus", heater="on"), 5: dict(tc08="focus")})
 
-F["DVT-SAF-005"] = fig(
-    "Control NTC replaced by a fixed 10 kOhm resistor — a plausible, frozen 25 C reading; the software must detect that full heater output moves nothing",
-    {**HEAT_ON, **TC, "ntc_heater": "off", "resistor_10k": "fault", "ref_tc": "instr", "ui": "focus"},
-    {0: dict(resistor_10k="fault", ui="focus", heater=None, ssr_heater=None, wire_heater=None, ref_tc="focus"), 1: dict(ui="focus", heater="on", tc08="focus"),
-     2: dict(ui="focus", ref_tc="focus", heater="on"), 3: dict(ui="focus", log="instr"), 4: TRACE_TURN,
-     5: dict(ref_tc="focus", cutout="focus", chamber="focus"), 6: dict(ui="focus", ssr_heater="off", heater="off", wire_heater="off", resistor_10k="fault"),
-     7: dict(resistor_10k=None, ntc_heater="ok", heater="on"), 8: dict(tc08="focus", log="instr")})
-
-F["DVT-SAF-007"] = fig(
+F["DVT-SAF-004"] = fig(
     "LED thermistor open circuit — cure start inhibited, LED drive cut mid-cure within 2 s (Ophir trace), alarm names the sensor",
     {**UV_ON, "th_right": "fault", "ophir_head": "instr", "ophir": "instr"},
     {0: dict(th_right="fault", led_left=None, led_right=None, led_back=None, led_door=None, ssr_led=None, drivers=None, wire_led=None, inlet=None),
@@ -226,7 +219,7 @@ F["DVT-SAF-007"] = fig(
      2: dict(th_right="fault", ophir="focus", ophir_head="focus", led_right="off", ssr_led="off", drivers="off", wire_led="off"),
      3: dict(ui="focus", th_right="fault")})
 
-F["DVT-SAF-008"] = fig(
+F["DVT-SAF-005"] = fig(
     "One LED cooling fan disabled — job start inhibited, mid-job stop, and the error names the right fan",
     {**UV_ON, "fan_led_right": "fault"},
     {0: dict(fan_led_right="fault", led_left=None, led_right=None, led_back=None, led_door=None, ssr_led=None, drivers=None, wire_led=None),
@@ -234,32 +227,32 @@ F["DVT-SAF-008"] = fig(
      2: dict(ui="focus", fan_led_right="fault"), 3: dict(fan_led_right="fault", led_right="off", ssr_led="off", drivers="off", wire_led="off"),
      4: dict(th_right="focus", fan_led_right="fault")})
 
-F["DVT-SAF-009"] = fig(
+F["DVT-SAF-006"] = fig(
     "Chamber intake fan disconnected, then rotor blocked — job start inhibited and the fan named; injected again during cooling",
     {"fan_intake": "fault", "damper": "focus", "ui": "focus"},
     {0: dict(fan_intake="fault"), 1: dict(ui="focus", fan_intake="fault"), 2: dict(ui="focus"), 3: dict(fan_intake="fault", damper="on", fan_circ="on", chamber="focus")})
 
-F["DVT-SAF-010"] = fig(
-    "Desk review — every alarm raised in SAF-003…009 checked against the error registry: names the component, states the recovery, logged with a timestamp",
+F["DVT-SAF-020"] = fig(
+    "Desk review — every alarm raised in DVT-SAF-001…DVT-SAF-020 checked against the error registry: names the component, states the recovery, logged with a timestamp",
     {"ui": "focus", "registry": "instr", "log": "instr", "controller": "focus"},
     {0: dict(ui="focus"), 1: dict(registry="focus"), 2: dict(ui="focus", registry="focus"), 3: dict(log="focus", controller="focus")})
 
-F["DVT-SAF-011"] = fig(
-    "110 V mains into the 230 V selector position — a quarter of the heater power; the chamber must not silently fail to reach temperature",
+F["DVT-SAF-007"] = fig(
+    "110 V mains into the 220 V selector position — about a quarter of the heater power; the chamber must not silently fail to reach temperature",
     {**HEAT_ON, "selector": "fault", "ac_source": "instr", "current_probe": "instr", "chamber_sensor": "instr", "ui": "focus"},
     {0: dict(selector="fault", ac_source="focus", heater=None, ssr_heater=None, wire_heater=None, inlet=None), 1: dict(inlet="on", controller="on", ui="on", heater=None, ssr_heater=None, wire_heater=None),
      2: dict(ui="focus", heater="on"), 3: dict(current_probe="focus", wire_heater="focus"), 4: dict(chamber_sensor="focus", chamber="focus"),
      5: dict(ui="focus"), 6: dict(fuse_heater="ok", fuse_inlet="ok", cutout="ok"), 7: dict(selector="ok", heater="on")},
     selector="230", mains="110 V")
 
-F["DVT-SAF-021"] = fig(
+F["DVT-SAF-017"] = fig(
     "Voltage selector between detents (open circuit) — controller and UI run, the heater receives no power; the alarm must tell the customer to set the selector",
     {"inlet": "on", "fuse_inlet": "on", "selector": "fault", "wire_ctrl": "on", "psu": "on", "controller": "on", "ui": "on",
      "fuse_heater": "off", "ssr_heater": "off", "wire_heater": "off", "heater": "off", **TC, "current_probe": "instr", "ac_source": "instr"},
     {0: dict(selector="fault", ac_source="focus"), 1: dict(controller="focus", ui="focus", psu="focus"), 2: dict(ui="focus", tc08="focus"),
      3: dict(current_probe="focus", wire_heater="off"), 4: dict(chamber_sensor="instr", tc_heater="focus", chamber="focus"), 5: dict(ui="focus"),
-     6: dict(ui="focus", ssr_heater="off"), 7: dict(fuse_heater="ok", fuse_inlet="ok", cutout="ok"), 8: dict(selector="ok", heater="on", wire_heater="on", ssr_heater="on", fuse_heater="on"),
-     9: dict(tc08="focus", log="instr")},
+     6: dict(ui="focus", ssr_heater="off"), 7: dict(selector="ok", heater="on", wire_heater="on", ssr_heater="on", fuse_heater="on"),
+     8: dict(tc08="focus", log="instr")},   # the fuse / damage inspection step removed (user, 2026-11-12)
     selector="mid", mains="230 V")
 
 F["DVT-THM-001"] = fig(
@@ -268,6 +261,13 @@ F["DVT-THM-001"] = fig(
     {0: dict(ac_source="focus", selector="focus", chamber_sensor="focus", heater=None, ssr_heater=None, wire_heater=None), 1: dict(grid="focus", ref_tc="focus", tc08="focus", heater=None, ssr_heater=None, wire_heater=None),
      2: dict(ui="focus", heater="on"), 3: dict(chamber_sensor="focus"), 4: dict(ref_tc="focus"), 5: dict(ref_tc="focus", chamber_sensor="focus"),
      6: dict(chamber_sensor="focus"), 7: dict(grid="focus"), 8: dict(chamber_sensor="focus"), 9: dict(heater="off", ssr_heater="off", wire_heater="off", grid="focus", fan_intake="on", damper="on"), 10: dict(tc08="focus")})
+
+F["DVT-THM-007"] = fig(
+    "Step from ambient to 80 C at 220 V with the 16-channel grid read by the machine — heat-up time, then a 5 minute hold and the uniformity over it",
+    {**HEAT_ON, "grid": "instr", "chamber_sensor": "instr", "tc08": "instr", "ac_source": "instr"},
+    {0: dict(ac_source="focus", selector="focus", chamber_sensor="focus", heater=None, ssr_heater=None, wire_heater=None),
+     1: dict(ui="focus", heater="on", grid="focus", tc08="focus"), 2: dict(chamber_sensor="focus"), 3: dict(chamber_sensor="focus", grid="focus"),
+     4: dict(heater="off", ssr_heater="off", wire_heater="off", grid="focus"), 5: dict(tc08="focus")})
 
 F["DVT-ENV-001"] = fig(
     "The packaged unit shipped by truck with a shock logger and indicators inside the crate — functional acceptance before and after, inspection on arrival",
@@ -304,14 +304,14 @@ F["DVT-ELE-005"] = fig(
      3: m(UV_ON, power_analyzer="focus"), 4: {**HEAT_ON, **UV_ON, "fan_intake": "on", "power_analyzer": "focus"}, 5: dict(inlet="on", current_probe="focus", scope="instr", power_analyzer=None),
      6: dict(fuse_inlet="focus"), 7: dict(inlet="focus", ui="focus")})
 
-F["DVT-SAF-012"] = fig(
-    "Door interlock — no UV with the door open; opening the door mid-cure removes UV within 1 s on the Ophir trace; magnet defeat attempted; GPIO27 truthful",
+F["DVT-SAF-008"] = fig(
+    "Door interlock — no UV with the door open; opening the door mid-cure removes UV within 1 s on the Ophir trace; the lock holds against a pull; magnet defeat attempted",
     {**UV_ON, "door": "focus", "door_sensor": "focus", "door_lock": "focus", "ophir_head": "instr", "ophir": "instr"},
     {0: dict(door="fault", ui="focus", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off", drivers="off", wire_led="off"),
      1: dict(door="fault", ophir="focus", ophir_head="focus", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off", drivers="off", wire_led="off"),
-     2: dict(door_lock="focus", door="focus"), 3: dict(magnet="fault", door_sensor="focus", door="fault"), 4: dict(door_sensor="focus", controller="focus"), 5: dict(ui="focus")})
+     2: dict(door_lock="focus", door="focus"), 3: dict(magnet="fault", door_sensor="focus", door="fault")})   # steps 5-6 removed (user, 2026-11-12)
 
-F["DVT-SAF-013"] = fig(
+F["DVT-SAF-009"] = fig(
     "Heater fed from an external supply with the machine commanding nothing and its limits untouched — the independent thermal cutout must open; trip time, trip temperature and reset temperature on the heater-body thermocouple, the trace itself the fourth deliverable",
     {**HEAT_ON, **TC, "cutout": "focus", "controller": "off", "ssr_heater": "off"},
     {0: dict(cutout="focus", tc_heater="focus", heater=None, ssr_heater=None, wire_heater=None),
@@ -319,36 +319,39 @@ F["DVT-SAF-013"] = fig(
      2: dict(controller="off", ssr_heater="off", wire_heater="on", heater="on", ui="focus"),
      3: dict(cutout="fault", heater="off", wire_heater="off", ssr_heater="off", tc08="focus", tc_heater="focus")})
 
-F["DVT-SAF-014"] = fig(
-    "Heartbeat stopped / control process killed — the SSRs must drop by hardware: heater off on the TC-08 trace, UV off on the Ophir trace; no automatic restart",
+F["DVT-SAF-010"] = fig(
+    "Firmware hung on purpose — the separate output watchdog must cut: UV off on the StarBright, heater off on the TC-08 trace; nothing restarts by itself",
     {**HEAT_ON, **TC, "heartbeat": "fault", "controller": "fault", "ssr_heater": "focus", "ssr_led": "focus", "ophir_head": "instr", "ophir": "instr"},
-    {0: dict(heartbeat="fault", ssr_heater="focus", tc_heater="focus", tc08="focus"), 1: m(UV_ON, heartbeat="fault", ssr_led="focus", ophir="focus", ophir_head="focus", heater=None, ssr_heater=None, wire_heater=None, fan_circ=None),
-     2: dict(controller="fault", heartbeat="fault", ssr_heater="focus", ssr_led="focus"), 3: dict(controller="off", heater="off", ssr_heater="off", wire_heater="off", tc_heater="focus"),
-     4: dict(log="instr", controller="focus"), 5: dict(tc08="focus", ophir="focus")})
+    {0: m(UV_ON, tc_heater="focus", tc08="focus", ophir="focus", ophir_head="focus"),
+     1: dict(controller="fault", heartbeat="fault", ssr_heater="focus", ssr_led="focus", ophir="focus", tc_heater="focus"),
+     2: dict(controller="focus", heater="off", ssr_heater="off", wire_heater="off", log="instr")})
 
-F["DVT-SAF-015"] = fig(
+F["DVT-SAF-011"] = fig(
     "Mains cut for 20 ms … 60 s during a job — nothing resumes by itself on restoration, the door is releasable, the job is marked aborted, the configuration survives",
     {**HEAT_ON, **UV_ON, **TC, "inlet": "fault", "ac_source": "instr", "door_lock": "focus"},
     {0: dict(inlet="fault", ac_source="focus"), 1: dict(inlet="on", heater="off", ssr_heater="off", wire_heater="off", ssr_led="off", drivers="off", wire_led="off", led_left="off", led_right="off", led_back="off", led_door="off", tc_heater="focus", tc08="focus"),
      2: dict(inlet="fault", door_lock="focus", door="focus"), 3: dict(ui="focus", log="instr", inlet="on"), 4: dict(controller="focus", inlet="fault", log="instr")})
 
-F["DVT-SAF-016"] = fig(
+F["DVT-SAF-012"] = fig(
     "UV radiometer scanned along the door seam, hinge, damper, vents, cable entries and panel joints at 10 cm, then at the operator position",
     {**UV_ON, "vents": "focus", "uv_meter": "instr", "door": "focus"},
     {0: dict(vents="focus", uv_meter="focus", door="focus", damper="focus"), 1: dict(operator="instr", uv_meter="focus", vents=None), 2: dict(operator="focus", uv_meter="focus", vents=None)})
 
-F["DVT-SAF-017"] = fig(
-    "Door sensor unplugged, then shorted to fake a closed door — no cure, UV removed mid-cure, the hardware SSR enable path opens; any service bypass is controlled and logged",
-    {**UV_ON, "door_sensor": "fault", "ssr_led": "focus", "door": "focus", "dmm": "instr"},
-    {0: dict(door_sensor="fault", ui="focus", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off", drivers="off", wire_led="off", heater="off"),
-     1: dict(door_sensor="fault", ophir="instr", ophir_head="instr", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off"),
-     2: dict(door_sensor="fault", door="fault", ui="focus", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off"),
-     3: dict(ssr_led="focus", dmm="focus", door_sensor="fault"), 4: dict(controller="focus", log="instr", ui="focus"), 5: dict(ui="focus", door_sensor="ok")})
+F["DVT-SAF-013"] = fig(
+    "Door switch connector unplugged - the LEDs and the heating are commanded on and neither may turn on",
+    {**UV_ON, "door_sensor": "fault", "ssr_led": "focus", "door": "focus"},
+    {0: dict(door_sensor="fault", ui="focus"),
+     1: dict(door_sensor="fault", ui="focus", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off", drivers="off", wire_led="off"),
+     2: dict(door_sensor="fault", ui="focus", heater="off", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off"),
+     3: dict(ui="focus", log="instr", door_sensor="fault", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off"),
+     4: dict(door_sensor="ok")})
 
-F["DVT-SAF-018"] = fig(
-    "Software stack failure per layer (UI, backend, hardware bridge, OS) — heater and UV response, what the machine shows, no automatic resumption, distinct error code",
-    {**HEAT_ON, **UV_ON, "controller": "fault", "ui": "fault", "ssr_heater": "focus", "ssr_led": "focus", "log": "instr"},
-    {0: dict(controller="fault", ui="fault", ssr_heater="focus", ssr_led="focus"), 1: dict(controller="ok", heater="off", ssr_heater="off", wire_heater="off", ssr_led="off", drivers="off", wire_led="off", led_left="off", led_right="off", led_back="off", led_door="off", log="focus")})
+F["DVT-SAF-014"] = fig(
+    "Software stack failure - screen killed (the cure carries on), storage read-only (safe, alarm), I2C bus lost (heater and UV off) - read on the StarBright and the heater-body thermocouple",
+    {**HEAT_ON, **UV_ON, "controller": "fault", "ui": "fault", "ssr_heater": "focus", "ssr_led": "focus", "log": "instr", "ophir": "instr", "ophir_head": "instr"},
+    {0: m(UV_ON, ophir="focus", ophir_head="focus"),
+     1: dict(controller="fault", ui="fault", ssr_heater="focus", ssr_led="focus", ophir="focus"),
+     2: dict(controller="ok", heater="off", ssr_heater="off", ssr_led="off", log="focus")})
 
 F["DVT-THM-002"] = fig(
     "30-minute cure at the working point with thermocouples bonded to all four LED panels next to the built-in thermistors — back-face maximum, rate of rise, junction margin",
@@ -356,14 +359,14 @@ F["DVT-THM-002"] = fig(
     {0: dict(ui="focus", chamber_sensor="focus"), 1: dict(tc08="focus", th_left="focus", th_right="focus", th_back="focus", th_door="focus"), 2: dict(led_left="focus", led_right="focus", led_back="focus", led_door="focus"),
      3: dict(tc08="focus"), 4: dict(led_right="focus"), 5: dict(th_right="focus"), 6: dict(led_right="focus"), 7: dict(ui="focus", ssr_led="focus"), 8: dict(tc08="focus")})
 
-F["DVT-SAF-019"] = fig(
+F["DVT-SAF-015"] = fig(
     "LED cooling degraded in steps (fan duty 75 / 50 / 25 %, or an obstruction) on one side — the alarm must name the SIDE and blame the right fan; other panels stay quiet",
     {**UV_ON, "fan_led_right": "fault", "th_right": "instr", "ui": "focus"},
     {0: dict(th_right="focus", fan_led_right="focus"), 1: dict(fan_led_right="fault"), 2: dict(th_right="focus", ui="focus"), 3: dict(ui="focus"), 4: dict(ui="focus", led_right="focus"),
      5: dict(ui="focus", fan_led_right="fault"), 6: dict(fan_led_right="focus"), 7: dict(th_right="focus", led_right="off", ssr_led="off", drivers="off", wire_led="off"),
      8: dict(led_left="focus", led_back="focus", led_door="focus", th_left="focus", th_back="focus", th_door="focus"), 9: dict(fan_led_right="ok", ui="focus")})
 
-F["DVT-SAF-020"] = fig(
+F["DVT-SAF-016"] = fig(
     "One LED panel electrically disconnected (at the driver or at the panel) — detected at switch-on, the alarm names the panel, the job does not run dark, the other three keep working",
     {**UV_ON, "led_right": "fault", "wire_led": "focus", "drivers": "focus", "dmm": "instr"},
     {0: dict(led_right="fault", wire_led="focus", drivers="focus"), 1: dict(led_right="fault", dmm="focus", inlet="on", led_left="off", led_back="off", led_door="off", ssr_led="off"),
@@ -377,7 +380,17 @@ F["DVT-THM-003"] = fig(
      4: dict(chamber_sensor="focus"), 5: dict(chamber_sensor="focus", fan_intake="focus"), 6: dict(fan_intake="focus"), 7: dict(chamber_sensor="focus"), 8: dict(grid="focus"),
      9: dict(ui="focus", chamber_sensor="focus"), 10: dict(tc08="focus")})
 
-F["DVT-THM-004"] = fig(
+F["DVT-THM-005"] = fig(
+    "Drying from a cold start to 50 C — heater and heater fan on, damper closed until the chamber is close to the set point, then the damper opens and the intake fan blows fresh air; time to 30 / 40 / 50 / 60 C and the highest temperature off the chamber sensor",
+    {**HEAT_ON, "fan_intake": "off", "damper": "off", "chamber_sensor": "instr"},
+    {0: dict(chamber_sensor="focus", heater="off", ssr_heater="off", wire_heater="off", fan_circ="off"),
+     1: dict(ui="focus", chamber_sensor="instr"),
+     2: dict(chamber_sensor="focus", ui="focus"),
+     3: dict(chamber_sensor="focus", damper="on", fan_intake="on"),
+     4: dict(chamber_sensor="focus", damper="on", fan_intake="on"),
+     5: dict(damper="focus", fan_intake="focus", chamber_sensor="instr")})
+
+F["DVT-THM-006"] = fig(
     "230 V into the 110 V selector position, HEAT commanded — the heater is over-driven until the 5 A branch fuse opens; the shutdown instant is the rise-to-fall turn on the heater-body thermocouple",
     {**HEAT_ON, **TC, "selector": "fault", "fuse_heater": "focus", "ac_source": "instr", "thermal_cam": "instr"},
     {0: dict(fuse_inlet="focus", fuse_heater="focus", selector="fault", tc_heater="focus", heater=None, ssr_heater=None, wire_heater=None, inlet=None),
@@ -388,7 +401,7 @@ F["DVT-THM-004"] = fig(
      6: dict(fuse_heater="ok", selector="ok", heater="on", tc08="focus")},
     selector="110", mains="230 V")
 
-F["DVT-GAS-001"] = fig(
+F["DVT-GAS-007"] = fig(
     "N2 purge with two oxygen probes (centre and worst corner) — time to 95 % N2 and the lowest O2 reached; then the valve closes and the chamber must hold above 95 % N2 for the longest cure",
     {"n2_valve": "focus", "n2_nozzle": "focus", "n2_supply": "instr", "o2_center": "instr", "o2_corner": "instr", "o2_analyser": "instr", "damper": "off", "bofa": "off", "door": "focus"},
     {0: dict(n2_supply="focus", o2_analyser="focus", chamber_sensor="instr", n2_valve=None, n2_nozzle=None), 1: dict(ui="focus", n2_valve=None, n2_nozzle=None),
@@ -409,19 +422,19 @@ def _t(s: str) -> str:
     return html.escape(s, quote=True)          # drawings stay in English in every console language
 
 
-# ---- nitrogen: supply, valve, venting, operator (GAS-002…007, after GAS-001)
+# ---- nitrogen: supply, valve, venting, operator (DVT-GAS-001…DVT-GAS-006, after DVT-GAS-007)
 N2_IDLE = dict(n2_supply="instr", n2_valve="off", n2_nozzle="off", o2_center="instr", o2_analyser="instr", damper="off", bofa="off")
 N2_ON = dict(n2_valve="on", n2_nozzle="on")
+F["DVT-GAS-001"] = fig(
+    "Nitrogen over-pressure — above 3 bar the valve stays closed, refuses to open and the machine alarms; it closes at once when the pressure rises while it flows",
+    m(N2_IDLE, n2_supply="focus", n2_valve="focus", ui="focus"),
+    {0: dict(n2_supply="focus", n2_valve="off"),
+     1: dict(n2_valve="off", n2_nozzle="off", ui="focus", n2_supply="focus"),
+     2: m(N2_ON, n2_supply="focus", ui="focus"),
+     3: dict(n2_supply="focus", n2_valve="off", n2_nozzle="off", ui="focus"),
+     4: m(N2_ON, n2_supply="focus")})
+
 F["DVT-GAS-002"] = fig(
-    "Nitrogen inlet over-pressure — supply at 1.0 / 1.5 / 2.0 x the rated maximum: no flow past the closed valve, chamber pressure and door seal with the valve open, valve leak-tight afterwards",
-    m(N2_IDLE, n2_supply="focus", n2_valve="focus", door="focus"),
-    {0: dict(n2_supply="focus"),
-     1: dict(n2_valve="focus", n2_nozzle="off", o2_center="focus", n2_supply="focus"),
-     2: m(N2_ON, door="focus", door_lock="focus", vents="focus", ui="focus"),
-     3: dict(n2_valve="off", n2_nozzle="off", o2_center="focus", n2_supply="focus"),
-     4: dict(n2_valve="focus", n2_nozzle="off", n2_supply="instr"),
-     5: m(N2_ON, n2_supply="focus")})
-F["DVT-GAS-003"] = fig(
     "Nitrogen supply low or lost — enable guard without supply, pre-cure check below 6 bar, supply closed mid-purge and mid-cure: the operator must be told it is the N2 line; no cure silently in air",
     m(N2_IDLE, n2_supply="fault", ui="focus"),
     {0: dict(n2_supply="focus"),
@@ -430,35 +443,33 @@ F["DVT-GAS-003"] = fig(
      3: m(N2_ON, n2_supply="fault", o2_center="focus", ui="focus", led_left="on", led_right="on", led_back="on", led_door="on"),
      4: dict(ui="focus"),
      5: dict(o2_analyser="focus", log="instr")})
+F["DVT-GAS-003"] = fig(
+    "Nitrogen line leak-down — line charged to 4 bar and isolated, valve closed; the machine logs the line pressure for 12 hours",
+    m(N2_IDLE, n2_supply="focus", n2_valve="off"),
+    {0: dict(n2_supply="focus", n2_valve="off"),
+     1: dict(n2_supply="instr", n2_valve="off", log="instr"),
+     2: dict(n2_supply="focus", n2_valve="focus"),
+     3: dict(n2_supply="ok")})
+
 F["DVT-GAS-004"] = fig(
-    "Nitrogen valve fail-safe — no flow with the machine off for 24 h; flow stops within 2 s on mains loss, door opening and abort, valve drive read on a probe",
-    m(N2_IDLE, n2_valve="focus", scope="instr"),
-    {0: dict(inlet="off", controller="off", n2_valve="focus", n2_supply="focus", o2_center="focus"),
-     1: m(N2_ON, ac_source="fault", inlet="off", controller="off", scope="focus"),
-     2: m(N2_ON, door="fault", door_sensor="focus", scope="focus"),
-     3: m(N2_ON, ui="focus", scope="focus"),
-     4: dict(n2_valve="off", n2_nozzle="off", scope="focus", o2_center="focus")})
-F["DVT-GAS-005"] = fig(
     "Venting after a cure under nitrogen — a program without the Cooling vent is refused; O2 back to 19.5 % before the job completes and the door lock releases",
     m(N2_IDLE, vents="focus", door_lock="focus", o2_center="instr"),
     {0: dict(ui="focus", controller="focus"),
      1: dict(n2_valve="off", n2_nozzle="off", vents="focus", fan_intake="on", damper="on", o2_center="focus", ui="focus"),
      2: dict(door_lock="focus", door="focus", o2_center="focus", operator="instr"),
      3: dict(o2_analyser="focus", log="instr")})
-F["DVT-GAS-006"] = fig(
+F["DVT-GAS-005"] = fig(
     "Room O2 at the operator — two purges back to back vented into the smallest permitted room, no extraction: breathing-zone O2 must stay above 19.5 %",
     m(N2_IDLE, operator="focus", vents="focus", bofa="off"),
     {0: dict(enclosure="focus", operator="focus"),
      1: m(N2_ON, vents="on", operator="focus", bofa="off"),
      2: dict(operator="focus", n2_valve="off", n2_nozzle="off")})
-F["DVT-GAS-007"] = fig(
-    "Nitrogen solenoid coil temperature — thermocouple on the coil through two maximum purges and 60 min held open; the valve must still operate afterwards",
-    m(N2_IDLE, n2_valve="focus", tc08="instr"),
-    {0: m(N2_ON, tc08="focus", n2_valve="focus"),
-     1: m(N2_ON, tc08="focus", n2_valve="fault", controller="focus"),
-     2: m(N2_ON, n2_supply="focus", n2_valve="ok"),
-     3: dict(tc08="focus", log="instr")})
-
+F["DVT-GAS-006"] = fig(
+    "Nitrogen not reaching the chamber — the tube after the valve is blocked; the machine sees no pressure drop, closes the valve and alarms",
+    m(N2_IDLE, n2_valve="focus", n2_nozzle="fault", ui="focus"),
+    {0: dict(n2_nozzle="fault", n2_valve="off"),
+     1: dict(n2_valve="fault", n2_nozzle="fault", ui="focus"),
+     2: m(N2_ON, n2_supply="focus")})
 
 F["DVT-NFC-001"] = fig(
     "Build-head NFC identification — a registered build head inserted to its stop is read and bound; a swapped head follows the tag; no tag, an unknown tag, a short seating and a disabled reader are reported to the operator",
@@ -467,7 +478,7 @@ F["DVT-NFC-001"] = fig(
      3: dict(ui="focus", build_head="focus"), 4: dict(ui="focus", controller="focus"), 5: dict(build_head="off", nfc_reader="focus", ui="focus"), 6: dict(log="focus")})
 
 
-F["DVT-THM-005"] = fig(
+F["DVT-THM-004"] = fig(
     "LED back-face temperature settled at LED-cooling fan duty 100 / 90 / 80 / 70 %, LEDs at maximum in an 80 C chamber — margin to the 75 C working limit per panel, the lowest duty the design can afford",
     {**HEAT_ON, **UV_ON, "fan_led_left": "focus", "fan_led_right": "focus", "fan_led_back": "focus", "fan_led_door": "focus", "th_left": "instr", "th_right": "instr", "th_back": "instr", "th_door": "instr", "tc08": "instr"},
     {0: dict(chamber_sensor="focus", ui="focus"), 1: dict(fan_led_left="focus", fan_led_right="focus", fan_led_back="focus", fan_led_door="focus", ui="focus"),

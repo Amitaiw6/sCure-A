@@ -1,4 +1,4 @@
-"""DVT-THM-005, automatic: LED back-face temperature against LED-cooling fan
+"""DVT-THM-004, automatic: LED back-face temperature against LED-cooling fan
 duty. The console drives the machine — no operator action during the run.
 
 Sequence (`FanSweepRunner.run`, blocking — call it from a worker thread):
@@ -252,7 +252,7 @@ def write_csv(res: FanSweepResult, path: str | Path) -> Path:
     t0 = res.t0 or (res.samples[0].t if res.samples else 0.0)
     with p.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["# DVT-THM-005 LED temperature vs LED-cooling fan duty", f"status={res.status}", f"recommended_duty={res.recommended_duty()}"])
+        w.writerow(["# DVT-THM-004 LED temperature vs LED-cooling fan duty", f"status={res.status}", f"recommended_duty={res.recommended_duty()}"])
         w.writerow(["t_s", "fan_duty_pct", *[f"led_{p}_C" for p in PANELS], "tach_rpm"])
         for s in res.samples:
             w.writerow([f"{s.t - t0:.1f}", s.duty, *[("" if s.temps.get(p) is None else f"{s.temps[p]:.2f}") for p in PANELS], "" if s.tach is None else f"{s.tach:.0f}"])
@@ -264,7 +264,7 @@ def write_csv(res: FanSweepResult, path: str | Path) -> Path:
     return p
 
 
-def plot_png(res: FanSweepResult, path: str | Path, title: str = "DVT-THM-005 · LED temperature vs LED-cooling fan duty") -> Path:
+def plot_png(res: FanSweepResult, path: str | Path, title: str = "DVT-THM-004 · LED temperature vs LED-cooling fan duty") -> Path:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt

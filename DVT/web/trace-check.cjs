@@ -38,7 +38,7 @@ const resetAt = ch1;
 for (let i = 601; i <= 900; i++) { ch1 += 0.2; chamber += 0.01; rows.push(row(tripAt + i, ch1, chamber, '9002')); }  // cutout closes, the bridged heater is back on
 process.env.SCURE_EXPECT_RESET = resetAt.toFixed(2);
 
-const test = CATALOG.tests['DVT-SAF-013'];
+const test = CATALOG.tests['DVT-SAF-009'];
 const rec = { values: {}, autos: { tc08_record: { kind: 'tc08_record', samples: rows } } };
 // does the recording know when it is complete? before the trip: no; 5 min after it: no; once the body climbs again: yes;
 // and 20 minutes after a trip with no reset: yes

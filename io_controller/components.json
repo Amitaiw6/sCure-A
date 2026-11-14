@@ -1,6 +1,5 @@
 {
   "_comment": "CureBox component configuration. Edit THIS FILE ONLY (no source changes) to add LEDs, change fan assignments, fan speeds, default intensity, or wavelength gating. LED and fan names must match the channel names in io_controller (PCA_CHANNELS).",
-
   "led_power": {
     "ssr_450nm": 16,
     "ssr_405nm": 20,
@@ -10,26 +9,62 @@
     "min_intensity": 10,
     "led_max_duty": 60,
     "modes": {
-      "450nm": { "ssr_450nm": 1, "ssr_405nm": 0, "routing": 0, "led_switch": 0 },
-      "405nm": { "ssr_450nm": 1, "ssr_405nm": 1, "routing": 0, "led_switch": 1 }
+      "450nm": {
+        "ssr_450nm": 1,
+        "ssr_405nm": 0,
+        "routing": 0,
+        "led_switch": 0
+      },
+      "405nm": {
+        "ssr_450nm": 1,
+        "ssr_405nm": 1,
+        "routing": 0,
+        "led_switch": 1
+      }
     },
     "_comment": "Software-driven LED-driver SSR + wavelength-select GPIOs (OUTPUTS) plus the LED_SWITCH relay: led_switch = TCA6424A P05 -> Q28 -> K4 (selects LED_OUT1/LED_OUT2 at J21), 1 while a Cure / 405nm process runs, 0 for Bleaching / 450nm and whenever the machine is idle, safe or shut down (SystemController._set_led_switch, verified by read-back). Turn-on order on every wavelength change: LED_SWITCH relay first -> wait switch_settle_sec (default 0.1 s, only when the relay actually moved) -> SSR enables + GPIO17 -> DIM PWM. GPIO16 = 450nm SSR, GPIO20 = 405nm SSR, GPIO17 = voltage-routing line. BENCH FINDING 2026-09-07 (testingcm5): GPIO17 HIGH cuts the 12 V rail of the door LED-driver DIM stage in EVERY SSR combination (door DIM measured 0 V), while GPIO17 LOW with only the 450nm SSR on gives the door its full 12 V DIM - so the old assumption HIGH=450nm was inverted and Bleaching never dimmed the door. Both modes therefore keep routing=0; the wavelength is selected by the SSRs alone (450nm: GPIO16 only, 405nm: GPIO16+GPIO20). Do not set routing=1 for 450nm again without re-measuring the door DIM. GPIO17 is still set BEFORE the SSRs and read back to verify before any LED may operate; on a mode change all LEDs turn off first, then GPIO17 changes. (GPIO27 is the door sensor, not here.) Below 'min_intensity' (user-facing brightness %) an LED counts as OFF: its PWM is zeroed, and once no LED remains on the SSRs (GPIO16 + GPIO20) are switched off. 'led_max_duty' is the PWM duty that equals 100% brightness (must match LED_MAX_DUTY in the dashboards); it converts min_intensity into duty for SystemController.set_led."
   },
-
   "door_sensor": {
     "gpio": 27,
     "open_level": 0,
     "abort_after_sec": 10,
     "_comment": "Door interlock input on GPIO27 (read via pinctrl). 'open_level' is the pin level that means the door is OPEN. Bench-confirmed 2026-07-22: GPIO27 HIGH = door CLOSED, LOW = door OPEN, hence open_level 0. When open: all LEDs + heater are forced OFF and cannot be enabled until the door closes. 'abort_after_sec' (default 10 s) is the grace period of the mid-process door watchdog: if the door STAYS open that long while any output is live, the whole process is aborted (Err 6016) and the status strip turns red; closing the door within the grace lets the process continue."
   },
-
   "leds": {
-    "LED_LEFT":  { "fan": "FAN_LEFT",  "fan_speed": 100, "intensity": 100, "modes": ["405nm"] },
-    "LED_RIGHT": { "fan": "FAN_RIGHT", "fan_speed": 100, "intensity": 100, "modes": ["405nm"] },
-    "LED_BACK":  { "fan": "FAN_BACK",  "fan_speed": 100, "intensity": 100, "modes": ["405nm"] },
-    "LED_DOOR":  { "fan": "FAN_DOOR",  "fan_speed": 100, "intensity": 100, "modes": ["405nm", "450nm"] }
+    "LED_LEFT": {
+      "fan": "FAN_LEFT",
+      "fan_speed": 100,
+      "intensity": 100,
+      "modes": [
+        "405nm"
+      ]
+    },
+    "LED_RIGHT": {
+      "fan": "FAN_RIGHT",
+      "fan_speed": 100,
+      "intensity": 100,
+      "modes": [
+        "405nm"
+      ]
+    },
+    "LED_BACK": {
+      "fan": "FAN_BACK",
+      "fan_speed": 100,
+      "intensity": 100,
+      "modes": [
+        "405nm"
+      ]
+    },
+    "LED_DOOR": {
+      "fan": "FAN_DOOR",
+      "fan_speed": 100,
+      "intensity": 100,
+      "modes": [
+        "405nm",
+        "450nm"
+      ]
+    }
   },
-
   "rgb": {
     "gpio": 12,
     "count": 21,
@@ -50,7 +85,62 @@
     },
     "_comment": "RGB status LEDs (TM1903 driver on GPIO12, WS2811-compatible serial data). 'count' = number of LEDs on the strip (writing more than fitted is harmless), 'order' = color byte order (TM1903 is typically RGB; if red/green come out swapped change back to GRB). Requires: sudo pip3 install adafruit-circuitpython-neopixel. CLI: io_controller.py rgb set <color|RRGGBB> [brightness%] / rgb off. 'status' = automatic machine-status colors driven by the server (io_bridge): solid 'normal' color while everything is OK, BLINKING 'fault' color when any fault is active (highest priority), BLINKING 'door_open' color while the door is open, and while a process runs (heating/cooling/UV) the 'busy' color MOVES right-to-left as a comet (busy = purple since 2026-09-07; every color here is re-read LIVE about once a second, so edits apply without a service restart) ('busy_direction' rtl/ltr, one LED step every 'chase_sec' seconds, tail length 'chase_tail'). Colors are names or RRGGBB hex; 'blink_sec' is the blink half-period; change values here only - no code change needed. 'status_sec' (default 1 s - the HSI sampling-time rule: every reading is sampled at most every 1 s) is how often the machine state is (re)classified - the same watchdog also enforces the door safety: the door opening while ANY output is live aborts the process and forces every output off (heater, UV, cooling, fans, N2, BOFA, damper). 'no_internet' marks a machine that cannot reach the internet (checked in the background every 'internet_check_sec' seconds, default 5 s - TCP 443 to www.google.com / 1.1.1.1, so a router that fakes DNS answers cannot spoof \"online\"): while IDLE the strip is solid in this color, and while a PROCESS RUNS the moving comet switches from the 'busy' color to this color - process + no-internet are visible at once. Faults and door-open always take priority."
   },
-
+  "fan_health": {
+    "warn_below_pct": 10,
+    "critical_below_pct": 20,
+    "persist_sec": 60,
+    "settle_sec": 5,
+    "min_eval_duty": 30,
+    "nominal_rpm": {
+      "FAN_HEATER": {
+        "100": 5925,
+        "80": 5227,
+        "50": 3669,
+        "30": 2363
+      },
+      "FAN_COOLING": {
+        "100": 4790,
+        "60": 2690,
+        "30": 1235
+      },
+      "FAN_LEFT": {
+        "100": 3560
+      },
+      "FAN_RIGHT": {
+        "100": 3560
+      },
+      "FAN_BACK": {
+        "100": 3560
+      },
+      "FAN_DOOR": {
+        "100": 3560
+      }
+    },
+    "critical_below_pct_by_fan": {
+      "FAN_HEATER": 11.8
+    },
+    "nominal_rpm_damper_open": {
+      "FAN_COOLING": {
+        "100": 4075,
+        "60": 2470
+      }
+    },
+    "_comment": "2026-10-11: synced with the unit's measured values - FAN_HEATER nominal re-measured after the heater fan / airflow fix (100 % 5,925 / 80 % 5,227 / 50 % 3,669 / 30 % 2,363 RPM, was 3,530 / 2,925 / 1,870 / 915), and critical_below_pct_by_fan carries the user's limit (2026-10-08): the heater fan stops the machine (9002) at 11.8 % below nominal - 5,227 RPM at 100 %, its 80 %-duty speed - while 9051 still warns at 10 % (5,333 RPM). Every other fan keeps critical_below_pct. nominal_rpm_damper_open replaces nominal_rpm for the fans listed while the damper is OPEN (cooling / drying): the open duct slows FAN_COOLING ~14 % (unit 2026-10-01: 60 % ~2,470 / 100 % ~4,075 RPM open vs 2,690 / 4,735 closed), which alone raised the 10 % wear warning in every fast cooling. Fan wear supervision (policy 2026-09-09). Every fan with a tachometer is compared, while it is commanded at >= min_eval_duty %, against the nominal RPM measured on the reference machine (testingcm5, 2026-09-09; per duty point, linear interpolation in between). A fan that stays >= warn_below_pct below nominal for persist_sec (one full minute, to ride out tach noise) raises warning 9051 'replace the fan'; >= critical_below_pct below for persist_sec raises critical 9002: every output is stopped, no process may start, and the alert names the exact fan (e.g. FAN_COOLING) with its measured and expected RPM. settle_sec ignores the spin-up after a duty change. Re-read live about once a second - edit here, no restart. LED fans: Right/Back/Door share the Left fan's nominal until measured individually."
+  },
+  "led_heating": {
+    "min_eval_intensity": 30,
+    "check_after_sec": 90,
+    "min_rise_c": 1.0,
+    "rest_sec": 120,
+    "panels": {
+      "LED_LEFT": "TEMP_LEFT",
+      "LED_RIGHT": "TEMP_RIGHT"
+    },
+    "drop_c": 1.0,
+    "drop_persist_sec": 30,
+    "drop_settle_sec": 120,
+    "_comment": "LED connection supervision (policy 2026-09-14). 'panels' maps each supervised LED to the thermistor that must warm while it is lit - the REGULAR Left / Right thermistors (TEMP_LEFT = U6 ch3, TEMP_RIGHT = U6 ch1), not the ORIGIN ones, so only the Left and Right panels are checked (Back / Door only carry an ORIGIN thermistor; add them here to include them). While a panel is commanded on at >= min_eval_intensity % system power, its temperature is compared with its temperature when the light started (baseline); after check_after_sec of accumulated light the rise must be >= min_rise_c C, otherwise the panel is not receiving current (open connector / driver output) -> Err 9004 critical 'check the LED connection', the alert names the panel. A panel re-lit within rest_sec of its last light keeps the previous baseline (it is still warm). Bench on testingcm5 2026-09-14 at 30 % 405 nm with the LED fans at 100 %: TEMP_LEFT / TEMP_RIGHT rose +1.3 / +1.2 C after 60 s, +1.8 / +1.7 C after 90 s, +2.4 / +2.2 C after 150 s (DVT/bench/data/led_panel_warmup_30pct_405nm_2026-09-14.csv) - 90 s / 1.0 C gives a 1.7x margin. Re-read live about once a second - edit here, no restart. Mid-process drop (Err 9005): once a panel has proved it heats, its peak temperature at the current power level is tracked; a fall of >= drop_c C below that peak - after taking off any fall of the chamber temperature over the same time - that lasts drop_persist_sec s while the panel is still lit means the panel stopped receiving current mid-process -> Err 9005 critical 'panel fault', the alert names the panel. A power-level change waits drop_settle_sec s before the peak is tracked again; a re-light re-judges the panel (rise rule again, peak restarts from the re-light temperature); the latch clears when the panel climbs back to within drop_c/2 of its peak while lit."
+  },
   "heater": {
     "channel": "PWM_HEATER",
     "fan": "FAN_HEATER",
@@ -62,7 +152,6 @@
     "health_check_sec": 10,
     "_comment": "Heater safety. Before enabling, the cooling 'fan' is started at 'fan_pwm' (default 100% PWM) and must spin above 'min_fan_rpm', and 'thermistor' must read a valid temperature within [temp_valid_min, temp_valid_max]. While the heater is on, both are re-checked every 'health_check_sec' seconds; any failure turns the heater OFF immediately. Change 'fan_pwm' here only - no source change or recompile needed; each heater activation reads the latest value."
   },
-
   "heating": {
     "target_temp": 60.0,
     "target_min": 30.0,
@@ -77,7 +166,6 @@
     "cooldown_fan_pwm": 30,
     "_comment": "Heating mode (temperature_control.py, PI(D) + delta-sigma control). Entry runs the 'heater' safety pre-flight (door closed, heater fan spin-up + RPM verified, thermistor valid) and keeps the heater fan on for the whole mode. Every 'sample_sec' (50 ms) the PI computes a 0..1 power command: control = kp*err + integ + kd*(err - prev_err), with integ += ki*err clamped to [integ_min, integ_max]; a first-order delta-sigma modulator streams that power to PWM_HEATER as per-cycle ON/OFF so the element's average ON-time equals the commanded power. |error| <= 'at_temp_band' C reports 'at temperature'. On stop the heater turns off immediately and the fan runs on at 'cooldown_fan_pwm' %% for 'cooldown_sec' s before stopping. 'target_min' is the lowest target temperature that can be entered (default 30 C): starting below it is rejected, and a mid-run setpoint below it is clamped up."
   },
-
   "servo": {
     "gpio": 8,
     "signal_inverted": true,
@@ -85,7 +173,6 @@
     "settle_sec": 1.5,
     "_comment": "Damper servo (MG90S) on GPIO8. The board buffers the signal through Q16 (transistor driver, J2_MOTOR_DAMPER) which INVERTS it - signal_inverted=true pre-inverts the pulses so the servo sees normal ones. Set false only if the servo is wired directly to the GPIO pin. driver: auto|pio|lgpio - pio = hardware-timed pulses from the RP1 PIO block via server/hardware/pio_servo (build-pio-servo.sh; 1 us exact, no jitter); lgpio = software-timed PWM fallback (jitters -> servo shivers, may stop short). auto picks pio when available. settle_sec: how long to keep pulsing after a move before releasing (must cover the full travel under load; 0 = hold forever)."
   },
-
   "cooling": {
     "damper_open_angle": 0,
     "damper_closed_angle": 90,
@@ -93,7 +180,11 @@
     "heater_fan_pwm": 100,
     "chamber_fan": "FAN_COOLING",
     "thermistor": "TEMP_CHAMBER",
-    "mode_pwms": { "fast": 100, "medium": 60, "slow": 30 },
+    "mode_pwms": {
+      "fast": 100,
+      "medium": 60,
+      "slow": 30
+    },
     "fast_led_fan_pwm": 100,
     "target_temp": 25.0,
     "sample_sec": 1.0,
@@ -104,6 +195,33 @@
     "temp_valid_max": 120,
     "_comment": "Cooling mode (FIXED chamber-fan duty, no closed-loop rate control). Entry sequence: damper (servo) to 'damper_open_angle', then 'heater_fan' fixed at 'heater_fan_pwm' % for the whole mode, then 'chamber_fan' at a constant duty for the whole mode - the UI modes map to duties via 'mode_pwms' (fast=100, medium=60, slow=30 %). The loop samples 'thermistor' every 'sample_sec' s and estimates dT/dt over a sliding 'window_sec' s window for status/telemetry only. The mode ends automatically at 'target_temp': fans off, damper to 'damper_closed_angle'. Verify damper angles on the bench."
   },
-
+  "pressure_sensor": {
+    "adc": "U7",
+    "channel": 3,
+    "mode": "analog_voltage",
+    "v_min": 1.0,
+    "v_max": 5.0,
+    "i_min_ma": 4.0,
+    "i_max_ma": 20.0,
+    "shunt_ohms": 120.0,
+    "p_min_mpa": -0.1,
+    "p_max_mpa": 1.0,
+    "divider": 1.0,
+    "adc_saturation_volts": 3.2,
+    "on_above_volts": 2.0,
+    "set_point_mpa": 0.6,
+    "model": "SMC ISE20A / ISE20B with analog output (CAT.ES100-114); model code -R/-T = 1-5 V voltage output, -S/-V = 4-20 mA current output",
+    "rated_range_mpa": [
+      -0.1,
+      1.0
+    ],
+    "set_range_mpa": [
+      -0.105,
+      1.05
+    ],
+    "resolution_mpa": 0.001,
+    "supply": "12-24 VDC +/-10 %",
+    "_comment": "N2 line pressure: gray lead (analog output) -> Analog_IN -> R86 (120 R) -> ADS1115 U7 AIN3 (I2C1 0x49). mode analog_voltage: 1 V = -0.100 MPa, 5 V = 1.000 MPa, linear (datasheet p. 17); so 0 MPa = 1.364 V, 0.6 MPa (6 bar) = 3.545 V. mode analog_current: I * shunt_ohms then 4 mA = -0.1 MPa, 20 mA = 1.0 MPa (only valid if R86 is a shunt to GND - on the schematic it is in SERIES). mode switch: OUT1/OUT2 lead on the input, on/off only. 'divider' = sensor volts / ADC volts of a divider fitted on Analog_IN (none today). The ADS1115 is supplied from 3.3 V: above adc_saturation_volts the pin is clamped, mpa is reported null and 'saturated' true - with 1-5 V that is every pressure above ~0.5 MPa, i.e. the 6 bar line ALWAYS saturates until a 2:1 divider is fitted (then set divider 2.0). Exposed as /api/state.n2Pressure and, when readable, n2LinePressure (bar) for the Settings 6 bar guard. BENCH 2026-09-14 (testingcm5): 0.52 V with no pressure (a 1-5 V analog output would give 1.36 V at 0 MPa -> the lead on Analog_IN reads like a switch output or the sensor was unpowered), ADC clamped with pressure. Model code, lead colour on Analog_IN and the display reading still to be confirmed on the unit."
+  },
   "_modes_note": "In 450nm mode only LEDs whose 'modes' list contains '450nm' may turn on (the Door LED). In 405nm mode every LED whose 'modes' contains '405nm' may turn on. Each LED's 'fan' starts automatically at 'fan_speed' when the LED is turned on, and stops when the LED is turned off."
 }

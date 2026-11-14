@@ -1,4 +1,4 @@
-"""DVT-THM-005 automatic run — the console drives the machine through the
+"""DVT-THM-004 automatic run — the console drives the machine through the
 LED-cooling fan duties and hands the operator the final answer and the graph.
 
 Opened from the wizard on the step that carries `tool: led_fan_sweep`. On
@@ -25,7 +25,7 @@ from .widgets import Card, Pill, label
 from .i18n import tr, trf
 from ..instruments.fansweep import FanSweepRunner, FanSweepConfig, FanSweepResult, PANELS, write_csv, plot_png
 
-TEST_ID = "DVT-THM-005"
+TEST_ID = "DVT-THM-004"
 COLORS = {"right": T.BAD, "left": T.INFO, "back": T.WARN, "door": T.OK}
 
 
@@ -94,7 +94,7 @@ class FanSweepDialog(QDialog):
         super().__init__(parent)
         self.app, self.run, self.store = app, run, app.store
         self.result: FanSweepResult | None = None; self.worker: FanSweepWorker | None = None; self.files: list[Path] = []
-        self.setWindowTitle(tr("DVT-THM-005 — LED temperature vs LED-cooling fan duty (automatic)"))
+        self.setWindowTitle(tr("DVT-THM-004 — LED temperature vs LED-cooling fan duty (automatic)"))
         from .screen import fit
         fit(self, 1120, 860)
         self._build()
@@ -166,7 +166,7 @@ class FanSweepDialog(QDialog):
         self.btn_start.setEnabled(False); self.btn_abort.setEnabled(True); self.btn_apply.setEnabled(False)
         self.worker = FanSweepWorker(dut, cfg)
         self.worker.status.connect(self._on_status); self.worker.sample.connect(self._on_sample); self.worker.done.connect(self._on_done)
-        self.store.log("THM-005 fan sweep started", self.app.operator, self.run["run_id"] if self.run else None, {"cfg": cfg.__dict__})
+        self.store.log("DVT-THM-004 fan sweep started", self.app.operator, self.run["run_id"] if self.run else None, {"cfg": cfg.__dict__})
         self.worker.start()
 
     def abort(self):
@@ -197,13 +197,13 @@ class FanSweepDialog(QDialog):
         stem = (self.run["run_id"].replace("|", "_") if self.run else "standalone") + time.strftime("_%Y%m%d-%H%M%S")
         out = self.app.data / "export" / "attachments" / ((self.run["test_id"] + "_" + self.run["unit_id"]) if self.run else "thm005")
         try:
-            csv_p = write_csv(res, out / f"{stem}_fansweep.csv"); png_p = plot_png(res, out / f"{stem}_fansweep.png", title=f"DVT-THM-005 · {self.run['unit_id'] if self.run else 'bench'} · LED temperature vs fan duty")
+            csv_p = write_csv(res, out / f"{stem}_fansweep.csv"); png_p = plot_png(res, out / f"{stem}_fansweep.png", title=f"DVT-THM-004 · {self.run['unit_id'] if self.run else 'bench'} · LED temperature vs fan duty")
             self.files = [csv_p, png_p]; self.lbl_files.setText(tr("Saved: ") + ", ".join(f.name for f in self.files))
             self.graph.setPixmap(QPixmap(str(png_p)).scaled(self.graph.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         except Exception as e:  # noqa: BLE001
             self.lbl_files.setText(trf("Could not write the artefacts: {err}", err=e))
         self.btn_apply.setEnabled(self.run is not None and bool(res.rows))
-        self.store.log("THM-005 fan sweep finished", self.app.operator, self.run["run_id"] if self.run else None, res.summary())
+        self.store.log("DVT-THM-004 fan sweep finished", self.app.operator, self.run["run_id"] if self.run else None, res.summary())
 
     # ------------------------------------------------------------------ apply
     def apply(self):
@@ -229,5 +229,5 @@ class FanSweepDialog(QDialog):
                 v, d = self.app.engine.finish(run["run_id"], self.app.operator)
                 self.store.log("Auto-completed by the fan sweep", self.app.operator, run["run_id"], {"from_run": self.run["run_id"], "verdict": v, "detail": d})
                 applied[run["run_id"]] = vals
-        self.store.log("THM-005 values applied", self.app.operator, self.run["run_id"], {"rows": sorted(applied), "recommended_duty": self.result.recommended_duty()})
+        self.store.log("DVT-THM-004 values applied", self.app.operator, self.run["run_id"], {"rows": sorted(applied), "recommended_duty": self.result.recommended_duty()})
         self.app.kick_sync(); self.applied.emit(applied); self.accept()

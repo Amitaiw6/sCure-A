@@ -8,7 +8,7 @@ import { generateCureReport } from '@/lib/cure-report'
 function StatusIcon({ status }: { status: CureLog['status'] }) {
   switch (status) {
     case 'completed': return <CheckCircle size={16} className="text-green-500 shrink-0" />
-    case 'aborted': return <AlertTriangle size={16} className="text-yellow-500 shrink-0" />
+    case 'aborted': return <AlertTriangle size={16} className="text-orange-500 shrink-0" />
     case 'error': return <XCircle size={16} className="text-destructive shrink-0" />
     case 'running': return <Play size={16} className="text-primary shrink-0 animate-pulse" />
   }
@@ -17,11 +17,13 @@ function StatusIcon({ status }: { status: CureLog['status'] }) {
 // Temperature-sensor keys published by the hardware service -> operator labels
 const SENSOR_LABELS: Record<string, string> = { chamber: 'Chamber', left: 'Left LED', right: 'Right LED', back: 'Back LED', door: 'Door LED' }
 function sensorLabel(key: string) { return SENSOR_LABELS[key] ?? key }
+const FAN_LABELS: Record<string, string> = { FAN_HEATER: 'Heater fan', FAN_COOLING: 'Chamber cooling fan', FAN_LEFT: 'Left LED fan', FAN_RIGHT: 'Right LED fan', FAN_BACK: 'Back LED fan', FAN_DOOR: 'Door LED fan' }
+function fanLabel(key: string) { return FAN_LABELS[key] ?? key }
 
 function statusLabel(status: CureLog['status']) {
   switch (status) {
     case 'completed': return 'Completed'
-    case 'aborted': return 'Aborted'
+    case 'aborted': return 'Stopped'
     case 'error': return 'Error'
     case 'running': return 'Running'
   }
@@ -84,7 +86,7 @@ export default function CureHistoryPage() {
                   <span className={cn(
                     'text-[9px] px-1.5 py-0.5 rounded font-medium',
                     log.status === 'completed' ? 'bg-green-500/15 text-green-400' :
-                    log.status === 'aborted' ? 'bg-yellow-500/15 text-yellow-400' :
+                    log.status === 'aborted' ? 'bg-orange-500/15 text-orange-400' :
                     log.status === 'error' ? 'bg-destructive/15 text-destructive' :
                     'bg-primary/15 text-primary'
                   )}>
@@ -102,6 +104,13 @@ export default function CureHistoryPage() {
                     log.sensorIssues.some(i => i.critical) ? 'text-destructive' : 'text-orange-400')}>
                     <AlertTriangle size={10} className="shrink-0" />
                     <span className="truncate">Sensor disconnected during run: {log.sensorIssues.map(i => sensorLabel(i.sensor)).join(', ')}</span>
+                  </div>
+                )}
+                {log.fanIssues && log.fanIssues.length > 0 && (
+                  <div className={cn('flex items-center gap-1 mt-0.5 text-[10px]',
+                    log.fanIssues.some(i => i.critical) ? 'text-destructive' : 'text-orange-400')}>
+                    <AlertTriangle size={10} className="shrink-0" />
+                    <span className="truncate">Fan below nominal during run: {log.fanIssues.map(i => `${fanLabel(i.fan)}${i.deficitPct != null ? ` (-${Math.round(i.deficitPct)} %)` : ''}`).join(', ')}</span>
                   </div>
                 )}
               </div>
@@ -125,7 +134,8 @@ export default function CureHistoryPage() {
                   className="shrink-0 p-1.5 rounded-lg hover:bg-accent transition-colors touch-manipulation"
                 >
                   {reportStatus[log.id] === 'ok' ? (
-                    <CheckCircle size={14} className="text-green-500" />
+                    // export succeeded — green only for a completed run; a stopped run stays orange
+                    <CheckCircle size={14} className={log.status === 'completed' ? 'text-green-500' : 'text-orange-400'} />
                   ) : reportStatus[log.id] === 'fail' ? (
                     <XCircle size={14} className="text-destructive" />
                   ) : (

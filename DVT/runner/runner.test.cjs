@@ -11,12 +11,12 @@ function world(opts = {}) {
   let answerQueue = (opts.answers || []).slice();
   let cancelAfter = opts.cancelAfter === undefined ? -1 : opts.cancelAfter;   // cancel on the Nth dvt_update
   let updates = 0;
-  let started = 0, stopped = 0, clicks = [];
+  let started = 0, stopped = 0, clicks = [], acked = [];
   const tests = {
-    'DVT-ELE-001': { title: 'Protective earth bonding continuity', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok',
+    'DVT-THM-001': { title: 'Protective earth bonding continuity', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok',
       equipment: opts.needsMeter ? [{ name: 'Ophir StarBright power meter' }] : [] },
     'DVT-OPT-001': { title: 'UV linearity', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok' },
-    'DVT-SAF-004': { title: 'Heater temperature sensor disconnected', units: ['UUT-01'], variants: [{}], repetitions: 1,
+    'DVT-SAF-002': { title: 'Heater temperature sensor disconnected', units: ['UUT-01'], variants: [{}], repetitions: 1,
       data_fields: [{ name: 'heater_off_time' }, { name: 'raw_log_attached' }], pass_criteria: 'heater_off_time <= 80',
       procedure_steps: [{ step: 'Automatic on the machine - press Start.', tool: 'bench' }, { step: 'Record the alarm text' }] },
   };
@@ -25,20 +25,22 @@ function world(opts = {}) {
   let benchPolled = 0, benchAborted = 0;
   let H = null, state = {}, resolveRun = null, endRun = null;
   const A = {
-    version: 'test', SCRIPTS: { 'DVT-ELE-001': {} },
-    has: (tid) => tid === 'DVT-ELE-001',
+    version: 'test', SCRIPTS: { 'DVT-THM-001': {} },
+    has: (tid) => tid === 'DVT-THM-001',
     detailOf: (t) => ({ purpose: 'why ' + t.title, steps: (t.procedure_steps || []).map((x) => x.step), criteria: t.pass_criteria, bench: (t.procedure_steps || []).some((x) => x.tool === 'bench') }),
     mmss: (n) => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`,
     attach: (h) => { H = h; },
     _state: (tid) => state[tid],
     start: (tid) => { started++; const run = H.run(tid); const rec = H.results()[run.id];
-      state[tid] = { line: 'measuring the bond', prompt: opts.prompt ? { kind: 'do', text: 'Clip the probe to the PE stud, then press Done' } : null };
+      state[tid] = { line: 'measuring the bond', prompt: opts.prompt ? { kind: 'do', text: 'Clip the probe to the PE stud, then press Done' } : null,
+                     act: opts.act ? { text: 'OPEN THE DOOR and keep it open', sec: 24, stage: { n: 4, of: 6, text: 'the magnet must not fool the sensor' } } : null };
       if (opts.stopError) { state[tid] = { line: 'stopped: ' + opts.stopError, status: 'ERROR', error: opts.stopError }; return Promise.resolve(); }   // the script stopped before measuring
       return new Promise((res) => {
         endRun = () => { resolveRun = null; endRun = null; res(); };              // a stopped run ends without a verdict
-        resolveRun = () => { rec.values.r_mohm = 42; state[tid] = { line: 'the test finished and PASSED' }; H.record(tid); endRun(); };
+        resolveRun = () => { rec.values.r_mohm = 42; state[tid] = { line: 'the test finished and PASSED', status: 'OK' }; if (!opts.noRecord) H.record(tid); endRun(); };
         if (!opts.prompt && !opts.longRun) resolveRun(); }); },
-    stop: () => { stopped++; if (endRun) { state['DVT-ELE-001'] = { line: 'stopped' }; endRun(); } },
+    stop: () => { stopped++; if (endRun) { state['DVT-THM-001'] = { line: 'stopped' }; endRun(); } },
+    ackAct: (tid) => { acked.push(tid); if (state[tid] && state[tid].act) state[tid].act.acked = true; return true; },
     click: (act, tid) => { clicks.push(act); if (resolveRun && (act === 'as-done' || act === 'as-skip')) resolveRun(); },
   };
   const engine = { A, CAT: { catalog_version: '0.24', thresholds: {}, tests, phases: [{ id: 1, name: 'Electrical safety', gate: '', tests: Object.keys(tests) }] },
@@ -51,11 +53,16 @@ function world(opts = {}) {
     if (url === 'https://portal/exec') {
       portalCalls.push(body);
       if (body.kind === 'dvt_events') { eventCalls.push(body); return reply({ ok: true, ver: opts.commandAt !== undefined && eventCalls.length > opts.commandAt ? 2 : 1 }); }
-      if (body.kind === 'dvt_next') return reply({ ok: true, watch: !!opts.watch, request: opts.noRequest ? null : { id: 7, unit: opts.unit || 'UUT-01', testId: opts.testId || 'DVT-ELE-001' } });
+      if (body.kind === 'dvt_next') return reply({ ok: true, watch: !!opts.watch, request: opts.noRequest ? null : { id: 7, unit: opts.unit || 'UUT-01', testId: opts.testId || 'DVT-THM-001' } });
+      if (body.kind === 'dvt_update' && opts.hangOnce && body.status === 'running') {
+        opts.hangOnce = false;                                // one Apps Script execution that never answers
+        return new Promise((_, rej) => { if (o.signal) o.signal.addEventListener('abort', () => rej(new Error('aborted'))); });
+      }
       if (body.kind === 'dvt_update') {
         updates++;
         const out = { ok: true, cancel: cancelAfter >= 0 && updates > cancelAfter };
         if (body.prompt && answerQueue.length) { out.hasAnswer = true; out.answer = answerQueue.shift(); }
+        if (body.act && opts.pressAct && !out.acted && updates >= 1) { out.acted = true; opts.pressAct = false; }   // "I did it" from the site
         return reply(out);
       }
       return reply({ ok: true });
@@ -64,14 +71,14 @@ function world(opts = {}) {
       const b = url.replace('http://127.0.0.1:3002', '');
       machineCalls.push(`${o.method || 'GET'} ${b} (bench)`);
       if (opts.benchMissing) return { status: 404, json: async () => ({}) };
-      if (b === '/bench/status') return reply({ ok: true, tests: ['DVT-SAF-004'], version: '1.0.91', run: { running: false } });
+      if (b === '/bench/status') return reply({ ok: true, tests: ['DVT-SAF-002'], version: '1.0.91', run: { running: false } });
       if (b.startsWith('/bench/run?test=') && o.method === 'POST') return reply(opts.benchRefuses ? { ok: false, message: 'TEMP_CHAMBER is not reading' } : { ok: true, message: 'bench started' });
       if (b === '/bench/run/abort?by=site') { benchAborted++; return reply({ ok: true }); }
       if (b === '/bench/run?samples=0') { benchPolled++; return reply(benchPolled <= benchPolls && !benchAborted
         ? { running: true, phase: 'heating', elapsed: 75, prompt: 'DISCONNECT the heater thermistor now', last: [75, 61.5, 0, 0, 0, 0, 0, 30.2] } : { running: false }); }
       if (b === '/bench/run') return reply(opts.benchStatus === 'ABORTED'
         ? { status: 'ABORTED', error: 'aborted by the page', marks: {}, samples: [[0, 40, 0, 0, 0, 0, 0, 22]], columns: ['t_s', 'body'], values: {} }
-        : { status: 'OK', marks: { heat_on: 1, disconnect: 30 }, columns: ['t_s', 'body'], samples: [[0, 40], [1, 41]], test_id: 'DVT-SAF-004',
+        : { status: 'OK', marks: { heat_on: 1, disconnect: 30 }, columns: ['t_s', 'body'], samples: [[0, 40], [1, 41]], test_id: 'DVT-SAF-002',
             values: { heater_off_time: opts.heaterOff || 51.6, not_a_field: 1 }, phases: [{ name: 'done' }], notes: [] });
     }
     const p = url.replace('http://127.0.0.1:3001', '');
@@ -86,14 +93,55 @@ function world(opts = {}) {
     return reply({ ok: true });
   };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvt-runner-'));
+  if (opts.recorded) fs.writeFileSync(path.join(dir, 'results.json'), JSON.stringify(opts.recorded));
   const runner = createRunner({ portalUrl: 'https://portal/exec', key: 'dk', machine: 'CureBox-1', unit: 'UUT-01',
-    machineApi: 'http://127.0.0.1:3001', resultsFile: path.join(dir, 'results.json'), confirmTimeoutSec: 600 },
+    machineApi: 'http://127.0.0.1:3001', resultsFile: path.join(dir, 'results.json'), confirmTimeoutSec: 600, portalTimeoutSec: opts.portalTimeoutSec },
     { fetch: fetchImpl, engine, log: () => {}, sleep: () => new Promise((r) => setImmediate(r)) });
-  return { runner, portalCalls, machineCalls, eventCalls, get started() { return started; }, get stopped() { return stopped; }, get benchAborted() { return benchAborted; }, clicks,
+  return { runner, portalCalls, machineCalls, eventCalls, get started() { return started; }, get stopped() { return stopped; }, get benchAborted() { return benchAborted; }, clicks, acked,
            finalUpdate: () => portalCalls.filter((c) => c.kind === 'dvt_update').pop() };
 }
 
 (async () => {
+  // 0. a step the person must do now (c.act) reaches the site as its own field, not as a grey line:
+  //    the portal shows it big, with the seconds left (user, 2026-10-29 - DVT-SAF-008 timed out)
+  {
+    const wa = world({ act: true, longRun: true, cancelAfter: 2 });
+    await wa.runner.tick();
+    const step = wa.portalCalls.find((c) => c.kind === 'dvt_update' && c.act);
+    assert.ok(step, 'the step reaches the portal as its own field');
+    assert.deepStrictEqual([step.act.text, step.act.sec, step.act.stage.n, step.act.stage.of],
+                           ['OPEN THE DOOR and keep it open', 24, 4, 6]);
+    assert.strictEqual(step.status, 'running');
+    assert.ok(!wa.finalUpdate().act, 'the run that ended carries no step to do');
+  }
+  {
+    // "I did it" pressed on the site reaches the script that is waiting for it
+    const wp = world({ act: true, longRun: true, pressAct: true, cancelAfter: 4 });
+    await wp.runner.tick();
+    assert.deepStrictEqual(wp.acked, ['DVT-THM-001'], 'the press reaches the engine');
+  }
+  {
+    // a portal call that never answers is cut at its deadline and the report loop goes on: the press still arrives
+    // (user, 2026-11-12 - DVT-SAF-008 step 4: "I did it" pressed several times, never reached the machine)
+    const wh = world({ act: true, longRun: true, pressAct: true, cancelAfter: 4, hangOnce: true, portalTimeoutSec: 0.05 });
+    await wh.runner.tick();
+    assert.deepStrictEqual(wh.acked, ['DVT-THM-001'], 'the press reaches the engine after a hung report');
+  }
+
+  {
+    // a test whose every run is already recorded (here a FAIL) is run AGAIN when the site asks - before, the request
+    // ended at once as "already recorded" and nothing reached the machine (user, 2026-11-12)
+    const wr = world({ recorded: { 'DVT-THM-001|UUT-01||1': { verdict: 'FAIL', values: { lock_engaged: false } } } });
+    await wr.runner.tick();
+    assert.ok(wr.machineCalls.includes('POST /api/dvt/remote-confirm'), 'the re-test is offered at the machine');
+    assert.ok(!/already recorded/.test(wr.finalUpdate().line || ''), wr.finalUpdate().line);
+    // ... and starts from an empty record: the old values and FAIL do not carry into the new run
+    const rec = wr.runner.results()['DVT-THM-001|UUT-01||1'];
+    assert.ok(!('lock_engaged' in rec.values), 'the old values are gone: ' + JSON.stringify(rec.values));
+    assert.strictEqual(rec.values.r_mohm, 42, 'the new run measured');
+    assert.notStrictEqual(rec.verdict, 'FAIL', 'the old FAIL is not the new verdict');
+  }
+
   // 1. Start at the machine -> the run happens, its prompt goes to the site and the answer comes back, results go up
   let w = world({ prompt: true, answers: [true] });
   assert.strictEqual(await w.runner.tick(), true);
@@ -105,9 +153,18 @@ function world(opts = {}) {
   assert.strictEqual(asked.prompt.text, 'Clip the probe to the PE stud, then press Done');
   assert.ok(w.clicks.includes('as-done'), 'the answer from the site reaches the engine');
   const run = w.portalCalls.find((c) => c.kind === 'dvt_run');
-  assert.deepStrictEqual([run.runId, run.machine, run.verdict, run.values.r_mohm], ['DVT-ELE-001|UUT-01||1', 'CureBox-1', 'PASS', 42]);
-  assert.deepStrictEqual([w.finalUpdate().status, w.finalUpdate().verdict, w.finalUpdate().runIds[0]], ['done', 'PASS', 'DVT-ELE-001|UUT-01||1']);
+  assert.deepStrictEqual([run.runId, run.machine, run.verdict, run.values.r_mohm], ['DVT-THM-001|UUT-01||1', 'CureBox-1', 'PASS', 42]);
+  assert.deepStrictEqual([w.finalUpdate().status, w.finalUpdate().verdict, w.finalUpdate().runIds[0]], ['done', 'PASS', 'DVT-THM-001|UUT-01||1']);
   assert.strictEqual(w.started, 1);
+
+  // 1b. a script with autoRecord: false finishes on its own (status OK, no Record press - there is none on the machine)
+  //     -> the runner records the verdict itself, so the portal gets it and the request is not just "done"
+  //     (2026-11-09: DVT-THM-007 failed its uniformity but reached the portal with no verdict)
+  w = world({ noRecord: true });
+  assert.strictEqual(await w.runner.tick(), true);
+  const unrec = w.portalCalls.find((c) => c.kind === 'dvt_run');
+  assert.deepStrictEqual([unrec.verdict, unrec.values.r_mohm], ['PASS', 42], 'the runner records an unrecorded finished run');
+  assert.deepStrictEqual([w.finalUpdate().status, w.finalUpdate().verdict], ['done', 'PASS']);
 
   // 2. Decline at the machine -> nothing runs
   w = world({ confirm: ['pending', 'declined'] });
@@ -162,44 +219,44 @@ function world(opts = {}) {
   await w.runner.hello();
   assert.ok(w.portalCalls.some((c) => c.kind === 'dvt_runner_hello' && c.machine === 'CureBox-1' && c.unit === 'UUT-01'));
   const cat = w.portalCalls.find((c) => c.kind === 'dvt_catalog');
-  assert.strictEqual(cat.catalog.tests['DVT-ELE-001'].auto, true);
+  assert.strictEqual(cat.catalog.tests['DVT-THM-001'].auto, true);
   assert.strictEqual(cat.catalog.tests['DVT-OPT-001'].auto, false);
   assert.ok(w.portalCalls.every((c) => c.machineKey === 'dk'), 'every portal call carries the DVT key');
 
   // 9. the catalog carries each test's detail (purpose, steps, criteria) and a bench test is runnable from the site
-  assert.strictEqual(cat.catalog.tests['DVT-ELE-001'].d.purpose, 'why Protective earth bonding continuity');
-  assert.deepStrictEqual(cat.catalog.tests['DVT-SAF-004'].d.steps, ['Automatic on the machine - press Start.', 'Record the alarm text']);
-  assert.strictEqual(cat.catalog.tests['DVT-SAF-004'].d.bench, true);
-  assert.strictEqual(cat.catalog.tests['DVT-SAF-004'].auto, true, 'a bench test is run by the DVT bench process');
+  assert.strictEqual(cat.catalog.tests['DVT-THM-001'].d.purpose, 'why Protective earth bonding continuity');
+  assert.deepStrictEqual(cat.catalog.tests['DVT-SAF-002'].d.steps, ['Automatic on the machine - press Start.', 'Record the alarm text']);
+  assert.strictEqual(cat.catalog.tests['DVT-SAF-002'].d.bench, true);
+  assert.strictEqual(cat.catalog.tests['DVT-SAF-002'].auto, true, 'a bench test is run by the DVT bench process');
 
   // 10. readiness: every row of the card, read on the machine, sent with the poll
   w = world({ noRequest: true, bench: true });
   let rd = await w.runner.readiness();
-  assert.strictEqual(rd['DVT-SAF-004'].ready, true);
-  assert.deepStrictEqual(Object.keys(rd['DVT-SAF-004'].rows), ['machine', 'svc', 'tc08', 'chamber', 'idle']);
-  assert.ok(/sCureBox 1.0.91/.test(rd['DVT-SAF-004'].rows.svc.text) && /30.5 °C/.test(rd['DVT-SAF-004'].rows.tc08.text));
+  assert.strictEqual(rd['DVT-SAF-002'].ready, true);
+  assert.deepStrictEqual(Object.keys(rd['DVT-SAF-002'].rows), ['machine', 'svc', 'tc08', 'chamber', 'idle']);
+  assert.ok(/sCureBox 1.0.91/.test(rd['DVT-SAF-002'].rows.svc.text) && /30.5 °C/.test(rd['DVT-SAF-002'].rows.tc08.text));
   await w.runner.tick();
-  assert.strictEqual(w.portalCalls.find((c) => c.kind === 'dvt_next').readiness['DVT-SAF-004'].ready, true, 'readiness goes up with every poll');
+  assert.strictEqual(w.portalCalls.find((c) => c.kind === 'dvt_next').readiness['DVT-SAF-002'].ready, true, 'readiness goes up with every poll');
   w = world({ noRequest: true, bench: true, noTc08: true });
   rd = await w.runner.readiness();
-  assert.deepStrictEqual([rd['DVT-SAF-004'].ready, rd['DVT-SAF-004'].rows.tc08.ok], [false, false]);
-  assert.ok(/plug the TC-08/.test(rd['DVT-SAF-004'].rows.tc08.text));
+  assert.deepStrictEqual([rd['DVT-SAF-002'].ready, rd['DVT-SAF-002'].rows.tc08.ok], [false, false]);
+  assert.ok(/plug the TC-08/.test(rd['DVT-SAF-002'].rows.tc08.text));
   w = world({ noRequest: true, bench: true, chamberOpen: true });
   rd = await w.runner.readiness();
-  assert.strictEqual(rd['DVT-SAF-004'].rows.chamber.ok, false);
-  assert.ok(/thermistor is disconnected/.test(rd['DVT-SAF-004'].rows.chamber.text));
+  assert.strictEqual(rd['DVT-SAF-002'].rows.chamber.ok, false);
+  assert.ok(/thermistor is disconnected/.test(rd['DVT-SAF-002'].rows.chamber.text));
   w = world({ noRequest: true, bench: true, benchMissing: true });
   rd = await w.runner.readiness();
-  assert.deepStrictEqual([rd['DVT-SAF-004'].ready, rd['DVT-SAF-004'].rows.svc.ok], [false, false]);
-  assert.ok(/port 3002/.test(rd['DVT-SAF-004'].rows.svc.text));
+  assert.deepStrictEqual([rd['DVT-SAF-002'].ready, rd['DVT-SAF-002'].rows.svc.ok], [false, false]);
+  assert.ok(/port 3002/.test(rd['DVT-SAF-002'].rows.svc.text));
 
   // 11. a bench test: Start at the machine -> the bench runs it, values, verdict and trace go up
-  w = world({ testId: 'DVT-SAF-004', bench: true, benchPolls: 5 });
+  w = world({ testId: 'DVT-SAF-002', bench: true, benchPolls: 5 });
   await w.runner.tick();
   assert.ok(w.machineCalls.indexOf('POST /api/dvt/remote-confirm') >= 0, 'confirmation at the machine first');
-  assert.ok(w.machineCalls.some((c) => c.startsWith('POST /bench/run?test=DVT-SAF-004')), 'the bench is started');
+  assert.ok(w.machineCalls.some((c) => c.startsWith('POST /bench/run?test=DVT-SAF-002')), 'the bench is started');
   const brun = w.portalCalls.find((c) => c.kind === 'dvt_run');
-  assert.deepStrictEqual([brun.runId, brun.verdict, brun.values.heater_off_time, brun.values.raw_log_attached, brun.values.not_a_field], ['DVT-SAF-004|UUT-01||1', 'PASS', 51.6, true, undefined]);
+  assert.deepStrictEqual([brun.runId, brun.verdict, brun.values.heater_off_time, brun.values.raw_log_attached, brun.values.not_a_field], ['DVT-SAF-002|UUT-01||1', 'PASS', 51.6, true, undefined]);
   const bfile = w.portalCalls.find((c) => c.kind === 'dvt_file');
   assert.ok(bfile && bfile.fileKind === 'bench' && /\.csv$/.test(bfile.fileName), 'the trace is uploaded');
   const live = w.portalCalls.find((c) => c.kind === 'dvt_update' && /heating/.test(c.line || ''));
@@ -207,24 +264,24 @@ function world(opts = {}) {
   assert.deepStrictEqual([w.finalUpdate().status, w.finalUpdate().verdict], ['done', 'PASS']);
 
   // 11b. a failing value -> FAIL is recorded as measured
-  w = world({ testId: 'DVT-SAF-004', bench: true, heaterOff: 95 });
+  w = world({ testId: 'DVT-SAF-002', bench: true, heaterOff: 95 });
   await w.runner.tick();
   assert.strictEqual(w.portalCalls.find((c) => c.kind === 'dvt_run').verdict, 'FAIL');
 
   // 12. the bench refuses (thermistor not reading) -> nothing recorded, the reason goes to the site
-  w = world({ testId: 'DVT-SAF-004', bench: true, benchRefuses: true });
+  w = world({ testId: 'DVT-SAF-002', bench: true, benchRefuses: true });
   await w.runner.tick();
   assert.ok(!w.portalCalls.some((c) => c.kind === 'dvt_run'), 'a refused run records nothing');
   assert.strictEqual(w.finalUpdate().status, 'failed');
   assert.ok(/did not start: TEMP_CHAMBER is not reading/.test(w.finalUpdate().line), w.finalUpdate().line);
 
   // 12b. no bench service on the machine -> a clear message
-  w = world({ testId: 'DVT-SAF-004', bench: true, benchMissing: true });
+  w = world({ testId: 'DVT-SAF-002', bench: true, benchMissing: true });
   await w.runner.tick();
   assert.deepStrictEqual([w.finalUpdate().status, w.finalUpdate().line], ['blocked', 'The DVT bench service is not running on the machine (port 3002)']);
 
   // 13. the bench ends without finishing -> the values it has are kept, no verdict
-  w = world({ testId: 'DVT-SAF-004', bench: true, benchStatus: 'ABORTED' });
+  w = world({ testId: 'DVT-SAF-002', bench: true, benchStatus: 'ABORTED' });
   await w.runner.tick();
   const arun = w.portalCalls.find((c) => c.kind === 'dvt_run');
   assert.strictEqual(arun.verdict, '', 'an unfinished run has no verdict');
@@ -232,7 +289,7 @@ function world(opts = {}) {
   assert.ok(/ABORTED/.test(w.finalUpdate().line));
 
   // 14. the site cancels a running bench test -> the bench is told to abort, nothing is judged
-  w = world({ testId: 'DVT-SAF-004', bench: true, benchPolls: 40, cancelAfter: 2 });
+  w = world({ testId: 'DVT-SAF-002', bench: true, benchPolls: 40, cancelAfter: 2 });
   await w.runner.tick();
   assert.ok(w.benchAborted >= 1, 'the bench is aborted');
   assert.strictEqual(w.finalUpdate().status, 'cancelled');
@@ -259,7 +316,7 @@ function world(opts = {}) {
   assert.strictEqual(w.finalUpdate().line, 'stopped: the door closed during the attempt - repeat the step');
 
   // 17. a bench test with the TC-08 unplugged: blocked, the TC-08 named, no Start dialog
-  w = world({ testId: 'DVT-SAF-004', bench: true, noTc08: true });
+  w = world({ testId: 'DVT-SAF-002', bench: true, noTc08: true });
   await w.runner.tick();
   assert.ok(!w.machineCalls.includes('POST /api/dvt/remote-confirm'));
   assert.deepStrictEqual([w.finalUpdate().status, w.finalUpdate().line], ['blocked', "Connect the TC-08 to the machine's USB, with its thermocouple on CH1"]);
@@ -295,6 +352,18 @@ function world(opts = {}) {
   w = world({ noRequest: true });
   await w.runner.tick();
   assert.ok(w.portalCalls.find((c) => c.kind === 'dvt_next').wait > 0, 'dvt_next asks the server to hold the call');
+
+  // 22. the instruments for the site's machine card: a missing one says "not connected", never null (user, 2026-10-28)
+  const ins = w.runner.instrumentsOf;
+  let i = ins({ connected: false, error: 'usbtc08 driver unavailable: ...' }, { ok: false, present: false });
+  assert.deepStrictEqual([i.tc08.ok, i.tc08ch1.ok, i.ophir.ok], [false, false, false]);
+  assert.ok(/driver missing/.test(i.tc08.text) && /not connected/.test(i.ophir.text), JSON.stringify(i));
+  i = ins({ connected: true, deviceInfo: 'PicoLog TC-08 S/N AO027/073', ch1Available: false, temperature: null, ch2Available: true, ch2: 36.86 }, null);
+  assert.deepStrictEqual([i.tc08.ok, i.tc08ch1.ok, i.tc08ch2.ok], [true, false, true]);
+  assert.strictEqual(i.tc08ch1.text, 'body thermocouple (CH1) not connected');
+  assert.strictEqual(i.tc08ch2.text, 'reference (CH2) 36.9 °C');
+  i = ins({ connected: true, ch1Available: true, temperature: 24.04 }, { ok: true, present: true });
+  assert.deepStrictEqual([i.tc08ch1.text, i.ophir.ok], ['body (CH1) 24.0 °C', true]);
 
   console.log('dvt-runner: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

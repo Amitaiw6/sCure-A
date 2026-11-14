@@ -126,6 +126,8 @@
   .auto-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .auto-text { font-size: 12px; color: #9ecbf0; }
   .auto-text.fail { color: #f44336; } .auto-text.pass { color: #4caf50; }
+  /* c.act(): a step the person must do now - readable from across the bench, not a status line */
+  .auto-text.act { font-size: 17px; font-weight: 800; color: #ffb300; letter-spacing: .2px; }
   .btn-auto { background: #1565c0; color: #fff; }
   .btn-auto:hover { background: #1976d2; }
   .btn-auto:disabled { background: #333; color: #666; cursor: not-allowed; }
@@ -134,6 +136,8 @@
   .auto-est { font-size: 11px; color: #8aa4bb; font-variant-numeric: tabular-nums; }
   .auto-prompt { margin-top: 10px; padding: 10px 12px; border: 1px solid #5a4a12; border-radius: 6px; background: #1d1809; }
   .auto-prompt-text { font-size: 13px; color: #ffd76a; margin-bottom: 8px; line-height: 1.5; }
+  /* the step the person must confirm ("I did it"): the same card as a question, read across the bench */
+  .auto-prompt-text:has(+ .auto-prompt-row [data-act="as-acted"]) { font-size: 16px; font-weight: 700; }
   .auto-prompt-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .auto-prompt-row input, .auto-prompt-row select { background: #0a0a0a; border: 1px solid #444; border-radius: 6px; padding: 5px 8px; color: #fff; font-size: 12px; min-width: 160px; }
   .g-prompt { margin-top: 10px; padding: 12px 14px; border-radius: 8px; background: #3d2e10; border: 1px solid #ff9800; color: #ffcc80; font-size: 15px; font-weight: 700; }
@@ -894,7 +898,7 @@ async function runUvSweep(tid) {
   refreshTest(tid);
 }
 
-// ---------- DVT-SAF-012 step 1 (tool: door_open_cure): the door opened, the machine tries to start a cure, the StarBright watches ----------
+// ---------- DVT-SAF-008 step 1 (tool: door_open_cure): the door opened, the machine tries to start a cure, the StarBright watches ----------
 const DOOR_UV_THRESHOLD = 0.5;       // mW/cm2 above the dark reading = UV seen (catalog field note: CONFIRM)
 const DOOR_WATCH_MS = 5000;
 
@@ -974,7 +978,7 @@ async function runDoorOpenCure(tid) {
     if (trace.some((r) => r[2] === 'dark' && !r[3])) throw new Error(t('doorClosedDuring'));
 
     autoSay(tid, t('doorAttempt'));
-    const material = { id: 'dvt-saf-012', name: 'DVT-SAF-012 door interlock', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
+    const material = { id: 'dvt-saf-012', name: 'DVT-SAF-008 door interlock', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
     const rRecipe = await postJson('/api/recipe/start', { material });
     accepted.recipe = rRecipe.ok === true;
     let recipeStop = null;
@@ -1285,7 +1289,7 @@ async function tcTick() {
     autoSay(r.tid, lost ? t('tcLost')(Math.round(secs - r.badSince)) : t('tcRecording')(temp, r.max, mmss, r.n), lost ? 'fail' : '');
     drawTc08(r.tid);                                    // the graph grows live, one point a second
     if (r.n % 30 === 0) persist(r.runId, true);         // the trace reaches the results folder every 30 s
-    // the analyser decides when the run is over (SAF-013: trip seen, then the reset or the wait after it) - the operator does not
+    // the analyser decides when the run is over (DVT-SAF-009: trip seen, then the reset or the wait after it) - the operator does not
     const as = typeof DVT_AUTO.autoStop === 'function' ? DVT_AUTO.autoStop(TESTS[r.tid], rec) : { stop: false };
     if (as && as.stop) { log('info', `${r.runId}: ${t('tcAutoStopped')(as.why || '')}`); stopTc08(r.tid); return; }
   } finally {
@@ -1330,7 +1334,7 @@ setInterval(() => {                      // keep the readiness checks of every o
   }
 }, 2000);
 
-// ---------- DVT-SAF-012 steps 2-6: guided door checks, each measured by the machine ----------
+// ---------- DVT-SAF-008 steps 2-6: guided door checks, each measured by the machine ----------
 // every automatic step keeps its own record in rec.autos[kind] (and its own CSV in sweeps/); rec.auto is the latest one
 function setAuto(rec, auto) {
   rec.autos = rec.autos || {};
@@ -1518,7 +1522,7 @@ async function runGuided(tid, tool) {
 
     if (tool === 'door_lock_check') {
       if (st0.doorClosed !== true) throw new Error(t('gCloseFirst'));
-      const material = { id: 'dvt-saf-012-lock', name: 'DVT-SAF-012 lock check', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
+      const material = { id: 'dvt-saf-012-lock', name: 'DVT-SAF-008 lock check', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
       const r = await postJson('/api/recipe/start', { material });
       if (!r.ok) throw new Error(r.message || 'the program did not start');
       started.recipe = true;
@@ -1704,7 +1708,38 @@ function renderTraceCharts(test, run) {
 }
 
 /** The trace on a canvas: temperatures against minutes, the heater / UV bands at the bottom, the first alarm marked with its code. */
+/** An X-Y curve (a.xy = {x, y, xLabel, yLabel}): one point per settled step, e.g. LED fan duty against panel temperature. */
+function drawXY(canvas, a) {
+  const ctx = canvas.getContext('2d');
+  const xi = a.columns.indexOf(a.xy.x), yi = a.columns.indexOf(a.xy.y);
+  const pts = a.samples.filter((r) => typeof r[xi] === 'number' && typeof r[yi] === 'number').map((r) => [r[xi], r[yi]]).sort((p, q) => p[0] - q[0]);
+  const W = canvas.width, H = canvas.height, L = 56, R = 16, T = 26, B = 46;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+  if (!pts.length) return;
+  const xmin = Math.min(0, ...pts.map((p) => p[0])), xmax = Math.max(...pts.map((p) => p[0]), xmin + 1);
+  const ymin = Math.min(...pts.map((p) => p[1])) - 3, ymax = Math.max(...pts.map((p) => p[1])) + 3;
+  const X = (x) => L + ((x - xmin) / (xmax - xmin)) * (W - L - R);
+  const Y = (y) => H - B - ((y - ymin) / (ymax - ymin)) * (H - T - B);
+  ctx.font = '11px Segoe UI, sans-serif'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = ymin + ((ymax - ymin) * k) / 4;
+    ctx.strokeStyle = '#2a2a2a'; ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(W - R, Y(v)); ctx.stroke();
+    ctx.fillStyle = '#777'; ctx.textAlign = 'right'; ctx.fillText(v.toFixed(1), L - 6, Y(v) + 4);
+  }
+  ctx.textAlign = 'center';
+  pts.forEach((p) => ctx.fillText(String(p[0]), X(p[0]), H - B + 16));
+  ctx.fillText(a.xy.xLabel || a.xy.x, (L + W - R) / 2, H - 8);
+  ctx.save(); ctx.translate(14, (H - B + T) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(a.xy.yLabel || a.xy.y, 0, 0); ctx.restore();
+  ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
+  ctx.stroke();
+  ctx.fillStyle = '#4fc3f7';
+  pts.forEach((p) => { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 4, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ddd'; ctx.textAlign = 'left';
+                       ctx.fillText(p[1].toFixed(1) + ' °C', X(p[0]) + 6, Y(p[1]) - 6); ctx.fillStyle = '#4fc3f7'; });
+}
+
 function drawTrace(canvas, a) {
+  if (a.xy) return drawXY(canvas, a);
   const ctx = canvas.getContext('2d');
   const ix = (c) => a.columns.indexOf(c);
   const tI = ix('t_s');
@@ -1759,7 +1794,7 @@ function drawTrace(canvas, a) {
     });
   }
   series.forEach((s) => {
-    // a trace that holds several passes (SAF-008: one per fan, each timed from 0) restarts its clock: start a new line
+    // a trace that holds several passes (DVT-SAF-005: one per fan, each timed from 0) restarts its clock: start a new line
     // there instead of drawing a stroke back to the left edge
     ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.beginPath();
     s.pts.forEach((p, k) => (k && p[0] >= s.pts[k - 1][0] ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke();
@@ -2432,7 +2467,7 @@ values.csv     one row per recorded value (long format): filter / pivot by unit,
 journal.jsonl  every record / reopen / automatic measurement, append-only, one JSON per line
 runs/<unit>/<test>/<variant>_r<n>.json       the full run (values, verdict, note, measurement summary)
 sweeps/<unit>/<test>/<variant>_r<n>[_<step tool>]_<time>.csv  raw samples of an automatic measurement
-sweeps/<unit>/<test>/<variant>_r<n>_uv_off_timing_<time>.png  the UV-off graph (SAF-012 step 2)
+sweeps/<unit>/<test>/<variant>_r<n>_uv_off_timing_<time>.png  the UV-off graph (DVT-SAF-008 step 2)
 reports/       text reports saved from "Export report"
 
 The page reads runs/ back when this folder is chosen, so the folder - not the browser - is the record.

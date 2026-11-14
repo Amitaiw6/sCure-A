@@ -30,7 +30,7 @@ window.google = { script: { run: {} } };
     portalLogin: () => ({ ok: true, token: 'tok' }),
     portalMachines: () => [{ name: 'CureBox-1', online: true, lastSeen: 1, state: {}, runs: [], errors: [], programs: [], prints: [] }],
     portalDvt: () => ({ runs: ${JSON.stringify(RUNS)}.concat(window.__u3done ? [${JSON.stringify(U3_LAST)}] : []), fileUrl: '', catalog: ${JSON.stringify(CATALOG)},
-      requests: ${JSON.stringify(REQS)}, runners: [], units: ${JSON.stringify(UNITS)}, build: '0.9.123', now: ${BASE} + 9000 + (Date.now() - window.__t0) / 1000,
+      requests: ${JSON.stringify(REQS)}, runners: [], units: ${JSON.stringify(UNITS)}, build: (typeof PORTAL_BUILD !== 'undefined' ? PORTAL_BUILD : ''), now: ${BASE} + 9000 + (Date.now() - window.__t0) / 1000,
       race: { start: window.__start, units: window.__units } }),
     portalRaceSet: (tok, d) => { window.__calls.push(d); if (d.start === 'now') window.__start = ${BASE}; if (d.start === 0) window.__start = 0; if (d.units) window.__units = d.units; return { ok: true }; },
   };

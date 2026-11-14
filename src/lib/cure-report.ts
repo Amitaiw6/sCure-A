@@ -20,6 +20,25 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
   const ledLeft = telemetry.map(s => s.ledTemps?.left ?? 0)
   const ledDoor = telemetry.map(s => s.ledTemps?.door ?? 0)
   const ledBack = telemetry.map(s => s.ledTemps?.back ?? 0)
+  // Fan tachometer RPM per sample (v0.8.42+). Fans that never reported stay out of the chart.
+  const FAN_SERIES: { key: string; label: string; color: string }[] = [
+    { key: 'FAN_HEATER', label: 'Heater fan', color: '#DC2626' },
+    { key: 'FAN_COOLING', label: 'Chamber cooling fan', color: '#0072CE' },
+    { key: 'FAN_LEFT', label: 'Left LED fan', color: '#16A34A' },
+    { key: 'FAN_RIGHT', label: 'Right LED fan', color: '#D97706' },
+    { key: 'FAN_BACK', label: 'Back LED fan', color: '#7C3AED' },
+    { key: 'FAN_DOOR', label: 'Door LED fan', color: '#0891B2' },
+  ]
+  const hasFanData = telemetry.some(s => s.fanRpm && Object.keys(s.fanRpm).length > 0)
+  const fanSeries = FAN_SERIES
+    .map(f => ({ ...f, data: telemetry.map(s => s.fanRpm?.[f.key] ?? null) }))
+    .filter(f => f.data.some(v => typeof v === 'number'))
+  const fanSummary = fanSeries.map(f => {
+    const running = f.data.filter((v): v is number => typeof v === 'number' && v > 0)
+    if (running.length === 0) return `${f.label}: off`
+    const avg = Math.round(running.reduce((a, b) => a + b, 0) / running.length)
+    return `${f.label}: avg ${avg.toLocaleString()} RPM (min ${Math.min(...running).toLocaleString()}, max ${Math.max(...running).toLocaleString()}, running ${Math.round(running.length / f.data.length * 100)} % of the run)`
+  })
 
   const sampleInterval = times.length > 1 ? times[1] - times[0] : 5
   const uv405Duration = uv405.filter(v => v === 1).length * sampleInterval
@@ -52,13 +71,20 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
   const sensorIssuesStr = sensorIssues.length === 0
     ? (log.sensorIssues ? 'All sensors read' : 'n/a')
     : sensorIssues.map(i => SENSOR_LABELS[i.sensor] ?? i.sensor).join(', ') + ' disconnected'
-  const statusClass = log.status === 'completed' ? 'ok' : log.status === 'aborted' ? 'warn' : log.status === 'running' ? 'warn' : 'err'
-  const statusLabel = log.status.charAt(0).toUpperCase() + log.status.slice(1)
+  const FAN_LABELS: Record<string, string> = { FAN_HEATER: 'Heater fan', FAN_COOLING: 'Chamber cooling fan', FAN_LEFT: 'Left LED fan', FAN_RIGHT: 'Right LED fan', FAN_BACK: 'Back LED fan', FAN_DOOR: 'Door LED fan' }
+  const fanIssues = log.fanIssues ?? []
+  const fanIssuesStr = fanIssues.length === 0
+    ? (log.fanIssues ? 'All fans at nominal' : 'n/a')
+    : fanIssues.map(i => `${FAN_LABELS[i.fan] ?? i.fan}${i.deficitPct != null ? ` -${Math.round(i.deficitPct)} %` : ''}`).join(', ')
+  const statusClass = log.status === 'completed' ? 'ok' : log.status === 'aborted' ? 'stopped' : log.status === 'running' ? 'warn' : 'err'
+  const statusLabel = log.status === 'aborted' ? 'Stopped' : log.status.charAt(0).toUpperCase() + log.status.slice(1)
 
-  const statusPillBg = log.status === 'completed' ? '#DCFCE7' : log.status === 'aborted' ? '#FEF3C7' : log.status === 'running' ? '#FEF3C7' : '#FEE2E2'
-  const statusPillColor = log.status === 'completed' ? '#166534' : log.status === 'aborted' ? '#92400E' : log.status === 'running' ? '#92400E' : '#991B1B'
-  const statusPillBorder = log.status === 'completed' ? '#86EFAC' : log.status === 'aborted' ? '#FCD34D' : log.status === 'running' ? '#FCD34D' : '#FCA5A5'
-  const statusDotColor = log.status === 'completed' ? '#16A34A' : log.status === 'aborted' ? '#D97706' : log.status === 'running' ? '#D97706' : '#DC2626'
+  // Status colours: completed = green, stopped (aborted) = ORANGE — a stopped
+  // run must never read as a green/successful one — error = red.
+  const statusPillBg = log.status === 'completed' ? '#DCFCE7' : log.status === 'aborted' ? '#FFEDD5' : log.status === 'running' ? '#FEF3C7' : '#FEE2E2'
+  const statusPillColor = log.status === 'completed' ? '#166534' : log.status === 'aborted' ? '#9A3412' : log.status === 'running' ? '#92400E' : '#991B1B'
+  const statusPillBorder = log.status === 'completed' ? '#86EFAC' : log.status === 'aborted' ? '#FDBA74' : log.status === 'running' ? '#FCD34D' : '#FCA5A5'
+  const statusDotColor = log.status === 'completed' ? '#16A34A' : log.status === 'aborted' ? '#EA580C' : log.status === 'running' ? '#D97706' : '#DC2626'
 
   const uv405Scaled = uv405.map(v => v === 1 ? uvScale : null)
   const uv450Scaled = uv450.map(v => v === 1 ? uvScale : null)
@@ -161,6 +187,7 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
   .info-card .value { font-size: 20px; font-weight: 700; color: var(--sts-blue-900); margin-top: 6px; letter-spacing: -0.3px; }
   .info-card .value.ok { color: var(--sts-success); }
   .info-card .value.warn { color: var(--sts-warning); }
+  .info-card .value.stopped { color: #EA580C; }
   .info-card .value.err { color: var(--sts-error); }
   .info-card .value.cure { color: var(--sts-cure); }
   .info-card .value.bleach { color: var(--sts-bleach); }
@@ -285,6 +312,10 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
     <div class="label">Temperature Sensors</div>
     <div class="value ${sensorIssues.length === 0 ? 'ok' : sensorIssues.some(i => i.critical) ? 'err' : 'warn'}" style="font-size:14px">${sensorIssuesStr}</div>
   </div>
+  <div class="info-card">
+    <div class="label">Fans</div>
+    <div class="value ${fanIssues.length === 0 ? 'ok' : fanIssues.some(i => i.critical) ? 'err' : 'warn'}" style="font-size:14px">${fanIssuesStr}</div>
+  </div>
 </div>
 
 <!-- Phase ribbon -->
@@ -321,6 +352,16 @@ export async function generateCureReport(log: CureLog): Promise<ReportResult> {
   </div>
 </div>
 
+${hasFanData ? `<!-- Fan chart -->
+<div class="chart-section">
+  <h2>Fan speeds</h2>
+  <div class="chart-sub">Tachometer RPM of every fan throughout the cure cycle (0 = fan off). ${fanSummary.join(' · ')}</div>
+  <div class="chart-container"><canvas id="fanChart"></canvas></div>
+  <div class="legend-row">
+    ${fanSeries.map(f => `<div class="legend-item"><div class="legend-dot" style="background:${f.color}"></div>${f.label}</div>`).join('\n    ')}
+  </div>
+</div>
+` : ''}
 <!-- Footer -->
 <div class="footer">
   <div class="footer-left">
@@ -451,6 +492,25 @@ new Chart(document.getElementById('ledChart'), {
     scales: { x: stsScaleX, y: stsScaleY({ min: 0, step: 5, text: 'Temperature (°C)' }) }
   }
 });
+${hasFanData ? `new Chart(document.getElementById('fanChart'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: ${JSON.stringify(fanSeries.map(f => ({ label: f.label, data: f.data, borderColor: f.color, backgroundColor: 'transparent', pointRadius: 0, borderWidth: 2, tension: 0.2, spanGaps: true })))}
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        ...stsTooltip,
+        callbacks: { label: ctx => ctx.dataset.label + ' · ' + (ctx.raw == null ? 'n/a' : ctx.raw + ' RPM') }
+      }
+    },
+    scales: { x: stsScaleX, y: stsScaleY({ min: 0, step: 1000, text: 'Fan speed (RPM)' }) }
+  }
+});` : ''}
 </script>
 </body>
 </html>`
@@ -467,6 +527,7 @@ new Chart(document.getElementById('ledChart'), {
     startedAt: log.startedAt,
     endedAt: log.endedAt,
     sensorIssues: log.sensorIssues ?? null,
+    fanIssues: log.fanIssues ?? null,
   })
 
   const filename = `cure-report-${log.materialName}-${new Date(log.startedAt).toISOString().slice(0, 10)}.html`

@@ -18,7 +18,7 @@ DVT/
 │   ├── export.py     JSON snapshot + per-test CSV + XLSX workbook + Markdown report
 │   ├── drive.py      Google Drive sync (Drive API with your account, or a Drive-for-Desktop / OneDrive folder)
 │   ├── figures.py    process figures: one generated machine schematic, per-test / per-step highlights   python -m dvt_tool.figures --out docs/figures
-│   └── instruments/  bench instruments: ophir.py (StarBright via StarLab USB / serial / simulated), uvoff.py (SAF-012 door / SAF-007 thermistor UV-off sequence + graph)
+│   └── instruments/  bench instruments: ophir.py (StarBright via StarLab USB / serial / simulated), uvoff.py (DVT-SAF-008 door / DVT-SAF-004 thermistor UV-off sequence + graph)
 └── tests/            pytest
 ```
 
@@ -98,6 +98,59 @@ criteria, Evaluate / Finish / Waive / Reject, optional witness) → Done
 Next saves, so closing the app and reopening resumes at the same stage.
 FAIL opens an NCR automatically; BLOCKED (missing value or a threshold that
 is still `null` in the catalog) is never reported as PASS.
+
+### Alarms are pulled from the machine (SRS-DVT-198)
+
+Twenty tests record an alarm (`alarm_raised`, `error_code`, `alarm_text`,
+`time_to_alarm`). On those steps the console does not take your word for it:
+while the step is open it reads the machine's own active-alarm list over the
+API (`/api/state`, polled every 2 s) and shows a card **Alarms from the
+machine** with
+
+- the codes active right now, with the machine's own text,
+- what it has seen since this step opened, each with the seconds from the
+  step's start — that is where `time_to_alarm` comes from,
+- the code the step expects, when the catalog declares one.
+
+**Next stays locked until the console has seen an alarm.** The code, the
+text and the time are then written into the step's fields (marked as coming
+from the DUT) and into the run — nothing is typed. Two recorded ways past a
+locked step:
+
+- **No alarm appeared — record as a failure.** Writes `alarm_raised = false`,
+  so the run commits **FAIL**. A silent machine is a result, not missing data
+  — this is what the fixed-resistor run (DVT-SAF-003, 2026-10-29) should have
+  recorded: the firmware never raised 9006, and the old wizard walked on.
+- **No link to the machine — record by hand.** Offered only while the machine
+  is unreachable, for the tests that take it off the air on purpose
+  (DVT-SAF-010 firmware hang, DVT-SAF-014 software stack). Logged as not
+  witnessed by the console.
+
+An alarm that was already active when the step opened counts as evidence but
+gets no `time_to_alarm` — the console did not time it.
+
+A step can declare the codes it must see:
+
+```yaml
+    - step: Record the alarm — time from the HEAT command to the alarm …
+      capture: [alarm_raised, time_to_alarm, error_code]
+      expect_alert: [9006]          # error-registry codes (public/config/errors.json)
+```
+
+A **different** code does not lock the step: the console records what the
+machine really raised and flags it red (`the machine raised 9007, not the
+expected 9006`) for you to judge on the verdict page. Declared so far:
+DVT-SAF-002 `[9010, 9001]`, DVT-SAF-003 `[9006]`, DVT-SAF-004
+`[9011, 9012, 9013, 9014, 9050]`, DVT-SAF-006 `[9034, 9003]`, DVT-SAF-017
+`[9007]` — the codes pinned by the firmware or the registry. The other 15
+tests with alarm fields are watched generically (any alarm) until their code
+is confirmed; see the Open Issues in [docs/SRS-DVT-Tool.md](docs/SRS-DVT-Tool.md).
+
+In simulation the injectable faults raise the same codes the firmware does,
+including a new **heater sensor replaced by a fixed resistor** fault: the
+reading sticks at the value it was fitted at, the real chamber keeps
+climbing, and 9006 follows 90 s later — DVT-SAF-003 can be rehearsed without
+a resistor.
 
 Every commit is exported and pushed to Drive in the background; the pill
 in the header shows the last sync and how many items are queued if Drive is
@@ -323,8 +376,8 @@ result on the step page; when it finishes every value, the CSV log and the
 graph are recorded by themselves and the wizard moves on — nothing is typed
 in, nothing attached by hand). It first checks the meter through the
 machine and shows the wavelength it is *set* to; the sweep refuses to
-start unless that equals the test's wavelength (405 nm for OPT-001, 450 nm
-for OPT-002). The StarBright needs no calibration certificate for these two
+start unless that equals the test's wavelength (405 nm for DVT-OPT-001, 450 nm
+for DVT-OPT-002). The StarBright needs no calibration certificate for these two
 tests: on the Equipment stage the wizard asks the machine whether the meter
 is connected and delivering a reading, shows the result live, and locks
 Next until it is (catalog `verify: live_meter`; the fixture is `verify:
@@ -336,9 +389,9 @@ the fields (per-step irradiance, slope, intercept, R², max deviation,
 gain at 30 / 100 %, monotonic) and attaches the CSV + PNG. In simulation
 mode the same flow runs against a simulated meter.
 
-### Bench instruments — Ophir StarBright (DVT-SAF-012, DVT-SAF-007)
+### Bench instruments — Ophir StarBright (DVT-SAF-008, DVT-SAF-004)
 
-Step 2 of DVT-SAF-012 has a **Measure with the Ophir meter…** button. The
+Step 2 of DVT-SAF-008 has a **Measure with the Ophir meter…** button. The
 console switches the LEDs on at maximum, waits for a stable reading on the
 meter, opens the door (API release, or you on the prompt), records the
 irradiance against time until the UV is gone, switches the LEDs off, and
@@ -349,7 +402,7 @@ StarLab installed and `pip install pywin32`), **serial** (RS-232 / USB-serial,
 `pyserial`), or the **simulated meter** for rehearsal in simulation mode.
 The backend, port, unit and aperture are remembered in the campaign store.
 
-Step 3 of DVT-SAF-007 uses the same button with the **LED-thermistor
+Step 3 of DVT-SAF-004 uses the same button with the **LED-thermistor
 trigger**: LEDs on at maximum, stable reading, then the console prompts you
 to pull the connector of the selected thermistor (right / left / back /
 door — in simulation the open-thermistor fault is injected for you) and
@@ -410,12 +463,61 @@ the workbook, the report and a `CHECKPOINT.md` with who / when / progress per
 machine — as one commit, pushed when a remote is configured. Only that folder
 is committed; other changes in the working tree are untouched.
 
+### Guided tests — the step you have to do, in large type
+
+A guided script (`web/dvt-auto.js`) reports two different things, and they must
+not look the same:
+
+- `c.say(...)` — what the **machine** is doing: `waiting for the UV to settle
+  (112.6 mW/cm2)`, `decay · -0.1 mW/cm2`. Grey status line.
+- `c.act(en, he, secondsLeft)` — what the **person** must do right now:
+  `OPEN THE DOOR and keep it open`. It is published as the run's *step*: the
+  runner sends it to the portal as its own field with the seconds left and the
+  stage it belongs to, the sCure Cloud run card shows it as the headline of
+  *What to do now* — amber, with a `24 s` countdown and `step 4 of 6` — and the
+  run log marks it `DO NOW:`. The local console shows the same line in amber.
+
+**You confirm every step you carry out.** An instruction published with
+`c.act` / `c.doThis` shows an **I did it** button (48 px, on the phone too), and
+the script goes on only when *both* are true: you pressed it **and** — where the
+machine can see the action — the machine agrees. The press never stands in for a
+reading: while they disagree the step says which half is missing (`pressed, but
+the machine does not see it yet` / `the machine sees it; press "I did it" to go
+on`) and keeps waiting. A step the machine times by itself (the UV-off
+measurement, a bench prompt) is shown **without** a button, because a press
+there would add nothing to what is being measured.
+
+Timed holds start from the press, not before: *"PULL the door firmly and keep
+pulling, then press I am pulling"* → the ten seconds begin. Until 2026-10-30 the
+window ran whether or not anybody had a hand on the door.
+
+Every waiting prompt uses it: the `wait(...)` helper of a script calls
+`c.doThis`, so an instruction can never arrive as a status line again. A run
+that ends clears its step, so no finished card is left telling anyone to open a
+door.
+
+This exists because of a real failure (2026-10-29): DVT-SAF-008 step 4/6 asked
+for the door, the portal showed the request as an ordinary line while the big
+box said *"running by itself - nothing to do"*, and the run died 30 s later with
+`the machine did not see the door open`.
+
+A question with buttons is still `c.ask(...)` — use it when the script needs an
+**answer** (a yes/no, a reading). Use `c.doThis(...)` when it needs an **action**
+confirmed, and `c.act(..., { ack: false })` when the machine itself is the witness
+and the person only needs to know what to do.
+
+The one place a step is still shown without a press is the machine's own bench
+(`sCureBox-CS` on :3002, DVT-SAF-002 and friends): its prompts — *"DISCONNECT THE
+HEATER THERMISTOR NOW"* — now reach the site as the step, but the bench has no
+route to take a confirmation, so it keeps judging by the hardware alone. Adding
+one means an ack endpoint on the bench host and the C# runner honouring it.
+
 ### Automatic tests — the console drives the machine
 
 Some catalog steps carry a `tool:` key and the wizard shows a button that runs
 them without operator action: `uv_off_timing` / `led_off_timing` (Ophir
 StarBright: LEDs at maximum, trigger, irradiance vs time) and `led_fan_sweep`
-(DVT-THM-005: LED-cooling fans at 100 / 90 / 80 / 70 %, LEDs at maximum, every
+(DVT-THM-004: LED-cooling fans at 100 / 90 / 80 / 70 %, LEDs at maximum, every
 panel left to settle or stopped at the 75 °C limit). The console sends the
 commands, watches the machine's own sensors, ends safe (LEDs off, fans 100 %),
 hands the operator the final answer — the lowest duty with margin — and the

@@ -94,7 +94,7 @@ def build_html(d: dict, campaign: str = "sCure-DVT") -> str:
     unit_rows = "".join(f"<tr><td><b>{_e(u['id'])}</b></td><td>{_e(u.get('role_label') or u.get('role') or '')}</td><td>{_e(u.get('notes') or '')}</td>"
                         f"<td class='n'>{(pr.get('perUnit') or {}).get(u['id'], {}).get('done', 0)}/{(pr.get('perUnit') or {}).get(u['id'], {}).get('total', 0)}</td></tr>" for u in d["units"])
     nulls = ", ".join(f"<span class='tag'>{_e(k.replace('_thresholds', ''))}.{_e(kk)}</span>" for k, kk in d["null_thresholds"])
-    fig = figures.figure_svg("DVT-SAF-012", None, "Door interlock — UV inhibited with the door open", rev=d["version"], date=today)
+    fig = figures.figure_svg("DVT-SAF-008", None, "Door interlock — UV inhibited with the door open", rev=d["version"], date=today)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>sCure DVT — overview</title><style>{CSS}</style></head><body>
 <div class="page">
 <div class="hdr"><div><h1>sCure / CureBox — Design Verification Test (DVT)</h1><div class="sub">Campaign overview · catalog v{_e(d['version'])} · SRS-DVT-SW Rev B · {today}</div></div><div class="brand">STRATASYS · sCure<br>DVT OVERVIEW · 2 pages</div></div>
@@ -111,7 +111,7 @@ def build_html(d: dict, campaign: str = "sCure-DVT") -> str:
 
 <h2>2 · Phases and gates</h2>
 <table><tr><th>Phase</th><th class="n">Tests</th><th class="n">Runs</th><th class="n">Hours</th><th>Gate to the next phase</th></tr>{phase_rows}</table>
-<p class="sub">A phase opens for a unit only when the previous one is closed for that unit; protective earth (ELE-001) must PASS before anything is energised. Phase 0 is the configuration freeze (serial, firmware, catalog revision) and the readiness review (TRR) signed per unit.</p>
+<p class="sub">A phase opens for a unit only when the previous one is closed for that unit; protective earth (DVT-ELE-001) must PASS before anything is energised. Phase 0 is the configuration freeze (serial, firmware, catalog revision) and the readiness review (TRR) signed per unit.</p>
 
 <h2>3 · Units</h2>
 <table><tr><th>Unit</th><th>Role</th><th>Notes</th><th class="n">Runs done</th></tr>{unit_rows}</table>
@@ -131,8 +131,8 @@ def build_html(d: dict, campaign: str = "sCure-DVT") -> str:
 <div>
 <h2>5 · Instrumentation</h2>
 <ul>
-<li><b>PicoLog TC-08 ×2</b> — 16 type-K thermocouples on a fixed 3-D grid (THM-001), heater-body and LED MCPCB bonds; the TC-08 clock is the time base of every shutdown test.</li>
-<li><b>Ophir StarBright</b> UV power meter (PD300-UV head) read directly by the console: LEDs at maximum → trigger → irradiance vs time, graph and CSV attached to the run (SAF-012 door, SAF-007 thermistor, SAF-014 watchdog).</li>
+<li><b>PicoLog TC-08 ×2</b> — 16 type-K thermocouples on a fixed 3-D grid (DVT-THM-001), heater-body and LED MCPCB bonds; the TC-08 clock is the time base of every shutdown test.</li>
+<li><b>Ophir StarBright</b> UV power meter (PD300-UV head) read directly by the console: LEDs at maximum → trigger → irradiance vs time, graph and CSV attached to the run (DVT-SAF-008 door, DVT-SAF-004 thermistor, DVT-SAF-010 watchdog).</li>
 <li><b>Oxygen analyser</b> (centre + worst corner), inline N₂ flow meter, chamber manometer — purge to 95 % N₂, hold through the cure, inlet over-pressure, venting, room O₂ at the operator.</li>
 <li><b>Programmable AC source</b> 100 / 110 / 230 / 240 V, true-RMS meter, clamp on the heater branch, current probe with single-shot scope for the fuse tests.</li>
 <li><b>Safety bench</b> — earth-bond tester, insulation tester, hipot, touch-current meter; thermal camera and fire-rated enclosure for the destructive tests.</li>
@@ -149,7 +149,7 @@ def build_html(d: dict, campaign: str = "sCure-DVT") -> str:
 </div>
 <div>
 <div class="fig">{fig}</div>
-<p class="figcap">Process figure — one generated engineering sheet per test and per step: the machine, the mains chain, the instruments, the injected fault, with component tags and a title block (here: DVT-SAF-012, door interlock).</p>
+<p class="figcap">Process figure — one generated engineering sheet per test and per step: the machine, the mains chain, the instruments, the injected fault, with component tags and a title block (here: DVT-SAF-008, door interlock).</p>
 
 <h2>7 · Status</h2>
 <p>Catalog v{_e(d['version'])} baselined for review: {d['n_tests']} tests, {d['n_runs']} applicable runs, ≈{d['hours']} bench hours. Runs committed so far: <b>{done} / {total}</b>{(' · ' + str(pr.get('PASS', 0)) + ' PASS · ' + str(pr.get('FAIL', 0)) + ' FAIL · ' + str(pr.get('BLOCKED', 0)) + ' BLOCKED · ' + str(pr.get('openNcrs', 0)) + ' open NCRs') if pr else ''}.</p>
@@ -157,11 +157,11 @@ def build_html(d: dict, campaign: str = "sCure-DVT") -> str:
 <h2>8 · Decisions needed before Phase 2</h2>
 <div class="warn"><b>Limits still null in the catalog:</b> {nulls}. The tests that reference them evaluate as BLOCKED until set.</div>
 <ul>
-<li><b>Fan and LED feedback.</b> No tach on the second fan of each pair and no per-panel LED output feedback: SAF-008 / 019 / 020 need a hardware or firmware decision (tach lead, per-panel current sense on the spare ADS1115 inputs, or a thermistor rise-rate rule).</li>
+<li><b>Fan and LED feedback.</b> No tach on the second fan of each pair and no per-panel LED output feedback: DVT-SAF-005 / 015 / 016 need a hardware or firmware decision (tach lead, per-panel current sense on the spare ADS1115 inputs, or a thermistor rise-rate rule).</li>
 <li><b>Nitrogen sensing.</b> No line-pressure sensor on the board (<span class="tag">n2LinePressure = null</span>); the 6 bar enable guard and the pre-cure N₂ check cannot work, and the Settings guard blocks nitrogen mode on real hardware. Fit an inlet pressure switch or drop the guard.</li>
 <li><b>Voltage selector.</b> A mid position is an open circuit; only the 25-minute stall rule can catch it and its text does not mention the selector. A "no rise at all" rule with customer guidance is recommended.</li>
-<li><b>REQ-48 heat-up ≤ 20 min</b> already fails at EVT (27–33 min); decide the number or a documented waiver before Phase 3. Low line at 100 V is now in THM-001; 207 V still open.</li>
-<li><b>Campaign logistics</b> — the destructive unit (UUT-05), the shipped unit for ENV-001, witnessing of Phases 1 and 5, a climate-controlled room for THM-003.</li>
+<li><b>REQ-48 heat-up ≤ 20 min</b> already fails at EVT (27–33 min); decide the number or a documented waiver before Phase 3. Low line at 100 V is now in DVT-THM-001; 207 V still open.</li>
+<li><b>Campaign logistics</b> — the destructive unit (UUT-05), the shipped unit for DVT-ENV-001, witnessing of Phases 1 and 5, a climate-controlled room for DVT-THM-003.</li>
 </ul>
 <div class="foot"><span>sCure DVT overview · catalog v{_e(d['version'])} · generated by the DVT console</span><span>page 2 / 2</span></div>
 </div>

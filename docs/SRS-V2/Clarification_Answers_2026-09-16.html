@@ -1,0 +1,420 @@
+<title>sCure Box Clarification Answers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#f2f4f6; --paper:#ffffff; --ink:#18212b; --sub:#4d5864; --line:#d9dfe6; --code-bg:#e8edf2;
+  --bench:#0f5e8c; --bench-bg:#e6f1f9; --po:#8a4b00; --po-bg:#f9eee2;
+  --ok:#2d6a45; --ok-bg:#e4f2e9; --part:#7a5d00; --part-bg:#f7f0d6; --open:#a8261e; --open-bg:#fbe7e5;
+  --head-a:#14283d; --head-b:#1d3d5f; --head-ink:#ffffff; --head-sub:#c3d6e8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#11161c; --paper:#19212a; --ink:#e3e9ef; --sub:#9aa7b4; --line:#2b3742; --code-bg:#243039;
+    --bench:#6db6e6; --bench-bg:#16303f; --po:#e0a764; --po-bg:#35291a;
+    --ok:#7fcf9d; --ok-bg:#1a3326; --part:#e2c35c; --part-bg:#342d14; --open:#f08a82; --open-bg:#3b1d1b;
+    --head-a:#0c1824; --head-b:#15293c; --head-ink:#eef3f8; --head-sub:#9fb6cb;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#11161c; --paper:#19212a; --ink:#e3e9ef; --sub:#9aa7b4; --line:#2b3742; --code-bg:#243039;
+  --bench:#6db6e6; --bench-bg:#16303f; --po:#e0a764; --po-bg:#35291a;
+  --ok:#7fcf9d; --ok-bg:#1a3326; --part:#e2c35c; --part-bg:#342d14; --open:#f08a82; --open-bg:#3b1d1b;
+  --head-a:#0c1824; --head-b:#15293c; --head-ink:#eef3f8; --head-sub:#9fb6cb;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font:15px/1.55 "IBM Plex Sans",system-ui,"Segoe UI",Arial,sans-serif}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace;font-size:.86em}
+code{background:var(--code-bg);padding:1px 5px;border-radius:3px;word-break:break-word}
+header{background:linear-gradient(135deg,var(--head-a),var(--head-b));color:var(--head-ink);padding:34px 16px 30px}
+.wrap{max-width:1040px;margin:0 auto}
+header h1{margin:0 0 8px;font-size:1.65rem;font-weight:700;text-wrap:balance}
+header p{margin:4px 0;color:var(--head-sub);max-width:70ch}
+main{padding-inline:16px;padding-block:24px 60px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin:14px 0 0;font-size:.82rem;color:var(--head-sub)}
+.chip{display:inline-block;font:600 .68rem/1 "IBM Plex Mono",monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 7px;border-radius:3px;white-space:nowrap}
+.c-code{background:var(--bench-bg);color:var(--bench)}
+.c-sch{background:var(--code-bg);color:var(--ink)}
+.c-bench{background:var(--ok-bg);color:var(--ok)}
+.c-open{background:var(--open-bg);color:var(--open)}
+.c-sec{background:var(--open);color:var(--paper)}
+.alert{background:var(--open-bg);border:1px solid var(--open);border-radius:6px;padding:14px 18px;margin:0 0 26px}
+.alert b{color:var(--open)}
+.alert p{margin:4px 0}
+h2{font-size:1.2rem;margin:36px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+h2.bench{color:var(--bench)} h2.po{color:var(--po)}
+.overview{overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--sub);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+.st{font-weight:600;white-space:nowrap}
+.st.ok{color:var(--ok)} .st.part{color:var(--part)} .st.open{color:var(--open)}
+.item{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px 18px;margin-bottom:14px}
+.item-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin-bottom:6px}
+.id{font:600 .8rem "IBM Plex Mono",monospace;padding:2px 7px;border-radius:3px}
+.bench .id{background:var(--bench-bg);color:var(--bench)}
+.po .id{background:var(--po-bg);color:var(--po)}
+.item h3{margin:0;font-size:1rem;font-weight:600;flex:1 1 260px;text-wrap:balance}
+.item p{margin:8px 0;max-width:80ch}
+.item ul{margin:6px 0;padding-left:20px}
+.item li{margin-bottom:4px}
+.tbl{overflow-x:auto;margin:10px 0;border:1px solid var(--line);border-radius:4px}
+.ask{margin-top:10px;padding:8px 12px;background:var(--open-bg);border-radius:4px;font-size:.9rem}
+.ask b{color:var(--open)}
+footer{color:var(--sub);font-size:.82rem;margin-top:40px}
+</style>
+
+<header>
+  <div class="wrap">
+    <h1>Answers: Items to Clarify with Bench &amp; Product Owner</h1>
+    <p>Reply to the v2 list of 2026-09-10 (14 bench items, 12 product owner items). Answered 2026-09-16, with hardware-owner answers added the same day, from the legacy sCure-A code, the IO board schematic BRD-74205 rev07, the HSI sheet, the legacy SRS, the DVT catalog, and a live read-out of the test unit <span class="mono">testingcm5</span> (Pi CM5).</p>
+    <p>Nothing here is guessed. Where no source answers a question, the item says so and names who can close it.</p>
+    <div class="legend">
+      <span><span class="chip c-code">Code</span> what the legacy software does today</span>
+      <span><span class="chip c-sch">Schematic</span> BRD-74205 rev07 netlist or HSI</span>
+      <span><span class="chip c-bench">Bench</span> measured on the one reference unit</span>
+      <span><span class="chip c-open">Open</span> needs the named person</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<div class="alert">
+  <p><span class="chip c-sec">Security</span> <b>The update-signing private key is committed to the repository.</b></p>
+  <p><code>keys/scure-update.key</code> (PKCS#8 private key) has been tracked since the first commit, next to the public key the updater verifies against. Anyone with repository access can sign an update package that the device accepts. If this key signs real packages, it must be rotated and the old key revoked. Removing the file from the tree is not enough, because it stays in git history.</p>
+</div>
+
+<h2>Status at a glance</h2>
+<div class="overview">
+<table>
+<thead><tr><th>Item</th><th>Topic</th><th>Status</th><th>Still needs</th></tr></thead>
+<tbody>
+<tr><td class="num">B1</td><td>Door interlock</td><td class="st ok">Closed</td><td>Nothing. Closed by the hardware owner</td></tr>
+<tr><td class="num">B2</td><td>GPIO17 routing</td><td class="st ok">Answered</td><td>GPIO17 is PCA9685 OE. Confirm fan/heater effect of HIGH (bench)</td></tr>
+<tr><td class="num">B3</td><td>Fan connectors, thresholds</td><td class="st ok">Answered</td><td>Per-unit nominal RPM (bench). J22 not connected</td></tr>
+<tr><td class="num">B4</td><td>BOFA</td><td class="st part">Partly answered</td><td>BOFA_EN / BOFA_PRESENT levels (bench, datasheet)</td></tr>
+<tr><td class="num">B5</td><td>Pressure, light sensors</td><td class="st ok">Answered</td><td>Which lead is on Analog_IN, divider (bench); light sensors (PO)</td></tr>
+<tr><td class="num">B6</td><td>NFC reader</td><td class="st ok">Answered</td><td>Nothing. Production uses the USB reader</td></tr>
+<tr><td class="num">B7</td><td>CM5 carrier, BOM</td><td class="st part">Partly answered</td><td>Carrier identity, BOM (David/Roman)</td></tr>
+<tr><td class="num">B8</td><td>Storage medium</td><td class="st part">Partly answered</td><td>Production medium (David/Roman)</td></tr>
+<tr><td class="num">B9</td><td>OTA, bundled services</td><td class="st part">Partly answered</td><td>NetBird owner; SWUpdate vs RAUC vs .scu</td></tr>
+<tr><td class="num">B10</td><td>Touchscreen, USB</td><td class="st part">Partly answered</td><td>7" or 10.1" panel for production (PO)</td></tr>
+<tr><td class="num">B11</td><td>I2C numbering</td><td class="st ok">Answered</td><td>Repeat on a production carrier</td></tr>
+<tr><td class="num">B12</td><td>Damper servo</td><td class="st ok">Closed</td><td>Nothing. Closed by the hardware owner</td></tr>
+<tr><td class="num">B13</td><td>Motors 1 and 2</td><td class="st ok">Answered</td><td>What is cabled to J12/J13 (bench)</td></tr>
+<tr><td class="num">B14</td><td>Wi-Fi</td><td class="st ok">Answered</td><td>In or out of v1 (PO)</td></tr>
+<tr><td class="num">PO-1</td><td>Evidence levels</td><td class="st open">Open</td><td>PO decision</td></tr>
+<tr><td class="num">PO-2</td><td>Serial number</td><td class="st open">Open</td><td>PO decision (not implemented)</td></tr>
+<tr><td class="num">PO-3</td><td>Backup write failure</td><td class="st open">Open</td><td>PO decision (SRS OI-6)</td></tr>
+<tr><td class="num">PO-4</td><td>Device name rules</td><td class="st part">Legacy described</td><td>PO decision</td></tr>
+<tr><td class="num">PO-5</td><td>Timer / UV start</td><td class="st part">Legacy described</td><td>PO/QA ruling</td></tr>
+<tr><td class="num">PO-6</td><td>Release criteria</td><td class="st open">Open</td><td>PO decision</td></tr>
+<tr><td class="num">PO-7</td><td>License approval</td><td class="st open">Open</td><td>PO decision</td></tr>
+<tr><td class="num">PO-8</td><td>Organization Link</td><td class="st part">Legacy described</td><td>PO decision</td></tr>
+<tr><td class="num">PO-9</td><td>Update delivery</td><td class="st part">C1 to C5 answered</td><td>C6, C7 (PO, customer)</td></tr>
+<tr><td class="num">PO-10</td><td>Cure together</td><td class="st part">Legacy described</td><td>SRS OI-15 (PM)</td></tr>
+<tr><td class="num">PO-11</td><td>CI/CD</td><td class="st open">Open</td><td>Runner choice</td></tr>
+<tr><td class="num">PO-12</td><td>Cloud inbound writes</td><td class="st part">Legacy described</td><td>Customer confirmation</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 class="bench">Bench items</h2>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B1</span><h3>Door interlock</h3><span class="chip c-sch">Schematic</span><span class="chip c-code">Code</span><span class="chip c-bench">Bench</span></div>
+  <p><b>Sensing path.</b> The external door sensor enters on <code>J17_SSR_LED/DOOR SWITCH</code> pin 2. That node drives <code>R125</code> (1 kΩ), which commons the control inputs of three CPC-1017N relays on <code>Safety.SchDoc</code>.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Relay</th><th>Load in</th><th>Load out</th><th>Gates</th></tr></thead>
+    <tbody>
+      <tr><td class="num">K1</td><td>GPIO16</td><td><code>SSR_SWITCH_450NM</code> to <code>J20</code></td><td>450 nm SSR enable</td></tr>
+      <tr><td class="num">K2</td><td>GPIO20</td><td><code>SSR_SWITCH_405NM</code> to J17 pin 3</td><td>405 nm SSR enable</td></tr>
+      <tr><td class="num">K3</td><td><code>HEATER_PWM</code></td><td><code>HEATER_PWM_1</code> to <code>J19</code></td><td>Heater PWM</td></tr>
+    </tbody>
+  </table></div>
+  <p>The CM5 never drives that node. GPIO27 is a passive tap behind <code>D10</code> with <code>R46</code> (10 kΩ to 3.3 V) as its only pull-up, and the software sets the pin to input with the internal pull off. The hardware interlock therefore covers UV and heater, and software only observes.</p>
+  <p><b>Polarity.</b> Bench-confirmed 2026-07-22 and read again 2026-09-16: <code>pinctrl get 27</code> reads <code>hi</code> with the door closed.</p>
+  <p><b>Grace period in the code.</b></p>
+  <ul>
+    <li>A watchdog checks the door every second. Door open while any output is live starts a countdown of <code>abort_after_sec</code>, default 10 s.</li>
+    <li>If the door closes in time, the process continues.</li>
+    <li>If the countdown expires, every output goes off (heater, UV, cooling, fans, N2, BOFA, damper), Err 6016 is raised, and the status strip stays red until acknowledged or a new process starts.</li>
+    <li>LED and heater enables refuse while the door is not confirmed closed. The relays already cut the drive when the sensor line dropped, so the 10 s grace is software only. DVT-SAF-012 requires UV off within 1 s on the Ophir trace.</li>
+  </ul>
+  <p><b>Closed by the hardware owner, 2026-09-16.</b> No further bench checks are requested for the door interlock.</p>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B2</span><h3>UV wavelength routing and GPIO17</h3><span class="chip c-sch">Schematic</span><span class="chip c-code">Code</span><span class="chip c-bench">Bench</span></div>
+  <p><b>Schematic.</b> Text extraction of all 13 pages confirms no net named GPIO17. GPIO16, GPIO20 and GPIO27 appear on several sheets.</p>
+  <p><b>Bench, 2026-09-07.</b> The pin is connected to something on <span class="mono">testingcm5</span>. GPIO17 HIGH cuts the 12 V rail of the Door LED driver DIM stage in every SSR combination. GPIO17 LOW with only the 450 nm SSR on gives the door its full 12 V DIM. The old assumption "HIGH = 450 nm" was inverted.</p>
+  <p><b>The premise of the question is outdated.</b> Since v0.8.33 and v0.8.39 the code no longer uses GPIO17 as the selector:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Mode</th><th>GPIO16 450 SSR</th><th>GPIO20 405 SSR</th><th>GPIO17</th><th>LED_SWITCH relay K4</th></tr></thead>
+    <tbody>
+      <tr><td>450 nm Bleaching</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+      <tr><td>405 nm Cure</td><td class="num">1</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+      <tr><td>Idle / safe</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+    </tbody>
+  </table></div>
+  <p>K4 is driven by TCA6424A P05 through Q28 and switches LED_OUT1/LED_OUT2 at <code>J21_LED_SWITCH</code>. Turn-on order on each wavelength change: all LEDs off, K4 to position with read-back and 0.1 s settle, GPIO17 set and read back, SSR enables, then DIM PWM. Only the Door LED is allowed in 450 nm mode.</p>
+  <p><b>Answered by the hardware owner, 2026-09-16: GPIO17 is wired to the PCA9685 (U15) <code>OE</code> pin 23.</b> It is not a wavelength line and never was. <code>OE</code> is the active-low output enable for all 16 PWM channels.</p>
+  <p>With the code's <code>MODE2 = 0x04</code> and the datasheet, GPIO17 HIGH forces every chip output to 0 without any I2C traffic. The expected effect per channel follows the code's inversion table. Only the door DIM has been measured.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>PCA channels</th><th>Effect of GPIO17 HIGH</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">11 to 14 LED DIM</td><td>0, LEDs dark. <b>Matches the 2026-09-07 bench result.</b></td></tr>
+      <tr><td class="mono">6 HEATER_PWM</td><td>0, heater off</td></tr>
+      <tr><td class="mono">10 BOFA</td><td>0, BOFA off</td></tr>
+      <tr><td class="mono">0 to 5 fans, 7 LIGHT1, 8 and 9 motor enable</td><td>Behind inverting stages, so expected full on. Motors stay stopped because their TCA direction pins idle at 0.</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>The wrong-wavelength hazard in the question does not exist.</b> Wavelength is selected by the SSR pair and relay K4, and the code already keeps GPIO17 LOW in every mode.</li>
+    <li><b>Rename the <code>routing</code> key</b> to a PWM output enable instead of deleting it. Its read-back still proves the PWM stage is enabled.</li>
+    <li><b>GPIO17 can stop heater PWM and LED DIM without I2C.</b> That makes it a candidate stop path for a hung bus. This is a suggestion, not current behaviour.</li>
+    <li>The legacy HSI row and the <code>components.json</code> comment that call GPIO17 "HIGH = 450 nm" are wrong.</li>
+  </ul>
+  <div class="ask"><b>Open (bench):</b> confirm that GPIO17 HIGH drives the fans to full speed and cuts the heater PWM.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B3</span><h3>Fan connectors and diagnostic thresholds</h3><span class="chip c-sch">Schematic</span><span class="chip c-code">Code</span><span class="chip c-bench">Bench</span></div>
+  <p><b>Physical map</b> from <code>FAN.SchDoc</code>. Every connector is a 4-pin B4B-XH carrying +12 V, GND, tach and PWM.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Fan</th><th>Connector</th><th>PCA9685 channel</th><th>Tach GPIO (J1 pin)</th></tr></thead>
+    <tbody>
+      <tr><td>FAN_HEATER</td><td><code>J4_FAN_HEATER</code></td><td class="num">0</td><td class="num">GPIO22 (15)</td></tr>
+      <tr><td>FAN_DOOR</td><td><code>J1_FAN_DOOR</code></td><td class="num">1</td><td class="num">GPIO23 (16)</td></tr>
+      <tr><td>FAN_RIGHT</td><td><code>J5_FAN_RIGHT</code></td><td class="num">2</td><td class="num">GPIO24 (18)</td></tr>
+      <tr><td>FAN_LEFT</td><td><code>J6_FAN_LEFT</code></td><td class="num">3</td><td class="num">GPIO19 (35)</td></tr>
+      <tr><td>FAN_BACK</td><td><code>J9_FAN_BACK</code></td><td class="num">4</td><td class="num">GPIO25 (22)</td></tr>
+      <tr><td>FAN_COOLING</td><td><code>J7_FAN_CHAMBER</code></td><td class="num">5</td><td class="num">GPIO26 (37)</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>TCA fan-enable bits P11 to P16.</b> <code>FANONOFF.SchDoc</code> shows they drive six high-side +12 V switches (Q29 to Q34) to an 8-pin connector <code>J22</code>. They are not in series with the six fan connectors above. Nothing in the software calls them.</p>
+  <p><b>Thresholds in the code</b> (policy 2026-09-09). While a fan runs at 30 % duty or more, its RPM is compared with a nominal table. 10 % low for 60 s raises warning 9051. 20 % low for 60 s raises critical 9002, stops all outputs, and names the fan with measured and expected RPM. The heater pre-flight needs FAN_HEATER above 100 RPM. Any LED fan reading 0 RPM blocks UV start (Err 9003).</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Nominal RPM, bench 2026-09-09</th><th>100 %</th><th>80 %</th><th>60 %</th><th>50 %</th><th>30 %</th></tr></thead>
+    <tbody>
+      <tr><td>FAN_HEATER</td><td class="num">3530</td><td class="num">2925</td><td class="num">·</td><td class="num">1870</td><td class="num">915</td></tr>
+      <tr><td>FAN_COOLING</td><td class="num">4790</td><td class="num">·</td><td class="num">2690</td><td class="num">·</td><td class="num">1235</td></tr>
+      <tr><td>LED fans (Left measured, others share it)</td><td class="num">3560</td><td class="num">·</td><td class="num">·</td><td class="num">·</td><td class="num">·</td></tr>
+    </tbody>
+  </table></div>
+  <p>Known defect on the reference unit: the Door fan tach reads 0 RPM since 2026-09-14, so UV start is refused there until it is fixed.</p>
+  <p><b>Answered by the hardware owner, 2026-09-16:</b> nothing is connected to <code>J22</code>. The FAN1..6_ONOFF bits are unused, and the fans are controlled only by PCA9685 PWM and monitored by tach.</p>
+  <div class="ask"><b>Open (bench):</b> nominal RPM tables on production units.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B4</span><h3>BOFA fume extractor</h3><span class="chip c-sch">Schematic</span><span class="chip c-code">Code</span></div>
+  <p>The code drives only PCA9685 channel 10 (<code>4DA_BOFA_PWM</code>, not inverted) and turns it off on a door abort.</p>
+  <p>The board has more than the code uses. On <code>Light Sensor.SchDoc</code>:</p>
+  <ul>
+    <li><b>BOFA_EN</b> on GPIO6 (J1 pin 31) switches a fused +24 V branch through Q18/Q19.</li>
+    <li><b>BOFA_PRESENT</b> comes back through Schmitt buffer U19A, most likely to GPIO18 (J1 pin 12).</li>
+    <li><b>4DA ANALOG</b> feeds the op-amp stage that produces the BOFA PWM signal.</li>
+  </ul>
+  <p>A presence input and an enable therefore exist on the PCB. Neither GPIO6 nor GPIO18 appears in the software.</p>
+  <div class="ask"><b>Open (bench and BOFA datasheet):</b> levels on BOFA_EN and BOFA_PRESENT, and the connector semantics.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B5</span><h3>Pressure sensor and light sensors</h3><span class="chip c-bench">Bench</span><span class="chip c-code">Code</span></div>
+  <p><b>The HSI pressure IC is not fitted.</b> An I2C scan on 2026-09-14 found bus 0: 0x23, 0x45, 0x49, 0x55, 0x5d, 0x65, and bus 1: 0x48, 0x49. There is no ABP2 at 0x28, and ADS1115 U8 is also absent, so the legacy kPa placeholder is moot.</p>
+  <p><b>The real N2 device</b> is an SMC ISE20-series pressure switch wired from <code>Analog_IN</code> through R86 (120 Ω) to ADS1115 U7 AIN3 on bus 1. It reads 0.52 V without pressure and clamps the ADC with pressure. The code threshold is 2.0 V and the set point is 0.6 MPa, which must match the value programmed on the switch.</p>
+  <p><b>Hardware issue</b> raised 2026-09-14: the switch output reaches the 3.3 V ADC input through R86 alone, which overdrives the input clamp. A divider or clamp is needed on <code>Analog_IN</code>.</p>
+  <p><b>Light sensors.</b> U10 is present on bus 1, but rev07 has no photo-sensor front end for AIN0/AIN1. Nothing in the product reads them.</p>
+  <p><b>Answered by the hardware owner, 2026-09-16: the model is SMC ISE20A-T-01.</b> Decoded from SMC catalog CAT.ES100-114:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">ISE20A</td><td>Positive pressure, rated −0.100 to 1.000 MPa, IP40, 12 to 24 VDC</td></tr>
+      <tr><td class="mono">T</td><td><b>PNP open collector, 2 outputs, plus analog voltage output 1 to 5 V</b> with about 1 kΩ output impedance</td></tr>
+      <tr><td class="mono">01</td><td>R1/8 port, no lead wire included</td></tr>
+    </tbody>
+  </table></div>
+  <p>Lead colours: brown DC+, blue DC−, black OUT1 (PNP), white OUT2 (PNP), <b>gray analog</b>. The code's analog mode matches this model: 0 MPa is 1.364 V and 6 bar is 3.545 V.</p>
+  <p><b>The 2026-09-14 reading does not fit the gray lead.</b> A powered 1 to 5 V output never reads 0.52 V, and 5 V through 1 kΩ cannot overload the ADC. About 0.5 V without pressure and a clamped ADC with pressure fit a PNP switch output, which swings to 11 to 23 V into the 3.3 V ADC.</p>
+  <ul>
+    <li><b>If a PNP output (black or white) is on <code>Analog_IN</code>:</b> the software must run switch mode, and a divider or clamp is mandatory to protect U7.</li>
+    <li><b>If the gray lead goes to <code>Analog_IN</code>:</b> analog mode is right, but without a 2:1 divider the input saturates near 0.5 MPa, so the 6 bar guard never reads a value.</li>
+  </ul>
+  <div class="ask"><b>Open:</b> which lead colour is on <code>Analog_IN</code>, and whether the switch was powered during the 0.52 V reading (bench). Light sensors in v1 or later (PO).</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B6</span><h3>NFC reader</h3><span class="chip c-bench">Bench</span><span class="chip c-code">Code</span></div>
+  <p><b>The working reader is a USB device, not the board header.</b> An Eccel Pepper C2 on USB (0483:5740, <code>/dev/ttyACM0</code>, 115200 binary protocol, firmware 1.14) read a tag UID on 2026-09-14. The server detects it by USB identity and raises an error when it is missing.</p>
+  <p>The C2 only listens after a line-coding change, so every open sets 9600 and then 115200.</p>
+  <p>The board's own NFC path (<code>J15_UART_NFC</code> with SPI level shifters, NFC_CS on GPIO4, NFC_INT on GPIO7) is unused. Only the 10 ms reset pulse on TCA P01 is implemented.</p>
+  <p><b>Answered by the hardware owner, 2026-09-16: the NFC reader connects over USB.</b> The v1 NFC scope is the USB Pepper C2. The J15 SPI path and the TCA reset pulse are out of scope, because that reset line goes to the unused J15 header.</p>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B7</span><h3>CM5 carrier, power rails and BOM</h3><span class="chip c-bench">Bench</span><span class="chip c-sch">Schematic</span></div>
+  <p><b>Reference unit, read 2026-09-16.</b> Compute Module 5 Rev 1.0, revision code <code>c04180</code> (4 GB, wireless variant), 29.1 GiB Samsung eMMC. It runs a standard Raspberry Pi OS on Debian 13 trixie, not <code>origin.img</code>.</p>
+  <p><b>IO board.</b> BRD-74205 rev07 connects through the 40-pin header J1. Its rails are +24 V, +12 V, +5 V_EXT and 3.3 V from an LM25149 buck. The CM5 carrier board itself is not identified anywhere in the repository.</p>
+  <p><b>Boot config on the reference unit</b> enables both I2C buses and the 7" DSI panel:</p>
+  <div class="tbl"><table><tbody>
+    <tr><td class="mono">dtparam=i2c_arm=on</td><td class="mono">dtparam=i2c0=on</td><td class="mono">dtparam=spi=off</td></tr>
+    <tr><td class="mono">dtoverlay=vc4-kms-v3d</td><td class="mono">dtoverlay=vc4-kms-dsi-ili9881-7inch</td><td class="mono">[cm5] dtoverlay=dwc2,dr_mode=host</td></tr>
+  </tbody></table></div>
+  <p><b>"Origin" naming.</b> The legacy SRS defines Origin as the Stratasys printer that feeds the sCure Box, so the image name fits that product family.</p>
+  <div class="ask"><b>Open (David/Roman):</b> carrier identity, rails and BOM, and whether <code>origin.img</code> is their own base image or an upstream reference.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B8</span><h3>Primary storage medium</h3><span class="chip c-code">Code</span><span class="chip c-bench">Bench</span></div>
+  <p><b>The legacy paths exist only in the SRS.</b> <code>/etc/scure/config.json</code> and <code>/mnt/ssd2/...</code> appear in no code. On the reference unit <code>/etc/scure</code> does not exist and <code>/mnt</code> is empty.</p>
+  <p><b>What the legacy software actually persists:</b></p>
+  <ul>
+    <li>JSON files under <code>server/data/</code>: counters, history fallbacks, user materials, NFC and LED calibration settings, cloud config.</li>
+    <li>PostgreSQL for prints, materials, cure runs and reports.</li>
+    <li>Browser local storage for organization ID, setup-complete flag, device name and a cure-history mirror.</li>
+    <li>The serial number is a static placeholder in <code>public/config/system.json</code>.</li>
+  </ul>
+  <p><b>Reference unit medium:</b> the CM5's own eMMC with a 512 MiB boot partition and a 28.6 GiB root. There is no second storage device.</p>
+  <div class="ask"><b>Open (David/Roman):</b> the medium on production units.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B9</span><h3>OTA mechanism and bundled services</h3><span class="chip c-code">Code</span><span class="chip c-bench">Bench</span></div>
+  <p><b>Legacy update path: USB only.</b> A <code>.scu</code> file holds a payload tarball and a signature. The updater verifies it with <code>openssl</code> against an RSA public key, runs <code>install.sh --pre</code> and <code>--post</code>, and calls <code>install.sh --rollback</code> on failure. There is no GCP bucket code in the repository.</p>
+  <p><b>Reference unit, 2026-09-16:</b> no SWUpdate, no RAUC, no <code>motion</code>, and USB is in host mode rather than Ethernet gadget.</p>
+  <p><b>NetBird is also installed, enabled and running on the test unit,</b> next to a VNC server. So it is not unique to <code>origin.img</code>.</p>
+  <p>The team's own secure-appliance design chose RAUC with A/B slots, while <code>origin.img</code> ships SWUpdate. One mechanism has to be chosen before Epic 7 (see PO-9).</p>
+  <div class="ask"><b>Open (David/Roman):</b> who installed NetBird and why, and which update mechanism is the target.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B10</span><h3>Touchscreen and USB topology</h3><span class="chip c-bench">Bench</span></div>
+  <p><b>Reference unit display:</b> Raspberry Pi Touch Display 2, 7", on DSI-2 (native 720×1280, rotated 270°). Touch is a Goodix GT911 at 0x5d on <code>i2c-0</code>, with the panel controller at 0x45. The touch panel therefore shares bus 0 with the TCA, PCA and ADS U6. The kiosk runs lightdm and Chromium.</p>
+  <p><b>Divergence.</b> The C# port targets the 10.1" Touch Display 2 instead. That panel needs its own power supply.</p>
+  <p><b>USB:</b> five root hubs and one 4-port QinHeng hub on the carrier, with nothing attached at read-out. The software uses USB for the NFC reader, a USB stick for updates and exports, and the Ophir and Pico TC-08 meters for DVT only.</p>
+  <div class="ask"><b>Open (PO):</b> 7" or 10.1" for production.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B11</span><h3>I2C bus numbering</h3><span class="chip c-bench">Bench</span></div>
+  <div class="tbl"><table>
+    <thead><tr><th>Linux bus</th><th>Header pins</th><th>Enabled by</th><th>Devices on the reference unit</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">i2c-0</td><td class="num">27 / 28</td><td class="mono">dtparam=i2c0=on</td><td>TCA6424A 0x23, ADS U6 0x49, PCA9685 0x55, touch 0x45 and 0x5d, unidentified 0x65</td></tr>
+      <tr><td class="mono">i2c-1</td><td class="num">3 / 5</td><td class="mono">dtparam=i2c_arm=on</td><td>ADS U10 0x48, ADS U7 0x49 (chamber thermistor on AIN2, N2 pressure on AIN3)</td></tr>
+    </tbody>
+  </table></div>
+  <p>The escalation in the question is correct. The heater safety gate reads the chamber thermistor on <code>i2c-1</code>, so an image without both settings loses the sensor gate and every actuator.</p>
+  <p>The driver stack assumes one process owns each bus. A second process on <code>i2c-1</code> caused wrong-channel ADC samples on this unit.</p>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B12</span><h3>Damper servo</h3><span class="chip c-code">Code</span><span class="chip c-sch">Schematic</span></div>
+  <p>GPIO8 (J1 pin 24) goes through an inverting stage R91/Q16 to <code>J2_MOTOR_DAMPER</code>. Pulses are 0.5 to 2.4 ms, pre-inverted in software, and generated by the RP1 PIO block for jitter-free timing. The pulse is held 1.5 s after each move. Cooling opens at 0° and closes at 90°.</p>
+  <p><b>Answered by the hardware owner, 2026-09-16: the servo is an MG90S.</b> The configuration is right and the HSI entry "SG90" is wrong. There is no read-back, so the servo is never a safety precondition.</p>
+  <p><b>Closed by the hardware owner, 2026-09-16.</b> The answer is confirmed as complete. No further bench checks are requested for the damper servo.</p>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B13</span><h3>Motor 1 and Motor 2</h3><span class="chip c-sch">Schematic</span><span class="chip c-code">Code</span></div>
+  <p><b>Schematic.</b> An L298N (U9) drives Motor 1 to <code>J12_PWM_SERVO</code> pins 1 and 2, despite the name. Motor 2 goes to <code>J13_DAMBER_EXHAUST</code> pins 1 and 2. Direction comes from TCA pins, and enable from PCA channels 8 and 9. The feedback ADC U8 is not present on the reference unit.</p>
+  <p><b>Code.</b> Motor functions exist and both motors are stopped at startup. No server path ever drives a motor. <b>v1 does not use them.</b></p>
+  <div class="ask"><b>Open (bench):</b> what is cabled to J12 and J13.</div>
+</div>
+
+<div class="item bench">
+  <div class="item-head"><span class="id">B14</span><h3>Wi-Fi</h3><span class="chip c-bench">Bench</span><span class="chip c-code">Code</span></div>
+  <p>The reference CM5 is the wireless variant. <code>wlan0</code> is up and connected, and Bluetooth is running. The product software uses <code>eth0</code> only for status and static IP, and the SRS has no Wi-Fi requirement. <code>origin.img</code> disables both radios.</p>
+  <div class="ask"><b>Open (PO):</b> Wi-Fi in or out of v1.</div>
+</div>
+
+<h2 class="po">Product owner items</h2>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-1</span><h3>Evidence levels per hardware behaviour</h3><span class="chip c-open">Open</span></div>
+  <p>Not decided in the repository. In practice the DVT program already treats door, UV, heater, thermistor, fans, cooling, nitrogen and damper as bench-only. Shutdown proofs are taken on the physical output: a thermocouple on the heater body and the Ophir irradiance trace. Simulation is used only for UI and QA. The assignment is the PO's call.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-2</span><h3>Serial number provisioning</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>The SRS requires a cloud-assigned serial number, with up to 5 attempts and setup blocked until it is saved and backed up. <b>None of that is implemented.</b> The serial number is the static placeholder <code>cure45223</code>. A serial service is designed in the appliance program but not built.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-3</span><h3>Backup write failure</h3><span class="chip c-open">Open</span></div>
+  <p>Still open as SRS OI-6. No backup-storage code exists.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-4</span><h3>Device name validation</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>The SRS proposes default "S-Cure" (OI-7) and specifies only "non-empty" (OI-8). The code trims the input and requires it to be non-empty. It sets no length limit, character set or uniqueness rule, and stores the name in browser local storage with default "sCure".</p>
+  <p>Story 2.1's "1 to 64 printable characters, no default" is stricter than both the SRS and the code.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-5</span><h3>Timer start and UV start</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>The SRS contradicts itself, and the code matches only part of it:</p>
+  <ul>
+    <li>SRS §6.7 defines TimerMode (<code>on-ramp</code> or <code>on-target</code>) and UVStart (<code>at-start</code> or <code>at-target</code>), both defaulting to "at temperature".</li>
+    <li>OI-16 says the runtime never branches on them. That is still true: the cure screen always ramps first and then starts the countdown.</li>
+    <li>OI-17 says these fields were removed, but the code still carries them in the editor, the CSV header and validation.</li>
+  </ul>
+  <p><b>Accurate legacy characterization for the fixtures:</b> the fields are captured and validated, and the runtime always behaves as on-target and at-target.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-6</span><h3>Release readiness criteria</h3><span class="chip c-open">Open</span></div>
+  <p>Nothing in the repository. The DVT plan has pass criteria per test, but no alpha, beta or customer-site thresholds.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-7</span><h3>Dependency license approval</h3><span class="chip c-open">Open</span></div>
+  <p>Nothing in the repository.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-8</span><h3>Organization Link</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>The code reads the CSV as plain text and takes the first match of this case-insensitive, unanchored pattern:</p>
+  <div class="tbl"><table><tbody><tr><td class="mono">/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i</td></tr></tbody></table></div>
+  <p>There is no RFC 4122 version or variant check and no case normalization. The ID is stored as matched in browser local storage. No CSV schema exists (SRS OI-10). The organization ID is never sent to the cloud (OI-11), because the sync snapshot does not include it. A file without a match raises Err 5001.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-9</span><h3>Update delivery, C1 to C7</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>Answers from the legacy software:</p>
+  <div class="tbl"><table>
+    <tbody>
+      <tr><td class="num">C1</td><td>File level. A payload tarball is installed into <code>/opt/scure</code> by <code>install.sh</code>.</td></tr>
+      <tr><td class="num">C2</td><td>Script-level rollback with <code>install.sh --rollback</code>. No A/B partitions.</td></tr>
+      <tr><td class="num">C3</td><td>An RSA public key shipped in the repository, checked with <code>openssl dgst -sha256</code>. The matching private key is also in the repository (see the security note at the top).</td></tr>
+      <tr><td class="num">C4</td><td>A technician or operator plugs in a USB stick and presses Update Software. No polling, no push.</td></tr>
+      <tr><td class="num">C5</td><td>No device identity for updates. The cloud agent uses a per-machine key and is outbound-only.</td></tr>
+      <tr><td class="num">C6, C7</td><td>Open, for the PO and the customer.</td></tr>
+    </tbody>
+  </table></div>
+  <p>There are now three incompatible candidates: the legacy <code>.scu</code> path, RAUC A/B from the appliance design, and SWUpdate A/B in <code>origin.img</code>. Which one is "the customer's existing infrastructure" is the question for David and Roman.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-10</span><h3>Multi-material cure together</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>SRS §6.4 and the code agree. Cure Together is allowed for one print or several prints of the same material, compared by name. Different materials are blocked with "Cannot cure different materials together!". The rule for positions and trays beyond name equality is still open as OI-15.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-11</span><h3>CI/CD platform</h3><span class="chip c-open">Open</span></div>
+  <p>The repository has no GitHub or GitLab pipeline. Existing test tooling is the browser QA page, the DVT pytest suite, and a PowerShell QA runner in the C# repository.</p>
+</div>
+
+<div class="item po">
+  <div class="item-head"><span class="id">PO-12</span><h3>Cloud inbound writes</h3><span class="chip c-code">Code</span><span class="chip c-open">Open</span></div>
+  <p>The legacy cloud agent is outbound-only by design and has no hardware commands. About every 10 s it posts a snapshot to <code>/api/agent/sync</code> with a machine key. It applies a small set of commands returned in the response, such as saving a program, and acknowledges them on the next sync. The agent stays off unless a cloud config file exists, and it does not exist on the reference unit. Customer confirmation is still needed.</p>
+</div>
+
+<footer>
+  <p>Sources: sCure-A repository (<span class="mono">io_controller/</span>, <span class="mono">server/</span>, <span class="mono">src/</span>, <span class="mono">keys/</span>), <span class="mono">IO BOARD SCURE.pdf</span> (BRD-74205 rev07), <span class="mono">HSI sCure (3).xlsx</span>, <span class="mono">docs/sCure_SRS.html</span>, <span class="mono">DVT/catalog/DVT_test_catalog.yaml</span>, and an SSH read-out of <span class="mono">testingcm5</span> on 2026-09-16. Bench numbers come from one reference unit, not a production carrier.</p>
+</footer>
+</main>

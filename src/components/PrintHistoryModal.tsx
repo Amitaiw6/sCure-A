@@ -30,7 +30,7 @@ interface PrintHistoryModalProps {
 function StatusIcon({ status }: { status: PrintLog['status'] }) {
   switch (status) {
     case 'completed': return <CheckCircle size={16} className="text-green-500 shrink-0" />
-    case 'aborted': return <AlertTriangle size={16} className="text-yellow-500 shrink-0" />
+    case 'aborted': return <AlertTriangle size={16} className="text-orange-500 shrink-0" />
     case 'error': return <XCircle size={16} className="text-destructive shrink-0" />
   }
 }

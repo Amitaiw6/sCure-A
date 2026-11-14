@@ -48,7 +48,7 @@ HE = {
     "{unit}: configuration not frozen (Phase 0)": "{unit}: הקונפיגורציה לא הוקפאה (שלב 0)",
     "phase {phase} ({name}) not closed for {unit}": "שלב {phase} ({name}) לא נסגר עבור {unit}",
     "readiness checklist for phase {phase} not signed for {unit}": "רשימת המוכנות (TRR) לשלב {phase} לא נחתמה עבור {unit}",
-    "protective earth bonding (ELE-001) not PASS on this unit": "חיבור הארקת ההגנה (ELE-001) לא PASS ביחידה זו",
+    "protective earth bonding (DVT-ELE-001) not PASS on this unit": "חיבור הארקת ההגנה (DVT-ELE-001) לא PASS ביחידה זו",
     "dependency {dep} not PASS/WAIVED": "התלות {dep} אינה PASS/WAIVED",
     "{unit} has already been through destructive testing — a different article": "{unit} כבר עברה בדיקות הרסניות — זה פריט אחר",
     "no valid calibration record for: {name}": "אין רשומת כיול בתוקף עבור: {name}",
@@ -158,7 +158,7 @@ HE = {
     "Runs of this test": "ריצות של בדיקה זו", "double-click a NOT_STARTED / IN_PROGRESS run to open it": "לחיצה כפולה על ריצה שלא התחילה / בתהליך פותחת אותה",
     "Unit": "יחידה", "Variant": "וריאנט", "Rep": "חזרה", "Verdict": "פסק-דין", "Operator": "מפעיל",
     "Freeze configuration now": "הקפא קונפיגורציה עכשיו", "Sign phase readiness now": "חתום על מוכנות השלב עכשיו",
-    "Record calibrations…": "רשום כיולים…", "Go to ELE-001 (earth first)": "עבור ל-ELE-001 (הארקה קודם)",
+    "Record calibrations…": "רשום כיולים…", "Go to DVT-ELE-001 (earth first)": "עבור ל-ELE-001 (הארקה קודם)",
     "Blocked:": "חסום:", "Enter the operator name in the header first.": "הזן קודם שם מפעיל בכותרת.",
     # ---- wizard
     "Overview": "סקירה", "Safety plan": "תוכנית בטיחות", "Equipment": "ציוד", "Preconditions": "תנאים מוקדמים", "Done": "סיום", "Step": "צעד",
@@ -225,10 +225,10 @@ HE = {
     "Comparison across units": "השוואה בין יחידות", "SRS-DVT-095 — one curve per unit, x = sweep value (or repetition)": "SRS-DVT-095 — עקומה לכל יחידה, x = ערך sweep (או חזרה)",
     "Field": "שדה", "Values": "ערכים", "Subsystem": "תת-מערכת",
     "No recorded values yet for this field": "עדיין אין ערכים לשדה הזה",
-    # ---- DVT-SAF-012 instrumented measurement (Ophir StarBright)
+    # ---- DVT-SAF-008 instrumented measurement (Ophir StarBright)
     "Measure with the Ophir meter…": "מדוד עם מד ה-Ophir…",
     "Ophir measurement applied: {names}": "מדידת ה-Ophir הוחלה: {names}", "files attached": "קבצים צורפו",
-    "DVT-SAF-012 — UV-off timing with the Ophir StarBright": "DVT-SAF-012 — זמן כיבוי UV עם Ophir StarBright",
+    "DVT-SAF-008 — UV-off timing with the Ophir StarBright": "DVT-SAF-008 — זמן כיבוי UV עם Ophir StarBright",
     "stand-alone measurement (no run selected)": "מדידה עצמאית (לא נבחרה ריצה)",
     "LEDs at maximum → door opened → irradiance recorded against time": "לדים במקסימום → פתיחת דלת → עוצמת הקרינה נרשמת כפונקציה של הזמן",
     "Put the Ophir sensor at the door opening, facing the LEDs. UV eyewear on. The sequence is automatic: baseline, LEDs on, plateau, door, decay, LEDs off. Pass criterion: UV removed within 1 s of the door opening.":
@@ -249,8 +249,8 @@ HE = {
     "LEDs off — recording the dark reading": "לדים כבויים — רושם את קריאת החושך", "waiting for a stable reading": "ממתין לקריאה יציבה",
     "opening the door (API)": "פותח את הדלת (API)", "OPEN THE DOOR NOW": "פתח את הדלת עכשיו", "door open — recording the UV decay": "הדלת פתוחה — רושם את דעיכת ה-UV",
     "api": "API", "dut-poll": "דגימת מצב המכונה", "operator": "סימון המפעיל", "trace": "נגזר מהגרף",
-    # ---- DVT-SAF-007 instrumented measurement (same dialog, LED-thermistor trigger)
-    "DVT-SAF-007 — LED-off timing on thermistor disconnect with the Ophir StarBright": "DVT-SAF-007 — זמן כיבוי הלדים בניתוק תרמיסטור עם Ophir StarBright",
+    # ---- DVT-SAF-004 instrumented measurement (same dialog, LED-thermistor trigger)
+    "DVT-SAF-004 — LED-off timing on thermistor disconnect with the Ophir StarBright": "DVT-SAF-004 — זמן כיבוי הלדים בניתוק תרמיסטור עם Ophir StarBright",
     "LEDs at maximum → LED thermistor disconnected → irradiance recorded against time": "לדים במקסימום → ניתוק תרמיסטור LED → עוצמת הקרינה נרשמת כפונקציה של הזמן",
     "Put the Ophir sensor at the door opening, facing the LEDs, door closed. UV eyewear on. The sequence is automatic: baseline, LEDs on, plateau, then pull the connector of the selected LED thermistor when prompted and press the marker (in simulation the fault is injected for you). Pass criterion: LED drive removed within 2 s of the disconnection; the alarm must name the sensor.":
         "מקם את חיישן ה-Ophir בפתח הדלת, מופנה אל הלדים, הדלת סגורה. משקפי UV. הרצף אוטומטי: קו בסיס, לדים דולקים, מישור, ואז שלוף את מחבר תרמיסטור ה-LED שנבחר לפי ההנחיה ולחץ על הסימון (בסימולציה התקלה מוזרקת עבורך). קריטריון מעבר: הזנת הלדים מוסרת תוך 2 שניות מהניתוק; ההתראה חייבת לנקוב בשם החיישן.",
@@ -358,10 +358,10 @@ HE = {
         "זיהוי ראש הבנייה ב-NFC — ראש בנייה רשום שהוכנס עד המעצור נקרא ומקושר; ראש מוחלף עוקב אחרי התג; היעדר תג, תג לא מוכר, הושבה חסרה וקורא מנוטרל מדווחים למפעיל",
     "LED back-face temperature settled at LED-cooling fan duty 100 / 90 / 80 / 70 %, LEDs at maximum in an 80 C chamber — margin to the 75 C working limit per panel, the lowest duty the design can afford":
         "טמפרטורת הצד האחורי של הלדים מיוצבת בעומס מאווררי קירור הלדים 100 / 90 / 80 / 70%, לדים במקסימום בתא ב-80°C — המרווח ממגבלת העבודה של 75°C לכל פאנל, העומס הנמוך ביותר שהתכן יכול להרשות לעצמו",
-    # ---- DVT-THM-005 automatic fan-duty sweep
+    # ---- DVT-THM-004 automatic fan-duty sweep
     "Run the fan-duty sweep automatically…": "הרץ את סריקת עומס המאוורר אוטומטית…",
     "Fan sweep applied: this row filled, {n} other duty rows completed automatically": "סריקת המאוורר הוחלה: השורה הזו מולאה, {n} שורות עומס אחרות הושלמו אוטומטית",
-    "DVT-THM-005 — LED temperature vs LED-cooling fan duty (automatic)": "DVT-THM-005 — טמפרטורת הלדים מול עומס מאווררי הקירור (אוטומטי)",
+    "DVT-THM-004 — LED temperature vs LED-cooling fan duty (automatic)": "DVT-THM-004 — טמפרטורת הלדים מול עומס מאווררי הקירור (אוטומטי)",
     "stand-alone run (no wizard run selected)": "ריצה עצמאית (לא נבחרה ריצה באשף)",
     "The console runs the whole sweep: fans to each duty, LEDs on at maximum, wait for every panel to settle, stop at the 75 °C limit, LEDs off. You get the settled temperature per panel per duty, the lowest duty with margin, and the graph.":
         "הקונסולה מריצה את כל הסריקה: מאווררים לכל עומס, לדים במקסימום, המתנה להתייצבות כל הפאנלים, עצירה בגבול 75°C, לדים כבויים. מתקבלים טמפרטורת ההתייצבות לכל פאנל בכל עומס, העומס הנמוך ביותר עם מרווח, והגרף.",
@@ -396,4 +396,46 @@ HE = {
     "The machine does not see the StarBright. Plug it into the machine's USB port, switch it on and press 'Check the meter'.": "המכונה לא רואה את ה-StarBright. חבר אותו ליציאת ה-USB של המכונה, הפעל אותו ולחץ 'בדוק את המד'.",
     "meter": "מד", "start": "התחלה", "step": "מדרגה", "tail": "זנב",
     "Command": "פקודה", "Irradiance": "עוצמת קרינה", "SD": "סטיית תקן", "Fit": "התאמה", "Deviation": "סטייה", "Gain": "הגבר", "Hottest LED": "הלד החם ביותר",
+    # ---- alarms pulled from the machine (dvt_tool/alarms.py)
+    "Alarms from the machine": "התראות מהמכונה",
+    "The console watches the machine's own alarm list — the code, its text and the time are recorded from what it sees, not typed.":
+        "הקונסולה עוקבת אחרי רשימת ההתראות של המכונה עצמה — הקוד, הטקסט שלו והזמן נרשמים ממה שהיא רואה, לא מהקלדה.",
+    "This step expects: {codes}": "השלב הזה מצפה ל: {codes}",
+    "watching…": "עוקב…",
+    "alarm captured": "ההתראה נקלטה",
+    "already active": "הייתה פעילה כבר",
+    "unexpected code": "קוד לא צפוי",
+    "no alarm — recorded as a failure": "אין התראה — נרשם ככשל",
+    "recorded by hand": "נרשם ידנית",
+    "no machine": "אין מכונה",
+    "{code} raised {sec} s after the step opened.": "{code} עלה {sec} שניות אחרי פתיחת השלב.",
+    "{code} was already active when the step opened — recorded, but the time to the alarm was not measured.":
+        "{code} היה פעיל כבר בפתיחת השלב — נרשם, אבל הזמן עד ההתראה לא נמדד.",
+    "The machine raised {got}, not the expected {want} — recorded as it happened; judge it on the review page.":
+        "המכונה העלתה {got}, ולא את {want} הצפוי — נרשם כפי שקרה; שפוט את זה בעמוד הסיכום.",
+    "No link to the machine — the console cannot witness the alarm. Connect it in the header, or record by hand.":
+        "אין קשר למכונה — הקונסולה לא יכולה להעיד על ההתראה. חבר אותה בכותרת, או רשום ידנית.",
+    "The machine has raised nothing yet. This step unlocks when it does.": "המכונה עוד לא העלתה שום דבר. השלב ייפתח כשהיא תעלה.",
+    "active now: {list}": "פעיל עכשיו: {list}",
+    "seen on this step: {list}": "נראה בשלב הזה: {list}",
+    "{code} (already active)": "{code} (היה פעיל כבר)",
+    "nothing": "שום דבר",
+    "No alarm appeared — record as a failure": "לא עלתה התראה — רשום ככשל",
+    "Records alarm_raised = false: the machine stayed silent. The run ends FAIL, not BLOCKED.":
+        "רושם alarm_raised = false: המכונה שתקה. הריצה מסתיימת ב-FAIL, לא ב-BLOCKED.",
+    "No link to the machine — record by hand": "אין קשר למכונה — רשום ידנית",
+    "For the tests that take the machine off the air on purpose (firmware hang, software stack failure): read the alarm off the machine's screen and type it. Logged as recorded by hand.":
+        "לבדיקות שמוציאות את המכונה מהאוויר בכוונה (תקיעת קושחה, כשל מערכת התוכנה): קרא את ההתראה מהמסך של המכונה והקלד אותה. נרשם ביומן כרישום ידני.",
+    "Alarm from the machine: {codes} — recorded": "התראה מהמכונה: {codes} — נרשמה",
+    "The machine has raised no alarm yet — wait for it, or record that none appeared.":
+        "המכונה עוד לא העלתה התראה — חכה לה, או רשום שלא עלתה אף אחת.",
+    "No link to the machine — connect it in the header, or record this step by hand.":
+        "אין קשר למכונה — חבר אותה בכותרת, או רשום את השלב הזה ידנית.",
+    "No alarm": "אין התראה",
+    "Record that the machine raised no alarm on this step?\n\nalarm_raised = false is written, so this run ends FAIL — a silent machine is a result, not missing data.":
+        "לרשום שהמכונה לא העלתה שום התראה בשלב הזה?\n\nנרשם alarm_raised = false, ולכן הריצה מסתיימת ב-FAIL — מכונה שותקת היא תוצאה, לא נתון חסר.",
+    "Record by hand": "רישום ידני",
+    "The console has no link to the machine, so it cannot witness the alarm.\n\nRecord this step's alarm by hand from the machine's screen? The run keeps a note that it was not witnessed by the console.":
+        "לקונסולה אין קשר למכונה, ולכן היא לא יכולה להעיד על ההתראה.\n\nלרשום את ההתראה של השלב הזה ידנית מהמסך של המכונה? בריצה תישמר הערה שהקונסולה לא העידה עליה.",
+    "not reported": "לא מדווח",
 }

@@ -150,9 +150,9 @@ inline double analog_divider(const std::string& n) { return (n=="AIN2"||n=="AIN3
 constexpr int TEMP_PGA = 1;
 const std::map<std::string,AdcCfg> TEMP_ADCS = { {"U6",{0,0x49}}, {"U7",{1,0x49}} };
 const std::vector<std::pair<std::string,Chan>> TEMP_SENSORS = {
-    {"TEMP_RIGHT_ORIGIN",{"U6",0}},{"TEMP_RIGHT",{"U6",1}},
-    {"TEMP_LEFT_ORIGIN",{"U6",2}},{"TEMP_LEFT",{"U6",3}},
-    {"TEMP_BACK_ORIGIN",{"U7",0}},{"TEMP_DOOR_ORIGIN",{"U7",1}},
+    {"TEMP_RIGHT_UV",{"U6",0}},{"TEMP_RIGHT",{"U6",1}},
+    {"TEMP_LEFT_UV",{"U6",2}},{"TEMP_LEFT",{"U6",3}},   // Left UV on U6 AIN2, Back on U7 AIN0 (user 2026-11-01)
+    {"TEMP_BACK",{"U7",0}},{"TEMP_DOOR",{"U7",1}},
     {"TEMP_CHAMBER",{"U7",2}},   // NTC7 - chamber temperature
 };
 constexpr double NTC_R0 = 10000.0, NTC_BETA = 3934.0, NTC_T0 = 298.15;

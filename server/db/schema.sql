@@ -141,6 +141,8 @@ CREATE TABLE IF NOT EXISTS cure_runs (
 -- v0.8.39: temperature sensors that read open-circuit during the run
 -- ([{"sensor":"back","critical":false}, ...]; [] = all sensors read the whole run)
 ALTER TABLE cure_runs ADD COLUMN IF NOT EXISTS sensor_issues JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- v0.8.41: fans that ran below nominal during the run ([{"fan":"FAN_COOLING","deficitPct":25,"critical":true}, ...])
+ALTER TABLE cure_runs ADD COLUMN IF NOT EXISTS fan_issues JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS ix_cure_runs_print   ON cure_runs(print_id);
 CREATE INDEX IF NOT EXISTS ix_cure_runs_session ON cure_runs(cure_session_id);
 CREATE INDEX IF NOT EXISTS ix_cure_runs_started ON cure_runs(started_at DESC);
@@ -159,6 +161,8 @@ CREATE TABLE IF NOT EXISTS cure_run_telemetry (
     led_back     NUMERIC,
     recorded_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- v0.8.42: tachometer RPM per fan at each sample ({"FAN_HEATER": 3510, "FAN_COOLING": 0, ...})
+ALTER TABLE cure_run_telemetry ADD COLUMN IF NOT EXISTS fan_rpm JSONB;
 CREATE INDEX IF NOT EXISTS ix_telemetry_run ON cure_run_telemetry(cure_run_id, t);
 
 -- The generated cure report for a run (persisted, not only downloaded).
@@ -227,13 +231,15 @@ SELECT
     cr.phases                            AS phases,
     cr.target_temp                       AS "targetTemp",
     cr.sensor_issues                     AS "sensorIssues",
+    cr.fan_issues                        AS "fanIssues",
     cb.serial_number                     AS "serialNumber",
     COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
                    't', te.t, 'chamberTemp', te.chamber_temp,
                    'uvOn', te.uv_on, 'uvType', te.uv_type,
                    'ledTemps', jsonb_build_object('right', te.led_right, 'left', te.led_left,
-                                                  'door', te.led_door, 'back', te.led_back))
+                                                  'door', te.led_door, 'back', te.led_back),
+                   'fanRpm', te.fan_rpm)
                  ORDER BY te.t)
         FROM cure_run_telemetry te WHERE te.cure_run_id = cr.id
     ), '[]'::jsonb)                       AS telemetry

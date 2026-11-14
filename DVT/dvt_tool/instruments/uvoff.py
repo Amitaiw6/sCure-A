@@ -1,8 +1,8 @@
 """UV-off timing, instrumented: UV irradiance against time while a protective
 trigger fires. One runner, two catalog tests, selected by `UvOffConfig.trigger`:
 
-    "door"            DVT-SAF-012  the door opens          uv_off_time  <= 1 s
-    "led_thermistor"  DVT-SAF-007  an LED thermistor is    led_off_time <= 2 s
+    "door"            DVT-SAF-008  the door opens          uv_off_time  <= 1 s
+    "led_thermistor"  DVT-SAF-004  an LED thermistor is    led_off_time <= 2 s
                                    disconnected (open circuit)
 
 Sequence (`UvOffRunner.run`, blocking — call it from a worker thread):
@@ -41,6 +41,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Callable
 
+from ..alarms import normalise_alerts
+
 LED_POSITIONS = ("right", "left", "back", "door")
 
 # catalog step `tool:` key -> runner trigger
@@ -49,13 +51,13 @@ TOOL_TRIGGERS = {"uv_off_timing": "door", "led_off_timing": "led_thermistor"}
 # What each trigger means for the operator, the artefacts and the verdict.
 TRIGGERS = {
     "door": {
-        "test_id": "DVT-SAF-012", "field": "uv_off_time", "limit_s": 1.0,
+        "test_id": "DVT-SAF-008", "field": "uv_off_time", "limit_s": 1.0,
         "label": "door open", "prompt": "OPEN THE DOOR NOW",
         "auto_text": "opening the door (API)", "record_text": "door open — recording the UV decay",
         "sim_fault": None,
     },
     "led_thermistor": {
-        "test_id": "DVT-SAF-007", "field": "led_off_time", "limit_s": 2.0,
+        "test_id": "DVT-SAF-004", "field": "led_off_time", "limit_s": 2.0,
         "label": "thermistor disconnected", "prompt": "DISCONNECT THE LED THERMISTOR NOW",
         "auto_text": "disconnecting the thermistor (simulator fault injection)", "record_text": "thermistor disconnected — recording the UV decay",
         "sim_fault": "led_thermistor_open",
@@ -65,7 +67,7 @@ TRIGGERS = {
 
 @dataclass
 class UvOffConfig:
-    trigger: str = "door"           # "door" (SAF-012) | "led_thermistor" (SAF-007)
+    trigger: str = "door"           # "door" (DVT-SAF-008) | "led_thermistor" (DVT-SAF-004)
     sensor_position: str = "right"  # led_thermistor only: which thermistor is pulled
     intensity: int = 100            # % — both tests run at maximum
     wavelength: int = 405
@@ -113,7 +115,7 @@ class Sample:
 class UvOffResult:
     status: str = "NOT_RUN"          # OK | NO_PLATEAU | TIMEOUT | ABORTED | ERROR
     trigger: str = "door"
-    test_id: str = "DVT-SAF-012"
+    test_id: str = "DVT-SAF-008"
     sensor_position: str | None = None
     limit_s: float = 1.0
     unit: str = ""
@@ -180,12 +182,12 @@ def trigger_seen(s: dict, cfg: UvOffConfig) -> bool | None:
 
 
 def first_alert(s: dict) -> tuple[str | None, str | None]:
-    alerts = s.get("alerts") or s.get("activeAlerts") or []
-    if isinstance(alerts, list) and alerts:
-        a = alerts[0]
-        if isinstance(a, dict):
-            return (str(a.get("code")) if a.get("code") is not None else None), a.get("message")
-        return str(a), None
+    # one reader for both shapes - the firmware's `alerts: [9011]` + `alertDetails` and the
+    # simulator's dicts (alarms.normalise_alerts); before, a real machine's alarm came back
+    # with its code but no text
+    alerts = normalise_alerts(s)
+    if alerts:
+        return alerts[0].raw, alerts[0].text or None
     if s.get("doorAborted"):
         return "6016", "door abort"
     faults = s.get("faults") or {}
@@ -254,7 +256,7 @@ class UvOffRunner:
         (fallback when the DUT has no reading for the trigger)."""
         self._t_marked = time.monotonic(); self._marked.set()
 
-    mark_door_open = mark_trigger      # SAF-012 name
+    mark_door_open = mark_trigger      # DVT-SAF-008 name
 
     # ---- internals
     def _status(self, phase, text):

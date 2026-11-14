@@ -15,7 +15,9 @@ from typing import Any, Iterable
 
 import yaml
 
-TEST_ID_RE = re.compile(r"^DVT-[A-Z]{3}-\d{3}$")
+from .alarms import ALARM_FIELDS
+
+TEST_ID_RE = re.compile(r"^DVT-[A-Z]{3}-\d{3}$")    # category letters + a running number per category
 METHODS = {"Test", "Analysis", "Inspection", "Demonstration"}
 FIELD_TYPES = {"float", "int", "bool", "string", "enum"}
 
@@ -48,12 +50,20 @@ class Catalog:
     path: Path | None = None
     lang: str = "en"                                   # language of the prose after load()
     labels: dict = field(default_factory=dict)         # {"subsystems"|"methods"|"roles"|"rules": {key: label}}
+    renames: list = field(default_factory=list)        # [{"id": ..., "map": {old test id: new test id}}, ...] - each applied once, in order
 
     # text fields an overlay may translate (SRS-DVT-194); everything else is an identifier
     OVERLAY_TEXT = ("title", "purpose", "sample_rationale")
     OVERLAY_LISTS = ("safety_plan", "preconditions")
 
     # ---------------- loading ----------------
+    @staticmethod
+    def rename_sets(raw) -> list:
+        """test_renames as a list of {id, map} (a single dict is one set)."""
+        if not raw:
+            return []
+        return [dict(r) for r in (raw if isinstance(raw, list) else [raw]) if r and r.get("id") and r.get("map")]
+
     @classmethod
     def load(cls, path: str | Path, lang: str = "en") -> "Catalog":
         """Load + validate the catalog. With `lang` other than 'en' the sibling
@@ -69,7 +79,7 @@ class Catalog:
                   thresholds={"led_temperature_thresholds": data.get("led_temperature_thresholds", {}),
                               "heater_thresholds": data.get("heater_thresholds", {}),
                               "nitrogen_thresholds": data.get("nitrogen_thresholds", {})},
-                  path=p)
+                  path=p, renames=Catalog.rename_sets(data.get("test_renames")))
         cat.validate()
         if lang and lang != "en":
             ov = cls.overlay_path(p, lang)
@@ -187,10 +197,21 @@ class Catalog:
                 if f.get("type") == "enum" and any(isinstance(v, bool) for v in f.get("values") or []):
                     problems.append(f"{tid}: enum field {f.get('name')} has a YAML boolean value - quote 'on' / 'off' / 'yes' / 'no'")
                 names.add(f["name"])
-            for s in t.get("procedure_steps") or []:
+            for si, s in enumerate(t.get("procedure_steps") or []):
                 for c in s.get("capture") or []:
                     if c not in names:
                         problems.append(f"{tid}: step captures unknown field {c}")
+                # expect_alert: the error codes the console must see the machine raise on this
+                # step (dvt_tool/alarms.py). Codes live in the machine's registry
+                # (public/config/errors.json), so only the shape is checked here.
+                ea = s.get("expect_alert")
+                if ea is not None:
+                    if not isinstance(ea, list) or not ea:
+                        problems.append(f"{tid}: step {si + 1} expect_alert must be a non-empty list of error codes")
+                    elif any(not str(c).strip().isdigit() for c in ea):
+                        problems.append(f"{tid}: step {si + 1} expect_alert takes error codes (numbers), got {ea}")
+                    elif not any(c in ALARM_FIELDS for c in (s.get("capture") or [])):
+                        problems.append(f"{tid}: step {si + 1} declares expect_alert but captures no alarm field ({', '.join(ALARM_FIELDS)})")
             if t.get("sweep") and t.get("case_matrix"):
                 problems.append(f"{tid}: a test has either a sweep or a case_matrix, not both")
             co = t.get("co_executed_with")

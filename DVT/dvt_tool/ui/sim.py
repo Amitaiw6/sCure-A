@@ -27,11 +27,13 @@ import threading
 import time
 
 from .dut import DutState
+from ..alarms import normalise_alerts
 
 FAULTS = {
     "door_open": "Door opened (interlock)",
     "heater_sensor_open": "Heater temperature sensor open circuit",
     "heater_sensor_short": "Heater temperature sensor shorted (reads low)",
+    "heater_sensor_frozen": "Heater temperature sensor replaced by a fixed resistor (frozen reading)",
     "led_thermistor_open": "LED thermistor open (right panel)",
     "led_fan_disconnected": "LED cooling fan disconnected (right)",
     "led_fan_blocked": "LED cooling fan blocked rotor (right)",
@@ -42,10 +44,26 @@ FAULTS = {
     "thermal_cutout": "Independent thermal cutout tripped",
     "selector_open": "Voltage selector in the mid position (heater open circuit)",
 }
+# The codes the machine really raises, from the error registry (public/config/errors.json):
+# the simulator must speak the same numbers as the firmware, or a step's `expect_alert` can
+# never match in simulation. The simulator's right-hand panel / heater fan / cooling fan are
+# the ones its faults inject, hence the per-part codes.
 ERROR_CODES = {
-    "door_open": "1101", "heater_sensor_open": "2201", "heater_sensor_short": "2202", "led_thermistor_open": "2301", "led_panel_open": "2310",
-    "led_fan_disconnected": "2401", "led_fan_blocked": "2402", "circulation_fan_loss": "2410", "chamber_fan_loss": "2411",
-    "mains_dropout": "3001", "thermal_cutout": "2210", "heater_watchdog": "2220", "led_overtemp": "2320", "selector_open": "7004",
+    "door_open": "6016",                 # Door Opened - Process Aborted
+    "heater_sensor_open": "9010",        # Chamber Temperature Sensor Disconnected
+    "heater_sensor_short": "9010",       # same sensor: a short reads outside the valid range
+    "heater_sensor_frozen": "9006",      # Temperature Reading Frozen - Heater Switched Off
+    "led_thermistor_open": "9012",       # Right LED Temperature Sensor Disconnected
+    "led_panel_open": "9041",            # Right LED Panel Not Heating - Check LED Connection
+    "led_fan_disconnected": "9023",      # Right LED Fan Below Minimum Speed - System Stopped
+    "led_fan_blocked": "9023",
+    "circulation_fan_loss": "9020",      # Heater Fan Below Minimum Speed - System Stopped
+    "chamber_fan_loss": "9021",          # Cooling Fan Below Minimum Speed - System Stopped
+    "selector_open": "9007",             # Heater Not Heating - Check Voltage Selector / Fuse
+    # CONFIRM: no code in the registry yet for these three - the numbers below are the
+    # simulator's own and will not match a real machine (mains_dropout's 3001 now means
+    # "Serial Number Restore Failed" in the registry). Raised as an Open Issue with the SRS.
+    "mains_dropout": "3001", "thermal_cutout": "2210", "heater_watchdog": "2220", "led_overtemp": "2320",
 }
 
 
@@ -56,6 +74,7 @@ class SimMachine:
     LED_SHUTDOWN = 82.0          # protective shutdown (catalog CONFIRM item)
     CHAMBER_CEILING = 95.0
     STALL_WATCHDOG_S = 60.0      # simulator-accelerated no-heating watchdog (real machine: 25 min)
+    FROZEN_ALARM_S = 90.0        # frozen chamber reading -> Err 9006 (components.json frozen_reading.window_sec)
 
     def __init__(self, ambient: float = 24.0, mains_v: float = 230.0):
         self.lock = threading.Lock()
@@ -67,8 +86,9 @@ class SimMachine:
         self.uv_on = False; self.uv_pct = 0; self.uv_wavelength = 405
         self.door_open = False
         self.duty = {"chamber_heating": 0, "chamber_intake": 0, "led_cooling": 0}
-        self.fan_override = {}          # operator-commanded fan duty (DVT-THM-005); cleared on stop
+        self.fan_override = {}          # operator-commanded fan duty (DVT-THM-004); cleared on stop
         self.faults: set[str] = set(); self._heat_t0 = None; self._heat_start = None
+        self._frozen_t0 = None; self.frozen_read: float | None = None   # fixed resistor: the number the reading is stuck at
         self.alerts: list[dict] = []
         self.acked = True
         self.job_status = None
@@ -108,6 +128,17 @@ class SimMachine:
         if heating and "heater_sensor_open" in f:
             self.mode = "IDLE"; heating = False
             self._alarm("heater_sensor_open", FAULTS["heater_sensor_open"] + " — heater disabled", "Reconnect the heater sensor")
+        if heating and "heater_sensor_frozen" in f:
+            # DVT-SAF-003: a fixed resistor in place of the chamber NTC. The reading stays where
+            # it was while the real chamber keeps climbing; the firmware's rule is 90 s at >= 50 %
+            # output without the reading moving -> 9006, heater off (components.json frozen_reading)
+            if self._frozen_t0 is None: self._frozen_t0 = time.monotonic()
+            if time.monotonic() - self._frozen_t0 >= self.FROZEN_ALARM_S:
+                self.mode = "IDLE"; heating = False
+                if self.job_status == "running": self.job_status = "aborted"
+                self._alarm("heater_sensor_frozen", "Heater temperature reading frozen — it is not measuring the chamber; heater switched off", "Fix the sensor before heating again")
+        else:
+            self._frozen_t0 = None
         if heating and "heater_sensor_short" in f:
             # a shorted NTC reads low: plausibility check catches it after the temp keeps climbing
             if self.chamber > self.ambient + 12:
@@ -209,7 +240,7 @@ class SimMachine:
     def door(self, open_):
         with self.lock:
             self.door_open = bool(open_)
-            if self.door_open and self.uv_on:      # hardware interlock: UV is cut the instant the door opens (SAF-012)
+            if self.door_open and self.uv_on:      # hardware interlock: UV is cut the instant the door opens (DVT-SAF-008)
                 self.uv_on = False; self._alarm("door_open", FAULTS["door_open"], "Close the door and restart the job")
                 if self.job_status == "running": self.job_status = "aborted"
             return {"ok": True, "doorOpen": self.door_open}
@@ -226,6 +257,10 @@ class SimMachine:
     def inject(self, fault, on=True):
         with self.lock:
             if fault == "door_open": self.door_open = bool(on)
+            if fault == "heater_sensor_frozen":
+                # the resistor is fitted now: the reading sticks at whatever it reads this moment
+                self.frozen_read = round(self.chamber, 2) if on else None
+                if not on: self._frozen_t0 = None
             (self.faults.add if on else self.faults.discard)(fault)
             if not on and fault in ("thermal_cutout",): pass
             return {"ok": True, "faults": sorted(self.faults)}
@@ -252,7 +287,10 @@ class SimMachine:
     def api_state(self) -> dict:
         with self.lock:
             f = self.faults
-            chamber_reading = None if "heater_sensor_open" in f else (self.ambient - 5 if "heater_sensor_short" in f else self.chamber)
+            # the fixed resistor reports the number it was fitted at, whatever the chamber does
+            chamber_reading = (None if "heater_sensor_open" in f else
+                               self.ambient - 5 if "heater_sensor_short" in f else
+                               self.frozen_read if self.frozen_read is not None else self.chamber)
             led = {k: (None if (k == "right" and "led_thermistor_open" in f) else round(v, 2)) for k, v in self.led.items()}
             return {"chamberTemp": None if chamber_reading is None else round(chamber_reading, 2), "chamberTempTrue": round(self.chamber, 2),
                     "ambientTemp": self.ambient, "heaterTemp": round(self.heater_temp, 1), "targetTemp": self.target,
@@ -359,18 +397,18 @@ class SimClient:
     def state(self) -> DutState:
         s = self.sim.api_state()
         led = {k: v for k, v in s["ledTemps"].items() if v is not None}
-        alerts = s["alerts"]; first = alerts[0] if alerts else None
+        alerts = normalise_alerts(s); first = alerts[0] if alerts else None   # same reader as the real machine
         metrics = {"chamberTemp": s["chamberTemp"], "ambientTemp": s["ambientTemp"], "heaterTemp": s["heaterTemp"],
                    "ledTempMax": max(led.values()) if led else None,
                    "ledTempRight": s["ledTemps"].get("right"), "ledTempLeft": s["ledTemps"].get("left"),
                    "ledTempBack": s["ledTemps"].get("back"), "ledTempDoor": s["ledTemps"].get("door"),
                    "heaterFanRpm": s["fanRpm"]["chamber_heating"], "ledFanRpm": s["fanRpm"]["led_cooling"], "intakeFanRpm": s["fanRpm"]["chamber_intake"],
                    "targetTemp": s["targetTemp"], "uvIntensity": s["uvIntensity"], "mainsVoltage": s["mainsVoltage"],
-                   "errorCode": first["code"] if first else None, "alertText": first["message"] if first else None,
+                   "errorCode": first.raw if first else None, "alertText": first.text if first else None,
                    "jobStatus": s["jobStatus"], "faultsInjected": s["faultsInjected"]}
         flags = {"doorOpen": s["doorOpen"], "uvOn": s["uvOn"], "isHeating": s["isHeating"], "isCooling": s["isCooling"],
                  "fault": s["fault"], "simulated": True}
-        return DutState(True, self.url, s["version"], metrics, flags)
+        return DutState(True, self.url, s["version"], metrics, flags, alerts=alerts)
 
     def heat(self, t): return self.sim.heat(t)
     def cool(self, t, mode="normal"): return self.sim.cool(t, mode)

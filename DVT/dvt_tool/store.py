@@ -81,9 +81,38 @@ class Store:
         self.log("Configuration frozen", by, None, {"unit": unit_id, "serial": serial}); self.db.commit()
 
     # ---------------- runs ----------------
+    def apply_renames(self, renames) -> int:
+        """Every rename set in order (a list of {id, map}; one dict is one set). Returns the runs moved."""
+        sets = renames if isinstance(renames, list) else ([renames] if renames else [])
+        return sum(self._apply_rename_set(r) for r in sets)
+
+    def _apply_rename_set(self, renames: dict) -> int:
+        """Move every run recorded under a renamed test id to its new id, once per rename set
+        (meta key renames:<id>). Old ids are taken in ascending order, so a test moving into the
+        number another one just left never collides. Returns the number of runs moved."""
+        rid, mapping = (renames or {}).get("id"), (renames or {}).get("map") or {}
+        if not rid or not mapping or self.get_meta(f"renames:{rid}"):
+            return 0
+        moved = 0
+        tables = [t for t in ("run_values", "redlines", "ncrs", "waivers", "attachments")
+                  if self.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (t,)).fetchone()]
+        for old in sorted(mapping):
+            new = mapping[old]
+            rows = [r["run_id"] for r in self.db.execute("SELECT run_id FROM runs WHERE test_id=?", (old,))]
+            for run_id in rows:
+                to = new + run_id[len(old):]
+                self.db.execute("UPDATE runs SET run_id=?, test_id=? WHERE run_id=?", (to, new, run_id))
+                for t in tables:
+                    self.db.execute(f"UPDATE {t} SET run_id=? WHERE run_id=?", (to, run_id))
+                moved += 1
+        self.set_meta(f"renames:{rid}", str(moved))
+        self.log("Tests renumbered - recorded runs moved to the new ids", None, None, {"renames": rid, "runs_moved": moved})
+        self.db.commit()
+        return moved
+
     def ensure_runs(self, specs: Iterable, catalog_version: str) -> dict:
         """Make the stored run set match the catalog's. New runs are added; runs the
-        catalog no longer defines (a test re-shaped — e.g. ELE-005 gaining a mains-voltage
+        catalog no longer defines (a test re-shaped — e.g. DVT-ELE-005 gaining a mains-voltage
         sweep) are removed when they were never started, and kept but reported when
         they hold data, so nothing recorded on the bench is ever deleted here.
         Returns {"added": n, "retired": n, "orphaned": [run_id…]}."""

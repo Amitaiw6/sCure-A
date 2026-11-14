@@ -7,6 +7,8 @@ export interface TelemetrySample {
   uvOn: boolean
   uvType?: '405nm' | '450nm' | null  // Cure=405nm, Bleacher=450nm
   ledTemps?: { right: number; left: number; door: number; back: number }
+  /** Tachometer RPM per fan (FAN_HEATER, FAN_COOLING, FAN_LEFT, FAN_RIGHT, FAN_BACK, FAN_DOOR), v0.8.42+ */
+  fanRpm?: Record<string, number | null>
 }
 
 export interface CureLog {
@@ -24,6 +26,8 @@ export interface CureLog {
   telemetry?: TelemetrySample[]
   /** Temperature sensors that read open-circuit at any point of the run (v0.8.39+); [] = all read */
   sensorIssues?: { sensor: string; critical: boolean }[]
+  /** Fans that ran below their nominal RPM at any point of the run (v0.8.41+); worst deficit seen */
+  fanIssues?: { fan: string; deficitPct: number | null; critical: boolean }[]
 }
 
 interface CureHistoryContextType {

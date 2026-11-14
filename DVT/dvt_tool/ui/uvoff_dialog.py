@@ -2,8 +2,8 @@
 
 Opened from the wizard on a catalog step that carries a `tool:` key:
 
-    tool: uv_off_timing    DVT-SAF-012  trigger = the door opens         (uv_off_time  <= 1 s)
-    tool: led_off_timing   DVT-SAF-007  trigger = LED thermistor pulled  (led_off_time <= 2 s)
+    tool: uv_off_timing    DVT-SAF-008  trigger = the door opens         (uv_off_time  <= 1 s)
+    tool: led_off_timing   DVT-SAF-004  trigger = LED thermistor pulled  (led_off_time <= 2 s)
 
 The dialog drives the whole sequence: LEDs at maximum → trigger → irradiance
 recorded against time → graph. On "Apply to run" the CSV and PNG are attached
@@ -31,14 +31,14 @@ from ..instruments.uvoff import UvOffRunner, UvOffConfig, UvOffResult, TRIGGERS,
 # per-trigger UI text (English source strings; translated by i18n)
 _UI = {
     "door": {
-        "title": "DVT-SAF-012 — UV-off timing with the Ophir StarBright",
+        "title": "DVT-SAF-008 — UV-off timing with the Ophir StarBright",
         "headline": "LEDs at maximum → door opened → irradiance recorded against time",
         "intro": "Put the Ophir sensor at the door opening, facing the LEDs. UV eyewear on. The sequence is automatic: baseline, LEDs on, plateau, door, decay, LEDs off. Pass criterion: UV removed within 1 s of the door opening.",
         "auto": "Automatic — release the door via the API", "operator": "Operator opens the door on the prompt",
         "trigger_caption": "Door", "marker": "The door is open", "result_caption": "Door open",
     },
     "led_thermistor": {
-        "title": "DVT-SAF-007 — LED-off timing on thermistor disconnect with the Ophir StarBright",
+        "title": "DVT-SAF-004 — LED-off timing on thermistor disconnect with the Ophir StarBright",
         "headline": "LEDs at maximum → LED thermistor disconnected → irradiance recorded against time",
         "intro": "Put the Ophir sensor at the door opening, facing the LEDs, door closed. UV eyewear on. The sequence is automatic: baseline, LEDs on, plateau, then pull the connector of the selected LED thermistor when prompted and press the marker (in simulation the fault is injected for you). Pass criterion: LED drive removed within 2 s of the disconnection; the alarm must name the sensor.",
         "auto": "Automatic — inject the open-thermistor fault (simulator only)", "operator": "Operator pulls the thermistor connector on the prompt",

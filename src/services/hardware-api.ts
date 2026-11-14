@@ -103,8 +103,15 @@ export async function ackDoorAbort() {
 }
 
 /** Run fan test for a specific fan (led_cooling / chamber_intake / chamber_heating) */
+/** Operator's "continue anyway" after a fan failure: the fan is still measured and shown, but no longer
+ *  stops outputs, blocks a start or fails the LED pre-flight. Cleared when the process ends. */
+export async function setFanOverride(fan: string, on: boolean) {
+  return apiCall(`/fans/override?fan=${fan}&on=${on ? 1 : 0}`)
+}
+
 export async function runFanTest(fan?: string) {
-  return apiCall(`/diagnostics/fan-test${fan ? `?fan=${fan}` : ''}`)
+  // the LED group spins four fans and reads four tachometers (~3 s on the board): give it 20 s, not the 5 s default
+  return apiCall(`/diagnostics/fan-test${fan ? `?fan=${fan}` : ''}`, 'POST', 20000)
 }
 
 /** Open/close the N₂ purge valve */
@@ -113,6 +120,12 @@ export async function setNitrogenValve(on: boolean) {
 }
 
 /** BOFA fume-extraction on/off */
+/** NFC reader on/off. The server refuses ON (Err 9052) while no NFC reader
+ *  is detected on USB, so the setting can never be enabled without a reader. */
+export async function setNfcEnabled(on: boolean) {
+  return apiCall(`/nfc?on=${on ? 1 : 0}`)
+}
+
 export async function setBofaControl(on: boolean) {
   return apiCall(`/bofa?on=${on ? 1 : 0}`)
 }
@@ -137,8 +150,17 @@ export async function setSystemDateTime(date: string, time: string): Promise<{ o
 }
 
 /** Run LED diagnostic */
-export async function runLedDiagnostic() {
-  return apiCall('/diagnostics/led-test')
+/** The Alerts screen's undismissed counts, for the RGB status strip (critical -> pulsing red, warning -> pulsing yellow, none -> solid green). */
+export async function reportAlertSummary(critical: number, warning: number) {
+  return apiCall(`/rgb/alerts?critical=${critical}&warning=${warning}`)
+}
+
+export async function runLedDiagnostic(wavelength: 405 | 450 = 405) {
+  // sensors check, then all panels on for the window and every LED thermistor must warm up.
+  // 405 nm: 15 s, 0.8 °C (slowest healthy panel +0.9, dark +0.2). 450 nm strings dissipate about half the heat:
+  // 30 s, 0.8 °C (healthy panels +1.5 … +1.9 in 30 s on the test unit).
+  const q = wavelength === 450 ? 'seconds=30&min_rise=0.8&wavelength=450' : 'seconds=15&min_rise=0.8&wavelength=405'
+  return apiCall(`/diagnostics/led-test?${q}`, 'POST', 120000)
 }
 
 /** Export logs to USB */

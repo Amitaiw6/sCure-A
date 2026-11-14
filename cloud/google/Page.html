@@ -24,7 +24,11 @@
     if (!fileUrl) return '#';
     return fileUrl + '?dvtfile=' + encodeURIComponent(id) + '&t=' + encodeURIComponent(tok());
   };
-  function reply(status, obj) { return { status: status, ok: status < 400, json: function () { return Promise.resolve(obj); } }; }
+  function reply(status, obj) {
+    /* signed in, but the role does not allow it (Code.gs need_) */
+    if (obj && obj.denied) status = 403;
+    return { status: status, ok: status < 400, json: function () { return Promise.resolve(obj); } };
+  }
   window.fetch = async function (path, opts) {
     opts = opts || {};
     var body = {};
@@ -32,7 +36,37 @@
     if (path === '/login') {
       var r = await call('portalLogin', body.password || '');
       if (r && r.ok) { setTok(r.token); return reply(200, { ok: true }); }
-      return reply(401, { ok: false, message: 'Wrong password' });
+      return reply(401, { ok: false, message: (r && r.message) || 'Wrong password' });
+    }
+    // Google sign-in: mode -> start (a link to Google + a state) -> poll(state) until Google sent the person back
+    if (path === '/login/mode') {
+      try { return reply(200, await call('portalLoginMode')); } catch (e) { return reply(200, { google: false }); }
+    }
+    if (path === '/login/google') return reply(200, await call('portalLoginStart'));
+    if (path === '/login/poll') {
+      var lp = await call('portalLoginPoll', body.state || '');
+      if (lp && lp.ok && lp.token) { setTok(lp.token); return reply(200, { ok: true }); }
+      return reply(200, lp || { ok: false });
+    }
+    if (path === '/logout') {
+      try { await call('portalLogout', tok()); } catch (e) {}
+      setTok('');
+      return reply(200, { ok: true });
+    }
+    if (path === '/api/me') {
+      var me = await call('portalMe', tok());
+      return me === null ? reply(401, { ok: false }) : reply(200, me);
+    }
+    if (path === '/api/users' || path === '/api/users/save' || path === '/api/users/remove' || path === '/api/audit') {
+      var uo2 = path === '/api/users' ? await call('portalUsers', tok())
+              : path === '/api/users/save' ? await call('portalUserSave', tok(), body.email || '', body.role || '', body.name || '')
+              : path === '/api/users/remove' ? await call('portalUserRemove', tok(), body.email || '')
+              : await call('portalAudit', tok(), 100);
+      return uo2 === null ? reply(401, { ok: false }) : reply(uo2.ok ? 200 : 400, uo2);
+    }
+    if (path === '/api/machines/remove') {
+      var mr = await call('portalMachineRemove', tok(), body.name || '', body.password || '');
+      return mr === null ? reply(401, { ok: false }) : reply(mr.ok ? 200 : 400, mr);
     }
     if (path === '/api/machines') {
       var list = await call('portalMachines', tok());
@@ -68,10 +102,15 @@
       var uo = await call('portalDvtUnitSave', tok(), body.unit, body.fields || {});
       return uo === null ? reply(401, { ok: false }) : reply(uo.ok ? 200 : 400, uo);
     }
+    if (path === '/api/dvt/approve') {
+      var ap = await call('portalDvtApprove', tok(), body.unit, body.testId, body.runIds || [], body.who || '', body.approve !== false);
+      return ap === null ? reply(401, { ok: false }) : reply(ap.ok ? 200 : 400, ap);
+    }
     // DVT runs requested from the site (confirmed at the CureBox before anything runs)
-    if (path === '/api/dvt/request' || path === '/api/dvt/cancel' || path === '/api/dvt/answer') {
+    if (path === '/api/dvt/request' || path === '/api/dvt/cancel' || path === '/api/dvt/answer' || path === '/api/dvt/acted') {
       var out = path === '/api/dvt/request' ? await call('portalDvtRequest', tok(), body.machine, body.unit, body.testIds || [])
-              : path === '/api/dvt/cancel' ? await call('portalDvtCancel', tok(), body.id)
+              : path === '/api/dvt/cancel' ? await call('portalDvtCancel', tok(), body.ids || body.id, body.force === true)
+              : path === '/api/dvt/acted' ? await call('portalDvtActed', tok(), body.id)
               : await call('portalDvtAnswer', tok(), body.id, body.value === undefined ? null : body.value);
       return out === null ? reply(401, { ok: false }) : reply(out.ok ? 200 : 400, out);
     }
@@ -87,37 +126,59 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sCure Cloud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* Light monochrome theme: white ground, black text, black primary buttons;
-     green/red kept for online/offline + errors only. */
-  :root { --bg:#ffffff; --panel:#ffffff; --line:#e5e5e5; --text:#111111;
-          --mut:#6b7280; --acc:#111111; --acc2:#111111; --ok:#16a34a; --err:#dc2626;
-          --field:#ffffff; --inset:#fafafa; }
+  /* Calm and neutral, so the status colours (green / red / amber) stand out; one cobalt accent for "do this" and for progress.
+     Change the look here first: a literal colour in a rule is a smell. (skill: .claude/skills/scure-cloud-ux) */
+  :root { --bg:#f5f6f8; --panel:#ffffff; --line:#e3e6eb; --line2:#cfd4dc; --text:#14181f;
+          --mut:#5b6472; --acc:#2457d6; --on-acc:#ffffff; --acc2:#2457d6; --ok:#15803d; --err:#c62828; --warn:#b45309;
+          --field:#ffffff; --inset:#f0f2f5; color-scheme:light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0e1116; --panel:#171b22; --line:#262d37; --line2:#38414d; --text:#e8ecf1;
+            --mut:#9aa5b4; --acc:#7da2ff; --on-acc:#0b1220; --acc2:#7da2ff; --ok:#4ade80; --err:#f87171; --warn:#fbbf24;
+            --field:#11151b; --inset:#1b2129; color-scheme:dark; }
+    header .logo { filter:invert(1) hue-rotate(180deg); }
+  }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
-         font:15px/1.45 "Segoe UI", Arial, sans-serif; }
-  header { display:flex; align-items:center; gap:.8rem; padding:.9rem 1.4rem;
+         font:15px/1.5 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; -webkit-font-smoothing:antialiased; }
+  header { display:flex; align-items:center; gap:.8rem; padding:.8rem 1.4rem; background:var(--panel);
            border-bottom:1px solid var(--line); }
-  header h1 { font-size:1.05rem; margin:0; letter-spacing:.04em; }
+  header h1 { font-size:1.1rem; margin:0; font-weight:650; }
   header .logo { height:42px; display:block; }
   main { max-width:1060px; margin:0 auto; padding:1.2rem 1.4rem 3rem; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-          padding:1rem 1.2rem; margin-bottom:1rem; }
-  h2 { font-size:.95rem; color:var(--text); text-transform:uppercase;
-       letter-spacing:.08em; margin:0 0 .7rem; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:1.1rem 1.3rem; margin-bottom:1rem; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+  h2 { font-size:1.1rem; font-weight:650; color:var(--text); margin:0 0 .8rem; }
   table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
   th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); }
-  th { color:var(--mut); font-weight:600; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
+  th { color:var(--mut); font-weight:600; font-size:.82rem; }
   input, select, button, textarea { background:var(--field); color:var(--text);
-    border:1px solid #d4d4d4; border-radius:7px; padding:.45rem .7rem; font:inherit; }
+    border:1px solid var(--line2); border-radius:8px; padding:.45rem .75rem; font:inherit; }
   input:focus, select:focus, textarea:focus { outline:none; border-color:var(--acc); }
   button { cursor:pointer; }
-  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:var(--on-acc); font-weight:600; }
   button.danger { color:var(--err); }
+  /* sign-in, who is signed in, People (2026-10-30) */
+  a.btn { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:.45rem 1.2rem; border-radius:8px;
+          text-decoration:none; font-weight:600; border:1px solid var(--acc); }
+  a.btn.primary { background:var(--acc); color:var(--on-acc); }
+  .login-g { max-width:30rem; margin:2rem auto; }
+  #who { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; }
+  #who .who-name { max-width:14rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+  #who .who-role { background:var(--inset); color:var(--mut); }
+  #who button { min-height:44px; }
+  .people-help { margin:.2rem 0 .9rem; padding-left:1.2rem; }
+  .people-add { gap:.5rem; flex-wrap:wrap; }
+  #flash { position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%); max-width:min(34rem, calc(100% - 2rem)); z-index:50;
+           background:var(--text); color:var(--bg); padding:.7rem 1rem; border-radius:10px; opacity:0; pointer-events:none; transition:opacity .2s; }
+  #flash.on { opacity:1; }
+  @media (max-width: 640px) { #flash { bottom:5.5rem; } #who .who-name { max-width:8rem; } }
   .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
   /* the Machine | DVT tabs under the CureBox chips */
   .subtab { border:none; border-bottom:2px solid transparent; border-radius:0; background:none; padding:.55rem 1rem; color:var(--mut); }
-  .subtab.active { border-bottom-color:var(--text); color:var(--text); font-weight:600; }
+  .subtab.active { border-bottom-color:var(--acc); color:var(--text); font-weight:600; }
   /* DVT catalog view: counters, progress, phases with their tests (same layout as the DVT tool) */
   .dvt-sum { display:grid; grid-template-columns:repeat(5, 1fr); gap:.6rem; margin:.4rem 0 .6rem; }
   #app select { max-width:100%; }   /* a long option (a test title) must not widen the page on a phone */
@@ -130,6 +191,25 @@
   .race-clock { font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums; }
   .race-win { padding:.8rem 1rem; margin-bottom:.8rem; border-radius:10px; background:rgba(212,160,23,.14); border:1px solid #d4a017; font-size:1.05rem; }
   .race-lead { padding:.5rem .8rem; margin-bottom:.8rem; border-radius:8px; background:var(--inset); }
+  /* sections: a bar that stays in reach; on a phone it moves to the bottom, where the thumb is */
+  .sections { position:sticky; top:0; z-index:10; background:var(--bg); }
+  .subtab .ic { margin-right:.4rem; display:inline-flex; }
+  .subtab .ic svg { width:18px; height:18px; }
+  .subtab .lb { white-space:nowrap; }
+  :focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+  button:hover:not(:disabled) { border-color:var(--line2); background:var(--inset); }
+  button.primary:hover:not(:disabled) { background:var(--acc); filter:brightness(1.08); border-color:var(--acc); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  /* "what now": the one thing the person should know / do on the Overview */
+  .now { display:flex; gap:.8rem 1rem; align-items:center; flex-wrap:wrap; padding:.9rem 1.1rem; border-radius:12px; margin-bottom:1rem; border:1px solid var(--line); background:var(--panel); }
+  .now .t { flex:1 1 16rem; font-size:1.05rem; font-weight:600; }
+  .now .s { display:block; font-weight:400; font-size:.88rem; color:var(--mut); margin-top:.1rem; }
+  .now.bad { border-color:var(--err); background:color-mix(in srgb, var(--err) 8%, var(--panel)); }
+  .now.warn { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 9%, var(--panel)); }
+  .now.good { border-color:var(--ok); background:color-mix(in srgb, var(--ok) 8%, var(--panel)); }
+  details.more > summary::before { content:'▸'; margin-right:.5rem; }
+  details.more[open] > summary::before { content:'▾'; }
+  details.more > summary { cursor:pointer; color:var(--mut); padding:.4rem 0; min-height:44px; display:flex; align-items:center; }
   .dvt-tile { border:1px solid var(--line); border-radius:10px; padding:.7rem; text-align:center; }
   .dvt-tile .num { font-size:1.7rem; font-weight:700; }
   .dvt-bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-bottom:1rem; }
@@ -166,7 +246,7 @@
   .dvt-chk.ok .dot { background:#16a34a; } .dvt-chk.bad .dot { background:#dc2626; } .dvt-chk.warn .dot { background:#d97706; }
   /* the guide window that opens on Run: how the test goes, then Queue / Cancel */
   .dvt-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:1rem; }
-  .dvt-modal { background:var(--bg, #fff); color:var(--text); border-radius:12px; width:min(760px, 100%); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.3); }
+  .dvt-modal { background:var(--panel); color:var(--text); border-radius:12px; width:min(760px, 100%); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.3); }
   .dvt-modal-head { padding:1rem 1.2rem .6rem; border-bottom:1px solid var(--line); }
   .dvt-modal-head h3 { margin:0; font-size:1.1rem; } .dvt-modal-head .tid { font-family:ui-monospace,Consolas,monospace; margin-right:.5rem; }
   .dvt-modal-body { padding:0 1.2rem; overflow-y:auto; }
@@ -175,6 +255,19 @@
   .dvt-modal-run { flex-direction:column; flex-wrap:nowrap; align-items:stretch; max-height:45vh; overflow-y:auto; flex:none; }
   .dvt-now { border-left:4px solid #2563eb; background:#fff; border-radius:0 8px 8px 0; padding:.5rem .8rem; line-height:1.5; }
   .dvt-now b.lbl { display:block; font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
+  /* the step the person has to do now: it has to be readable across the bench, not a grey line */
+  .dvt-now.act { border-left-color:#f59e0b; background:#fffbeb; }
+  .dvt-act { display:flex; gap:.7rem; align-items:baseline; flex-wrap:wrap; margin:.1rem 0 .2rem; }
+  .dvt-act .txt { font-size:1.45rem; font-weight:800; line-height:1.25; color:#92400e; }
+  .dvt-act .sec { font-family:ui-monospace,Consolas,monospace; font-size:1.05rem; font-weight:700; color:#b45309;
+                  border:1px solid #fcd34d; border-radius:999px; padding:.05rem .55rem; white-space:nowrap; }
+  .dvt-act .stage { font-size:.8rem; color:var(--mut); }
+  .dvt-steps { margin:.35rem 0 0; padding-left:1.1rem; font-size:.86rem; color:var(--mut); }
+  .dvt-steps li.now { color:var(--ink); font-weight:700; }
+  .dvt-steps li.done { text-decoration:line-through; }
+  .dvt-did { background:#b45309; color:#fff; border:0; border-radius:10px; font-size:1rem; font-weight:800;
+             padding:.7rem 1.4rem; min-height:48px; cursor:pointer; }
+  .dvt-did:disabled { opacity:.6; cursor:default; }
   .dvt-sys { display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; font-size:.86rem; }
   .dvt-sys .lbl { font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); margin-right:.2rem; }
   .dvt-log { margin:0; padding:0; list-style:none; font-size:.84rem; }
@@ -198,6 +291,8 @@
   a.vid { margin-left:.4rem; font-size:.78rem; font-weight:600; color:#2563eb; text-decoration:none; white-space:nowrap; }
   .pill { display:inline-block; padding:.1rem .55rem; border-radius:999px; font-size:.78rem; }
   .pill.on { background:rgba(22,163,74,.12); color:var(--ok); }
+  .pill.bad { background:rgba(220,38,38,.12); color:var(--err); }
+  .dvt-runpanel .lbl { font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); margin-right:.2rem; }
   .pill.off { background:rgba(220,38,38,.10); color:var(--err); }
   .stat { display:inline-flex; flex-direction:column; margin-right:1.6rem; }
   .stat b { font-size:1.25rem; }
@@ -211,6 +306,20 @@
   /* ---- phone layout (user, 2026-10-23: "add a phone version"): one thumb-friendly column, the sections scroll sideways in one line,
      the numbers sit three to a row, the unit table becomes one card per unit and the first column of a comparison stays in view ---- */
   @media (max-width:640px) {
+    /* the sections become a bottom bar: icon over a short label, six equal thumb targets */
+    .sections { position:fixed; top:auto; bottom:0; left:0; right:0; z-index:20; margin:0 !important; background:var(--panel);
+                border-top:1px solid var(--line); border-bottom:none !important; padding-bottom:env(safe-area-inset-bottom, 0px); }
+    .sections { box-shadow:0 -6px 16px rgba(16,24,40,.08); padding-bottom:max(env(safe-area-inset-bottom, 0px), 10px); }
+    .sections .subtab { flex:1 1 0; min-width:0; min-height:56px; padding:.3rem .1rem .25rem; display:flex; flex-direction:column; align-items:center; justify-content:center;
+                        gap:.1rem; font-size:.75rem; line-height:1.1; border:none; color:var(--mut); }
+    .sections .subtab.active { color:var(--acc); }
+    .subtab .ic { margin:0; padding:.15rem .75rem; border-radius:999px; }
+    .subtab .ic svg { width:22px; height:22px; stroke-width:2; }
+    .sections .subtab.active .ic { background:color-mix(in srgb, var(--acc) 15%, transparent); }   /* the section you are in: a pill behind its icon */
+    main { padding-bottom:5.5rem; }
+    html { scroll-padding-bottom:6rem; }   /* a field scrolled into view stays clear of the bottom bar */
+    .now { padding:.8rem .9rem; }
+    .now button { width:100%; min-height:48px; }
     header { padding:.5rem .9rem; gap:.6rem; }
     header .logo { height:30px; }
     header h1 { font-size:.95rem; }
@@ -218,9 +327,9 @@
     .card { padding:.75rem .8rem; border-radius:9px; margin-bottom:.7rem; }
     h2 { font-size:.82rem; line-height:1.35; }
     input, select, button { min-height:44px; font-size:16px; }   /* 16 px: a phone browser does not zoom into the field */
-    .sections { flex-wrap:nowrap !important; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
-    .sections .subtab { white-space:nowrap; flex:0 0 auto; padding:.65rem .85rem; }
+    .sections { flex-wrap:nowrap !important; }
     .dvt-tiles { grid-template-columns:repeat(3, 1fr) !important; gap:.4rem !important; }
+    .dvt-tiles.ov-main { grid-template-columns:repeat(2, 1fr) !important; }   /* the four figures that matter, two by two */
     .dvt-tile { padding:.4rem .2rem; }
     .dvt-tile .num { font-size:1.3rem; }
     .dvt-tile .mut { font-size:.68rem; line-height:1.2; }
@@ -232,6 +341,11 @@
     .ov-units td:first-child { font-size:1.05rem; }
     .ov-units td input { flex:1 1 auto; width:100% !important; max-width:62%; }
     .ov-units td .dvt-bar { width:100%; }
+    /* two fields in one line (revisions, plan): the label on its own line, the fields share the width below it */
+    .ov-units td[data-l="Revisions"], .ov-units td[data-l="Plan"] { flex-wrap:wrap; justify-content:flex-start; }
+    .ov-units td[data-l="Revisions"]::before, .ov-units td[data-l="Plan"]::before { flex:1 1 100%; }
+    .ov-units td[data-l="Revisions"] br, .ov-units td[data-l="Plan"] br { display:none; }
+    .ov-units td[data-l="Revisions"] input, .ov-units td[data-l="Plan"] input { flex:1 1 40%; min-width:0; max-width:none; width:auto !important; }
     .cmp-controls { display:grid !important; grid-template-columns:1fr 1fr; gap:.6rem !important; }
     .cmp-controls > label:first-child { grid-column:1 / -1; }
     .cmp-controls select, .cmp-controls input { width:100%; }
@@ -281,7 +395,7 @@
     .dvt-modal-head { padding:.7rem .9rem .5rem; }
     .dvt-modal-body { padding:0 .9rem; }
     .dvt-modal-run { padding:.6rem .9rem; max-height:50vh; }
-    .dvt-modal-foot { flex-direction:column-reverse; align-items:stretch; padding:.7rem .9rem calc(.7rem + env(safe-area-inset-bottom, 0px)); background:var(--bg, #fff); }
+    .dvt-modal-foot { flex-direction:column-reverse; align-items:stretch; padding:.7rem .9rem calc(.7rem + env(safe-area-inset-bottom, 0px)); background:var(--panel); }
     .dvt-modal-foot button { width:100%; min-height:48px; }
     .dvt-modal-foot .mut { margin:.2rem 0 0 !important; text-align:center; }
     .dvt-prompt .row { flex-wrap:wrap; gap:.5rem; }
@@ -310,22 +424,167 @@ function userBusy() {
 
 async function api(path, opts) {
   const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
-  if (r.status === 401) { renderLogin(); throw new Error('auth'); }
+  if (r.status === 401) { ME = null; renderLogin(); throw new Error('auth'); }
+  if (r.status === 403) { const d = await r.json(); flash(d.message || 'Your access does not allow this.'); throw new Error('denied'); }
   return r.json();
 }
 
-function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="card" id="login"><h2>Sign in</h2>
-    <div class="row"><input id="pw" type="password" placeholder="Portal password" style="flex:1">
-    <button class="primary" id="go">Sign in</button></div>
-    <p class="msg err">${msg||''}</p></div>`;
-  $('#go').onclick = doLogin;
-  $('#pw').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+// A short message at the bottom of the screen (a refused action, a saved change); it goes by itself.
+function flash(text) {
+  let el = $('#flash');
+  if (!el) { el = document.createElement('div'); el.id = 'flash'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => el.classList.remove('on'), 6000);
+}
+
+// ---- Sign-in (user, 2026-10-30): with a Google account on the people list, or - until Google sign-in is set up - the
+// shared password. The Google link opens in a new window; this page asks the server every 1.5 s whether it is done.
+/* ME: {email, name, role, roleLabel, owner, via, canService, canAdmin} of the signed-in person; LOGIN: {state, url, waiting} of the Google sign-in on screen */
+let ME = null;
+let LOGIN = null;
+async function renderLogin(msg) {
+  /* already on screen: the 10 s refresh must not restart a sign-in */
+  if (!msg && $('#login')) return;
+  ME = null; renderWho();
+  let mode = { google: false };
+  try { mode = await (await fetch('/login/mode')).json(); } catch (e) { /* password */ }
+  if (!mode.google) {
+    $('#app').innerHTML = `<div class="card" id="login"><h2>Sign in</h2>
+      <div class="row"><input id="pw" type="password" placeholder="Portal password" style="flex:1">
+      <button class="primary" id="go">Sign in</button></div>
+      <p class="msg err">${msg||''}</p></div>`;
+    $('#go').onclick = doLogin;
+    $('#pw').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+    return;
+  }
+  LOGIN = null;
+  try { const s = await (await fetch('/login/google', { method: 'POST' })).json(); if (s.ok) LOGIN = { state: s.state, url: s.url, waiting: false }; } catch (e) {}
+  $('#app').innerHTML = `<div class="card login-g" id="login"><h2>Sign in to sCure Cloud</h2>
+    <p class="mut">Use the Google account an admin added to sCure Cloud.</p>
+    ${LOGIN ? `<a class="btn primary" id="g-go" href="${LOGIN.url}" target="_blank" rel="noopener">Sign in with Google</a>`
+            : `<p class="msg err">Google sign-in is not reachable right now - reload the page in a moment.</p>`}
+    <p class="mut" id="g-wait" hidden>Finish signing in in the Google window that opened. This page continues by itself.</p>
+    <p class="msg err" id="g-err">${msg ? escH(msg) : ''}</p></div>`;
+  const go = $('#g-go');
+  if (go) go.onclick = () => { if (!LOGIN.waiting) { LOGIN.waiting = true; $('#g-wait').hidden = false; $('#g-err').textContent = ''; googleWait(LOGIN); } };
+}
+async function googleWait(l) {
+  const until = Date.now() + 10 * 60 * 1000;
+  while (LOGIN === l && Date.now() < until) {
+    await new Promise(res => setTimeout(res, 1500));
+    let r = null;
+    try { r = await (await fetch('/login/poll', { method: 'POST', body: JSON.stringify({ state: l.state }) })).json(); } catch (e) { continue; }
+    if (LOGIN !== l) return;
+    if (r && r.pending) continue;
+    LOGIN = null;
+    if (r && r.ok) { load(true); return; }
+    renderLogin((r && r.message) || 'Sign-in failed - press Sign in again.');
+    return;
+  }
 }
 async function doLogin() {
   const r = await fetch('/login', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({password: $('#pw').value})});
-  if (r.ok) load(true); else renderLogin('Wrong password');   // forced: the focused password field counts as "busy"
+  if (r.ok) load(true); else renderLogin((await r.json()).message || 'Wrong password');   // forced: the focused password field counts as "busy"
+}
+async function signOut() {
+  await fetch('/logout', { method: 'POST' });
+  ME = null;
+  renderLogin();
+}
+
+// Header: who is signed in and with what access; People for admins; Sign out.
+function renderWho() {
+  const w = $('#who');
+  if (!w) return;
+  if (!ME) { w.innerHTML = ''; return; }
+  const who = ME.via === 'password' ? 'Shared password' : (ME.name || ME.email);
+  w.innerHTML = `<span class="who-name" title="${escH(ME.email || '')}">${escH(who)}</span>
+    <span class="pill who-role">${escH(ME.roleLabel)}</span>
+    ${ME.canAdmin ? `<button id="who-people" class="${VIEW === 'people' ? 'primary' : ''}">People</button>` : ''}
+    <button id="who-out">Sign out</button>`;
+  $('#who-out').onclick = signOut;
+  const p = $('#who-people');
+  if (p) p.onclick = () => { VIEW = 'people'; render(); loadPeople(); };
+}
+
+// ---- People (admins): who may open sCure Cloud and what each may do; recent activity under a fold ----
+/* PEOPLE: {users, google, redirectUri, audit} */
+let PEOPLE = null;
+const ROLE_HELP = { view: 'Viewer - sees everything, changes nothing',
+                    service: 'Service - also requests DVT tests, sends programs, edits units and the race',
+                    admin: 'Admin - also approves safety runs and manages people' };
+async function loadPeople() {
+  try {
+    const u = await api('/api/users');
+    let audit = [];
+    try { audit = (await api('/api/audit')).rows || []; } catch (e) { audit = []; }
+    PEOPLE = Object.assign({}, u, { audit });
+  } catch (e) { return; }
+  if (VIEW === 'people' && !userBusy()) render();
+}
+function peopleCard() {
+  if (!ME || !ME.canAdmin) return `<div class="card"><h2>People</h2><p class="mut">Only an admin can see the people list.</p></div>`;
+  if (!PEOPLE) return `<div class="card"><h2>People</h2><p class="mut">Loading…</p></div>`;
+  const opt = r => ['view', 'service', 'admin'].map(x => `<option value="${x}"${x === r ? ' selected' : ''}>${{ view: 'Viewer', service: 'Service', admin: 'Admin' }[x]}</option>`).join('');
+  const rows = PEOPLE.users.map(u => `<tr>
+      <td><b>${escH(u.name || u.email)}</b>${u.name ? `<br><span class="mut">${escH(u.email)}</span>` : ''}</td>
+      <td>${u.owner ? 'Admin <span class="mut">(owner)</span>'
+                    : `<select data-person-role="${escH(u.email)}" aria-label="Access of ${escH(u.email)}">${opt(u.role)}</select>`}</td>
+      <td class="mut">${u.lastLogin ? fmtAgo(u.lastLogin) : 'never'}</td>
+      <td>${u.owner ? '' : `<button data-person-remove="${escH(u.email)}">Remove</button>`}</td></tr>`).join('');
+  const setup = PEOPLE.google ? '' : `<div class="dvt-prompt" style="margin-bottom:1rem"><b>Google sign-in is not on yet</b> - everyone still signs in with the shared password.
+      To turn it on, create an OAuth client (type Web application) in Google Cloud and give it this redirect URI:
+      <br><code style="word-break:break-all">${escH(PEOPLE.redirectUri || '')}</code><br>
+      then set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the script properties. Add the people below first - yourself as Admin too - once it is on, only they can sign in.</div>`;
+  const audit = (PEOPLE.audit || []).slice(0, 50).map(a => `<tr><td class="mut">${fmtAgo(a.unix)}</td><td>${escH(a.email || 'shared password')}</td>
+      <td>${escH(a.action)}${a.detail ? ` <span class="mut">${escH(a.detail)}</span>` : ''}</td></tr>`).join('');
+  return `${setup}<div class="card"><h2>People</h2>
+    <p class="mut" style="margin-top:0">Who can open sCure Cloud, and what they may do.</p>
+    <ul class="mut people-help">${['view', 'service', 'admin'].map(r => `<li>${ROLE_HELP[r]}</li>`).join('')}</ul>
+    <div class="row people-add">
+      <input id="pp-email" type="email" placeholder="name@company.com" aria-label="Google account email" style="flex:2;min-width:12rem">
+      <input id="pp-name" placeholder="Name (optional)" aria-label="Name" style="flex:1;min-width:8rem">
+      <select id="pp-role" aria-label="Access">${opt('view')}</select>
+      <button class="primary" id="pp-add">Add</button></div>
+    <p class="msg err" id="pp-msg"></p>
+    <table class="cards"><tr><th>Person</th><th>Access</th><th>Last sign-in</th><th></th></tr>${rows}</table></div>
+    <details class="card"><summary><b>Recent activity</b> <span class="mut">sign-ins, refusals and every change</span></summary>
+      ${audit ? `<table class="cards"><tr><th>When</th><th>Who</th><th>What</th></tr>${audit}</table>` : '<p class="mut">Nothing yet.</p>'}</details>`;
+}
+function peopleWire() {
+  const add = $('#pp-add');
+  if (add) add.onclick = async () => {
+    const email = $('#pp-email').value.trim();
+    if (!email) { $('#pp-msg').textContent = 'Write the person\'s Google account email.'; return; }
+    try {
+      const r = await api('/api/users/save', { method: 'POST', body: JSON.stringify({ email, name: $('#pp-name').value, role: $('#pp-role').value }) });
+      if (!r.ok) { $('#pp-msg').textContent = r.message || 'Not saved'; return; }
+    } catch (e) { return; }
+    flash(email + ' can now sign in.');
+    $('#pp-email').value = ''; $('#pp-name').value = '';
+    await loadPeople(); render();
+  };
+  [...document.querySelectorAll('[data-person-role]')].forEach(s => s.onchange = async () => {
+    try {
+      const r = await api('/api/users/save', { method: 'POST', body: JSON.stringify({ email: s.dataset.personRole, role: s.value }) });
+      if (!r.ok) { flash(r.message || 'Not saved'); return; }
+      flash('Saved: ' + s.dataset.personRole + ' is now ' + s.options[s.selectedIndex].text + '.');
+    } catch (e) { return; }
+    s.blur(); await loadPeople(); render();
+  });
+  [...document.querySelectorAll('[data-person-remove]')].forEach(b => b.onclick = async () => {
+    const email = b.dataset.personRemove;
+    if (!confirm('Remove ' + email + '? They are signed out at once and can no longer open sCure Cloud.')) return;
+    try {
+      const r = await api('/api/users/remove', { method: 'POST', body: JSON.stringify({ email }) });
+      if (!r.ok) { flash(r.message || 'Not removed'); return; }
+    } catch (e) { return; }
+    flash(email + ' was removed.');
+    await loadPeople(); render();
+  });
 }
 
 function fmtAgo(t) {
@@ -337,6 +596,8 @@ function fmtAgo(t) {
 async function load(force) {
   if (!force && userBusy()) return;   // never re-render under the user's hands
   try { MACHINES = await api('/api/machines'); } catch { return; }
+  /* who is signed in: asked once per sign-in, without holding up the page */
+  if (!ME && !load.me) { load.me = true; api('/api/me').then(m => { ME = m; renderWho(); }).catch(() => {}).finally(() => { load.me = false; }); }
   if (!force && userBusy()) return;
   render();
   if (VIEW === 'errors') loadErrors();
@@ -351,7 +612,7 @@ let SEARCH = '';
 let VIEW = 'overview';
 let ERRORS = null;            // alerts from the portal's log: {machine, code, raised, cleared, message}
 // DVT: every run DVT/web/dvt-tool.html recorded, with its values and its raw measurement files.
-const PORTAL_BUILD = '0.9.123';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
+const PORTAL_BUILD = '0.9.149';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
 let DVT_DETAIL = null;        // {testId: {purpose, steps, equipment, preconditions, criteria, bench, note ...}} - fetched once per catalog
 let DVT_DETAIL_AT = -1;       // the catalog.updated the detail belongs to
 let DVT_DETAIL_BUSY = false;
@@ -359,6 +620,7 @@ let DVT = null;               // {runs: [{unit, testId, variant, rep, runId, ver
 let DVT_UNIT = localStorage.getItem('scure-dvt-unit') || 'all';
 const DVT_NONE = '__unassigned';  // the CureBox list's "not assigned" entry: runs uploaded before their unit had a CureBox
 const dvtMachines = () => [...new Set(((DVT && DVT.runs) || []).map(r => r.machine).filter(Boolean))];
+let DVT_MANUAL = {};         // the hand-made tests on screen (test id -> row), for the Approve button
 const DVT_OPEN = new Set();   // run ids whose values + files are expanded
 const CODE_TITLES = {
   6016: 'Door opened during a process', 7004: 'Temperature stall',
@@ -398,6 +660,11 @@ function errorsCard() {
 
 async function loadDvt() {
   try { DVT = await api('/api/dvt'); } catch { return; }
+  if (DVT && DVT.catalog && DVT.catalog.tests) Object.entries(DVT.catalog.tests).forEach(([tid, t]) => {   // electrical safety: done by hand, once, on UUT-01; the engineer approves it
+    if (t.group === 'ELE') { t.auto = false; t.manual = true; if ((t.units || []).includes('UUT-01')) t.units = ['UUT-01']; }
+  });
+  if (DVT && DVT.catalog && Array.isArray(DVT.catalog.phases))   // tests listed in ascending order inside each phase (user, 2026-10-25)
+    DVT.catalog.phases.forEach(p => { if (Array.isArray(p.tests)) p.tests = p.tests.slice().sort((a, b) => a.localeCompare(b, 'en', { numeric: true })); });
   if (DVT && DVT.now) DVT.skew = DVT.now - Date.now() / 1000;      // the server's clock, so a phone with a wrong time does not skew the race
   if ((VIEW === 'dvt' || VIEW === 'overview' || VIEW === 'compare' || VIEW === 'race') && !userBusy()) render();
   if (VIEW === 'dvt' && DVT && DVT.catalog && DVT.catalog.updated !== DVT_DETAIL_AT) loadDvtDetail();
@@ -558,7 +825,7 @@ function dvtGuide(tid, title) {
     bits.push(`<h4>Procedure</h4><ol class="dvt-steps">${(d.steps || []).map(s => `<li>${escH(s)}</li>`).join('')}</ol>`);
     if (d.criteria) bits.push(`<div class="dvt-crit"><h4>Pass criteria</h4><code>${escH(d.criteria)}</code></div>`);
     bits.push(`<div class="dvt-sim"><h4>Simulation</h4>
-      <p class="mut" style="margin:.2rem 0 .5rem;font-size:.88rem">A dry run in this window only: the steps play through and the pass criteria are checked against made-up readings. Nothing is sent to the CureBox and nothing is recorded.</p>
+      <p class="mut" style="margin:.2rem 0 .5rem;font-size:.88rem">A dry run in this window only: the steps play through, it asks you the same questions as a real run, and the pass criteria are checked against made-up readings (your answers replace them). Nothing is sent to the CureBox and nothing is recorded.</p>
       <div class="row"><button data-sim="pass">▶ Simulate a passing run</button><button data-sim="fail">▶ Simulate a failing run</button></div>
       <div data-sim-out></div></div>`);
   }
@@ -679,19 +946,59 @@ function critReadings(leaves, bad) {
   });
   return env;
 }
+/** One question of the real run, asked in the simulation panel the way the run asks it: resolves the answer, or undefined when skipped. */
+function simAsk(out, p) {
+  return new Promise(res => {
+    const sel = p.values && p.values.length;
+    const ctl = p.kind === 'yesno' ? '<button class="primary" data-a="yes">Yes</button><button data-a="no">No</button><button data-a="skip">Skip</button>'
+      : p.kind === 'value' ? `${sel ? `<select id="sim-ans">${p.values.map(v => `<option>${escH(v)}</option>`).join('')}</select>` : `<input id="sim-ans" type="${p.type === 'float' || p.type === 'int' ? 'number' : 'text'}" step="any" inputmode="decimal" style="max-width:12rem">`}${p.unit ? `<span class="mut">${escH(p.unit)}</span>` : ''}<button class="primary" data-a="ok">OK</button><button data-a="skip">Skip</button>`
+      : '<button class="primary" data-a="done">Done</button><button data-a="skip">Skip</button>';
+    out.innerHTML = `<div class="dvt-auto"><p class="note"><b>The machine asks.</b> ${escH(p.text)}</p><div class="row">${ctl}</div></div>`;
+    const inp = out.querySelector('#sim-ans');
+    if (inp) inp.focus();
+    out.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    out.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+      const a = b.dataset.a;
+      if (a === 'skip') return res(undefined);
+      if (a === 'yes' || a === 'no') return res(a === 'yes');
+      if (a === 'done') return res(true);
+      const raw = inp ? inp.value.trim() : '';
+      if (raw === '') return res(undefined);
+      res(p.type === 'float' ? Number(raw) : p.type === 'int' ? Math.round(Number(raw)) : p.type === 'bool' ? raw === 'true' : raw);
+    });
+    if (inp) inp.onkeydown = ev => { if (ev.key === 'Enter') out.querySelector('[data-a="ok"]').click(); };
+  });
+}
 async function dvtSimulate(bg, d, wantFail) {
   const out = bg.querySelector('[data-sim-out]'), btns = [...bg.querySelectorAll('[data-sim]')];
   btns.forEach(b => b.disabled = true);
   const steps = [...bg.querySelectorAll('.dvt-steps li')];
   steps.forEach(li => li.classList.remove('sim-on', 'sim-done'));
   out.innerHTML = '';
-  for (const li of steps) {                                       // play the procedure through
+  const prompts = Array.isArray(d.prompts) ? d.prompts : [];      // the questions the real run asks, in order
+  const given = {};                                               // what the person typed: it replaces the made-up reading
+  let at = 0;
+  const playTo = async upto => {                                  // play the procedure through, step by step
+    while (at < Math.min(upto, steps.length)) {
+      const li = steps[at++];
+      if (!bg.isConnected) return false;
+      li.classList.add('sim-on'); li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      await new Promise(r => setTimeout(r, 700));
+      li.classList.remove('sim-on'); li.classList.add('sim-done');
+    }
+    return bg.isConnected;
+  };
+  for (let k = 0; k < prompts.length; k++) {
+    if (!await playTo(Math.round((k + 1) * steps.length / (prompts.length + 1)))) return;
+    const li = steps[at];
+    if (li) li.classList.add('sim-on');
+    const a = await simAsk(out, prompts[k]);
+    if (li) li.classList.remove('sim-on');
     if (!bg.isConnected) return;
-    li.classList.add('sim-on'); li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    await new Promise(r => setTimeout(r, 700));
-    li.classList.remove('sim-on'); li.classList.add('sim-done');
+    if (a !== undefined && prompts[k].field) given[prompts[k].field] = a;
   }
-  if (!bg.isConnected) return;
+  out.innerHTML = '';
+  if (!await playTo(steps.length)) return;
   let html;
   try {
     const tree = critParse(String(d.criteria || ''));
@@ -701,12 +1008,13 @@ async function dvtSimulate(bg, d, wantFail) {
       const order = leaves.map((_, i) => i).sort(() => Math.random() - .5);
       for (const k of order) { const e = critReadings(leaves, k); if (!critEval(tree, e)) { bad = k; env = e; break; } }
     }
+    Object.keys(given).forEach(k => { env[k] = given[k]; });
     const verdict = !!critEval(tree, env);
     const fmt = v => typeof v === 'string' ? `'${escH(v)}'` : escH(String(v));
     const rows = leaves.map(leaf => {
       const ok = !!critEval(leaf, env), ids = [...new Set(critIds(leaf))];
       return `<tr><td><code>${escH(critText(leaf))}</code></td>
-        <td>${ids.map(id => `<code>${escH(id)}</code> = ${fmt(env[id])}${id.includes('.') ? ' <span class="mut">(limit)</span>' : ''}`).join('<br>')}</td>
+        <td>${ids.map(id => `<code>${escH(id)}</code> = ${fmt(env[id])}${id.includes('.') ? ' <span class="mut">(limit)</span>' : id in given ? ' <span class="mut">(your answer)</span>' : ''}`).join('<br>')}</td>
         <td class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'}</td></tr>`;
     }).join('');
     html = `<table><tr><th>Check</th><th>Simulated reading</th><th></th></tr>${rows}</table>
@@ -714,7 +1022,7 @@ async function dvtSimulate(bg, d, wantFail) {
   } catch (e) {
     html = `<p class="mut" style="margin:.6rem 0 0">The steps played through, but the pass criteria could not be read for a simulated check (${escH(e.message)}).</p>`;
   }
-  out.innerHTML = html + '<p class="mut" style="font-size:.8rem;margin:.4rem 0 0">Simulation only - made-up numbers, not recorded.</p>';
+  out.innerHTML = html + '<p class="mut" style="font-size:.8rem;margin:.4rem 0 0">Simulation only - made-up numbers except your answers, not recorded.</p>';
   out.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   btns.forEach(b => b.disabled = false);
 }
@@ -728,11 +1036,13 @@ function dvtGuideRefresh() {
   if (!r) { box.innerHTML = '<span class="pill warn">queuing…</span>'; return; }
   const active = DVT_ACTIVE_ST.includes(r.status);
   // the run log: one line per change of status / machine line / question, with the time the page saw it
-  const sig = [r.status, r.line, r.prompt && r.prompt.text, r.verdict].join('|');
+  const sig = [r.status, r.line, r.prompt && r.prompt.text, r.act && r.act.text, r.verdict].join('|');
   if (sig !== g.sig) {
     g.sig = sig;
     g.log.push({ t: new Date(), text: (DVT_REQ_LABEL[r.status] || r.status) + (r.verdict ? ' ' + r.verdict : '')
-      + (r.prompt && active ? ' - asks: ' + r.prompt.text : r.line ? ' - ' + r.line : '') });
+      + (r.prompt && active ? ' - asks: ' + r.prompt.text
+         : r.act && active ? ' - DO NOW: ' + r.act.text          // the person's steps stand out in the log too
+         : r.line ? ' - ' + r.line : '') });
   }
   if (g.bg.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;   // typing an answer
   box.innerHTML = `<div class="row" style="gap:.6rem;align-items:center">
@@ -740,12 +1050,30 @@ function dvtGuideRefresh() {
       ${r.verdict ? `<span class="pill ${dvtClass(r.verdict)}">${escH(r.verdict)}</span>` : ''}
       <span class="mut" style="flex:1;min-width:12rem">${escH(r.line || '')}</span>
       ${active && r.status !== 'cancel_requested' ? `<button class="danger" data-guide-stop="${r.id}">Stop the run</button>` : ''}</div>
-    <div class="dvt-now"><b class="lbl">What to do now</b>${dvtGuideNow(r, g)}${active ? dvtPromptControls(r) : ''}</div>
+    <div class="dvt-now${r.act && active ? ' act' : ''}"><b class="lbl">What to do now</b>${dvtGuideNow(r, g)}${active ? dvtPromptControls(r) : ''}</div>
     ${dvtGuideSystem(g.machine)}
     <div><b class="mut" style="font-size:.74rem;letter-spacing:.06em">RUN LOG</b><ul class="dvt-log">${g.log.slice().reverse()
       .map(e => `<li><span class="t">${e.t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><span>${escH(e.text)}</span></li>`).join('')}</ul></div>`;
   go.disabled = active;
   go.textContent = active ? 'Queued' : '▶ Run again';
+  // the box is redrawn about once a second while a run reports (seconds left, live chips): a click whose press and
+  // release fell on two different buttons was lost, so "I did it" often did nothing (user, 2026-11-12). The press is
+  // sent at pointerdown, and the step it was sent for stays "Sent…" across the redraws.
+  const did = box.querySelector('[data-dvt-acted]');
+  const actKey = r.act && r.act.text ? r.id + '|' + r.act.text : '';
+  if (g.sentAct && (g.sentAct !== actKey || Date.now() - g.sentAt > 8000)) g.sentAct = null;   // a new step, or no answer: press again
+  if (did) {
+    const key = actKey;
+    if (g.sentAct === key) { did.disabled = true; did.textContent = 'Sent…'; }
+    const send = (e) => {
+      if (did.disabled || g.sentAct === key) return;
+      if (e && e.preventDefault) e.preventDefault();
+      g.sentAct = key; g.sentAt = Date.now(); did.disabled = true; did.textContent = 'Sent…';
+      dvtSend('/api/dvt/acted', { id: Number(did.dataset.dvtActed) });
+    };
+    did.onpointerdown = send;
+    did.onclick = send;
+  }
   const stop = box.querySelector('[data-guide-stop]');
   if (stop) stop.onclick = () => { stop.disabled = true; stop.textContent = 'Stopping…'; dvtSend('/api/dvt/cancel', { id: r.id }); };
   [...box.querySelectorAll('[data-dvt-answer]')].forEach(b => b.onclick = () => {
@@ -765,8 +1093,26 @@ function dvtGuideNow(r, g) {
   switch (r.status) {
     case 'queued': return `Wait - the DVT runner on ${m} picks the test up within a few seconds. If it stays queued, check that the runner shows online.`;
     case 'waiting': return `Go to <b>${m}</b> and press <b>Start</b> on its screen (it asks to confirm ${escH(g.tid)}). Check the "Before you start" list below first. Nothing turns on until Start is pressed.`;
-    case 'running': return r.prompt ? 'The test is waiting for you - answer the question below.'
-      : 'The test is running by itself - nothing to do. Stay clear of the machine; keep this window open to follow it, or press Stop the run.';
+    case 'running': {
+      // an instruction the runner is waiting on (c.act): it IS what to do now - big, with the
+      // seconds left. Until 0.9.145 it arrived as an ordinary line and this box said "nothing to
+      // do", so DVT-SAF-008 timed out with nobody told to open the door (user, 2026-10-29).
+      if (r.act && r.act.text) {
+        const st = r.act.stage;
+        return `<div class="dvt-act"><span class="txt">${escH(r.act.text)}</span>`
+          + (typeof r.act.sec === 'number' ? `<span class="sec">${r.act.sec} s</span>` : '')
+          + (st && st.n ? `<span class="stage">step ${st.n} of ${st.of}${st.text ? ' · ' + escH(st.text) : ''}</span>` : '')
+          + '</div>'
+          + (r.act.ack === false
+              ? '<span class="mut">Do it now - the machine is watching for it and goes on by itself.</span>'
+              : r.act.acked
+                ? '<span class="mut">You pressed it - waiting for the machine to see it.</span>'
+                : `<button class="dvt-did" data-dvt-acted="${r.id}">${escH(r.act.label || 'I did it')}</button>`
+                  + '<span class="mut" style="display:block;margin-top:.3rem">Press it the moment you have done it - the test does not go on until you do.</span>');
+      }
+      if (r.prompt) return 'The test is waiting for you - answer the question below.';
+      return `The test is running by itself - nothing to do.${r.line ? ' <span class="mut">(' + escH(r.line) + ')</span>' : ''} Stay clear of the machine; keep this window open to follow it, or press Stop the run.`;
+    }
     case 'cancel_requested': return `Stopping - ${m} is turning everything off.`;
     case 'done': return r.verdict ? `Finished with <b>${escH(r.verdict)}</b>. The result is recorded in the campaign. You can close the window.`
       : 'Finished. You can close the window.';
@@ -779,18 +1125,35 @@ function dvtGuideNow(r, g) {
 /** The CureBox as its last sync reported it: connection, chamber temperature, door, UV, heating, cooling. */
 function dvtGuideSystem(name) {
   const m = (MACHINES || []).find(x => x.name === name);
-  if (!m) return `<div class="dvt-sys"><span class="lbl">${escH(name)}</span><span class="mut">no status from this CureBox yet</span></div>`;
-  const s = m.state || {};
+  // the DVT runner's report is live (seconds old, sent with every step of a run); the machine's cloud sync is minutes old
+  // and showed "offline" / "heater off" while a test was heating (user, 2026-10-28) - the live one wins when there is one
+  const runner = ((DVT && DVT.runners) || []).find(x => x.machine === name);
+  const live = runner && runner.online && runner.live ? runner.live : null;
+  if (!m && !live) return `<div class="dvt-sys"><span class="lbl">${escH(name)}</span><span class="mut">no status from this CureBox yet</span></div>`;
+  const s = live || (m && m.state) || {};
+  const online = !!(live || (m && m.online));
   const chip = (cls, text) => `<span class="pill ${cls}">${text}</span>`;
   const yes = (v, on, off, warn) => v === undefined ? '' : chip(v ? (warn ? 'warn' : 'on') : '', v ? on : off);
+  const pwm = typeof s.heaterPwm === 'number' && s.heaterPwm > 0 ? ` ${Math.round(s.heaterPwm)}%` : '';
   return `<div class="dvt-sys"><span class="lbl">${escH(name)} status</span>
-    ${chip(m.online ? 'on' : 'off', m.online ? 'online' : 'offline')}
+    ${chip(online ? 'on' : 'off', online ? 'online' : 'offline')}
     ${typeof s.chamberTemp === 'number' ? chip('', `chamber ${s.chamberTemp.toFixed(1)}°C`) : ''}
     ${s.doorClosed === undefined ? '' : chip(s.doorClosed ? 'on' : 'warn', s.doorClosed ? 'door closed' : 'door open')}
-    ${yes(s.uvOn, 'UV on', 'UV off', true)}${yes(s.isHeating, 'heating', 'heater off', true)}${yes(s.isCooling, 'cooling', 'not cooling', true)}
-    <span class="mut" style="font-size:.8rem">synced ${fmtAgo(m.lastSeen)}</span></div>`;
+    ${yes(s.uvOn, 'UV on', 'UV off', true)}${yes(s.isHeating || !!pwm, 'heating' + pwm, 'heater off', true)}${yes(s.isCooling, 'cooling', 'not cooling', true)}
+    <span class="mut" style="font-size:.8rem">${live ? 'live · ' + fmtAgo(live.at) : 'synced ' + fmtAgo(m.lastSeen)}</span></div>`;
 }
 const dvtTitleOf = tid => { const r = document.querySelector(`[data-dvt-test="${tid}"] .tid + span`); return r ? r.textContent : ''; };
+
+/** The test instruments on the CureBox's USB as its runner reported them: green when reading, red "not connected" when missing. */
+function dvtInstruments(runner) {
+  const ins = runner && runner.online && runner.readiness ? runner.readiness._instruments : null;
+  if (!ins) return '';
+  const chip = r => !r ? '' : `<span class="pill ${r.ok === true ? 'on' : r.ok === false ? 'bad' : ''}">${escH(r.text)}</span>`;
+  const missing = ['tc08', 'tc08ch1', 'ophir'].filter(k => ins[k] && ins[k].ok === false);
+  return `<div class="row" style="gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.45rem"><span class="lbl">Instruments</span>
+      ${['tc08', 'tc08ch1', 'tc08ch2', 'ophir'].map(k => chip(ins[k])).join('')}</div>
+    ${missing.length ? `<p class="err-t" style="margin:.3rem 0 0">Not connected: ${missing.map(k => escH(ins[k].text)).join(' · ')}</p>` : ''}`;
+}
 
 function dvtRunPanel(u, runnable) {
   if (SELECTED === 'all' || SELECTED === DVT_NONE) return `<p class="mut" style="margin:.2rem 0 .8rem">Choose a CureBox above to run tests on it.</p>`;
@@ -805,10 +1168,13 @@ function dvtRunPanel(u, runnable) {
   const row = r => `<tr><td><b>${escH(r.testId)}</b></td>
       <td><span class="pill ${reqClass(r.status)}">${DVT_REQ_LABEL[r.status] || escH(r.status)}</span>${r.verdict ? ` <span class="pill ${dvtClass(r.verdict)}">${escH(r.verdict)}</span>` : ''}</td>
       <td class="mut">${escH(r.line)}${dvtPromptControls(r)}</td>
-      <td style="white-space:nowrap">${DVT_ACTIVE_ST.includes(r.status) && r.status !== 'cancel_requested' ? `<button data-dvt-cancel="${r.id}">Cancel</button>` : `<span class="mut">${fmtWhen(r.finished || r.requested)}</span>`}</td></tr>`;
+      <td style="white-space:nowrap">${r.status === 'cancel_requested' ? `<button class="danger" data-dvt-force="${r.id}" title="Close it now - for a run the machine no longer answers for">Force stop</button>`
+        : DVT_ACTIVE_ST.includes(r.status) ? `<button data-dvt-cancel="${r.id}">Cancel</button>` : `<span class="mut">${fmtWhen(r.finished || r.requested)}</span>`}</td></tr>`;
   return `<div class="dvt-runpanel">
       <div class="row" style="gap:.6rem;align-items:center">${state}
-        <button class="primary" style="margin-left:auto" data-dvt-run-all="${escH(u)}" ${runnable.length ? '' : 'disabled'}>▶ Run all open tests (${runnable.length})</button></div>
+        <button class="primary" style="margin-left:auto" data-dvt-run-all="${escH(u)}" ${runnable.length ? '' : 'disabled'}>▶ Run all open tests (${runnable.length})</button>
+        ${active.length ? `<button class="danger" data-dvt-stop-all="${active.map(r => r.id).join(',')}">■ Stop all (${active.length})</button>` : ''}</div>
+      ${dvtInstruments(runner)}
       <p class="mut" style="margin:.4rem 0 0;font-size:.85rem">Nothing turns on until someone at ${escH(SELECTED)} presses <b>Start</b> on its screen. Steps that need a person are asked here.</p>
       ${DVT_MSG ? `<p class="err-t" style="margin:.4rem 0 0">${escH(DVT_MSG)}</p>` : ''}
       ${active.length || recent.length ? `<table class="rq-table" style="margin-top:.6rem"><tr><th>Test</th><th>Status</th><th>On the machine</th><th></th></tr>
@@ -867,12 +1233,17 @@ function dvtCatalogCard(all, picker, where) {
   };
   const canRequest = SELECTED !== 'all' && SELECTED !== DVT_NONE;
   const verdictOf = {};
-  phases.forEach(({ tests }) => tests.forEach(x => { verdictOf[x.tid] = x.verdict; }));
+  DVT_MANUAL = {};
+  phases.forEach(({ tests }) => tests.forEach(x => { verdictOf[x.tid] = x.verdict; if (x.t.manual) DVT_MANUAL[x.tid] = x; }));
   const runnerNow = (DVT.runners || []).find(r => r.machine === SELECTED) || null;
   const activeReq = {};
   (DVT.requests || []).filter(r => r.machine === SELECTED && r.unit === u && DVT_ACTIVE_ST.includes(r.status)).forEach(r => { activeReq[r.testId] = r; });
   const runnable = [];
-  phases.forEach(({ tests }) => tests.forEach(x => { if (x.t.auto && !['PASS', 'FAIL', 'BLOCKED', 'WAIVED'].includes(x.verdict) && !activeReq[x.tid]) runnable.push(x.tid); }));
+  // a test that runs last (after_all) waits until every other test on the unit has a result (user, 2026-10-25)
+  const DONE_V = ['PASS', 'FAIL', 'BLOCKED', 'WAIVED'];
+  const openOthers = tid => { let n = 0; phases.forEach(({ tests }) => tests.forEach(y => { if (y.tid !== tid && !DONE_V.includes(y.verdict)) n++; })); return n; };
+  phases.forEach(({ tests }) => tests.forEach(x => { x.waitLast = x.t.afterAll ? openOthers(x.tid) : 0; }));
+  phases.forEach(({ tests }) => tests.forEach(x => { if (x.t.auto && !x.waitLast && !DONE_V.includes(x.verdict) && !activeReq[x.tid]) runnable.push(x.tid); }));
   const phaseHtml = phases.map(({ p, tests, owedN, pc }) => {
     const isOpen = DVT_PHASES_TOUCHED ? DVT_PHASE_OPEN.has(p.id) : true;
     const head = `<div class="dvt-ph-head" data-dvt-phase="${p.id}">
@@ -888,8 +1259,11 @@ function dvtCatalogCard(all, picker, where) {
           ${x.t.safety ? '<span class="badge safety">safety-critical</span>' : ''}${x.t.auto ? '<span class="badge auto">auto</span>' : ''}
           <span class="mut" style="margin-left:auto;white-space:nowrap">${x.done}/${x.owed.length} ${new Set((x.t.runs || []).map(k => String(k).split('|')[0])).size > 1 ? 'cases' : 'runs'}${x.t.minutes ? ` · ~${x.t.minutes} min` : ''} ${to ? '▾' : '▸'}</span>
           ${!canRequest ? '' : activeReq[x.tid] ? `<span class="pill ${reqClass(activeReq[x.tid].status)}">${DVT_REQ_LABEL[activeReq[x.tid].status]}</span>`
+            : x.waitLast ? `<span class="mut" style="font-size:.78rem" title="This review runs last">runs last - ${x.waitLast} test(s) still open</span>`
             : x.t.auto ? `<button class="run-btn" data-dvt-run-test="${x.tid}" title="Queue this test on ${escH(SELECTED)} - one click runs ${x.owed.length > 1 ? 'all ' + x.owed.length + (new Set((x.t.runs || []).map(k => String(k).split('|')[0])).size > 1 ? ' cases' : ' runs') + ' one after another' : 'it'}; it starts when someone there presses Start">▶ Run</button>`
-            : '<span class="mut" style="font-size:.78rem" title="no automatic script - run it from the DVT tool">manual</span>'}</div>
+            : ''}${x.t.manual ? (x.verdict === 'PASS'
+              ? `<span class="mut" style="font-size:.78rem">approved by ${escH(((byId[x.owed[0]] || {}).operator) || '')}</span><button class="run-btn" data-dvt-approve="${x.tid}" data-v="0" title="Take the approval back">Withdraw</button>`
+              : `<button class="run-btn primary" data-dvt-approve="${x.tid}" data-v="1" title="The engineer did this test by hand: record it as passed">✓ Approve</button>`) : ''}</div>
         ${to ? `<div class="dvt-runs">${dvtDetailHtml(x.tid, x, runnerNow, verdictOf)}<table class="cards"><tr><th>Variant</th><th>Rep</th><th>Verdict</th><th>Operator</th><th>Recorded</th></tr>${x.owed.map(runRow).join('')}</table></div>` : ''}`;
     }).join('');
     return `<div class="dvt-phase">${head}${rows || `<p class="mut" style="padding:.6rem 1rem">${q ? 'Nothing matches the search' : 'No tests on this unit'}</p>`}</div>`;
@@ -1067,6 +1441,24 @@ function ganttSvg(models) {
   return `<svg viewBox="0 0 ${W} ${y + 8}" style="width:100%;height:auto;color:var(--text)" role="img" aria-label="DVT Gantt chart">${axis}${body}</svg>`;
 }
 
+/** The one sentence the Overview opens with, and the one button that goes with it. */
+function overviewNow(models, n) {
+  const runner = (DVT.runners || []).slice().sort((a, b) => (b.online - a.online) || (b.lastSeen - a.lastSeen))[0] || null;
+  const box = runner ? runner.machine : (MACHINES[0] || {}).name || '';
+  const mine = runner ? models.find(m => m.u === runner.unit) : null;
+  const ready = mine ? mine.tests.filter(t => (DVT.catalog.tests[t.tid] || {}).auto && (t.verdict === 'open' || t.verdict === 'progress') && !t.running).length : 0;
+  const running = models.some(m => m.active);
+  const go = (label) => box ? `<button class="primary" data-now-go="${escH(box)}">${label}</button>` : '';
+  const card = (tone, title, sub, btn) => `<div class="now ${tone}"><div class="t">${title}${sub ? `<span class="s">${sub}</span>` : ''}</div>${btn || ''}</div>`;
+  if (models.length && models.every(m => m.complete)) return card('good', 'The whole DVT is finished', 'Every unit has all its runs.', '');
+  if (n.failed) return card('bad', `${n.failed} test run${n.failed > 1 ? 's' : ''} failed`, 'Open the DVT list to see which, and run them again after the fix.', go('See the tests'));
+  if (n.blocked) return card('warn', `${n.blocked} run${n.blocked > 1 ? 's are' : ' is'} blocked or invalid`, 'They need a look before the unit can finish.', go('See the tests'));
+  if (running) return card('', 'A test is running', 'It follows live in the DVT list.', go('Follow it'));
+  if (runner && !runner.online) return card('warn', `The DVT runner on ${escH(box)} is offline`, 'Tests cannot be started from here until it is back.', '');
+  if (ready) return card('', `${ready} test${ready > 1 ? 's are' : ' is'} ready to run on ${escH(box)}`, 'Nothing starts until someone presses Start at the machine.', go('Run tests'));
+  return card('', 'Nothing needs your attention', 'Follow the progress below.', '');
+}
+
 function overviewCard() {
   if (!DVT || !DVT.catalog) return `<div class="card"><h2>Overview</h2><p class="mut">${DVT ? 'No DVT catalog has reached the portal yet - open the DVT tool once with the cloud connected.' : 'Loading…'}</p></div>`;
   const cat = DVT.catalog, runs = DVT.runs || [];
@@ -1099,17 +1491,20 @@ function overviewCard() {
       <td data-l="Status"><span class="pill ${OV_STATUS_CLASS[m.status] || ''}">${m.status}</span>${m.late ? ' <span class="pill off">Delayed</span>' : ''}<br>
         <span class="mut">${m.c.PASS} pass · ${m.c.FAIL} fail${m.c.BLOCKED ? ' · ' + m.c.BLOCKED + ' blocked' : ''}${m.c.INVALID ? ' · ' + m.c.INVALID + ' invalid' : ''}</span></td>
       <td data-l="Remaining">${m.complete ? '—' : '≈ ' + ovHours(m.remainingMin)}</td></tr>`).join('');
-  return stale + `<div class="card"><h2>DVT overview <span class="mut" style="font-weight:400;text-transform:none">catalog ${escH(cat.version || '')} · ${models.length} units</span></h2>
-    <div class="dvt-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem;margin-bottom:1rem">
+  return stale + overviewNow(models, { failed: fail, blocked: blocked + invalid, critical }) + `<div class="card"><h2>DVT overview <span class="mut" style="font-weight:400">catalog ${escH(cat.version || '')} · ${models.length} units</span></h2>
+    <div class="dvt-tiles ov-main" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem;margin-bottom:.6rem">
+      ${tile(pct(finished, total), 'Completion', 'ok')}${tile(pass, 'Passed', 'ok')}${tile(fail, 'Failed', fail ? 'err' : '')}${tile(ovHours(remaining), 'Test time left')}
+    </div>
+    <details class="more"><summary>More numbers</summary>
+    <div class="dvt-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem;margin:.4rem 0 1rem">
       ${tile(models.length, 'Machines (units)')}${tile(active, 'Active')}${tile(total, 'Runs planned')}${tile(finished, 'Runs finished')}
-      ${tile(pct(finished, total), 'Completion', 'ok')}${tile(pass, 'Passed', 'ok')}${tile(fail, 'Failed', fail ? 'err' : '')}
       ${tile(blocked, 'Blocked', blocked ? 'warn' : '')}${tile(invalid, 'Invalid', invalid ? 'warn' : '')}${tile(waived, 'Waived')}
       ${tile(pct(pass, pass + fail), 'Pass rate')}${tile(pct(doneMin, totalMin), 'Progress by time')}
-      ${tile(ovHours(remaining), 'Test time left')}${tile(ovHours(slowest), 'Until the slowest unit is done')}${tile(critical, 'Critical issues', critical ? 'err' : '')}
+      ${tile(ovHours(slowest), 'Until the slowest unit is done')}${tile(critical, 'Critical issues', critical ? 'err' : '')}
     </div>
     <p class="mut" style="margin:.2rem 0 .8rem">Completion counts valid finished runs (pass, fail, waived) of the runs the catalog owes. The pass rate counts only finished runs.
       Time is the catalog's estimate for what is still open; units run in parallel, so the last column is the one to plan by.
-      Critical issues = failed safety tests + blocked runs.</p></div>
+      Critical issues = failed safety tests + blocked runs.</p></details></div>
     <div class="card"><h2>Machines and integrators</h2>
       <div style="overflow-x:auto"><table class="ov-units"><tr><th>Unit</th><th>Integrator</th><th>Revisions</th><th>Plan</th><th>Progress</th><th>Status</th><th>Remaining</th></tr>${rows}</table></div>
       <p class="mut" style="margin:.5rem 0 0">Changes are saved when you leave a field.</p></div>
@@ -1120,6 +1515,11 @@ function overviewCard() {
 }
 
 function overviewWire() {
+  [...document.querySelectorAll('[data-now-go]')].forEach(b => b.onclick = () => {
+    SELECTED = b.dataset.nowGo; VIEW = 'dvt';
+    try { localStorage.setItem('scure-curebox', SELECTED); } catch (e) { /* no storage: the choice is just not remembered */ }
+    render(); loadDvt(); dvtLongPoll();
+  });
   [...document.querySelectorAll('[data-gantt]')].forEach(g => g.onclick = () => {
     const u = g.dataset.gantt;
     if (GANTT_OPEN.has(u)) GANTT_OPEN.delete(u); else GANTT_OPEN.add(u);
@@ -1265,9 +1665,13 @@ function cmpChart(series, xName, yName) {
     g += `<line x1="${L}" y1="${sy(yv).toFixed(1)}" x2="${W - R}" y2="${sy(yv).toFixed(1)}" stroke="var(--line)"/><text x="${L - 6}" y="${(sy(yv) + 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity="0.7">${cmpFmt(Math.round(yv * 100) / 100)}</text>`;
     g += `<text x="${sx(xv).toFixed(1)}" y="${H - 18}" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.7">${cmpFmt(Math.round(xv * 10) / 10)}</text>`;
   }
+  // a temperature curve gets a dashed line at 30 / 40 / 50 / 60 C: read across from it to see how long each temperature takes (drying times)
+  const marks = /chamber|temp/i.test(yName) ? [30, 40, 50, 60].filter(v => v > y0 && v < y1).map(v =>
+    `<line data-mark="${v}" x1="${L}" y1="${sy(v).toFixed(1)}" x2="${W - R}" y2="${sy(v).toFixed(1)}" stroke="currentColor" stroke-opacity="0.35" stroke-dasharray="5 4"/>` +
+    `<text x="${W - R - 2}" y="${(sy(v) - 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">${v} °C</text>`).join('') : '';
   const lines = series.map((s, i) => `<polyline fill="none" stroke="${CMP_COLORS[i % CMP_COLORS.length]}" stroke-width="1.6" points="${s.pts.map(p => sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join(' ')}"><title>${escH(s.label)}</title></polyline>`).join('');
   const legend = series.map((s, i) => `<span style="font-size:.8rem"><span style="display:inline-block;width:.9rem;height:3px;background:${CMP_COLORS[i % CMP_COLORS.length]};vertical-align:middle"></span> ${escH(s.label)}</span>`).join(' &nbsp; ');
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--text)" role="img" aria-label="Curve comparison">${g}${lines}
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--text)" role="img" aria-label="Curve comparison">${g}${marks}${lines}
     <text x="${(L + W - R) / 2}" y="${H - 4}" font-size="11" text-anchor="middle" fill="currentColor">${escH(xName)}</text>
     <text x="12" y="${H / 2}" font-size="11" text-anchor="middle" fill="currentColor" transform="rotate(-90 12 ${H / 2})">${escH(yName)}</text></svg>
     <div class="row" style="gap:.4rem;flex-wrap:wrap;margin-top:.3rem">${legend}</div>`;
@@ -1556,8 +1960,22 @@ setInterval(() => {
   });
 }, 1000);
 
+// the section icons: line drawings in the colour of the text (no emoji: they differ on every phone)
+const NAV_ICON = (() => {
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  return {
+    overview: svg('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>'),
+    machines: svg('<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'),
+    dvt: svg('<path d="M9 3h6M10 3v6L5 19a1.5 1.5 0 0 0 1.4 2h11.2a1.5 1.5 0 0 0 1.4-2L14 9V3"/>'),
+    race: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
+    compare: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    errors: svg('<path d="M12 3 2 20h20L12 3zM12 10v5M12 17.5v.5"/>'),
+  };
+})();
+
 function render() {
-  if (!MACHINES.length && VIEW !== 'dvt' && VIEW !== 'overview' && VIEW !== 'compare' && VIEW !== 'race' && !(DVT && (DVT.runs || []).length)) {
+  renderWho();
+  if (!MACHINES.length && VIEW !== 'dvt' && VIEW !== 'overview' && VIEW !== 'compare' && VIEW !== 'race' && VIEW !== 'people' && !(DVT && (DVT.runs || []).length)) {
     // no machine yet - the DVT campaign can still have results, so keep its tab reachable
     $('#app').innerHTML = `<div class="row" style="margin-bottom:1rem">
         <button data-view="dvt">🧪 DVT</button></div>
@@ -1575,14 +1993,14 @@ function render() {
   // the sections on top (Overview is the whole campaign; Machine / DVT / Errors are about one CureBox or all of them), and
   // the CureBox chooser under them - only where a CureBox matters, so the Overview does not look like part of CureBox-1
   const sections = `<div class="row sections" style="margin-bottom:.8rem;gap:0;border-bottom:1px solid var(--line)">
-       <button class="subtab ${VIEW==='overview'?'active':''}" data-view="overview">📊 Overview</button>
-       <button class="subtab ${VIEW==='machines'?'active':''}" data-view="machines">🖥️ Machine</button>
-       <button class="subtab ${VIEW==='dvt'?'active':''}" data-view="dvt">🧪 DVT</button>
-       <button class="subtab ${VIEW==='race'?'active':''}" data-view="race">🏁 Race</button>
-       <button class="subtab ${VIEW==='compare'?'active':''}" data-view="compare">⚖️ Compare</button>
-       <button class="subtab ${VIEW==='errors'?'active':''}" data-view="errors">⚠ Errors today</button>
+       <button class="subtab ${VIEW==='overview'?'active':''}" data-view="overview"><span class="ic">${NAV_ICON.overview}</span><span class="lb">Overview</span></button>
+       <button class="subtab ${VIEW==='machines'?'active':''}" data-view="machines"><span class="ic">${NAV_ICON.machines}</span><span class="lb">Machine</span></button>
+       <button class="subtab ${VIEW==='dvt'?'active':''}" data-view="dvt"><span class="ic">${NAV_ICON.dvt}</span><span class="lb">DVT</span></button>
+       <button class="subtab ${VIEW==='race'?'active':''}" data-view="race"><span class="ic">${NAV_ICON.race}</span><span class="lb">Race</span></button>
+       <button class="subtab ${VIEW==='compare'?'active':''}" data-view="compare"><span class="ic">${NAV_ICON.compare}</span><span class="lb">Compare</span></button>
+       <button class="subtab ${VIEW==='errors'?'active':''}" data-view="errors"><span class="ic">${NAV_ICON.errors}</span><span class="lb">Errors</span></button>
      </div>`;
-  const chooser = VIEW === 'overview' || VIEW === 'compare' || VIEW === 'race' ? '' : `<div class="row" style="margin-bottom:1rem">
+  const chooser = VIEW === 'overview' || VIEW === 'compare' || VIEW === 'race' || VIEW === 'people' ? '' : `<div class="row" style="margin-bottom:1rem">
        <span class="mut" style="font-size:.85rem">CureBox:</span>
        <button class="${SELECTED==='all'?'primary':''}" data-tab="all">All</button>
        ${MACHINES.map(m => `<button class="${SELECTED===m.name?'primary':''}"
@@ -1594,6 +2012,9 @@ function render() {
   const shown = SELECTED === 'all' || SELECTED === DVT_NONE ? MACHINES : MACHINES.filter(m => m.name === SELECTED);
   if (VIEW === 'errors') {
     $('#app').innerHTML = tabs + errorsCard();
+  } else if (VIEW === 'people') {
+    $('#app').innerHTML = tabs + peopleCard();
+    peopleWire();
   } else if (VIEW === 'overview') {
     $('#app').innerHTML = tabs + overviewCard();
     overviewWire();
@@ -1639,6 +2060,21 @@ function render() {
     const tid = b.dataset.dvtRunCard;
     dvtGuide(tid, dvtTitleOf(tid));
   });
+  [...document.querySelectorAll('[data-dvt-approve]')].forEach(b => b.onclick = async ev => {
+    ev.stopPropagation();
+    const tid = b.dataset.dvtApprove, yes = b.dataset.v === '1';
+    const x = DVT_MANUAL[tid];
+    if (!x) return;
+    let who = '';
+    if (yes) {
+      try { who = localStorage.getItem('scure_approver') || ''; } catch { who = ''; }
+      who = (prompt(`Who approves ${tid}?`, who || 'Alex') || '').trim();
+      if (!who) return;
+      try { localStorage.setItem('scure_approver', who); } catch { /* a private window: not remembered */ }
+    } else if (!confirm(`Withdraw the approval of ${tid}?`)) return;
+    b.disabled = true;
+    await dvtSend('/api/dvt/approve', { unit: DVT_UNIT, testId: tid, runIds: x.owed, who, approve: yes });
+  });
   [...document.querySelectorAll('[data-dvt-run-test]')].forEach(b => b.onclick = ev => {
     ev.stopPropagation();                                   // the row itself opens the test's runs
     const tid = b.dataset.dvtRunTest;
@@ -1657,6 +2093,19 @@ function render() {
     b.textContent = 'Cancelling…';
     dvtSend('/api/dvt/cancel', { id: Number(b.dataset.dvtCancel) });
   });
+  [...document.querySelectorAll('[data-dvt-force]')].forEach(b => b.onclick = () => {
+    b.disabled = true;
+    b.textContent = 'Stopping…';
+    dvtSend('/api/dvt/cancel', { id: Number(b.dataset.dvtForce), force: true });
+  });
+  const sa = document.querySelector('[data-dvt-stop-all]');
+  if (sa) sa.onclick = () => {
+    const ids = sa.dataset.dvtStopAll.split(',').map(Number);
+    if (!confirm(`Stop all ${ids.length} open request(s) on ${SELECTED}? A test that is running there is stopped and the machine turns everything off.`)) return;
+    sa.disabled = true;
+    sa.textContent = 'Stopping…';
+    dvtSend('/api/dvt/cancel', { ids, force: true });
+  };
   [...document.querySelectorAll('[data-dvt-answer]')].forEach(b => b.onclick = () => {
     b.disabled = true;
     dvtSend('/api/dvt/answer', { id: Number(b.dataset.dvtAnswer), value: JSON.parse(b.dataset.v) });
@@ -1708,6 +2157,24 @@ function netbirdPill(m) {
   return `<span class="pill ${nb.connected ? 'on' : 'off'}" title="${why}">NetBird ${nb.connected ? 'connected' : 'offline · seen ' + fmtWhen(nb.lastSeen)}</span>`;
 }
 
+// An NFC tag UID however it is typed ("e007c0e1...", "E0 07 C0 ...", "E0:07:...") in the form the machine shows:
+// E0:07:C0:E1:93:93:18:6D. Null when it is not a UID (the machine applies the same rule - NfcUid in the firmware).
+function nfcTagOf(text) {
+  const hex = String(text || '').replace(/[:\-\s]/g, '').toUpperCase();
+  if (!/^[0-9A-F]+$/.test(hex) || hex.length < 4 || hex.length > 32 || hex.length % 2) return null;
+  return hex.match(/../g).join(':');
+}
+
+// Every program the machine offers: the user's own first, then the built-in catalog (firmware 1.0.145+ sends it as
+// m.presets; an older machine sends none and the list is the user's programs only, as before).
+function programOptions(m) {
+  const opt = p => `<option>${escH(p.name||'')}</option>`;
+  const user = (m.programs||[]), cat = (m.presets||[]);
+  if (!cat.length) return user.map(opt).join('');
+  return (user.length ? `<optgroup label="My programs">${user.map(opt).join('')}</optgroup>` : '')
+       + `<optgroup label="Catalog">${cat.map(opt).join('')}</optgroup>`;
+}
+
 function machineCard(m, i) {
   const st = m.state || {};
   const c = st.counters || {};
@@ -1723,8 +2190,16 @@ function machineCard(m, i) {
     .filter(p => !q || [p.printName, p.materialName, p.printerName, p.status]
                        .some(v => (v||'').toLowerCase().includes(q)))
     .slice(0,5).map(p => `
-    <tr><td>${p.printName||''}</td><td data-l="Material">${p.materialName||''}</td>
-        <td data-l="Printer">${p.printerName||''}</td><td data-l="Status">${p.status||''}</td></tr>`).join('');
+    <tr><td>${escH(p.printName||'')}${p.nfcTag ? `<div class="mut">tag ${escH(p.nfcTag)}</div>` : ''}</td>
+        <td data-l="Material">${escH(p.materialName||'')}</td>
+        <td data-l="Printer">${escH(p.printerName||'')}</td><td data-l="Status">${escH(p.status||'')}</td>
+        <td class="act"><button class="danger" data-delprint="${i}:${escH(p.id||'')}">Delete</button></td></tr>`).join('');
+  // the programs that come with the machine (firmware 1.0.145+ reports them): read-only, they cannot be edited or deleted
+  const catRows = (m.presets||[])
+    .filter(p => !q || (p.name||'').toLowerCase().includes(q))
+    .map(p => `
+    <tr><td>${escH(p.name||'')}</td><td data-l="Steps">${(p.steps||[]).length} steps</td>
+        <td data-l="Duration">${p.totalDuration ?? '–'} min</td></tr>`).join('');
   return `<div class="card">
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0">${m.name}
@@ -1744,21 +2219,39 @@ function machineCard(m, i) {
     <p><button class="primary" data-new="${i}">+ New Program</button></p>
     <div id="editor-${i}"></div>
 
+    <h2>Machine Catalog <span class="mut" style="font-weight:400;text-transform:none">built in · ${(m.presets||[]).length} programs</span></h2>
+    <table class="cards"><tr><th>Name</th><th>Steps</th><th>Duration</th></tr>${catRows||`<tr><td colspan=3 class="mut">${(m.presets||[]).length ? 'no match' : 'not reported - the machine needs firmware 1.0.145 or newer'}</td></tr>`}</table>
+
     <h2>Send Simulated Print</h2>
     <div class="row sendrow">
       <input id="job-${i}" placeholder="Job name (e.g. Job 2 - Penrose)" style="flex:2">
       <input id="printer-${i}" placeholder="Printer (e.g. TZ)" style="flex:1">
-      <select id="mat-${i}">${(m.programs||[]).map(p=>`<option>${p.name}</option>`).join('')}</select>
+      <input id="nfc-${i}" placeholder="NFC tag (optional, e.g. E0:07:C0:E1:93:93:18:6D)" style="flex:1.4" autocomplete="off" spellcheck="false">
+      <select id="mat-${i}">${programOptions(m)}</select>
       <button class="primary" data-send="${i}">Send to machine</button>
     </div>
     <p class="msg" id="msg-${i}"></p>
 
     <h2>Recent Prints On Machine</h2>
-    <table class="cards"><tr><th>Job</th><th>Material</th><th>Printer</th><th>Status</th></tr>${printRows||'<tr><td colspan=4 class="mut">none</td></tr>'}</table>
+    <table class="cards"><tr><th>Job</th><th>Material</th><th>Printer</th><th>Status</th><th></th></tr>${printRows||'<tr><td colspan=5 class="mut">none</td></tr>'}</table>
 
     <h2>Cure Runs &amp; Reports</h2>
     <table class="cards"><tr><th>Program</th><th>Started</th><th>Duration</th><th>Status</th><th>Report</th></tr>${cureRows(m)||'<tr><td colspan=5 class="mut">none</td></tr>'}</table>
+    ${removeMachineBlock(m, i)}
   </div>`;
+}
+
+// A machine whose name no key maps to any more (renamed or retired) cannot sync again: an admin may take its card off
+// the portal, with the portal password (user, 2026-11-11). A machine that still has a key never shows this.
+function removeMachineBlock(m, i) {
+  if (!m.retired || !ME || !ME.canAdmin) return '';
+  return `<h2>Remove this machine</h2>
+    <p class="mut">${escH(m.name)} has no machine key any more, so it will not sync again. Removing it deletes its card, its cure reports and its alert history from sCure Cloud. DVT results are kept.</p>
+    <div class="row sendrow">
+      <input id="rmpw-${i}" type="password" placeholder="Portal password" autocomplete="current-password" style="flex:1">
+      <button class="danger" data-rmmachine="${i}">Remove ${escH(m.name)}</button>
+    </div>
+    <p class="msg" id="rmmsg-${i}"></p>`;
 }
 
 // Cure runs the machine reported (last 10). A report can be opened / downloaded once the machine has uploaded it
@@ -1791,8 +2284,12 @@ const PROC_LABEL = {Cure:'Cure (405nm)', Bleacher:'Bleaching (450nm)'};
 function stepRow(s, j) {
   const p = s.process;
   const uvish = p === 'Cure' || p === 'Bleacher';
+  // a Cure / Bleaching step without a temperature is UV only: the heater stays off (the machine's "Heating" switch of the step)
+  const uvOnly = uvish && (s.heat === false || (s.heat === undefined && s.temperature === null));
+  const heatSel = uvish ? `<select class="sh" title="Heating"><option value="on" ${uvOnly ? '' : 'selected'}>Heating on</option><option value="off" ${uvOnly ? 'selected' : ''}>No heating (UV only)</option></select>` : '';
   const temp = p === 'Nitrogen' ? '<span class="mut">–</span>'
-    : `<input class="st" type="number" min="30" max="${p==='Cooling'?75:80}"
+    : uvOnly ? heatSel
+    : heatSel + `<input class="st" type="number" min="30" max="${p==='Cooling'?75:80}"
          value="${s.temperature ?? (p==='Cooling'?30:40)}" placeholder="°C">`;
   const time = (p === 'Cooling' || p === 'Nitrogen') ? '<span class="mut">–</span>'
     : `<input class="sm" type="number" min="1" max="${p==='Bleacher'?720:120}"
@@ -1803,6 +2300,11 @@ function stepRow(s, j) {
   const opts = p === 'Cooling'
     ? `<select class="sc">${['fast','medium','slow'].map(m =>
         `<option value="${m}" ${m===(s.coolingMode||'medium')?'selected':''}>${m[0].toUpperCase()+m.slice(1)} cooling</option>`).join('')}</select>`
+    : uvOnly
+    ? `<select class="sv" title="Ventilation">
+         <option value="off" ${s.ventilation ? '' : 'selected'}>Ventilation: off</option>
+         <option value="on" ${s.ventilation ? 'selected' : ''}>Ventilation: on (fresh air)</option>
+       </select>`
     : uvish
     ? `<select class="stm" title="Timer start">
          <option value="on-target" ${((s.timerMode||'on-target')==='on-target')?'selected':''}>Timer: at temperature</option>
@@ -1831,13 +2333,16 @@ function readRow(r, j) {
   const sel = (c, d) => { const el = r.querySelector(c); return el ? el.value : d; };
   const p = r.querySelector('.sp').value;
   const st = { step: j+1, process: p, temperature: null, intensity: null, time: 0 };
-  if (p !== 'Nitrogen') st.temperature = num('.st');
+  const uvOnly = (p === 'Cure' || p === 'Bleacher') && sel('.sh', 'on') === 'off';
+  if (p !== 'Nitrogen' && !uvOnly) st.temperature = num('.st');          // UV only: no temperature at all, not a default one
   if (p !== 'Cooling' && p !== 'Nitrogen') st.time = num('.sm');
   if (p === 'Cooling') st.coolingMode = sel('.sc', 'medium');
   if (p === 'Cure' || p === 'Bleacher') {
     st.uvIntensity = num('.su');
     st.timerMode = sel('.stm', 'on-target');
     st.uvStartMode = sel('.ssm', 'at-target');
+    st.heat = !uvOnly;                       // only for the editor (a row that was just switched); removed before saving
+    if (uvOnly) st.ventilation = sel('.sv', 'off') === 'on';
   }
   return st;
 }
@@ -1850,7 +2355,8 @@ function stepErrors(steps) {
     const n = i + 1, prev = i > 0 ? steps[i-1] : null;
     if (s.process !== 'Nitrogen') {
       const [tMin, tMax] = s.process === 'Cooling' ? [30, 75] : [30, 80];
-      if (s.temperature == null || s.temperature < tMin || s.temperature > tMax)
+      const uvOnlyStep = (s.process === 'Cure' || s.process === 'Bleacher') && s.temperature == null;      // UV only
+      if (!uvOnlyStep && (s.temperature == null || s.temperature < tMin || s.temperature > tMax))
         errs.push(`Step ${n}: temperature must be ${tMin}-${tMax}°C`);
     }
     if (s.process !== 'Cooling' && s.process !== 'Nitrogen') {
@@ -1932,6 +2438,15 @@ function wireStepRows(i) {
     };
     // Switching the process swaps the row to that process's field set,
     // carrying the temperature over like the machine UI does.
+    const sh = r.querySelector('.sh');
+    if (sh) sh.onchange = () => {
+      const j = r.rowIndex - 1;
+      const cur = readRow(r, j);
+      cur.heat = sh.value === 'on';
+      if (cur.heat && cur.temperature == null) cur.temperature = 40;
+      r.outerHTML = stepRow(cur, j);
+      wireStepRows(i);
+    };
     r.querySelector('.sp').onchange = e => {
       const j = r.rowIndex - 1;   // header row is 0
       const cur = readRow(r, j);
@@ -1952,7 +2467,7 @@ async function saveProgram(i, prog) {
   if (!name) { $('#pmsg-'+i).textContent = 'Name required'; return; }
   const rows = [...document.querySelectorAll(`#ptable-${i} tr`)].slice(1);
   if (!rows.length) { $('#pmsg-'+i).textContent = 'Add at least one step'; return; }
-  const steps = rows.map(readRow);
+  const steps = rows.map(readRow).map(s => { delete s.heat; return s; });
   const errs = stepErrors(steps);
   const msg = $('#pmsg-'+i);
   if (errs.length) {
@@ -1983,20 +2498,51 @@ function wireCard(m, i) {
               {method:'POST', body: JSON.stringify({type:'delete_program', payload:{id}})});
     load();
   });
+  // a print in Recent Prints, removed on the machine at its next sync (firmware 1.0.147+); its cure runs stay
+  [...document.querySelectorAll(`[data-delprint^="${i}:"]`)].forEach(b => b.onclick = async () => {
+    const id = b.dataset.delprint.split(':').slice(1).join(':');
+    const p = (m.prints||[]).find(x => String(x.id) === id);
+    if (!confirm(`Delete print "${(p && p.printName) || id}" from ${m.name}?`)) return;
+    await api(`/api/machines/${m.name}/commands`,
+              {method:'POST', body: JSON.stringify({type:'delete_print', payload:{id}})});
+    load();
+  });
+  const rm = document.querySelector(`[data-rmmachine="${i}"]`);
+  if (rm) rm.onclick = async () => {
+    const pw = $('#rmpw-'+i).value;
+    if (!pw) { $('#rmmsg-'+i).textContent = 'Type the portal password first'; return; }
+    if (!confirm(`Remove ${m.name} from sCure Cloud? Its card, cure reports and alert history are deleted and cannot be brought back.`)) return;
+    rm.disabled = true;
+    $('#rmmsg-'+i).textContent = 'Removing…';
+    let r;
+    try { r = await api('/api/machines/remove', { method: 'POST', body: JSON.stringify({ name: m.name, password: pw }) }); }
+    catch (e) { r = { ok: false, message: (e && e.message) || 'Not removed' }; }
+    if (r && r.ok) { load(true); return; }
+    rm.disabled = false;
+    $('#rmpw-'+i).value = '';
+    $('#rmmsg-'+i).textContent = (r && r.message) || 'Not removed';
+  };
   const nb = document.querySelector(`[data-new="${i}"]`);
   if (nb) nb.onclick = () => openEditor(i, null);
   const sb = document.querySelector(`[data-send="${i}"]`);
   if (sb) sb.onclick = async () => {
+    // an NFC tag makes the machine ask "Start this job?" when that tag is presented to its reader (firmware 1.0.146+)
+    const tagText = $('#nfc-'+i).value.trim();
+    const tag = nfcTagOf(tagText);
+    if (tagText && !tag) { $('#msg-'+i).textContent = 'That is not an NFC tag number - use hex digits, e.g. E0:07:C0:E1:93:93:18:6D'; return; }
     const payload = {
       printName: $('#job-'+i).value || 'Job',
       printerName: $('#printer-'+i).value || 'CLOUD',
       materialName: $('#mat-'+i).value,
     };
+    if (tag) payload.nfcTag = tag;
     await api(`/api/machines/${m.name}/commands`,
               {method:'POST', body: JSON.stringify({type:'send_print', payload})});
     $('#job-'+i).value = '';
     $('#printer-'+i).value = '';
-    $('#msg-'+i).textContent = 'Print sent — it appears on the machine within ~10 s';
+    $('#nfc-'+i).value = '';
+    $('#msg-'+i).textContent = tag ? `Print sent — present tag ${tag} to the machine to start it`
+                                   : 'Print sent — it appears on the machine within ~10 s';
   };
 }
 

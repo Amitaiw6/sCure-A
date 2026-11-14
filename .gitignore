@@ -36,3 +36,8 @@ server/data/
 cloud/portal_config.json
 cloud/data/
 cloud/portal_secrets.local.txt
+cloud/google/Secrets.gs
+cloud/google/.clasp.json
+
+# over the GitHub 100 MB limit - the same content is in docs/SRS-V2/
+docs/SRS-V2.zip

@@ -274,15 +274,16 @@ def start_cure_run(ext_id, material_name, steps, phases, target_temp, serial_num
         return cur.fetchone()[0]
 
 
-def finish_cure_run(ext_id, status, steps_completed=None, sensor_issues=None):
+def finish_cure_run(ext_id, status, steps_completed=None, sensor_issues=None, fan_issues=None):
     with _conn() as conn, conn.cursor() as cur:
         cur.execute(
             """UPDATE cure_runs
                SET status = %s, ended_at = now(),
                    steps_completed = COALESCE(%s, steps_completed),
-                   sensor_issues = %s
+                   sensor_issues = %s, fan_issues = %s
                WHERE ext_id = %s""",
-            (status, steps_completed, psycopg2.extras.Json(list(sensor_issues or [])), str(ext_id)),
+            (status, steps_completed, psycopg2.extras.Json(list(sensor_issues or [])),
+             psycopg2.extras.Json(list(fan_issues or [])), str(ext_id)),
         )
         return cur.rowcount > 0
 
@@ -293,12 +294,14 @@ def record_telemetry(ext_id, sample):
         if not run_id:
             return False
         led = sample.get('ledTemps') or {}
+        fan_rpm = sample.get('fanRpm')
         cur.execute(
             """INSERT INTO cure_run_telemetry
-                 (cure_run_id, t, chamber_temp, uv_on, uv_type, led_right, led_left, led_door, led_back)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                 (cure_run_id, t, chamber_temp, uv_on, uv_type, led_right, led_left, led_door, led_back, fan_rpm)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (run_id, sample.get('t'), sample.get('chamberTemp'), sample.get('uvOn'),
-             sample.get('uvType'), led.get('right'), led.get('left'), led.get('door'), led.get('back')),
+             sample.get('uvType'), led.get('right'), led.get('left'), led.get('door'), led.get('back'),
+             psycopg2.extras.Json(fan_rpm) if isinstance(fan_rpm, dict) else None),
         )
         return True
 

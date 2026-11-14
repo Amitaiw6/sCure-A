@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridL
 from . import theme as T
 from .widgets import Card, Pill, PulseDot, label
 from .i18n import tr
+from ..alarms import Alert, normalise_alerts
 
 # data-field name (or suffix) -> live metric key.  The wizard offers an
 # "⇩ from DUT" button next to any field that maps.
@@ -52,6 +53,7 @@ class DutState:
     metrics: dict = field(default_factory=dict)
     flags: dict = field(default_factory=dict)
     error: str | None = None
+    alerts: list[Alert] = field(default_factory=list)      # active alarms, machine order
 
     @property
     def mode(self) -> str:
@@ -82,8 +84,10 @@ class DutClient:
         led_map = led if isinstance(led, dict) else {}
         led_vals = [v for v in led_map.values() if isinstance(v, (int, float))]
         rpm = s.get("fanRpm") or {}
-        alerts = s.get("alerts") or s.get("activeAlerts") or []
-        first = alerts[0] if isinstance(alerts, list) and alerts else None
+        # both shapes: the firmware's `alerts: [9011]` + `alertDetails`, and the simulator's
+        # `[{"code": ..., "message": ...}]` (see alarms.normalise_alerts)
+        alerts = normalise_alerts(s)
+        first = alerts[0] if alerts else None
         metrics = {
             "chamberTemp": s.get("chamberTemp"), "ambientTemp": s.get("ambientTemp"), "heaterTemp": s.get("heaterTemp"),
             "ledTempMax": max(led_vals) if led_vals else s.get("ledTemp"),
@@ -91,12 +95,17 @@ class DutClient:
             "ledTempBack": led_map.get("back") or led_map.get("LED_BACK"), "ledTempDoor": led_map.get("door") or led_map.get("LED_DOOR"),
             "heaterFanRpm": rpm.get("chamber_heating"), "ledFanRpm": rpm.get("led_cooling"), "intakeFanRpm": rpm.get("chamber_intake"),
             "targetTemp": s.get("targetTemp"), "uvIntensity": s.get("uvIntensity"),
-            "errorCode": (first.get("code") if isinstance(first, dict) else first) if first else None,
-            "alertText": (first.get("message") if isinstance(first, dict) else None) if first else None,
+            "errorCode": first.raw if first else None,
+            "alertText": first.text if first else None,
         }
-        flags = {"doorOpen": s.get("doorOpen"), "uvOn": s.get("uvOn"), "isHeating": s.get("isHeating"),
+        # the firmware reports `doorClosed`, the simulator `doorOpen` — keep None ("unknown")
+        # when neither is there, so the screens say so instead of claiming the door is closed
+        door_open = s.get("doorOpen")
+        if door_open is None and s.get("doorClosed") is not None:
+            door_open = not s["doorClosed"]
+        flags = {"doorOpen": door_open, "uvOn": s.get("uvOn"), "isHeating": s.get("isHeating"),
                  "isCooling": s.get("isCooling"), "fault": bool(s.get("fault")) or bool(alerts), "internetOk": s.get("internetOk")}
-        return DutState(True, self.url, s.get("version"), metrics, flags)
+        return DutState(True, self.url, s.get("version"), metrics, flags, alerts=alerts)
 
     # ---- controls (the sCure hardware API) ----
     def heat(self, target_c: float): return self._req(f"/api/cure/heat?target={target_c}", "POST")

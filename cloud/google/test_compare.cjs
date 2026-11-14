@@ -31,7 +31,7 @@ window.google = { script: { run: {} } };
   const handlers = {
     portalLogin: () => ({ ok: true, token: 'tok' }),
     portalMachines: () => [{ name: 'CureBox-1', online: true, lastSeen: 1, state: {}, runs: [], errors: [] }],
-    portalDvt: () => ({ runs: ${JSON.stringify(RUNS)}, fileUrl: '', catalog: ${JSON.stringify(CATALOG)}, requests: [], runners: [], units: [], build: '0.9.123' }),
+    portalDvt: () => ({ runs: ${JSON.stringify(RUNS)}, fileUrl: '', catalog: ${JSON.stringify(CATALOG)}, requests: [], runners: [], units: [], build: (typeof PORTAL_BUILD !== 'undefined' ? PORTAL_BUILD : '') }),
     portalDvtFiles: (tok, ids) => { window.__files += ids.length; const all = ${JSON.stringify(FILES)}; const o = {}; ids.forEach(i => { if (all[i]) o[i] = all[i]; }); return { ok: true, files: o }; },
   };
   window.google.script.run = { withSuccessHandler(ok) { return { withFailureHandler(bad) { return new Proxy({}, { get: (_, fn) => (...args) => {
@@ -148,6 +148,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   let lines = await page.$$eval('svg[aria-label="Curve comparison"] polyline', ls => ls.length);
   check(lines === 2, 'two sample files (U1, U2) are drawn as two curves');
   const cols = await page.$$eval('#cmp-col option', os => os.map(o => o.value));
+  const markLines = await page.$$eval('svg[aria-label="Curve comparison"] line[data-mark]', ls => ls.map(l => l.dataset.mark).join(','));
+  check(markLines === '30,40,50,60', 'a temperature curve is drawn with dashed lines at 30 / 40 / 50 / 60 C: ' + markLines);
   check(cols.join(',') === 'chamber_c', 'only numeric columns can be plotted (the phase text is left out): ' + cols.join(','));
   check(await page.evaluate(() => window.__files) === 2, 'the files were fetched once, not on every redraw');
   // a phone: a long test title in the selector must not widen the page

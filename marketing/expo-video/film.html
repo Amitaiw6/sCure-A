@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sCure Expo Film</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--bg:#070a14;--txt:#f2f5ff;--dim:#98a3c7;--uv:#a66bff;--blue:#3b82f6;--ok:#4ade80}
+  *{box-sizing:border-box;margin:0}
+  html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;color:var(--txt)}
+  #frame{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;background:var(--bg);overflow:hidden}
+  .abs{position:absolute}
+  canvas.full{position:absolute;left:0;top:0;width:1920px;height:1080px}
+  #logo{left:0;top:0;width:1920px;height:1080px;opacity:0}
+  #intro{left:130px;top:300px;width:760px;opacity:0}
+  .kick{font-size:30px;letter-spacing:.22em;text-transform:uppercase;font-weight:600;color:var(--uv)}
+  .big{font-size:150px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-top:20px}
+  .sub{font-size:42px;color:#c9d2f0;margin-top:30px;line-height:1.3}
+  #ui{left:160px;top:18px;width:1600px;height:960px;border-radius:26px;overflow:hidden;opacity:0;background:#0b0b0d;box-shadow:0 0 0 2px #2a3150,0 30px 90px rgba(0,0,0,.6)}
+  #ui img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}
+  .ring{position:absolute;border:5px solid #4aa3ff;border-radius:22px;opacity:0;box-shadow:0 0 40px rgba(74,163,255,.8),inset 0 0 30px rgba(74,163,255,.35)}
+  #cap{left:0;width:1920px;top:996px;display:flex;justify-content:center;align-items:center;gap:22px;opacity:0}
+  #cap .chip{padding:8px 24px;border-radius:30px;background:var(--blue);font-size:30px;font-weight:700;white-space:nowrap}
+  #cap .txt{font-size:36px;color:#eef1fb;text-shadow:0 2px 12px rgba(0,0,0,.8)}
+  #tagline{left:0;width:1920px;top:735px;text-align:center;opacity:0}
+  #tagline .t{font-size:52px;font-weight:600}
+  #tagline .u{font-size:34px;color:var(--dim);margin-top:26px;letter-spacing:.02em}
+  #fade{inset:0;background:#000;opacity:0;pointer-events:none}
+</style>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/RoundedBoxGeometry.js"></script>
+<script src="vendor/CopyShader.js"></script>
+<script src="vendor/LuminosityHighPassShader.js"></script>
+<script src="vendor/EffectComposer.js"></script>
+<script src="vendor/RenderPass.js"></script>
+<script src="vendor/ShaderPass.js"></script>
+<script src="vendor/MaskPass.js"></script>
+<script src="vendor/UnrealBloomPass.js"></script>
+<script src="machine3d.js"></script>
+</head>
+<body>
+<div id="frame">
+  <canvas id="bg" class="full" width="1920" height="1080"></canvas>
+  <canvas id="gl" class="full" width="1920" height="1080" style="opacity:0"></canvas>
+
+  <!-- Stratasys logo (drawn approximation of the mark + wordmark) -->
+  <svg id="logo" class="abs" viewBox="0 0 1920 1080">
+    <g id="mark" transform="translate(640 500) scale(1.55)" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="miter">
+      <path pathLength="1" d="M0 -62 L58 -16 L0 30 L-58 -16 Z"/><path pathLength="1" d="M0 -62 L0 -16"/><path pathLength="1" d="M-58 -16 L58 -16"/>
+      <path pathLength="1" d="M-58 30 L0 -16 L58 30 L0 76 Z"/><path pathLength="1" d="M-58 30 L58 30"/><path pathLength="1" d="M0 30 L0 76"/>
+    </g>
+    <text id="word" x="760" y="560" fill="#fff" font-size="150" font-family="Segoe UI, Arial"><tspan font-weight="900" font-family="Segoe UI Black, Arial Black, Arial">strata</tspan><tspan font-weight="400">sys</tspan><tspan font-size="40" dy="-80" dx="6">®</tspan></text>
+  </svg>
+
+  <div id="intro" class="abs">
+    <div class="kick">Introducing</div>
+    <div class="big">sCure<span style="font-size:50px;vertical-align:top;margin-left:6px">™</span></div>
+    <div class="sub">Heat · Dry · Cure · Bleach · Cool<br>in one automated chamber.</div>
+  </div>
+
+  <div id="ui" class="abs">
+    <img id="u-home" src="shots/ui-home.png"><img id="u-b1" src="shots/ui-builder.png"><img id="u-b2" src="shots/ui-builder2.png"><img id="u-b3" src="shots/ui-builder3.png">
+    <img id="u-set" src="shots/ui-settings.png"><img id="u-cure" src="shots/ui-cure.png">
+    <div id="r-nfc" class="ring" style="left:16px;top:690px;width:360px;height:76px"></div>
+    <div id="r-bofa" class="ring" style="left:390px;top:690px;width:356px;height:76px"></div>
+  </div>
+
+  <div id="capbg" class="abs" style="left:0;top:880px;width:1920px;height:200px;opacity:0;background:linear-gradient(rgba(4,6,12,0),rgba(4,6,12,.85))"></div>
+  <div id="cap" class="abs"><span class="chip" id="capchip"></span><span class="txt" id="captxt"></span></div>
+  <div id="tagline" class="abs"><div class="t">sCure — from print to perfect.</div><div class="u">support.stratasys.com</div></div>
+  <div id="fade" class="abs"></div>
+</div>
+
+<script>
+const DUR=60;
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+function pw(t,k){
+  if(t<=k[0][0])return k[0][1];
+  for(let i=1;i<k.length;i++){ if(t<=k[i][0]){const [t0,v0]=k[i-1],[t1,v1]=k[i];return lerp(v0,v1,smooth((t-t0)/(t1-t0)))} }
+  return k[k.length-1][1];
+}
+const $=id=>document.getElementById(id);
+const win=(T,a,b,f=.4)=>clamp((T-a)/f)*clamp((b-T)/f);
+
+// ---- machine program in "program time" u (12..46), played at real 44..53.4
+const S={
+  heat:[[0,0],[12,0],[15,1],[40,1],[41,.3],[45,.05]],
+  temp:[[12,24],[19,60],[40,60],[45,32]],
+  damper:[[0,0],[16.5,0],[17.5,1],[19,1],[19.5,0],[40,0],[40.6,1],[45,1],[45.6,0]],
+  airW:[[17,0],[17.6,1],[19,1],[19.5,0]],
+  airC:[[40.5,0],[41,1],[45,1],[45.6,0]],
+  n2:[[19,0],[19.6,1],[23.5,1],[24,0]],
+  uv405:[[24,0],[24.8,1],[34,1],[34.5,0]],
+  uv450:[[34.5,0],[35.3,1],[39.5,1],[40,0]],
+  cure:[[24,0],[34,1]],
+  fan:[[0,0],[12,0],[12.8,1],[45,1],[46,0]],
+};
+const P0=44,P1=53.4;
+const U=T=>T<P0?0:T<P1?12+(T-P0)*34/(P1-P0):46;
+const R=o=>P0+(o-12)*(P1-P0)/34;
+
+// ---- real-time scene map (s)
+// 0-5 Stratasys logo | 5-15 3D machine enters, door opens | 15-18.6 zoom into the screen
+// 18.6-41 real UI: programs, builder, NFC/BOFA settings, live run | 41-43.6 zoom out
+// 43.6-53.4 the program in x-ray | 53.4-57 door opens on the finished part | 57-60 logo + tagline (loops)
+const GLO=[[4.0,0],[4.8,1],[18.5,1],[18.9,0],[40.9,0],[41.2,1],[56.8,1],[57.4,0]];
+const UIF=[[18.4,0],[18.8,1],[40.9,1],[41.3,0]];
+const IMGS=[['u-home',18.4,22.2],['u-b1',22,24.2],['u-b2',24,26.2],['u-b3',26,28.2],['u-set',28,36.2],['u-cure',36,41.4]];
+const DOOR=[[9.4,0],[11.6,1],[13.2,1],[14.8,0],[53.6,0],[55,1],[60,1]];
+const XRAY=[[43.6,0],[44.4,1],[53.0,1],[53.6,0]];
+const TEASE=[[10.6,0],[11.4,.85],[12.8,.85],[13.6,0]];
+const SHOW=[[54.6,0],[55.4,1],[60,1]];
+const CAPS=[
+  [10.2,14.6,'Inside','LED panels on the walls and the door — heater and fan above the chamber.'],
+  [15.2,18.3,'Touch control','Everything runs from the built-in touch screen.'],
+  [18.9,22.1,'Programs','Pick a program — the estimated run time is shown up front.'],
+  [22.2,28.0,'Build','Pick a process, set temperature and time, add steps. Total time is calculated.'],
+  [28.2,32.0,'NFC','Built-in support for a USB NFC reader — switch it on in Settings.'],
+  [32.1,36.0,'BOFA','BOFA fume-extraction control — switched off automatically if the door opens.'],
+  [36.2,41.0,'Live','Every step on screen: target temperature, progress and time left.'],
+  [R(12.2),R(19),'Heat & dry','Up to 80 °C, with fresh airflow to carry moisture out.'],
+  [R(19),R(24),'N₂ purge','Nitrogen displaces the air before the light comes on.'],
+  [R(24),R(34.5),'Cure 405 nm','UV LED panels on the walls and the door.'],
+  [R(34.5),R(40),'Bleach 450 nm','Blue light from the door panel.'],
+  [R(40),53.4,'Cool','Fans and an open vent bring the chamber back down.'],
+  [53.8,56.7,'Done','Cured, bleached and ready to use.'],
+];
+const CHIPCOL={'Heat & dry':'#ea6a1f','N₂ purge':'#0e8fbf','Cure 405 nm':'#7c3aed','Bleach 450 nm':'#2563eb','Cool':'#0e8fbf','Done':'#16a34a'};
+
+function fanAngle(u){let a=0;const dt=1/30;for(let x=0;x<u;x+=dt)a+=pw(x,S.fan)*dt*900;return a}
+
+const bg=$('bg').getContext('2d');
+function drawBg(T){
+  const g=bg.createLinearGradient(0,0,0,1080);g.addColorStop(0,'#0a0f1f');g.addColorStop(1,'#04060c');bg.fillStyle=g;bg.fillRect(0,0,1920,1080);
+  const rg=bg.createRadialGradient(960+Math.sin(T*.3)*120,520,0,960,520,900);rg.addColorStop(0,'rgba(59,130,246,.16)');rg.addColorStop(1,'rgba(59,130,246,0)');bg.fillStyle=rg;bg.fillRect(0,0,1920,1080);
+}
+
+let ready=false;
+function renderAt(T){
+  T=((T%DUR)+DUR)%DUR; const u=U(T);
+  drawBg(T);
+  // ---- program state
+  const heat=pw(u,S.heat),n2=pw(u,S.n2),dmp=pw(u,S.damper),aW=pw(u,S.airW),aC=pw(u,S.airC),cure=pw(u,S.cure);
+  const uv=Math.max(pw(u,S.uv405),pw(T,TEASE)),bl=pw(u,S.uv450);
+  let mode='Ready',mcol='#4ade80',led='#3b82f6',step=-1,prog=0;
+  if(u>=12&&u<19){mode='Heating';mcol='#ff9a4d';led='#ff7a33';step=0;prog=(u-12)/7}
+  else if(u>=19&&u<24){mode='Nitrogen purge';mcol='#7dd3fc';led='#7dd3fc';step=1;prog=(u-19)/5}
+  else if(u>=24&&u<34.5){mode='Cure 405 nm';mcol='#a66bff';led='#a66bff';step=2;prog=(u-24)/10.5}
+  else if(u>=34.5&&u<40){mode='Bleaching 450 nm';mcol='#4aa3ff';led='#4aa3ff';step=3;prog=(u-34.5)/5.5}
+  else if(u>=40&&u<46&&T<P1){mode='Cooling';mcol='#7dd3fc';led='#7dd3fc';step=4;prog=(u-40)/6}
+  if(T>=P1){mode='Done';mcol='#4ade80';led='#4ade80';step=5}
+  const total=T>=P1?1:clamp((u-12)/34);
+  const screenImg=T<18.6?'home':T<43.6?'cure':null;
+
+  const glo=pw(T,GLO);$('gl').style.opacity=glo;
+  if(glo>.01&&ready) M3D.render({T,uv,bl,heat,n2,dmp,aW,aC,cure,fan:fanAngle(u),door:pw(T,DOOR),xray:pw(T,XRAY),show:pw(T,SHOW),
+    mode,modeCol:mcol,temp:pw(u,S.temp),ledCol:led,step,prog,total,screenImg});
+
+  // ---- logo (start + end)
+  const lo=Math.max(clamp(T/.3)*clamp((4.8-T)/.7), clamp((T-57)/.6));
+  $('logo').style.opacity=lo;
+  const startDraw=T<5?T:T-57;
+  document.querySelectorAll('#mark path').forEach((p,i)=>{const d=clamp((startDraw-.2-i*.18)/.9);p.style.strokeDasharray='1';p.style.strokeDashoffset=String(1-smooth(d))});
+  const wd=smooth((startDraw-1.1)/.9);$('word').style.opacity=wd;$('word').setAttribute('transform',`translate(${(1-wd)*40} 0)`);
+  $('logo').style.transform=T<5?`scale(${1+.03*smooth(T/5)})`:'none';
+  $('tagline').style.opacity=clamp((T-57.9)/.6);
+  // ---- intro text
+  $('intro').style.opacity=win(T,5.6,9.6,.6);$('intro').style.transform=`translateX(${(1-smooth((T-5.6)/1))*-40}px)`;
+  // ---- UI
+  const uf=pw(T,UIF);$('ui').style.opacity=uf;
+  for(const [id,a,b] of IMGS){const e=$(id);e.style.opacity=win(T,a,b,.35);e.style.transform=`scale(${1+.02*clamp((T-a)/(b-a))})`}
+  const pulse=.75+.25*Math.sin(T*6);
+  $('r-nfc').style.opacity=win(T,28.6,32,.4)*pulse;$('r-bofa').style.opacity=win(T,32.4,36,.4)*pulse;
+  // ---- caption
+  let c=null;for(const k of CAPS) if(T>=k[0]&&T<k[1]) c=k;
+  if(c){$('capchip').textContent=c[2];$('captxt').textContent=c[3];$('capchip').style.background=CHIPCOL[c[2]]||'#3b82f6';$('cap').style.opacity=win(T,c[0],c[1],.35);$('capbg').style.opacity=win(T,c[0],c[1],.35)*glo}
+  else {$('cap').style.opacity=0;$('capbg').style.opacity=0}
+  // ---- loop fade
+  $('fade').style.opacity=Math.max(1-clamp(T/.35),clamp((T-59.65)/.35));
+}
+window.renderAt=renderAt;window.DUR=DUR;
+
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);const f=$('frame');
+  f.style.transform=`scale(${s})`;f.style.left=(innerWidth-1920*s)/2+'px';f.style.top=(innerHeight-1080*s)/2+'px'}
+addEventListener('resize',fit);fit();
+
+// wait for the screenshots (they also feed the 3D screen), then start
+Promise.all([...document.images].map(i=>i.complete?1:new Promise(r=>{i.onload=i.onerror=r}))).then(()=>{
+  M3D.init($('gl'),{home:$('u-home'),cure:$('u-cure')});ready=true;window.READY=true;
+  const q=new URLSearchParams(location.search);
+  if(q.has('t'))renderAt(parseFloat(q.get('t')));
+  else if(q.has('capture'))renderAt(0);
+  else{const t0=performance.now();(function loop(){renderAt((performance.now()-t0)/1000);requestAnimationFrame(loop)})();
+    document.addEventListener('click',()=>document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen())}
+});
+</script>
+</body>
+</html>

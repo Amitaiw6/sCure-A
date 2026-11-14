@@ -1,7 +1,7 @@
 {
   "_meta": {
     "version": "3.0.0",
-    "lastUpdated": "2026-06-29",
+    "lastUpdated": "2026-11-12",
     "description": "sCure central Error Registry — the single source of truth for every error/warning. Each record has a stable, unique numeric code whose FIRST DIGIT identifies the SRS section/screen the error is documented in (3=Setup, 4=Setup Name, 5=Connect Organization, 6=Home, 7=Cure Process, 8=Cure History, 9=Error Management: device/hardware alerts + cross-cutting system faults). The code is carried UNCHANGED across every layer (C++ driver/daemon -> Flask backend -> React UI); the originating subsystem is recorded in the per-record \"layer\" field. CS may edit message, description, troubleshooting and supportUrl; code, key, severity, category and layer are system-defined.",
     "editableFields": [
       "message",
@@ -75,12 +75,12 @@
       "severity": "critical",
       "category": "provisioning",
       "layer": "daemon",
-      "description": "During setup the serial number could not be restored from the SD backup to device storage. Provisioning cannot continue until a valid serial number is available.",
+      "description": "The system could not verify its serial number during setup. Setup cannot continue until the serial number is restored",
       "troubleshooting": [
-        "Check the SD card is seated and readable",
-        "Verify the backup configuration file exists on SD",
-        "Reboot and retry setup",
-        "Contact support to re-provision the serial number"
+        "Restart the system",
+        "Run the setup process again",
+        "Make sure any installation media provided with the system is connected. Refer to the Product Guide for instructions on locating the installation media",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/3001"
     },
@@ -91,12 +91,15 @@
       "severity": "critical",
       "category": "provisioning",
       "layer": "backend",
-      "description": "During setup, the device could not obtain a serial number from the cloud within the allowed number of attempts due to a communication problem.",
+      "description": "The system could not connect to the sCure cloud service during setup. Setup cannot continue until the connection is restored.",
       "troubleshooting": [
-        "Check the internet connection",
-        "Verify the device can reach the sCure cloud service",
-        "Retry the request",
-        "Contact support if the cloud remains unreachable"
+        "Verify that the Ethernet cable is connected securely.",
+        "Confirm that your network has an active internet connection.",
+        "Open Network Status from the network icon (globe icon in the top-right corner) and verify that the system has an active network connection.",
+        "If needed, ask your IT administrator to use the DIAGNOSTICS tab tool to verify network connectivity and DNS settings.",
+        "Refer to the Product Guide for network setup requirements.",
+        "Run the setup process again.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/3002"
     },
@@ -107,11 +110,14 @@
       "severity": "warning",
       "category": "network",
       "layer": "backend",
-      "description": "During setup the device has no internet connection, so it cannot request a serial number from the cloud. Restore the network connection and retry.",
+      "description": "The system is not connected to the internet. Setup cannot continue until the network connection is restored.",
       "troubleshooting": [
-        "Connect the Ethernet cable",
-        "Verify the network/router is online",
-        "Retry once the connection is restored"
+        "Verify that the Ethernet cable is connected securely.",
+        "Confirm that your network has an active internet connection.",
+        "Open Network Status from the network icon (globe icon in the top-right corner) and verify that the system has an active network connection.",
+        "If needed, ask your IT administrator to use the Diagnostics tools to verify network connectivity and DNS settings.",
+        "Retry the setup process after the network connection is restored.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/3003"
     },
@@ -122,10 +128,11 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "The device name entered on the Setup Name screen is empty. A non-empty name is required to continue.",
+      "description": "A device name is required to continue setup. Enter a device name and try again.",
       "troubleshooting": [
-        "Enter a name for the device",
-        "The name cannot consist of spaces only"
+        "Enter a name for the device.",
+        "Make sure the device name contains at least one letter or number.",
+        "Continue with the setup process."
       ],
       "supportUrl": "https://docs.scure.com/errors/4001"
     },
@@ -136,11 +143,12 @@
       "severity": "critical",
       "category": "storage",
       "layer": "backend",
-      "description": "The backend could not persist a data file (user materials or print history) to the device storage.",
+      "description": "The system could not save required data. Your changes or process information may not have been saved correctly.",
       "troubleshooting": [
-        "Check available space on the device",
-        "Reboot the system and retry",
-        "Contact support if the fault persists"
+        "Restart the system.",
+        "Repeat the action that triggered the error.",
+        "Verify that the material, process, or history entry was added and saved correctly.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/4002"
     },
@@ -151,11 +159,11 @@
       "severity": "warning",
       "category": "storage",
       "layer": "backend",
-      "description": "The configuration was saved to primary storage but the secondary backup copy to the SD card failed. Whether this blocks setup or is only a warning is determined by system policy.",
+      "description": "The system configuration was saved successfully, but a backup copy could not be created. System operation can continue.",
       "troubleshooting": [
-        "Check the SD card is inserted and writable",
-        "Verify free space on the SD card",
-        "Reboot and retry; the primary configuration is already saved"
+        "Restart the system.",
+        "If the warning appears again, verify that any service storage media provided with the system is installed correctly. Refer to the Product Guide for storage media location information.",
+        "If the warning persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/4003"
     },
@@ -166,10 +174,13 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "The selected organization CSV file does not contain a valid organization ID (UUID).",
+      "description": "The selected organization CSV file does not contain a valid Organization ID (UUID) and cannot be imported.",
       "troubleshooting": [
-        "Select the correct organization CSV exported from the portal",
-        "Verify the file contains a valid organization UUID"
+        "Verify that the selected file is the organization CSV file exported from the portal.",
+        "Open the CSV file and confirm that it contains a valid Organization ID (UUID).",
+        "If the Organization ID is missing or invalid, export a new organization CSV file from the portal.",
+        "Import the updated CSV file.",
+        "If you do not want to import an organization at this time, continue the setup process without importing a CSV file."
       ],
       "supportUrl": "https://docs.scure.com/errors/5001"
     },
@@ -180,9 +191,10 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "The recipe builder cannot save a program without a name.",
+      "description": "A program name is required before the recipe can be saved.",
       "troubleshooting": [
-        "Enter a program name before saving"
+        "Enter a program name.",
+        "Save the recipe again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6001"
     },
@@ -193,9 +205,10 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "The recipe builder cannot save a program with zero steps.",
+      "description": "At least one step is required before the recipe can be saved.",
       "troubleshooting": [
-        "Add at least one step to the program"
+        "Add at least one step to the recipe.",
+        "Save the recipe again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6002"
     },
@@ -206,10 +219,11 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "An N₂ purge step is not followed by the required sequence: N₂ → (Cure | Bleaching) → Cooling.",
+      "description": "An N₂ purge step must be followed by a Cure or Bleaching step, and then a Cooling step.",
       "troubleshooting": [
-        "After an N₂ purge, add a Cure or Bleaching step",
-        "After that Cure/Bleaching, add a Cooling step"
+        "After the N₂ purge step, add a Cure or Bleaching step.",
+        "After the Cure or Bleaching step, add a Cooling step.",
+        "Save the recipe again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6003"
     },
@@ -220,10 +234,11 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A non-cooling step's temperature is lower than the previous non-cooling step. Temperatures must not decrease except in a Cooling step.",
+      "description": "The temperature of a process step is lower than the previous step. Temperature decreases are only allowed in a Cooling step.",
       "troubleshooting": [
-        "Raise the step temperature to at least the previous step's temperature",
-        "Use a Cooling step to lower the temperature"
+        "Increase the step temperature to match or exceed the previous step's temperature.",
+        "If a temperature reduction is required, add a Cooling step before the lower-temperature step.",
+        "Save the recipe again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6004"
     },
@@ -234,9 +249,10 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A Cooling step's target temperature is not lower than the temperature of the preceding step.",
+      "description": "A Cooling step must have a target temperature lower than the previous step's temperature.",
       "troubleshooting": [
-        "Set the Cooling target below the previous step's temperature"
+        "Set the Cooling step target temperature below the previous step's temperature.",
+        "Save the recipe again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6005"
     },
@@ -247,10 +263,12 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "An imported program CSV is missing a required header or contains no data row.",
+      "description": "The selected program CSV file is missing required column headers or does not contain any program steps.",
       "troubleshooting": [
-        "Use a CSV exported by the recipe builder",
-        "Check the header row and that at least one step is present"
+        "Use a CSV file that was exported from the recipe builder.",
+        "Verify that all required column headers are present in the CSV file.",
+        "Verify that the CSV file contains at least one program step.",
+        "Import the CSV file again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6006"
     },
@@ -261,10 +279,12 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A row in the imported CSV names a process that is not recognized (expected Heating, Drying, Cure, Bleaching, Cooling, or Nitrogen).",
+      "description": "The imported CSV file contains an unrecognized process name. Only Heating, Drying, Cure, Bleaching, Cooling, and Nitrogen processes are supported.",
       "troubleshooting": [
-        "Correct the process name in the offending row",
-        "Re-export the CSV from the recipe builder"
+        "Review the CSV file and locate any invalid process names.",
+        "Replace the invalid process name with a supported process type: Heating, Drying, Cure, Bleaching, Cooling, or Nitrogen.",
+        "If needed, export a new CSV file from the recipe builder and use it as a reference.",
+        "Import the CSV file again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6007"
     },
@@ -275,9 +295,12 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A row in the imported CSV has a temperature outside the accepted range (30–80°C; Cooling steps 20–75°C).",
+      "description": "The imported CSV file contains a temperature value outside the allowed range for the selected process step.",
       "troubleshooting": [
-        "Set the row temperature between 30°C and 80°C (20–75°C for Cooling steps)"
+        "Review the temperature value in the affected CSV row.",
+        "Set the temperature between 30°C and 80°C for Heating, Drying, Cure, Bleaching, and Nitrogen steps.",
+        "Set the temperature between 20°C and 75°C for Cooling steps.",
+        "Import the CSV file again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6008"
     },
@@ -288,10 +311,13 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "A row in the imported CSV has a time outside the accepted range (1–120 minutes; Bleaching: 1–720 minutes). Note: per-step time has since been removed from the recipe model; this check is retained only for legacy CSV files.",
+      "description": "The imported CSV file contains a time value outside the allowed range.",
       "troubleshooting": [
-        "Correct the time value in the offending row",
-        "Re-export the CSV from the current recipe builder"
+        "Review the time value in the affected CSV row.",
+        "Set the time between 1 and 120 minutes for standard process steps.",
+        "Set the Bleaching step time between 1 and 720 minutes.",
+        "If the CSV file was created manually or from an older system version, export a new CSV file from the current recipe builder and use it instead.",
+        "Import the CSV file again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6009"
     },
@@ -302,9 +328,12 @@
       "severity": "warning",
       "category": "validation",
       "layer": "ui",
-      "description": "The imported CSV defines more than the maximum of 2 nitrogen purge steps.",
+      "description": "The imported CSV file contains more than the allowed maximum of 2 Nitrogen purge steps.",
       "troubleshooting": [
-        "Reduce the program to at most 2 nitrogen purge steps"
+        "Review the program and identify all Nitrogen purge steps.",
+        "Remove or combine Nitrogen purge steps until no more than 2 remain in the program.",
+        "Save or export the updated program.",
+        "Import the CSV file again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6010"
     },
@@ -315,10 +344,11 @@
       "severity": "warning",
       "category": "io",
       "layer": "ui",
-      "description": "The recipe builder could not save the generated program CSV to USB; the file was downloaded in the browser instead.",
+      "description": "The program CSV could not be saved to the USB drive. A copy of the file was downloaded through the browser instead.",
       "troubleshooting": [
-        "Insert a writable USB drive and retry",
-        "Use the downloaded file from the browser instead"
+        "Locate and use the CSV file that was downloaded through the browser.",
+        "If you need to save the file directly to a USB drive, verify that a writable USB drive is connected.",
+        "Export the program again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6011"
     },
@@ -329,10 +359,10 @@
       "severity": "warning",
       "category": "selection",
       "layer": "ui",
-      "description": "A Cure Together batch may only combine prints of the same material. Two or more different materials were selected.",
+      "description": "A Cure Together batch can only include prints that use the same material. Prints with different materials were selected.",
       "troubleshooting": [
-        "Select prints that all use the same material",
-        "Run different materials as separate cures"
+        "Select only prints that use the same material for the Cure Together batch.",
+        "Create separate Cure Together batches for prints that use different materials."
       ],
       "supportUrl": "https://docs.scure.com/errors/6012"
     },
@@ -343,9 +373,10 @@
       "severity": "warning",
       "category": "selection",
       "layer": "ui",
-      "description": "Start Cure was pressed with no material or print selected.",
+      "description": "No material or print was selected. Select a material or print before starting a cure.",
       "troubleshooting": [
-        "Select a material or a recent print before starting a cure"
+        "Select a material or a recent print.",
+        "Start the cure again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6013"
     },
@@ -356,10 +387,11 @@
       "severity": "warning",
       "category": "selection",
       "layer": "ui",
-      "description": "The selected program cannot run as configured — e.g. it is nitrogen-only while nitrogen is disabled, so every step would be skipped.",
+      "description": "The selected program requires Nitrogen, but Nitrogen is currently disabled in system settings.",
       "troubleshooting": [
-        "Enable nitrogen in Settings, or",
-        "Choose a program that has non-nitrogen steps"
+        "Enable Nitrogen in Settings.",
+        "Alternatively, select a program that does not rely solely on Nitrogen steps.",
+        "Start the program again."
       ],
       "supportUrl": "https://docs.scure.com/errors/6014"
     },
@@ -370,12 +402,13 @@
       "severity": "critical",
       "category": "safety",
       "layer": "daemon",
-      "description": "The pre-cure hardware check did not pass (e.g. chamber not ready, door/seal open, or N₂ line not pressurized). The cure was not started and no outputs were energized.",
+      "description": "The system detected an issue that prevents the curing process from starting. Resolve the issue and try again.",
       "troubleshooting": [
-        "Close and seal the chamber door",
-        "Verify the N₂ line pressure (if nitrogen is enabled)",
-        "Wait for the chamber to report ready, then retry",
-        "Run diagnostics from Settings if the check keeps failing"
+        "Review any active warnings or notifications displayed on the screen.",
+        "Verify that the door is fully closed.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner, then run the available component diagnostics and resolve any reported issues",
+        "Restart the curing process.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/6015"
     },
@@ -386,12 +419,12 @@
       "severity": "critical",
       "category": "safety",
       "layer": "daemon",
-      "description": "The chamber door was opened during an active process and remained open for more than 10 seconds. The process cannot continue while the door is open, so for your safety it was stopped and all outputs were switched off (heater, UV, cooling, fans, nitrogen). The interrupted cure cannot be resumed.",
+      "description": "The curing process was stopped because the door was opened during operation. Close the door and restart the process.",
       "troubleshooting": [
-        "Close and seal the chamber door",
-        "Inspect the part — an interrupted cure may be incomplete",
-        "Start a new cure program from the beginning",
-        "If the door was not physically opened, check the door sensor (GPIO27)"
+        "Verify that the chamber door is fully closed.",
+        "Check that no trays, parts, or other objects are preventing the door from closing completely.",
+        "Restart the curing process.",
+        "If the issue persists while the door remains closed, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/6016"
     },
@@ -402,10 +435,13 @@
       "severity": "warning",
       "category": "validation",
       "layer": "backend",
-      "description": "A cure operation requested a target temperature outside the accepted range (heating 30–80°C; cooling 20–80°C). The backend rejected the command and no outputs were energized.",
+      "description": "The requested target temperature is outside the allowed range for the selected cure step. The cure could not be started.",
       "troubleshooting": [
-        "Edit the recipe step so the heating target is between 30°C and 80°C (cooling 20–80°C)",
-        "Re-import the program CSV if the value came from a file"
+        "Review the target temperature configured for the cure step.",
+        "Set the temperature between 30°C and 80°C for heating steps.",
+        "Set the temperature between 20°C and 80°C for cooling steps.",
+        "If the temperature was imported from a CSV file, correct the value and re-import the file.",
+        "Start the cure again."
       ],
       "supportUrl": "https://docs.scure.com/errors/7001"
     },
@@ -416,10 +452,12 @@
       "severity": "warning",
       "category": "validation",
       "layer": "backend",
-      "description": "A Cure (405 nm) or Bleaching (450 nm) step requested a UV intensity outside the accepted 10–100% range. The backend rejected the command.",
+      "description": "The requested UV intensity is outside the allowed range for the selected cure step. The cure could not be started.",
       "troubleshooting": [
-        "Set the UV intensity between 10% and 100%",
-        "Re-import the program CSV if the value came from a file"
+        "Review the UV intensity configured for the Cure or Bleaching step.",
+        "Set the UV intensity between 10% and 100%.",
+        "If the UV intensity was imported from a CSV file, correct the value and re-import the file.",
+        "Start the cure again."
       ],
       "supportUrl": "https://docs.scure.com/errors/7002"
     },
@@ -430,10 +468,12 @@
       "severity": "warning",
       "category": "validation",
       "layer": "backend",
-      "description": "A cooling step requested a mode other than fast, medium or slow. The backend rejected the command.",
+      "description": "The selected cooling mode is not valid for the cooling step. The cure could not be started.",
       "troubleshooting": [
-        "Set the cooling mode to fast, medium or slow",
-        "Re-import the program CSV if the value came from a file"
+        "Review the cooling mode configured for the cooling step.",
+        "Set the cooling mode to Fast, Medium, or Slow.",
+        "If the cooling mode was imported from a CSV file, correct the value and re-import the file.",
+        "Start the cure again."
       ],
       "supportUrl": "https://docs.scure.com/errors/7003"
     },
@@ -444,11 +484,13 @@
       "severity": "warning",
       "category": "process",
       "layer": "ui",
-      "description": "During a cure, the chamber temperature failed to move toward its target across five consecutive 5-minute stall checks. The user is warned that continuing may distort the printed models, and may Continue or Abort.",
+      "description": "The chamber temperature is not moving toward the target temperature. Continuing the cure may affect cure quality and final part properties.",
       "troubleshooting": [
-        "Choose Abort to stop, or Continue at your own risk",
-        "Check heater/cooling operation and chamber insulation",
-        "Run diagnostics from Settings"
+        "Select Abort to stop the cure, or Continue if you choose to proceed despite the warning.",
+        "If the chamber is not heating, verify that the voltage selector next to the mains inlet is fully set to the correct 110 V or 220 V position for your local power source.",
+        "Verify that the chamber door is fully closed and sealing correctly.",
+        "Select the Settings icon (gear icon) in the upper right corner of the screen, then open Diagnostics and run the available diagnostics. Follow any corrective actions identified by the diagnostics.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/7004"
     },
@@ -459,12 +501,264 @@
       "severity": "warning",
       "category": "process",
       "layer": "ui",
-      "description": "A cure run was aborted (by the user from the active phase, or from the Temperature Warning). The session is logged with status aborted and the device returns to Home.",
+      "description": "The cure was aborted before completion. The system has returned to the Home screen.",
       "troubleshooting": [
-        "Review the cure history entry for the aborted run",
-        "Restart the cure when ready"
+        "Insert a USB drive, open Cure History, select the aborted cure, and export the cure report for review.",
+        "Review the exported report to determine why the cure was aborted.",
+        "If the cure was aborted due to a warning or issue, resolve the cause before restarting the cure.",
+        "Start the cure again when ready.",
+        "If the cure aborts again or the cause cannot be determined from the report, contact Stratasys Support and provide the exported cure report and log files. To export the log files, insert a USB drive, select the Settings icon (gear icon) in the upper right corner of the screen, and then select Export Logs."
       ],
       "supportUrl": "https://docs.scure.com/errors/7005"
+    },
+    {
+      "code": 9001,
+      "key": "TEMP_SENSOR_DISCONNECTED",
+      "message": "Temperature Sensor Disconnected",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system cannot verify the chamber temperature. For safety reasons, the curing process has been stopped.",
+      "troubleshooting": [
+        "Restart the system.",
+        "Verify that the chamber is empty and that nothing is blocking the internal airflow.",
+        "Start the curing process again.",
+        "If the issue persists, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9001"
+    },
+    {
+      "code": 9002,
+      "key": "FAN_FAILURE",
+      "message": "Fan Below Minimum Speed - System Stopped",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system detected that a required cooling fan is not operating correctly. For safety reasons, the curing process has been stopped. The affected fan is identified above",
+      "troubleshooting": [
+        "Identify the affected fan listed above",
+        "Check that nothing is blocking the fan or restricting airflow.",
+        "Restart the system.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner, then run the available component diagnostics and resolve any reported issues.",
+        "If the issue persists, replace the Fan Assembly. Refer to the Repair Guide chapter in the Product Guide for Fan Assembly replacement instructions.",
+        "If the issue remains after replacing the Fan Assembly, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9002"
+    },
+    {
+      "code": 9003,
+      "key": "LED_FAN_NOT_SPINNING",
+      "message": "Cooling Fan Not Spinning - Job Not Started",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system detected that a required cooling fan is not operating. For safety reasons, the curing process cannot start. The affected fan is identified above.",
+      "troubleshooting": [
+        "Identify the affected fan listed above.",
+        "Check that nothing is blocking the fan or preventing it from spinning.",
+        "Restart the system.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner, then run the available component diagnostics and resolve any reported issues.",
+        "If the issue persists, replace the Fan Assembly. Refer to the Repair Guide chapter in the Product Guide for Fan Assembly replacement instructions.",
+        "If the issue remains after replacing the Fan Assembly, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9003"
+    },
+    {
+      "code": 9004,
+      "key": "LED_NOT_HEATING",
+      "message": "LED Panel Not Heating - Check LED Connection",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system detected that an LED panel is not operating correctly. The curing process may not perform as expected until the issue is resolved. The affected LED panel is identified above.",
+      "troubleshooting": [
+        "Identify the affected LED panel listed above.",
+        "Restart the system.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner, then run the available component diagnostics and resolve any reported issues.",
+        "Run the LED Test and verify that the LED system passes the test.",
+        "If the issue persists, replace the affected LED Panel Assembly. Refer to the Repair Guide chapter in the Product Guide for LED panel replacement instructions.",
+        "If the issue remains after replacing the LED panel, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9004"
+    },
+    {
+      "code": 9005,
+      "key": "LED_PANEL_TEMP_DROP",
+      "message": "LED Panel Fault - Temperature Dropped During Cure",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system detected that an LED panel stopped operating correctly during the curing process. Cure performance may be affected until the issue is resolved. The affected LED panel is identified above.",
+      "troubleshooting": [
+        "Identify the affected LED panel listed above.",
+        "Restart the system.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner, then run the available component diagnostics and resolve any reported issues.",
+        "Run the LED Test and verify that the LED system passes the test.",
+        "Start the curing process again.",
+        "If the issue persists, replace the affected LED Panel Assembly. Refer to the Repair Guide chapter in the Product Guide for LED panel replacement instructions.",
+        "If the issue remains after replacing the LED Panel Assembly, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9005"
+    },
+    {
+      "code": 9006,
+      "key": "TEMP_READING_FROZEN",
+      "message": "Temperature Reading Frozen - Heater Switched Off",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system cannot reliably detect the chamber temperature during heating. For safety reasons, the heater has been turned off.",
+      "troubleshooting": [
+        "Restart the system.",
+        "Wait for the system startup sequence to complete.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner and verify that the chamber temperature reading is displayed and changes during heating",
+        "Start the curing process again.",
+        "If the issue persists, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9006"
+    },
+    {
+      "code": 9007,
+      "key": "HEATER_NOT_HEATING",
+      "message": "Heater Not Heating - Check Voltage Selector / Fuse",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The system detected that the chamber is not heating as expected. For safety reasons, the heating process has been stopped.",
+      "troubleshooting": [
+        "Verify that the voltage selector is set correctly and is fully engaged in either the 110V or 230V position.",
+        "Restart the system.",
+        "Open the Settings page by selecting the Settings icon (gear icon) in the top-right corner and verify that the chamber temperature reading increases during heating.",
+        "Start the heating or curing process again.",
+        "If the issue persists, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9007"
+    },
+    {
+      "code": 9008,
+      "key": "N2_PRESSURE_TOO_HIGH",
+      "message": "Nitrogen Supply Pressure Too High - Nitrogen Closed",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The nitrogen line pressure measured by the N2 pressure sensor is above the allowed maximum (components.json pressure_sensor.max_bar, 3 bar by default). Nitrogen is never opened above the limit: a request to open the valve (a program's nitrogen step, POST /api/cure/nitrogen) is refused with this code, and if the pressure rises above the limit while the valve is open the valve is closed at once by the 1-second supervision check. The alert names the measured pressure and the limit, e.g. 'N2 supply pressure too high (3.4 bar > 3.0 bar) - nitrogen closed. Lower the regulator below 3 bar.' It clears by itself once the pressure is back at or under the limit; the valve is not reopened by itself - the next nitrogen request opens it. Only a real pressure value counts: with no reading (sensor error, switch mode, saturated input) nothing is blocked.",
+      "troubleshooting": [
+        "Lower the nitrogen regulator so the line pressure reads below 3 bar on Settings (N2 Pressure)",
+        "Check the regulator holds its setting - a creeping regulator lets the pressure rise during a purge",
+        "The alert clears by itself once the pressure is under the limit; then start the nitrogen step / program again"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9008"
+    },
+    {
+      "code": 9009,
+      "key": "N2_NO_SUPPLY",
+      "message": "No Nitrogen Supply - Line Pressure Too Low",
+      "severity": "warning",
+      "category": "process",
+      "layer": "backend",
+      "description": "Nitrogen was requested (a program's nitrogen step, POST /api/cure/nitrogen, or Nitrogen Mode in Settings) while the nitrogen line pressure is below the minimum (components.json pressure_sensor.min_bar, 0.5 bar by default): there is no nitrogen supply to the system, so the valve is not opened and the request is refused with the text 'No nitrogen supply - line pressure X.X bar is below 0.5 bar. Check the nitrogen line and regulator.' The low limit is judged only on a reading taken with the valve CLOSED and settled (3 s after it last closed): while the valve is open the gas flows and the line reads near 0 bar, which is normal and never closes the valve or raises this code. With no reading (sensor error, switch mode, saturated input) nothing is blocked.",
+      "troubleshooting": [
+        "Check the nitrogen cylinder / generator is on and not empty",
+        "Check the nitrogen line is connected to the machine and its valve is open",
+        "Set the regulator to at least 0.5 bar (and at most 3 bar) and check N2 Pressure on Settings, then try again"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9009"
+    },
+    {
+      "code": 9015,
+      "key": "N2_FLOW_BLOCKED",
+      "message": "Nitrogen Not Flowing Into the Chamber - Nitrogen Closed",
+      "severity": "critical",
+      "category": "process",
+      "layer": "daemon",
+      "description": "When the nitrogen valve opens the gas flows into the chamber and the line pressure must drop. The reading taken with the valve closed just before it opened is the baseline; if the line pressure has not fallen by at least components.json pressure_sensor.flow_check_min_drop_bar (0.3 bar by default) within flow_check_window_sec (5 s by default) after the valve opened, nitrogen is not reaching the chamber - the valve is stuck closed, its coil is not driven, or the tube to the chamber is kinked or blocked. The valve is closed at once and the alert names the pressure, e.g. 'Nitrogen is not flowing into the chamber - the line pressure stayed at 2.0 bar after the valve opened. Check the nitrogen valve and the tube to the chamber.' A running program fails with this code (the chamber is not inert, so the cure does not continue). No check is made when there is no real pressure value before or after opening (sensor error, switch mode, saturated input), when the valve was closed again before the window ended, or when it reopens within 3 s of closing (the line has not built up again). The check can be switched off with flow_check_enabled. The alert clears at the next opening of the valve, which judges the flow afresh.",
+      "troubleshooting": [
+        "Check the nitrogen valve opens: listen for the click and check its cable and connector on the IO board",
+        "Check the tube from the valve to the chamber is not kinked, pinched or blocked",
+        "Open nitrogen again (start the program again) - the alert clears and the line pressure must drop within 5 seconds"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9015"
+    },
+    {
+      "code": 9016,
+      "key": "N2_SENSOR_NOT_READING",
+      "message": "Nitrogen Pressure Sensor Not Reading",
+      "severity": "warning",
+      "category": "hardware",
+      "layer": "daemon",
+      "description": "The nitrogen line-pressure sensor gives no valid reading: the reading fails (an ADC / bus error that lasts past the sensor glitch hold), the analog input is saturated, or the sensor's analog output is outside its range (below 90 % of its 1 V / 4 mA start or above 110 % of its 5 V / 20 mA end - an unplugged 1-5 V sensor reads about 0 V). The alert 'N2 pressure sensor not reading - check that the nitrogen pressure sensor is connected.' is raised once there has been no valid reading for components.json pressure_sensor.not_reading_after_sec (20 s by default), and the boot self-test (N2 Pressure Sensor) gives the sensor up to 20 s to read before it fails with the same text. Without a pressure reading the nitrogen protections (9008 over-pressure, 9009 no supply, 9015 flow blocked) cannot work, so opening nitrogen is refused with this code while the alert is active; a valve that is already open is not closed (a reading can glitch mid-purge) - only the alert is raised. A switch-mode sensor has no pressure value by design and is never flagged. The alert clears by itself as soon as the sensor reads again. A machine without the sensor fitted sets pressure_sensor.required to false.",
+      "troubleshooting": [
+        "Check that the nitrogen pressure sensor is connected: its cable and the Analog_IN connector on the IO board",
+        "Check the sensor is powered and its output lead (1-5 V) goes to Analog_IN; a saturated input above about 0.5 MPa needs the 2:1 divider on Analog_IN (pressure_sensor.divider 2.0)",
+        "The alert clears by itself once the sensor reads again; then start nitrogen again"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9016"
+    },
+    {
+      "code": 9017,
+      "key": "WATCHDOG_TRIPPED",
+      "message": "Firmware Stopped Responding - Watchdog Switched Heater and UV Off",
+      "severity": "critical",
+      "category": "safety",
+      "layer": "daemon",
+      "description": "The machine firmware stopped responding (its heartbeat went silent for 20 s) and the separate output watchdog (scurebox-watchdog.service) switched the heater SSR and the UV LEDs off by itself, then kept them off (re-cut every 5 s). The watchdog records the cut next to the heartbeat (/run/scurebox-heartbeat.trip); when the firmware responds again it reads that record, comes back in a safe state - heater and UV off, a running program ended as failed with this code, nothing resumes by itself - and raises 'Firmware stopped responding - the output watchdog switched the heater and UV off. Restart the process to continue.' The alert stays until the operator acknowledges it (dismiss on the Alerts screen, or POST /api/watchdog/ack). DVT-SAF-010 provokes it on purpose with POST /api/dvt/hang.",
+      "troubleshooting": [
+        "Acknowledge the alert, check the part and the chamber, then start the process again - nothing restarts by itself",
+        "If it happens outside a DVT test, export the logs (Settings > Export Logs) and send them to service: the firmware hung",
+        "If the alert says the cut was INCOMPLETE, switch the machine off at the mains and call service"
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9017"
+    },
+    {
+      "code": 9050,
+      "key": "LED_TEMP_SENSOR_DISCONNECTED",
+      "message": "LED Temperature Sensor Disconnected",
+      "severity": "warning",
+      "category": "maintenance",
+      "layer": "daemon",
+      "description": "An LED temperature sensor was disconnected or not communicating. This warning is retained for compatibility with older reports and logs. Curing operations can continue, but the affected LED temperature will not be displayed until the issue is resolved.",
+      "troubleshooting": [
+        "Verify that the system is operating normally and that curing processes can be completed successfully.",
+        "Restart the system and check whether the warning clears.",
+        "If the warning persists, contact Stratasys Support.",
+        "If requested by Stratasys Support, export the system log files. Insert a USB drive, select the Settings icon (gear icon) in the upper right corner of the screen, and then select Export Logs."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9050"
+    },
+    {
+      "code": 9051,
+      "key": "FAN_WEAR_WARNING",
+      "message": "Fan Speed Low - Replace Fan",
+      "severity": "warning",
+      "category": "maintenance",
+      "layer": "daemon",
+      "description": "A fan is operating below its expected speed and may be wearing out. The system can continue operating, but the fan should be inspected and replaced if the condition persists.",
+      "troubleshooting": [
+        "Identify the fan named in the warning message.",
+        "Inspect the fan and air inlet/outlet areas for dust or debris and clean them if necessary.",
+        "Restart the system and check whether the warning clears.",
+        "If the warning persists, schedule replacement of the affected fan. Refer to the Repair Guide chapter in the Product Guide for fan replacement instructions.",
+        "If assistance is required, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9051"
+    },
+    {
+      "code": 9052,
+      "key": "NFC_READER_NOT_DETECTED",
+      "message": "NFC Reader Not Detected",
+      "severity": "warning",
+      "category": "io",
+      "layer": "backend",
+      "description": "The NFC reader is not detected. NFC cannot be enabled until a compatible NFC reader is connected and recognized by the system.",
+      "troubleshooting": [
+        "Connect the NFC reader to a USB port on the machine.",
+        "Verify that you are using a data-capable USB cable. Charge-only USB cables are not supported.",
+        "Wait at least 5 seconds for the NFC reader to be detected.",
+        "Enable NFC again.",
+        "If the NFC reader is still not detected, restart the system and try again.",
+        "If the issue persists, contact Stratasys Support."
+      ],
+      "supportUrl": "https://docs.scure.com/errors/9052"
     },
     {
       "code": 9080,
@@ -473,10 +767,13 @@
       "severity": "warning",
       "category": "validation",
       "layer": "backend",
-      "description": "The network diagnostics endpoint was called with an unsupported tool name (expected ping, traceroute or nslookup).",
+      "description": "The selected network diagnostic tool is not supported.",
       "troubleshooting": [
-        "Select one of the supported diagnostic tools",
-        "Retry the diagnostic from the Network screen"
+        "Select the Network icon (globe icon) in the upper right corner of the screen, open Diagnostics, and select a supported network diagnostic tool: Ping, Traceroute, or NSLookup.",
+        "Run the selected network diagnostic tool. These tools are primarily intended for IT administrators or advanced users to troubleshoot network connectivity issues. Please refer to your IT representative if applicable.",
+        "Retry the network operation.",
+        "If the issue persists, restart the system and try again.",
+        "If the issue continues, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9080"
     },
@@ -487,11 +784,14 @@
       "severity": "warning",
       "category": "storage",
       "layer": "backend",
-      "description": "An export operation could not find a Disk-on-Key (USB drive) connected to the machine.",
+      "description": "No USB drive was detected. Connect a USB drive and try the operation again.",
       "troubleshooting": [
-        "Connect a Disk-on-Key (USB drive) to the machine",
-        "Wait a few seconds for it to mount, then retry",
-        "Try a different USB port or Disk-on-Key"
+        "Insert a USB drive into the USB port on the machine.",
+        "Wait at least 5 seconds for the USB drive to be detected by the system.",
+        "Retry the export/upload operation.",
+        "If the USB drive is still not detected, try a different USB port (if applicable) or a different USB drive.",
+        "If the issue persists, restart the system and try again.",
+        "If the issue continues, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9081"
     },
@@ -502,11 +802,14 @@
       "severity": "warning",
       "category": "storage",
       "layer": "backend",
-      "description": "The Disk-on-Key was found but the file could not be written to it (it may be full, read-only, or was removed mid-write).",
+      "description": "A USB drive was detected, but the file could not be saved. The USB drive may be full, write-protected, or disconnected during the operation.",
       "troubleshooting": [
-        "Check that the Disk-on-Key has free space and is not write-protected",
-        "Do not remove the Disk-on-Key during export",
-        "Reformat the Disk-on-Key (FAT32) and retry"
+        "Verify that the USB drive has available free space and is not write-protected.",
+        "Ensure the USB drive remains connected until the export/upload operation is complete.",
+        "Retry the export operation.",
+        "If the issue persists, back up any required files and reformat the USB drive using the FAT32 file system.",
+        "If the export/upload still fails, try a different USB drive.",
+        "If the issue continues, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9082"
     },
@@ -517,10 +820,14 @@
       "severity": "warning",
       "category": "storage",
       "layer": "backend",
-      "description": "The backend failed to copy the system logs to the USB drive.",
+      "description": "The system could not export the log files to the USB drive.",
       "troubleshooting": [
-        "Insert a writable USB drive and retry",
-        "Check available space on the USB drive"
+        "Insert a USB drive into one the USB port on the machine.",
+        "Verify that the USB drive has available free space and is not write-protected.",
+        "Select the Settings icon (gear icon) in the upper right corner of the screen, then select Export Logs and try again.",
+        "If the log export still fails, try a different USB drive.",
+        "Restart the system and try exporting the log files again.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9083"
     },
@@ -531,11 +838,14 @@
       "severity": "warning",
       "category": "network",
       "layer": "backend",
-      "description": "The backend could not read the device network status (IP / MAC / gateway).",
+      "description": "The system could not retrieve its network status information.",
       "troubleshooting": [
-        "Check the Ethernet cable and link LEDs",
-        "Reboot the system",
-        "Verify network settings"
+        "Verify that the Ethernet cable is securely connected to both the sCure system and the network outlet or switch.",
+        "Check that the Ethernet port link/activity LEDs are illuminated or blinking.",
+        "Restart the system.",
+        "Select the Network icon (globe icon) in the upper right corner of the screen and verify that the network settings are configured correctly.",
+        "elect the Network icon (globe icon) in the upper right corner of the screen, open Diagnostics, and run the available network diagnostic tools. Resolve any reported issues. These tools are primarily intended for IT administrators or advanced users to troubleshoot network connectivity issues.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9084"
     },
@@ -546,10 +856,14 @@
       "severity": "warning",
       "category": "network",
       "layer": "backend",
-      "description": "A network diagnostic command (ping / traceroute / nslookup) failed to execute on the device.",
+      "description": "The selected network diagnostic could not be completed.",
       "troubleshooting": [
-        "Verify the target address is reachable",
-        "Check the network connection and retry"
+        "Verify that the destination address entered for the network diagnostic is correct and reachable.",
+        "Select the Network icon (globe icon) in the upper right corner of the screen, open Diagnostics, and run the selected network diagnostic tool again.",
+        "Verify that the Ethernet cable is securely connected to both the sCure system and the network outlet or switch.",
+        "Restart the system and repeat the network diagnostic.",
+        "These diagnostic tools are primarily intended for IT administrators or advanced users to troubleshoot network connectivity issues.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9085"
     },
@@ -560,11 +874,13 @@
       "severity": "critical",
       "category": "update",
       "layer": "backend",
-      "description": "The backend update process failed while installing a software package from USB.",
+      "description": "The software update could not be completed successfully. The system software may not have been updated.",
       "troubleshooting": [
-        "Re-download the update package and copy it to USB",
-        "Verify the package version and integrity",
-        "Retry the update from Settings → Update Software"
+        "Restart the system.",
+        "If performing an update from USB, verify that the USB drive is connected properly and contains the correct software update package, or replace the USB drive.",
+        "Retry the software update from the Update Software page.",
+        "If the issue persists, obtain a new copy of the software update package and try again.",
+        "If the issue remains, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9086"
     },
@@ -575,10 +891,15 @@
       "severity": "warning",
       "category": "update",
       "layer": "backend",
-      "description": "No update package (or its manifest) could be found on the connected USB drive.",
+      "description": "No valid software update package was found on the connected USB drive.",
       "troubleshooting": [
-        "Copy the .scu update package and its manifest to the USB root",
-        "Insert the USB drive and retry"
+        "Verify that the correct sCure software update package was copied to the USB drive.",
+        "Verify that all files provided with the software update package, including the package manifest file, were copied to the root directory of the USB drive.",
+        "Remove and reconnect the USB drive.",
+        "If the update package is still not found, try a different USB drive, or a different USB port (if applicable).",
+        "Retry the software update.",
+        "If the update package is missing or incomplete, obtain a new software update package from Stratasys and copy it to the USB drive again.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9087"
     },
@@ -589,11 +910,12 @@
       "severity": "critical",
       "category": "security",
       "layer": "ui",
-      "description": "The update package failed SHA-256 integrity verification (missing/malformed checksum or a mismatch — a corrupt or tampered-with package). Installation is blocked (EN 18031 secure update).",
+      "description": "The software update package could not be verified and was not installed. For security reasons, the update has been blocked.",
       "troubleshooting": [
-        "Re-download the update package from the official portal",
-        "Verify the checksum/manifest matches the package",
-        "Do not install packages from untrusted sources"
+        "If performing an update from USB, verify that the USB drive is connected properly and contains the correct software update package, or replace the USB drive.",
+        "Obtain a new copy of the software update package from the Stratasys Support Center or your authorized Stratasys representative.",
+        "Retry the software update from the Update Software page.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9088"
     },
@@ -604,11 +926,14 @@
       "severity": "critical",
       "category": "system",
       "layer": "ui",
-      "description": "The UI could not reach the local hardware API (Flask backend). Hardware commands cannot be sent.",
+      "description": "The system cannot communicate with the hardware controller. Hardware operations cannot continue until communication is restored.",
       "troubleshooting": [
-        "Reboot the system",
-        "Verify the sCure service is running",
-        "Contact support if the fault persists"
+        "Shut down the system and disconnect the power cord.",
+        "Wait 20 minutes.",
+        "Reconnect the power cord and turn the system on.",
+        "Wait for the system startup sequence to complete.",
+        "Verify that the touch screen is responsive and that system functions can be accessed.",
+        "If the issue persists, contact Stratasys Support."
       ],
       "supportUrl": "https://docs.scure.com/errors/9089"
     }

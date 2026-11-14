@@ -3,6 +3,10 @@ import { ArrowRight, DoorOpen, CheckCircle, AlertTriangle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import PhaseCard from '@/components/PhaseCard'
 import AbortModal from '@/components/AbortModal'
+import PauseOverlay from '@/components/PauseOverlay'
+import PauseModal from '@/components/PauseModal'
+import FanFailModal, { FAN_NAMES, LED_PANEL_NAMES } from '@/components/FanFailModal'
+import HeaterFaultModal from '@/components/HeaterFaultModal'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
@@ -14,10 +18,11 @@ import { useSystemConfig } from '@/context/SystemConfigContext'
 import type { PhaseType } from '@/components/PhaseCard'
 import type { CoolingMode, TimerMode, UvStartMode } from '@/context/MaterialContext'
 import { AMBIENT_TEMP, COOL_RATE_C_PER_MIN, estimateHeatSeconds, estimateProgram } from '@/lib/program-estimate'
+import { CHAMBER_SENSOR, FAN_FAILURE, FAN_STOPPED, TEMP_SENSOR, isA, ledNotHeatingCode } from '@/lib/error-codes'
 import {
   heatToTargetTemperature, dryToTargetTemperature, cureUv405, cureUv450, cureUvOnly,
   coolToTargetTemperature, stopCureOutputs, doorOpen, setNitrogenValve,
-  reportPhaseTiming,
+  reportPhaseTiming, ackDoorAbort, runFanTest, setFanOverride,
 } from '@/services/hardware-api'
 
 const phaseColorMap: Record<string, string> = {
@@ -51,6 +56,14 @@ const COOL_RATES: Record<CoolingMode, number> = {
 }
 const COOL_DONE_BAND = 0.5  // °C band around the target that counts as "reached"
 
+/** A heating command refused because the heater's temperature sensor (chamber NTC) is not reading: Err 9010 (9001 on older machines) from the
+ *  start pre-flight, or the heater safety's own reason ("thermistor ... disconnected / out of range"). */
+function isHeaterSensorRefusal(res: { ok: boolean; code?: number; message?: string }): boolean {
+  if (res.ok) return false
+  const m = res.message ?? ''
+  return (isA(res.code, TEMP_SENSOR) && /TEMP_CHAMBER|chamber|heater/i.test(m)) || /thermistor/i.test(m)
+}
+
 export default function CureProcessPage() {
   const navigate = useNavigate()
   const { removeLogs } = usePrintHistory()
@@ -61,6 +74,26 @@ export default function CureProcessPage() {
   const [cureLogId, setCureLogId] = useState<string | null>(null)
   const [activePhase, setActivePhase] = useState(0)
   const [showAbort, setShowAbort] = useState(false)
+  const [showPause, setShowPause] = useState(false)
+  // Paused = every output off, door released, all clocks frozen. Resume
+  // shifts the clock anchors by the pause length and re-sends the phase
+  // command, so the step continues exactly where it stopped.
+  const [isPaused, setIsPaused] = useState(false)
+  // Fan failure: the check before the process starts, and the stop mid-cure (Continue anyway / Stop)
+  const [fanFail, setFanFail] = useState<{ fans: string[]; when: 'preflight' | 'running' } | null>(null)
+  const [fanPreflight, setFanPreflight] = useState<'pending' | 'checking' | 'ok'>('pending')
+  const fanOverriddenRef = useRef<Set<string>>(new Set())
+  const fanPreflightRunRef = useRef(false)
+  // LED panels must warm up while the UV is on: the four thermistors are sampled when the UV comes on and
+  // checked 15 s later; a panel that did not rise pauses the cure and names itself (Stop / Continue anyway)
+  const ledCheckRef = useRef<{ at: number; temps: Record<string, number>; intensity: number; done: boolean; bleaching: boolean } | null>(null)
+  const ledOverriddenRef = useRef<Set<string>>(new Set())
+  const [ledFail, setLedFail] = useState<string[] | null>(null)
+  // The heater's temperature sensor (chamber NTC) is not reading: the machine never switches the heater on without it
+  // (start refused, Err 9001) and switches a running heater off at once. The program pauses; the operator retries or stops.
+  const [heaterFail, setHeaterFail] = useState<{ when: 'start' | 'running'; message: string } | null>(null)
+  const heaterAlertHandledRef = useRef(false)
+  const pausedAtRef = useRef(0)
   const [isRunning, setIsRunning] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
   // Real wall-clock timing: when the program and the current phase ACTUALLY
@@ -172,10 +205,17 @@ export default function CureProcessPage() {
     if (res && !res.ok) {
       setPhaseError(res.message || 'The hardware refused the command')
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
+      if (isHeaterSensorRefusal(res)) {
+        // the heater was NOT switched on: freeze the clocks where they are and pop the fault (Retry re-sends the step)
+        pausedAtRef.current = performance.now()
+        setIsPaused(true)
+        setHeating(false)
+        setHeaterFail(prev => prev ?? { when: 'start', message: res.message ?? '' })
+      }
     } else {
       setPhaseError(null)
     }
-  }, [hw.apiConnected, hw.chamberTemp])
+  }, [hw.apiConnected, hw.chamberTemp, setHeating])
 
   // Ramp finished for a cure/bleacher step → NOW turn the UV on (the heating
   // loop keeps running; cure_uv on an active loop just re-targets it).
@@ -190,8 +230,14 @@ export default function CureProcessPage() {
     if (!res.ok) {
       setPhaseError(res.message || 'UV command refused')
       window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015 } }))
+      if (isHeaterSensorRefusal(res)) {
+        pausedAtRef.current = performance.now()
+        setIsPaused(true)
+        setHeating(false)
+        setHeaterFail(prev => prev ?? { when: 'start', message: res.message ?? '' })
+      }
     }
-  }, [hw.apiConnected, hw.chamberTemp])
+  }, [hw.apiConnected, hw.chamberTemp, setHeating])
 
   // Ramp start temperature (where ramp begins from)
   const [rampStartTemp, setRampStartTemp] = useState(AMBIENT_TEMP)
@@ -305,7 +351,7 @@ export default function CureProcessPage() {
   }, [activePhase, phases, isRamping, rampDuration, rampStartTemp, targetTemp, n2Purging, hw.nitrogenDuration, hw.apiConnected, hw.chamberTemp, setChamberTemp, setHeating, setNitrogenActive, startPhaseUv])
 
   // Temperature stall detection: every 1 min during ramp or cooling, check progress
-  const isInTempPhase = isRamping || (isRunning && phases[activePhase]?.type === 'cooling')
+  const isInTempPhase = !isPaused && (isRamping || (isRunning && phases[activePhase]?.type === 'cooling'))
   useEffect(() => {
     if (!isInTempPhase || showTempWarning) {
       if (stallCheckRef.current) { clearInterval(stallCheckRef.current); stallCheckRef.current = null }
@@ -359,7 +405,7 @@ export default function CureProcessPage() {
   // grace) is the program stopped (Err 6016).
   const [doorCountdown, setDoorCountdown] = useState<number | null>(null)
   useEffect(() => {
-    if (!isRunning || isComplete || !hw.apiConnected || hw.doorClosed !== false) {
+    if (!isRunning || isComplete || isPaused || !hw.apiConnected || hw.doorClosed !== false) {
       setDoorCountdown(null)
       return
     }
@@ -368,11 +414,18 @@ export default function CureProcessPage() {
       () => setDoorCountdown(prev => (prev === null || prev <= 0 ? prev : prev - 1)),
       1000)
     return () => clearInterval(iv)
-  }, [isRunning, isComplete, hw.apiConnected, hw.doorClosed])
+  }, [isRunning, isComplete, isPaused, hw.apiConnected, hw.doorClosed])
 
+  // A door abort latched by an EARLIER run (Err 6016 never acknowledged)
+  // must not kill this one: the flag only counts once it has been seen
+  // clear during this run. The run start acknowledges the stale flag.
+  const staleDoorAbortRef = useRef(false)
+  useEffect(() => {
+    if (!hw.doorAborted) staleDoorAbortRef.current = false
+  }, [hw.doorAborted])
   useEffect(() => {
     if (!isRunning || isComplete) return
-    if (!hw.apiConnected || !hw.doorAborted) return
+    if (!hw.apiConnected || !hw.doorAborted || staleDoorAbortRef.current) return
     setDoorCountdown(null)
     stopCureOutputs(true)
     setIsRunning(false)
@@ -387,6 +440,93 @@ export default function CureProcessPage() {
     navigate('/')
   }, [isRunning, isComplete, hw.apiConnected, hw.doorAborted, cureLogId, activePhase,
       abortCure, navigate, setHeating, setCooling, setUv, setNitrogenActive])
+
+  // A fan fails DURING the cure (the machine's supervision: 'critical' after 5 s at 0 RPM, or its
+  // fan-stop / not-spinning alert naming the fan - 902x / 903x, one per fan, or the grouped 9002 / 9003 of older machines): every output off, the program paused where it is, and the
+  // operator decides — stop, or continue anyway without that fan.
+  useEffect(() => {
+    if (!isRunning || isComplete || isPaused || fanFail || !hw.apiConnected) return
+    const health = hw.fanHealth ?? {}
+    const failed = Object.entries(health)
+      .filter(([name, h]) => h.status === 'critical' && !fanOverriddenRef.current.has(name))
+      .map(([name]) => name)
+    for (const code of hw.hwAlerts.filter(c => isA(c, FAN_FAILURE) || isA(c, FAN_STOPPED))) {
+      const d = hw.alertDetails[String(code)] ?? ''
+      for (const name of Object.keys(FAN_NAMES)) {
+        if (d.includes(name) && !fanOverriddenRef.current.has(name) && !failed.includes(name)) failed.push(name)
+      }
+    }
+    if (!failed.length) return
+    pausedAtRef.current = performance.now()
+    setIsPaused(true)
+    stopCureOutputs(true)
+    setHeating(false)
+    setCooling(false)
+    setUv(false)
+    setNitrogenActive(false)
+    setFanFail({ fans: failed, when: 'running' })
+  }, [isRunning, isComplete, isPaused, fanFail, hw.apiConnected, hw.fanHealth, hw.hwAlerts, hw.alertDetails, setHeating, setCooling, setUv, setNitrogenActive])
+
+  // The heater's sensor stops reading DURING a heating step: the machine switched the heater off at once (heater safety)
+  // and raised Err 9010 (9001 on older machines) with the heater detail. Outputs off, program paused where it is; Retry re-sends the step.
+  const heaterCode = hw.hwAlerts.includes(CHAMBER_SENSOR) ? CHAMBER_SENSOR : hw.hwAlerts.includes(TEMP_SENSOR) ? TEMP_SENSOR : null
+  const heaterDetail = heaterCode === null ? '' : hw.alertDetails[String(heaterCode)] ?? ''
+  useEffect(() => {
+    const active = heaterCode !== null && /TEMP_CHAMBER|heater/i.test(heaterDetail)
+    if (!active) { heaterAlertHandledRef.current = false; return }
+    if (heaterAlertHandledRef.current || !isRunning || isComplete || isPaused || fanFail || ledFail || heaterFail || !hw.apiConnected) return
+    heaterAlertHandledRef.current = true
+    pausedAtRef.current = performance.now()
+    setIsPaused(true)
+    stopCureOutputs(true)
+    setHeating(false)
+    setCooling(false)
+    setUv(false)
+    setNitrogenActive(false)
+    setHeaterFail({ when: 'running', message: heaterDetail })
+  }, [isRunning, isComplete, isPaused, fanFail, ledFail, heaterFail, hw.apiConnected, heaterCode, heaterDetail, setHeating, setCooling, setUv, setNitrogenActive])
+
+  // An LED panel that does not warm up within 15 s of the UV coming on (30 s below 60 % power) is not emitting (unplugged, driver,
+  // sensor off the module): outputs off, program paused where it is, the operator decides.
+  useEffect(() => {
+    if (!isRunning || isComplete || isPaused || fanFail || ledFail || heaterFail || !hw.apiConnected || !hw.uvOn) {
+      if (!hw.uvOn) ledCheckRef.current = null          // every UV-on stretch gets its own check
+      return
+    }
+    const temps = hw.ledTemps ?? {}
+    if (!ledCheckRef.current) {
+      const snap: Record<string, number> = {}
+      const bleaching = phases[activePhase]?.type === 'bleacher'          // 450 nm strings leave ~half the heat; the door's too little to judge
+      for (const k of Object.keys(LED_PANEL_NAMES)) {
+        const v = temps[k]
+        // a panel still warm (>= 30 °C) was emitting a moment ago and cools faster than it warms — not judged this stretch
+        if (typeof v === 'number' && v < 30 && !(bleaching && k === 'door')) snap[k] = v
+      }
+      ledCheckRef.current = { at: Date.now(), temps: snap, intensity: hw.uvIntensity || 100, done: false, bleaching }
+      return
+    }
+    const c = ledCheckRef.current
+    // measured on the test unit at 100 %: healthy panels +1.1 … +1.9 °C in 15 s, a dark panel +0.2 °C (warmth from its neighbours)
+    const windowMs = (c.intensity >= 60 && !c.bleaching) ? 15000 : 30000   // low UV power or 450 nm warms the panels slowly: give them 30 s
+    if (c.done || Date.now() - c.at < windowMs) return
+    c.done = true
+    const need = Math.max(0.35, 0.8 * (c.intensity / 100) * (windowMs / 15000))   // 0.8 °C at 100 % in 15 s (slowest healthy panel +0.9, dark +0.2), scaled with power and window
+    const cold = Object.entries(c.temps)
+      .filter(([k, t0]) => { const t1 = temps[k]; return typeof t1 === 'number' && t1 - t0 < need && !ledOverriddenRef.current.has(k) })
+      .map(([k]) => k)
+    if (!cold.length) return
+    pausedAtRef.current = performance.now()
+    setIsPaused(true)
+    stopCureOutputs(true)
+    setHeating(false)
+    setCooling(false)
+    setUv(false)
+    setNitrogenActive(false)
+    setLedFail(cold)
+    // one alert per cold panel: 9040 left, 9041 right, 9044 back, 9045 door
+    for (const k of cold)
+      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: ledNotHeatingCode(k), detail: `${LED_PANEL_NAMES[k]}: ${(temps[k] as number) - c.temps[k] >= 0 ? '+' : ''}${((temps[k] as number) - c.temps[k]).toFixed(1)} °C in ${windowMs / 1000} s` } }))
+  }, [isRunning, isComplete, isPaused, fanFail, ledFail, heaterFail, hw.apiConnected, hw.uvOn, hw.ledTemps, hw.uvIntensity, phases, activePhase, setHeating, setCooling, setUv, setNitrogenActive])
 
   // When entering a new phase: command the hardware, then start ramp / N2 purge
   useEffect(() => {
@@ -479,7 +619,7 @@ export default function CureProcessPage() {
   // temperature actually reaches the target (the hardware cooling loop owns
   // the process — a zero/short step time must not cut it short).
   useEffect(() => {
-    if (!isRunning || isComplete || n2Purging) return
+    if (!isRunning || isComplete || n2Purging || isPaused) return
 
     const currentPhase = phases[activePhase]
     // Nitrogen phases are handled by N2 purge logic, skip here
@@ -515,7 +655,7 @@ export default function CureProcessPage() {
         }
       }
     }
-  }, [currentPhaseElapsed, activePhase, totalSteps, phases, isRunning, isComplete, isRamping, n2Purging, hw.nitrogenMode, hw.chamberTemp, pendingLogIds, removeLogs, setNitrogenActive, reportPhaseEnd, cureLogId, completeCure])
+  }, [currentPhaseElapsed, activePhase, totalSteps, phases, isRunning, isComplete, isRamping, n2Purging, isPaused, hw.nitrogenMode, hw.chamberTemp, pendingLogIds, removeLogs, setNitrogenActive, reportPhaseEnd, cureLogId, completeCure])
 
   // After N2 purge finishes → advance to next phase or complete
   useEffect(() => {
@@ -541,7 +681,7 @@ export default function CureProcessPage() {
 
   // Start/stop timer
   useEffect(() => {
-    if (isRunning && !isComplete) {
+    if (isRunning && !isComplete && !isPaused) {
       timerRef.current = setInterval(tick, 1000)
     } else if (timerRef.current) {
       clearInterval(timerRef.current)
@@ -550,7 +690,7 @@ export default function CureProcessPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isRunning, isComplete, tick])
+  }, [isRunning, isComplete, isPaused, tick])
 
   // Telemetry recording: one sample at start, then every 5 seconds.
   // The changing inputs are read through a ref — putting them in the effect
@@ -558,30 +698,36 @@ export default function CureProcessPage() {
   // timer would never fire and runs would end up with no telemetry (and no
   // downloadable report).
   const telemetryStartRef = useRef<number>(0)
-  const telemetrySnapRef = useRef({ chamberTemp: hw.chamberTemp, ledTemps: hw.ledTemps, phases, activePhase, isRamping })
-  telemetrySnapRef.current = { chamberTemp: hw.chamberTemp, ledTemps: hw.ledTemps, phases, activePhase, isRamping }
+  const telemetrySnapRef = useRef({ chamberTemp: hw.chamberTemp, ledTemps: hw.ledTemps, fanHealth: hw.fanHealth, phases, activePhase, isRamping, isPaused })
+  telemetrySnapRef.current = { chamberTemp: hw.chamberTemp, ledTemps: hw.ledTemps, fanHealth: hw.fanHealth, phases, activePhase, isRamping, isPaused }
   useEffect(() => {
     if (!isRunning || isComplete || !cureLogId) return
     telemetryStartRef.current = Date.now()
     const sample = () => {
-      const { chamberTemp, ledTemps, phases, activePhase, isRamping } = telemetrySnapRef.current
+      const { chamberTemp, ledTemps, fanHealth, phases, activePhase, isRamping, isPaused } = telemetrySnapRef.current
       const elapsed = Math.round((Date.now() - telemetryStartRef.current) / 1000)
       const currentPhase = phases[activePhase]
       const isCure = currentPhase?.type === 'cure'
       const isBleacher = currentPhase?.type === 'bleacher'
       // UV is off while still ramping to the cure temperature, except for
       // "On ramp start" steps where it runs through the whole ramp
-      const uvOn = (isCure || isBleacher) && (!isRamping || currentPhase?.uvStartMode === 'at-start')
+      const uvOn = !isPaused && (isCure || isBleacher) && (!isRamping || currentPhase?.uvStartMode === 'at-start')
       const uvType = isCure ? '405nm' as const : isBleacher ? '450nm' as const : null
       // Real per-module LED thermistors from the IO board when available;
       // simulated around chamber temp only off-Pi.
       const base = chamberTemp
       const real = ledTemps
+      // Tachometer RPM of every fan (from the IO board's fan supervision);
+      // undefined off-Pi so the report simply omits the fan chart.
+      const fanRpm = fanHealth
+        ? Object.fromEntries(Object.entries(fanHealth).map(([f, v]) => [f, v.rpm]))
+        : undefined
       recordTelemetry(cureLogId, {
         t: elapsed,
         chamberTemp,
         uvOn,
         uvType,
+        fanRpm,
         ledTemps: {
           right: real?.right ?? base + Math.round(Math.random() * 4 - 2),
           left: real?.left ?? base + Math.round(Math.random() * 4 - 2),
@@ -595,10 +741,35 @@ export default function CureProcessPage() {
     return () => clearInterval(interval)
   }, [isRunning, isComplete, cureLogId, recordTelemetry])
 
-  // Auto-start on mount
+  // Before any process: every fan (all six) is spun and its tachometer read. A fan that does not
+  // turn holds the start and asks the operator: cancel, or continue anyway (recorded on the machine).
   useEffect(() => {
-    if (!isRunning && !isComplete && phases.length > 0 && phaseElapsed.length > 0 && !cureLogId) {
+    if (fanPreflight !== 'pending' || isRunning || isComplete || cureLogId || phases.length === 0 || phaseElapsed.length === 0) return
+    if (!hw.apiConnected) { setFanPreflight('ok'); return }
+    if (fanPreflightRunRef.current) return
+    fanPreflightRunRef.current = true
+    setFanPreflight('checking')
+    // no cancellation here: the state flip to 'checking' re-runs this effect, and a cleanup would discard the answer
+    runFanTest('all').then(res => {
+      const fans = (res as { fans?: Record<string, { rpm: number; status: string }> }).fans
+      // only FAIL holds the start: a WARN fan is worn (9051 territory) but still moves the air it must
+      const failed = fans ? Object.entries(fans).filter(([, f]) => f.status === 'FAIL').map(([n]) => n) : []
+      if (failed.length) setFanFail({ fans: failed, when: 'preflight' })
+      else setFanPreflight('ok')
+    }).catch(() => setFanPreflight('ok'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fanPreflight, phases.length, phaseElapsed.length, hw.apiConnected])
+
+  // Auto-start on mount — once the fan check has passed (or was overridden)
+  useEffect(() => {
+    if (fanPreflight === 'ok' && !isRunning && !isComplete && phases.length > 0 && phaseElapsed.length > 0 && !cureLogId) {
       setIsRunning(true)
+      // A door abort still latched from a previous run is stale: clear it on
+      // the machine (same as confirming Err 6016) and ignore it until it drops.
+      if (hw.apiConnected && hw.doorAborted) {
+        staleDoorAbortRef.current = true
+        ackDoorAbort()
+      }
       // Anchor the real wall clocks: whole program + first phase
       processStartRef.current = Date.now()
       phaseWallRef.current = { start: Date.now(), temp: hw.chamberTemp, ramp: null }
@@ -636,9 +807,98 @@ export default function CureProcessPage() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phaseElapsed.length])
+  }, [phaseElapsed.length, fanPreflight])
+
+  // Pause: every output off NOW (immediate — no heater-fan run-on, so the
+  // server's door watchdog sees no live output and will not abort while the
+  // door stays open), then release the door. Clocks freeze via isPaused.
+  const handlePause = () => {
+    setShowPause(false)
+    pausedAtRef.current = performance.now()
+    setIsPaused(true)
+    stopCureOutputs(true)
+    setHeating(false)
+    setCooling(false)
+    setUv(false)
+    setNitrogenActive(false)
+    doorOpen()
+    if (!hw.apiConnected) setDoorClosed(false)
+  }
+
+  // Resume: shift every clock anchor by the pause length so the step picks
+  // up exactly where it stopped, then re-send the command the phase was
+  // running — heater + UV come back (UV still deferred if it was mid-ramp
+  // with UV Start = at-target), N₂ valve re-opens on a purge step.
+  const handleResume = () => {
+    const pausedMs = performance.now() - pausedAtRef.current
+    rampAnchorRef.current += pausedMs
+    n2AnchorRef.current += pausedMs
+    if (holdAnchorRef.current) holdAnchorRef.current.start += pausedMs
+    phaseWallRef.current.start += pausedMs
+    processStartRef.current += pausedMs
+    if (!hw.apiConnected) setDoorClosed(true)
+    const phase = phases[activePhase]
+    if (phase) {
+      if (phase.type === 'nitrogen') {
+        setNitrogenActive(true)
+        if (hw.apiConnected) setNitrogenValve(true)
+      } else {
+        commandPhase(phase, isRamping && phase.uvStartMode !== 'at-start')
+        if (isRamping) setHeating(true)
+      }
+    }
+    setIsPaused(false)
+  }
+
+  // "Continue anyway": the machine runs without the failed fan(s) for the rest of this process — recorded
+  const clearFanOverrides = useCallback(() => {
+    for (const f of Array.from(fanOverriddenRef.current)) setFanOverride(f, false)
+    fanOverriddenRef.current.clear()
+  }, [])
+  useEffect(() => { if (isComplete) clearFanOverrides() }, [isComplete, clearFanOverrides])
+  useEffect(() => () => clearFanOverrides(), [clearFanOverrides])
+
+  const handleFanContinue = async () => {
+    const fail = fanFail
+    setFanFail(null)
+    if (!fail) return
+    for (const f of fail.fans) { fanOverriddenRef.current.add(f); await setFanOverride(f, true) }
+    if (fail.when === 'preflight') setFanPreflight('ok')
+    else handleResume()
+  }
+
+  const handleLedContinue = () => {
+    for (const k of ledFail ?? []) ledOverriddenRef.current.add(k)
+    setLedFail(null)
+    handleResume()
+  }
+
+  const handleLedStop = () => {
+    setLedFail(null)
+    handleAbort()
+  }
+
+  // Retry: the sensor is re-checked by the machine when the step is re-sent (resume re-commands the phase)
+  const handleHeaterRetry = () => {
+    setHeaterFail(null)
+    handleResume()
+  }
+
+  const handleHeaterStop = () => {
+    setHeaterFail(null)
+    handleAbort()
+  }
+
+  const handleFanStop = () => {
+    const fail = fanFail
+    setFanFail(null)
+    if (fail?.when === 'preflight') { navigate('/'); return }
+    handleAbort()
+  }
 
   const handleAbort = () => {
+    clearFanOverrides()
+    setIsPaused(false)
     stopCureOutputs(true)      // abort: outputs stop now, heater fan runs its cooldown
     setIsRunning(false)
     setIsRamping(false)
@@ -856,6 +1116,7 @@ export default function CureProcessPage() {
               secElapsed={String(secE).padStart(2, '0')}
               percentComplete={`${Math.round(phaseProgress)}%`}
               onAbort={getPhaseStatus(i) === 'active' ? () => setShowAbort(true) : undefined}
+              onPause={getPhaseStatus(i) === 'active' ? () => setShowPause(true) : undefined}
               centerLabel={(phase.type === 'cure' || phase.type === 'bleacher') && phase.temp == null
                 ? (phase.vent ? 'UV + VENT' : 'UV ONLY') : undefined}
             />
@@ -923,11 +1184,60 @@ export default function CureProcessPage() {
         </div>
       )}
 
+      {fanPreflight === 'checking' && (
+        <div className="fixed inset-x-0 top-14 z-40 text-center text-xs text-muted-foreground">Checking all fans before starting…</div>
+      )}
+
+      <FanFailModal
+        isOpen={!!fanFail}
+        fans={fanFail?.fans ?? []}
+        when={fanFail?.when ?? 'running'}
+        onContinue={handleFanContinue}
+        onStop={handleFanStop}
+      />
+
+      <FanFailModal
+        isOpen={!!ledFail}
+        kind="led"
+        fans={ledFail ?? []}
+        when="running"
+        onContinue={handleLedContinue}
+        onStop={handleLedStop}
+      />
+
+      <HeaterFaultModal
+        isOpen={!!heaterFail}
+        when={heaterFail?.when ?? 'start'}
+        message={heaterFail?.message}
+        onRetry={handleHeaterRetry}
+        onStop={handleHeaterStop}
+      />
+
       <AbortModal
         isOpen={showAbort}
         onClose={() => setShowAbort(false)}
         onAbort={handleAbort}
+        chamberTemp={hw.chamberTemp}
       />
+
+      <PauseModal
+        isOpen={showPause}
+        onClose={() => setShowPause(false)}
+        onPause={handlePause}
+        chamberTemp={hw.chamberTemp}
+      />
+
+      {/* Deliberate pause: outputs off, door released; Continue once the door is closed */}
+      {isPaused && !fanFail && !ledFail && !heaterFail && (
+        <PauseOverlay
+          doorClosed={hw.doorClosed}
+          chamberTemp={hw.chamberTemp}
+          phaseName={phases[activePhase]?.name ?? 'current'}
+          apiConnected={hw.apiConnected}
+          onContinue={handleResume}
+          onStop={handleAbort}
+        />
+      )}
 
       {/* Door opened mid-process: grace-period countdown before the server
           aborts the run (Err 6016). Closing the door resumes normally. */}

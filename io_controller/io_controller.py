@@ -120,9 +120,10 @@ TEMP_ADCS = {
     "U7": {"bus": 1, "addr": 0x49},
 }
 TEMP_SENSORS = {
-    "TEMP_RIGHT_ORIGIN": ("U6", 0), "TEMP_RIGHT": ("U6", 1),
-    "TEMP_LEFT_ORIGIN":  ("U6", 2), "TEMP_LEFT":  ("U6", 3),
-    "TEMP_BACK_ORIGIN":  ("U7", 0), "TEMP_DOOR_ORIGIN": ("U7", 1),
+    "TEMP_RIGHT_UV": ("U6", 0), "TEMP_RIGHT": ("U6", 1),
+    # user, 2026-11-01: Left UV sensor on U6 AIN2, Back on U7 AIN0 (2026-10-01 swap undone); ORIGIN names renamed
+    "TEMP_LEFT_UV":      ("U6", 2), "TEMP_LEFT":  ("U6", 3),
+    "TEMP_BACK":         ("U7", 0), "TEMP_DOOR":        ("U7", 1),
     "TEMP_CHAMBER":      ("U7", 2),   # NTC7 - chamber temperature
 }
 NTC_R0, NTC_BETA, NTC_T0 = 10000.0, 3934.0, 298.15
@@ -166,6 +167,66 @@ GPIO_SIGNALS = {
     # "led_power". They are not manual signals.
 }
 GPIO_INVERTED = set()
+
+# Nitrogen line pressure sensor: SMC ISE20A/ISE20B digital pressure switch with
+# ANALOG output (model code -R/-T = 1-5 V, -S/-V = 4-20 mA), gray lead ->
+# Analog_IN -> R86 (120 R) -> ADS1115 U7 AIN3 (I2C1 0x49, schematic
+# BRD-74205). Datasheet (SMC CAT.ES100-114, p. 17 "Analog Output"): for the
+# positive-pressure range the output is linear, 1 V (4 mA) at -0.100 MPa and
+# 5 V (20 mA) at 1.000 MPa, accuracy +/-2.5 % F.S., output impedance ~1 kR
+# (voltage) / load 50-300 R at 12 V supply (current).
+#   mode 'analog_voltage': MPa = p_min + (V_sensor - v_min) * (p_max - p_min) / (v_max - v_min)
+#   mode 'analog_current': V_sensor = I * shunt_ohms, then the same with mA
+#   mode 'switch'        : OUT1/OUT2 lead on the input - only on/off (V >= on_above_volts)
+# 'divider' = V_sensor / V_adc when a resistive divider is fitted on
+# Analog_IN (none on the current board). The ADS1115 runs from 3.3 V, so
+# without a divider anything above ~3.2 V saturates ('saturated': True,
+# 'mpa': None) - with 1-5 V that is every pressure above ~0.5 MPa.
+# components.json "pressure_sensor" overrides every field.
+PRESSURE_SENSOR_DEFAULT = {
+    "adc": "U7", "channel": 3, "mode": "analog_voltage",
+    "v_min": 1.0, "v_max": 5.0,                 # analog voltage output span
+    "i_min_ma": 4.0, "i_max_ma": 20.0, "shunt_ohms": 120.0,   # analog current output
+    "p_min_mpa": -0.1, "p_max_mpa": 1.0,        # rated pressure range (ISE20)
+    "divider": 1.0,
+    "adc_saturation_volts": 3.2,                # 3.3 V ADS1115 supply: above this the pin is clamped
+    "on_above_volts": 2.0,                      # switch mode threshold (bench: 0.52 V off / clamped on)
+    "set_point_mpa": 0.6,                       # 6 bar nitrogen-line minimum (SRS); also programmed on the switch
+}
+MPA_TO_BAR = 10.0
+
+
+def pressure_sensor_convert(v_adc, cfg=None):
+    """Turn the ADC voltage on U7 AIN3 into the nitrogen line pressure.
+    Returns {"voltage", "sensor_volts", "mpa", "bar", "on", "saturated",
+    "mode", "set_point_mpa"}; mpa/bar are None when the reading cannot be
+    trusted (ADC clamped) or in switch mode."""
+    c = dict(PRESSURE_SENSOR_DEFAULT)
+    c.update(cfg or {})
+    mode = c["mode"]
+    sat = v_adc >= float(c["adc_saturation_volts"])
+    v_sensor = v_adc * float(c["divider"])
+    p_min, p_max = float(c["p_min_mpa"]), float(c["p_max_mpa"])
+    mpa = None
+    if mode == "analog_voltage" and not sat:
+        v0, v1 = float(c["v_min"]), float(c["v_max"])
+        mpa = p_min + (v_sensor - v0) * (p_max - p_min) / (v1 - v0)
+    elif mode == "analog_current" and not sat:
+        i0, i1 = float(c["i_min_ma"]), float(c["i_max_ma"])
+        i_ma = v_sensor / float(c["shunt_ohms"]) * 1000.0
+        mpa = p_min + (i_ma - i0) * (p_max - p_min) / (i1 - i0)
+    sp = c.get("set_point_mpa")
+    sp = float(sp) if sp is not None else None
+    if mode == "switch":
+        on = v_adc >= float(c["on_above_volts"])
+    elif mpa is not None and sp is not None:
+        on = mpa >= sp
+    else:
+        on = sat                                # clamped analog = pressure well above the readable span
+    return {"voltage": v_adc, "sensor_volts": v_sensor,
+            "mpa": mpa, "bar": (mpa * MPA_TO_BAR) if mpa is not None else None,
+            "on": bool(on), "saturated": bool(sat), "mode": mode, "set_point_mpa": sp}
+
 
 # Read-only GPIO inputs (sensors) - read via `pinctrl get`, never driven.
 # GPIO27 = door open/closed sensor (door interlock). GPIO17 is the wavelength
@@ -250,6 +311,9 @@ class PCA9685:
     def set_duty(self, ch, percent):
         """Logical duty 0-100%. Applies per-channel inversion; digital channel = switch."""
         percent = max(0.0, min(100.0, percent))
+        if not hasattr(self, 'last_duty'):
+            self.last_duty = {}
+        self.last_duty[ch] = percent          # what each channel is really driven at (fan supervision reads the truth here)
         if ch in PCA_DIGITAL:
             percent = 100.0 if percent > 0 else 0.0
         eff = (100.0 - percent) if ch in PCA_INVERTED else percent
@@ -830,6 +894,19 @@ class IOController:
         return self._servo
 
     # --- sensor reads ------------------------------------------------------
+    def read_pressure(self, config=None):
+        """The N2 line pressure sensor on U7 AIN3 (components.json
+        "pressure_sensor"): see pressure_sensor_convert()."""
+        cfg = dict(PRESSURE_SENSOR_DEFAULT)
+        cfg.update((config or {}).get("pressure_sensor", {}))
+        chip = cfg["adc"]
+        adc = self.temp.get(chip) or self.analog.get(chip)
+        if adc is None:
+            raise KeyError(f"pressure_sensor: unknown ADC {chip}")
+        return pressure_sensor_convert(adc.read_voltage(int(cfg["channel"])), cfg)
+
+    read_pressure_switch = read_pressure      # old name
+
     def read_temp(self, name):
         chip, ch = TEMP_SENSORS[name]
         v = self.temp[chip].read_voltage(ch)
@@ -1413,6 +1490,7 @@ class SystemController:
         "channel": "PWM_HEATER", "fan": "FAN_HEATER", "fan_pwm": 100,
         "thermistor": "TEMP_CHAMBER", "min_fan_rpm": 100,
         "temp_valid_min": -20, "temp_valid_max": 120, "health_check_sec": 10,
+        "thermistor_glitch_sec": 10,
     }
 
     def heater_cfg(self):
@@ -1425,8 +1503,8 @@ class SystemController:
         cfg.update({k: v for k, v in c.items() if not k.startswith("_")})
         return cfg
 
-    def _thermistor_state(self, cfg):
-        """(ok, temp, reason): invalid = disconnected / out-of-range / comm error."""
+    def _thermistor_read_once(self, cfg):
+        """One raw (ok, temp, reason): invalid = disconnected / out-of-range / comm error."""
         name = cfg["thermistor"]
         try:
             with self.lock:
@@ -1438,6 +1516,38 @@ class SystemController:
         if t < cfg["temp_valid_min"] or t > cfg["temp_valid_max"]:
             return False, t, f"thermistor {name} out of range ({t:.1f} C)"
         return True, t, None
+
+    def _thermistor_state(self, cfg):
+        """(ok, temp, reason) with glitch filtering: a thermistor is declared
+        failed only after it has read invalid CONTINUOUSLY for
+        thermistor_glitch_sec (default 10 s). During a shorter dropout the last
+        good temperature (if it is recent) is held; with no recent good value
+        (pre-flight after a long idle) the sensor is re-read every 0.5 s and the
+        first valid read passes. A single bad sample (I2C / connector noise)
+        therefore never stops heating or cooling."""
+        name = cfg["thermistor"]
+        hold = max(0.0, float(cfg.get("thermistor_glitch_sec", 10.0)))
+        bad_since = self.__dict__.setdefault("_therm_bad_since", {})
+        last_ok = self.__dict__.setdefault("_therm_last_ok", {})
+        last_bad = self.__dict__.setdefault("_therm_last_bad", {})
+        while True:
+            ok, t, why = self._thermistor_read_once(cfg)
+            now = time.monotonic()
+            if ok:
+                if bad_since.pop(name, None) is not None:
+                    LOG.info("thermistor %s reads again (glitch filtered)", name)
+                last_ok[name] = (now, t)
+                return True, t, None
+            if now - last_bad.get(name, now) > hold:
+                bad_since.pop(name, None)         # unobserved gap: this bad streak starts now
+            last_bad[name] = now
+            since = bad_since.setdefault(name, now)
+            if now - since >= hold:
+                return False, t, f"{why} for {hold:g} s"
+            prev = last_ok.get(name)
+            if prev is not None and now - prev[0] <= 2 * hold:
+                return True, prev[1], None        # short dropout: hold the last good value
+            time.sleep(0.5)                       # nothing recent to hold: confirm by re-reading
 
     def enable_heater(self):
         """Pre-flight (cooling fan spinning + thermistor valid) then enable.
@@ -1495,8 +1605,9 @@ class SystemController:
         while the fan spins fine. A single bad read must NOT abort a running
         cure, so a below-threshold reading is CONFIRMED with a blocking
         measure_rpm() before the heater is shut down; a real stopped fan stays
-        low, a glitch recovers. The thermistor check stays immediate - it is
-        the actual over-temperature safety net."""
+        low, a glitch recovers. The thermistor check is glitch-filtered the
+        same way (_thermistor_state: invalid continuously for
+        thermistor_glitch_sec, default 10 s, before the heater is shut down)."""
         if not self.heater_on:
             return None
         cfg = self.heater_cfg()

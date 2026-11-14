@@ -171,6 +171,7 @@ class PCA9685:
     def __init__(self, bus=BUS, addr=ADDR):
         self.bus = SMBus(bus)
         self.addr = addr
+        self.last_duty = {}              # channel -> last logical duty % written (fan supervision reads the truth here)
         self._wake()
 
     def _wake(self):
@@ -209,6 +210,7 @@ class PCA9685:
         """קביעת duty לוגי באחוזים (0-100). מחיל היפוך פר-ערוץ אם נדרש.
         ערוץ ב-DIGITAL_CHANNELS מתנהג כמתג: כל ערך > 0 → ON מלא, 0 → OFF."""
         percent = max(0.0, min(100.0, percent))
+        self.last_duty[ch] = percent
         if ch in DIGITAL_CHANNELS:
             percent = 100.0 if percent > 0 else 0.0
         # היפוך תוכנה לערוצים עם דרייבר הופך

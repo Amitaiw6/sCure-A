@@ -16,7 +16,9 @@ import { COMPLIANCE_CONTROLS } from '@/lib/compliance'
 import UpdateModal from '@/components/UpdateModal'
 import ComplianceModal from '@/components/ComplianceModal'
 import VersionsModal from '@/components/VersionsModal'
+import HeaterFaultModal from '@/components/HeaterFaultModal'
 import OnScreenKeyboard from '@/components/OnScreenKeyboard'
+import { TEMP_SENSOR, isA } from '@/lib/error-codes'
 import { Pencil } from 'lucide-react'
 
 function formatHours(h: number): string {
@@ -44,9 +46,11 @@ export default function SettingsPage() {
   // Rest position 25°C = heater OFF. Heating only starts once the user moves
   // the slider to 30°C or above (the heater's minimum target).
   const [chamberHeating, setChamberHeatingLocal] = useState(25)
+  // the machine refused to switch the heater on: its temperature sensor (chamber NTC) is not reading -> pop-up, slider back to OFF
+  const [heaterFault, setHeaterFault] = useState<string | null>(null)
   const [damperOpen, setDamperOpen] = useState(false)
   const [bofaControl, setBofaControl] = useState(true)
-  const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null; ok?: boolean }>>({})
+  const [fanTests, setFanTests] = useState<Record<string, { running: boolean; rpm: number | null; status?: string; message?: string | null; fans?: Record<string, { rpm: number; status: string }> }>>({})
   const [clockStatus, setClockStatus] = useState<'idle' | 'ok' | 'error'>('idle')
   const [ledTestRunning, setLedTestRunning] = useState(false)
   const [ledResults, setLedResults] = useState<{ label: string; ok: boolean }[] | null>(null)
@@ -65,32 +69,37 @@ export default function SettingsPage() {
     setTimeout(() => setLogsStatus('idle'), 3000)
   }
 
-  // Expected nominal RPM per fan (used by the per-fan diagnostic)
+  // Fallback RPM shown when the machine answers without a reading (used by the per-fan diagnostic)
   const FAN_RPM: Record<string, number> = {
     led_cooling: 2850,
     chamber_intake: 3050,
     chamber_heating: 2780,
   }
 
+  const FAN_LABELS: Record<string, string> = { FAN_LEFT: 'Left LED fan', FAN_RIGHT: 'Right LED fan', FAN_BACK: 'Back LED fan', FAN_DOOR: 'Door LED fan' }
   const handleFanTest = async (id: string) => {
     setFanTests(prev => ({ ...prev, [id]: { running: true, rpm: null } }))
     const res = await runFanTest(id)          // per-fan diagnostic on the IO board
     const rpm = (res as { rpm?: number }).rpm
-    const ok = (res as { status?: string }).status !== 'FAIL'
-    setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: rpm ?? FAN_RPM[id] ?? null, ok } }))
+    // OK / WARN (below warn_below_pct of nominal) / FAIL (below critical_below_pct, or not turning);
+    // no status at all (timeout, transport error) is a failed test, never OK
+    const status = (res as { status?: string }).status ?? 'FAIL'
+    const message = (res as { message?: string | null }).message ?? ((res as { status?: string }).status ? null : 'no answer from the machine')   // every fan that is not OK, e.g. "FAN_HEATER: 2363 RPM, 5925 RPM expected at 100 % duty (60 % below nominal)"
+    const fans = (res as { fans?: Record<string, { rpm: number; status: string }> }).fans   // every fan of the group, each with its own tachometer reading
+    setFanTests(prev => ({ ...prev, [id]: { running: false, rpm: rpm ?? FAN_RPM[id] ?? null, status, message, fans } }))
   }
 
-  const handleLedTest = async () => {
+  const handleLedTest = async (wavelength: 405 | 450 = 405) => {
     setLedTestRunning(true)
     setLedResults(null)
-    const res = await runLedDiagnostic()
-    const results = (res as { results?: { name: string; temp: number | null; status: string }[] }).results
-    setLedResults(results
-      ? results.map(r => ({
-          label: `${r.name}: ${r.temp != null ? `${r.temp}°C` : 'N/A'}`,
-          ok: r.status === 'OK',
-        }))
-      : [{ label: 'LED test unavailable', ok: false }])
+    const res = await runLedDiagnostic(wavelength)
+    // the machine answers OK, or FAIL with the sensors that did not read / panels that did not heat up
+    const status = (res as { status?: string }).status
+    // just the verdict: PASS, or FAIL with the panel(s) that did not heat up
+    const failed = (res as { results?: { name: string; status: string }[] }).results?.filter(r => r.status === 'FAIL').map(r => r.name.replace(' LED', '')) ?? []
+    setLedResults(status === 'OK'
+      ? [{ label: `${wavelength} nm`, ok: true }]
+      : [{ label: failed.length ? `${wavelength} nm — ${failed.join(', ')}` : (status ? `${wavelength} nm` : 'no answer'), ok: false }])
     setLedTestRunning(false)
   }
 
@@ -104,7 +113,12 @@ export default function SettingsPage() {
     if (tempDebounceRef.current) clearTimeout(tempDebounceRef.current)
     tempDebounceRef.current = setTimeout(() => {
       if (v <= 25) stopChamberHeating()
-      else setTargetTemperature(v)
+      else setTargetTemperature(v).then(res => {
+        if (res.ok) return
+        window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 6015, detail: res.message } }))
+        setChamberHeatingLocal(25)                                   // the heater is OFF: the slider says so
+        if (isA(res.code, TEMP_SENSOR) || /thermistor/i.test(res.message ?? '')) setHeaterFault(res.message ?? '')
+      })
     }, 400)
   }
 
@@ -168,11 +182,14 @@ export default function SettingsPage() {
           <Card>
             <div className="space-y-2">
               <FanRow label="LED Cooling Airflow" value={ledCoolingAirflow} onChange={handleFanChange('led_cooling', setLedCoolingAirflow)}
-                onTest={() => handleFanTest('led_cooling')} testing={fanTests['led_cooling']?.running} rpm={fanTests['led_cooling']?.rpm} ok={fanTests['led_cooling']?.ok} />
+                onTest={() => handleFanTest('led_cooling')} testing={fanTests['led_cooling']?.running} rpm={fanTests['led_cooling']?.rpm} status={fanTests['led_cooling']?.status} />
+              <FanTestLine test={fanTests['led_cooling']} labels={FAN_LABELS} />
               <FanRow label="Chamber Intake Fan" value={chamberIntakeFan} onChange={handleFanChange('chamber_intake', setChamberIntakeFan)}
-                onTest={() => handleFanTest('chamber_intake')} testing={fanTests['chamber_intake']?.running} rpm={fanTests['chamber_intake']?.rpm} ok={fanTests['chamber_intake']?.ok} />
+                onTest={() => handleFanTest('chamber_intake')} testing={fanTests['chamber_intake']?.running} rpm={fanTests['chamber_intake']?.rpm} status={fanTests['chamber_intake']?.status} />
+              <FanTestLine test={fanTests['chamber_intake']} labels={FAN_LABELS} />
               <FanRow label="Chamber Heating Fan" value={chamberHeatingFan} onChange={handleFanChange('chamber_heating', setChamberHeatingFan)}
-                onTest={() => handleFanTest('chamber_heating')} testing={fanTests['chamber_heating']?.running} rpm={fanTests['chamber_heating']?.rpm} ok={fanTests['chamber_heating']?.ok} />
+                onTest={() => handleFanTest('chamber_heating')} testing={fanTests['chamber_heating']?.running} rpm={fanTests['chamber_heating']?.rpm} status={fanTests['chamber_heating']?.status} />
+              <FanTestLine test={fanTests['chamber_heating']} labels={FAN_LABELS} />
             </div>
           </Card>
 
@@ -195,14 +212,19 @@ export default function SettingsPage() {
           <Card>
             <div className="flex items-center gap-3">
               <Label className="shrink-0">LED Test</Label>
-              <Button size="sm" className="text-[10px] h-7 px-3 gap-1" onClick={handleLedTest} disabled={ledTestRunning}>
+              <Button size="sm" className="text-[10px] h-7 px-3 gap-1 bg-purple-600 hover:bg-purple-500 text-white" onClick={() => handleLedTest(405)} disabled={ledTestRunning}>
                 <Zap size={11} />
-                {ledTestRunning ? 'Testing...' : 'Run Diagnostic'}
+                405 nm
               </Button>
+              <Button size="sm" className="text-[10px] h-7 px-3 gap-1 bg-blue-600 hover:bg-blue-500 text-white" onClick={() => handleLedTest(450)} disabled={ledTestRunning}>
+                <Zap size={11} />
+                450 nm
+              </Button>
+              {ledTestRunning && <span className="text-[10px] text-muted-foreground">Running…</span>}
               {ledResults && (
                 <div className="flex gap-3 flex-wrap">
                   {ledResults.map((r, i) => (
-                    <span key={i} className="text-[9px] text-muted-foreground">{r.label} <span className={cn('font-bold', r.ok ? 'text-green-400' : 'text-destructive')}>{r.ok ? 'OK' : 'FAIL'}</span></span>
+                    <span key={i} className="text-[10px] text-muted-foreground">{r.label} <span className={cn('font-bold', r.ok ? 'text-green-400' : 'text-destructive')}>{r.ok ? 'PASS' : 'FAIL'}</span></span>
                   ))}
                 </div>
               )}
@@ -243,7 +265,21 @@ export default function SettingsPage() {
                   disabled={!hw.nitrogenMode && hw.n2LinePressure < 6}
                 />
               </div>
-              <ToggleItem label="NFC" checked={hw.nfcEnabled} onChange={setNfcEnabled} />
+              {/* NFC can only be switched on while the server sees a reader on USB
+                  (same pattern as the Nitrogen-Mode 6 bar guard). */}
+              <div className="flex items-center justify-between">
+                <Label>
+                  NFC
+                  {hw.apiConnected && hw.nfcReader && !hw.nfcReader.detected && (
+                    <span className="text-destructive text-[9px] ml-1">(no reader)</span>
+                  )}
+                </Label>
+                <Switch
+                  checked={hw.nfcEnabled}
+                  onCheckedChange={v => { void setNfcEnabled(v) }}
+                  disabled={!hw.nfcEnabled && hw.apiConnected && hw.nfcReader != null && !hw.nfcReader.detected}
+                />
+              </div>
               <ToggleItem label="BOFA Control" checked={bofaControl}
                 onChange={v => { setBofaControl(v); apiSetBofa(v) }} />
             </div>
@@ -408,6 +444,7 @@ export default function SettingsPage() {
         </div>
       </div>
       <UpdateModal isOpen={showUpdate} onClose={() => setShowUpdate(false)} />
+      <HeaterFaultModal isOpen={heaterFault !== null} when="start" message={heaterFault ?? undefined} onStop={() => setHeaterFault(null)} stopLabel="OK" />
       <VersionsModal isOpen={showVersions} onClose={() => setShowVersions(false)} />
       <ComplianceModal isOpen={showCompliance} onClose={() => setShowCompliance(false)} />
       <OnScreenKeyboard
@@ -465,14 +502,38 @@ function Btn({ children, active, muted, red, onClick }: {
   )
 }
 
-function FanRow({ label, value, onChange, onTest, testing, rpm, ok = true }: {
+type FanTestState = {
+  running: boolean
+  rpm?: number | null
+  status?: string
+  message?: string | null
+  fans?: Record<string, { rpm: number; status: string }>
+}
+
+/// The line under a fan row: what every fan that is not OK read, against the nominal RPM it owes.
+function FanTestLine({ test, labels }: { test?: FanTestState; labels: Record<string, string> }) {
+  if (!test || test.running || !test.status || test.status === 'OK') return null
+  const named = test.fans
+    ? Object.entries(test.fans).filter(([, f]) => f.status !== 'OK').map(([name]) => labels[name] ?? name).join(', ')
+    : ''
+  const text = test.message ?? (named ? `${named} — not rotating` : '')
+  if (!text) return null
+  return (
+    <div className={cn('text-[10px] font-bold pl-[130px]', test.status === 'WARN' ? 'text-amber-400' : 'text-destructive')}>
+      {text}
+    </div>
+  )
+}
+
+function FanRow({ label, value, onChange, onTest, testing, rpm, status }: {
   label: string
   value: number
   onChange: (v: number) => void
   onTest?: () => void
   testing?: boolean
   rpm?: number | null
-  ok?: boolean
+  // OK = at nominal, WARN = worn (>= warn_below_pct below), FAIL = must be replaced / not turning
+  status?: string
 }) {
   return (
     <div className="flex items-center gap-2 flex-1">
@@ -491,9 +552,10 @@ function FanRow({ label, value, onChange, onTest, testing, rpm, ok = true }: {
           Test
         </Button>
       )}
-      {rpm != null && (
-        <span className={cn('text-[10px] shrink-0 whitespace-nowrap w-[72px] text-right', ok ? 'text-green-400' : 'text-destructive')}>
-          {rpm} RPM <b>{ok ? 'OK' : 'FAIL'}</b>
+      {rpm != null && status && (
+        <span className={cn('text-[10px] shrink-0 whitespace-nowrap w-[88px] text-right',
+          status === 'OK' ? 'text-green-400' : status === 'WARN' ? 'text-amber-400' : 'text-destructive')}>
+          {rpm} RPM <b>{status}</b>
         </span>
       )}
     </div>

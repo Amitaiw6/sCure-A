@@ -46,13 +46,13 @@ const CLOUD = () => vm.runInContext('CLOUD', sandbox);   // const in the page's 
 
 (async () => {
   // 1. without a URL + key nothing is queued and nothing is sent
-  sandbox.cloudQueue('SAF-016|DVT-01|wavelength=450|1');
+  sandbox.cloudQueue('DVT-SAF-012|DVT-01|wavelength=450|1');
   await sandbox.cloudSyncNow();
   assert.strictEqual(posted.length, 0, 'an unconfigured cloud must stay silent');
 
   // 2. a recorded run reaches the portal as one dvt_run, with its values and the operator who signed it
   S.cloud = { url: 'https://script.google.com/macros/s/X/exec', key: 'dk' };
-  const id = 'SAF-016|DVT-01|wavelength=450|1';
+  const id = 'DVT-SAF-012|DVT-01|wavelength=450|1';
   S.results[id] = { values: { max_irradiance_10cm: 1.8, leak_location: 'hinge' }, verdict: 'PASS', by: 'Amitai',
                     at: '2026-10-12T05:00:00Z', note: 'leak at the hinge' };
   sandbox.cloudQueue(id);
@@ -72,7 +72,7 @@ const CLOUD = () => vm.runInContext('CLOUD', sandbox);   // const in the page's 
   assert.strictEqual(posted.length, 1);
   assert.strictEqual(posted[0].url, S.cloud.url);
   assert.ok(posted[0].type.startsWith('text/plain'), 'text/plain keeps the browser from sending a CORS preflight');
-  assert.deepStrictEqual(posted[0].body, { kind: 'dvt_run', unit: 'DVT-01', testId: 'SAF-016', variant: 'wavelength=450',
+  assert.deepStrictEqual(posted[0].body, { kind: 'dvt_run', unit: 'DVT-01', testId: 'DVT-SAF-012', variant: 'wavelength=450',
     rep: 1, runId: id, verdict: 'PASS', operator: 'Amitai', startedAt: '2026-10-12T05:00:00Z',
     note: 'leak at the hinge', machine: '', values: { max_irradiance_10cm: 1.8, leak_location: 'hinge' }, machineKey: 'dk' });
 

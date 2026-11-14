@@ -19,7 +19,7 @@ window.DVT_AUTO = (function () {
 
   // Shown next to the catalog line in the page. A browser serving a cached dvt-auto.js is the
   // commonest reason a fix appears not to have landed, and this is how you see it at a glance.
-  const VERSION = '0.9.109';
+  const VERSION = '0.9.131';
 
   const SCRIPTS = {};                 // test_id -> { kind, minutes, needs, intro, run(c) }
   const STATE = {};                   // test_id -> live runner state
@@ -122,13 +122,83 @@ window.DVT_AUTO = (function () {
     say(en, hb, cls) {
       const text = L(en, hb === undefined ? en : hb);
       const st = STATE[this.tid];
-      if (st) { st.line = text; st.cls = cls || ''; }
+      if (st) { st.line = text; st.cls = cls || ''; st.act = null; st.actAt = 0; st.ackAt = 0; }
       paint(this.tid);
       return text;
+    }
+    /**
+     * An instruction the PERSON must carry out now ("OPEN THE DOOR and keep it open").
+     * Unlike say() - which reports what the machine is doing - this is published as the step
+     * on the site and in the console: big, amber, with the seconds left while the runner waits.
+     * Before this existed (user, 2026-10-29) a timed instruction reached the portal as an
+     * ordinary grey line while the big box said "running by itself - nothing to do", so
+     * DVT-SAF-008 step 4/6 timed out: nobody was told to open the door.
+     */
+    act(en, hb, secLeft, opts) {
+      const text = L(en, hb === undefined ? en : hb);
+      const st = STATE[this.tid];
+      const o = opts || {};
+      if (st) {
+        if (!st.act || st.act.text !== text) { st.actAt = Date.now(); st.ackAt = 0; }   // a new instruction needs its own press
+        st.line = text; st.cls = 'act';
+        st.act = { text, sec: typeof secLeft === 'number' ? Math.max(0, Math.ceil(secLeft)) : null,
+                   stage: this.stageNow || null, ack: o.ack !== false, acked: !!st.ackAt,
+                   label: o.label || null };
+      }
+      paint(this.tid);
+      return text;
+    }
+    /** The person pressed "I did it" for the instruction on screen. */
+    acked() {
+      const st = STATE[this.tid];
+      return !!(st && st.ackAt && st.ackAt >= (st.actAt || 0));
+    }
+    /** No instruction is on screen any more (the step moved on). */
+    actDone() {
+      const st = STATE[this.tid];
+      if (st) { st.act = null; st.actAt = 0; st.ackAt = 0; }
+    }
+    /**
+     * An instruction that is finished only when BOTH are true: the person pressed "I did it" and
+     * (when the machine can see it) the machine agrees. The press alone never stands in for a
+     * reading - if they disagree the operator is told which half is missing and the wait goes on.
+     * `pred` null = nothing to read, the press is the whole step.
+     */
+    async doThis(en, hb, pred, sec, failEn, failHb) {
+      const limit = sec === undefined ? 120 : sec;
+      const t0 = clock();
+      let seen = null, seenState = null, ok = false, everSeen = false, pressedOnce = false;
+      while ((clock() - t0) / 1000 < limit) {
+        this.check();
+        const left = limit - (clock() - t0) / 1000;
+        ok = true;
+        if (pred) { try { seen = await this.state(); } catch (e) { seen = null; } ok = !!(seen && pred(seen)); }
+        // look back: the step is done when the machine saw it at ANY moment since the instruction appeared, not only
+        // at the moment the press arrives - the press travels through the site for seconds, and a door opened and let
+        // go had swung back by then, so "I did it" was not taken (user, 2026-11-12)
+        if (ok) { everSeen = true; seenState = seen; }
+        // a press is kept for the whole step: the text below changes ("pressed, but..."), which clears the screen's
+        // ack - before this a press given before the machine saw the door was lost (user, 2026-11-12)
+        const pressed = pressedOnce = pressedOnce || this.acked();
+        if (everSeen && pressed) { this.actDone(); return ok ? seen : seenState; }
+        if (pressed && !everSeen) this.act(`${en} - pressed, but the machine does not see it yet`, `${hb === undefined ? en : hb} - נלחץ, אבל המכונה עדיין לא רואה את זה`, left);
+        else if (everSeen && !pressed) this.act(`${en} - the machine sees it; press "I did it" to go on`, `${hb === undefined ? en : hb} - המכונה רואה את זה; לחץ "ביצעתי" כדי להמשיך`, left);
+        else this.act(en, hb, left);
+        await sleep(250);
+      }
+      this.actDone();
+      // the machine saw it and only the press is missing: say so - "the machine did not see the door open" was shown
+      // while the door sensor read OPEN the whole time (user, 2026-11-12, DVT-SAF-008 step 4 on CureBox-3)
+      if (pred && everSeen && !pressedOnce)
+        throw new Error(L(`the machine saw it, but nobody pressed "I did it" within ${Math.round(limit)} s - ${en}`,
+                          `המכונה ראתה את זה, אבל אף אחד לא לחץ "ביצעתי" תוך ${Math.round(limit)} שניות - ${hb === undefined ? en : hb}`));
+      throw new Error(L(failEn || `${en} - it did not happen within ${Math.round(limit)} s`,
+                        failHb || `${hb === undefined ? en : hb} - לא בוצע תוך ${Math.round(limit)} שניות`));
     }
     /** A numbered stage of the script: shown to the operator and kept in the record. */
     stage(n, of, en, hb) {
       this.timeline.push([this.sec, L(en, hb === undefined ? en : hb)]);
+      this.stageNow = { n, of, text: L(en, hb === undefined ? en : hb) };
       return this.say(`[${n}/${of}] ${en}`, `[${n}/${of}] ${hb === undefined ? en : hb}`);
     }
     note(en, hb) { this.timeline.push([this.sec, L(en, hb === undefined ? en : hb)]); }
@@ -286,6 +356,16 @@ window.DVT_AUTO = (function () {
     });
   }
 
+  /** "I did it" - from the card here or from the site through the runner. */
+  function ackAct(tid) {
+    const st = STATE[tid];
+    if (!st || !st.act) return false;
+    st.ackAt = Date.now();
+    st.act = Object.assign({}, st.act, { acked: true });
+    paint(tid, true);
+    return true;
+  }
+
   function answer(tid, value) {
     const st = STATE[tid];
     if (!st || !st.prompt) return;
@@ -401,7 +481,7 @@ window.DVT_AUTO = (function () {
     async idle(c) {
       const s = await c.state();
       // /api/state keeps the LAST program in `recipe` after it ends (aborted, completed, error ...): only a program
-      // that is still going counts - an aborted SAF-012 attempt used to block every other script here for good
+      // that is still going counts - an aborted DVT-SAF-008 attempt used to block every other script here for good
       const running = s.recipe && s.recipe.state && ['running', 'paused', 'starting', 'preflight', 'waiting'].includes(String(s.recipe.state).toLowerCase());
       if (s.uvOn || s.isHeating || s.isCooling || s.nitrogenActive || running)
         throw new Error(L('a process is running on the machine - stop it first',
@@ -537,7 +617,7 @@ window.DVT_AUTO = (function () {
       c.say('functional check: sensors, fans, heater and LEDs…', 'בדיקה פונקציונלית: חיישנים, מאווררים, חימום ולדים…');
       const report = { at: new Date().toISOString() };
       // the step before this one is often "power the unit back up": wait for it to answer instead of
-      // failing the whole check on the first refused connection (a SAF-005 run on the unit did exactly that)
+      // failing the whole check on the first refused connection (a DVT-SAF-003 run on the unit did exactly that)
       const up = await c.until(() => true, { sec: 240, poll: 3,
         tick: () => c.say('waiting for the machine to answer before the functional check…', 'ממתין שהמכונה תענה לפני הבדיקה הפונקציונלית…') });
       if (!up.ok) { report.error = 'the machine did not answer within 4 minutes'; report.pass = false; c.trace('functional_check', report);
@@ -564,7 +644,7 @@ window.DVT_AUTO = (function () {
         if (o.led !== false) {
           const led = await c.post('/api/diagnostics/led-test?seconds=15').catch(() => null);
           report.led = led ? { status: led.status, stage: led.stage, message: led.message } : null;
-          // the C# firmware answers a passed LED test with status 'OK' (the Python one said 'PASS'): SAF-021 r1 lost a PASS to this
+          // the C# firmware answers a passed LED test with status 'OK' (the Python one said 'PASS'): DVT-SAF-017 r1 lost a PASS to this
           report.ledOk = !!(led && ['PASS', 'OK'].includes(String(led.status || '').toUpperCase()));
         } else report.ledOk = null;
 
@@ -693,7 +773,7 @@ window.DVT_AUTO = (function () {
     const notes = {};                   // the traces that are not sample rows travel in the summary
     for (const name of Object.keys(c.traces)) {
       const tr = c.traces[name];
-      if (tr && tr.samples) H.setAuto(rec, { kind: 'auto_' + name, test: tid, at, machine: c.machine, columns: tr.columns, samples: tr.samples });
+      if (tr && tr.samples) H.setAuto(rec, { kind: 'auto_' + name, test: tid, at, machine: c.machine, columns: tr.columns, samples: tr.samples, xy: tr.xy || undefined });
       else notes[name] = tr;
     }
     H.setAuto(rec, {                    // last, so rec.auto is the summary of the whole run
@@ -766,7 +846,7 @@ window.DVT_AUTO = (function () {
 
   /**
    * Fill a run from a measurement that is already in hand, whichever card produced it.
-   * A test where the operator drives the hardware (SAF-013: the heater is bridged by hand,
+   * A test where the operator drives the hardware (DVT-SAF-009: the heater is bridged by hand,
    * the machine has no command for it) still logs everything through the TC-08, and that log
    * IS the test data - so the values come out of it instead of being typed in afterwards.
    * Returns { filled, message }; filled is empty when the recording does not show what the
@@ -828,6 +908,8 @@ window.DVT_AUTO = (function () {
         ${st && st.busy ? `<button class="btn btn-outline btn-small" data-act="as-stop" data-test="${tid}">■ ${L('Stop', 'עצור')}</button>` : ''}
         <span class="auto-text ${st ? st.cls || '' : ''}" id="as-line-${tid}">${st ? esc(st.line) : ''}</span>
       </div>
+      ${st && st.act && st.act.ack && !st.act.acked ? `<div class="auto-prompt"><div class="auto-prompt-text">${esc(st.act.text)}</div>
+        <div class="auto-prompt-row"><button class="btn btn-auto btn-small" data-act="as-acted" data-test="${tid}">${esc(st.act.label || L('I did it', 'ביצעתי'))}</button></div></div>` : ''}
       ${st && st.prompt ? promptHtml(tid, st.prompt) : ''}
     </div>`;
   }
@@ -880,6 +962,7 @@ window.DVT_AUTO = (function () {
     else if (act === 'as-yes') answer(tid, true);
     else if (act === 'as-no') answer(tid, false);
     else if (act === 'as-skip') answer(tid, null);
+    else if (act === 'as-acted') ackAct(tid);
     else if (act === 'as-ok') {
       const el = document.getElementById('as-in-' + tid);
       answer(tid, el ? el.value : null);
@@ -898,6 +981,8 @@ window.DVT_AUTO = (function () {
    * What the DVT tab of sCure Cloud needs to explain a test the way this tool does: why, with what, in which order and
    * what counts as a pass. Plain English text only (the portal has no Hebrew); no data fields or run state.
    */
+  // The questions each script asks the operator, in order - GENERATED by DVT/web/build_sim_prompts.cjs (the portal's simulation plays them).
+  const SIM_PROMPTS = {"DVT-SAF-018":[{"kind":"do","text":"Selector at 110 V, mains at 230 V, current probe around the heater branch conductor, TC-08 CH1 bonded to the heater body. Press Done when the rig is as the catalog describes."},{"kind":"value","text":"Peak current the clamp meter recorded on the heater branch","field":"heater_branch_peak_current","unit":"A","type":"float"},{"kind":"value","text":"Which fuse opened?","field":"which_fuse_opened","type":"enum","values":["heater_branch_5A","inlet_15A","both","none"]},{"kind":"do","text":"De-energise, isolate and let the unit cool, then open it and inspect."},{"kind":"yesno","text":"Was there smoke or fire?","field":"smoke_or_fire"},{"kind":"yesno","text":"Is the enclosure damaged?","field":"enclosure_damage"},{"kind":"yesno","text":"Does the heater element still have continuity?","field":"heater_element_continuity"},{"kind":"value","text":"Condition of the wiring insulation","field":"wiring_insulation_condition","type":"enum","values":["intact","discoloured","damaged"]},{"kind":"yesno","text":"Take the heater branch fuse out and check it with a meter: did it really blow (open circuit)?","field":"fuse_blown_confirmed"},{"kind":"do","text":"Replace the opened fuse, set the selector correctly and power the unit up again. Press Done when it is running."}],"DVT-SAF-019":[{"kind":"value","text":"Prospective short-circuit current of the supply","field":"prospective_scc","unit":"A","type":"float"},{"kind":"value","text":"PE resistance measured at the inlet","field":"pe_resistance","unit":"ohm","type":"float"},{"kind":"do","text":"Energise the unit, confirm normal standby, then apply the short remotely and capture the current waveform."},{"kind":"value","text":"Peak fault current from the waveform","field":"peak_fault_current","unit":"A","type":"float"},{"kind":"value","text":"Fuse clearing time from the waveform","field":"fuse_clearing_time","unit":"ms","type":"float"},{"kind":"yesno","text":"Did the inlet fuse open?","field":"fuse_opened"},{"kind":"yesno","text":"Is there arc damage?","field":"arc_damage"},{"kind":"yesno","text":"Are the terminals damaged?","field":"terminal_damage"},{"kind":"yesno","text":"Is the inlet filter still functional?","field":"inlet_filter_functional"},{"kind":"value","text":"PE continuity after the event","field":"pe_continuity_post","unit":"ohm","type":"float"},{"kind":"value","text":"Insulation resistance after the event","field":"insulation_resistance_post","unit":"Mohm","type":"float"}],"DVT-SAF-001":[{"kind":"do","text":"Open the circulation fan supply NOW, then press Done. The runner times everything from that press."}],"DVT-SAF-004":[{"kind":"do","text":"Disconnect the RIGHT LED thermistor only (open circuit), then press Done."},{"kind":"do","text":"Reconnect the RIGHT thermistor and acknowledge the alarm on the screen, then press Done - the runner will light the LEDs and ask you to pull it again."},{"kind":"do","text":"LEDs at maximum. Pull the RIGHT thermistor connector NOW, then press Done."},{"kind":"do","text":"Reconnect the RIGHT thermistor and acknowledge the alarm, then press Done."},{"kind":"do","text":"Disconnect the LEFT LED thermistor only (open circuit), then press Done."},{"kind":"do","text":"Reconnect the LEFT thermistor and acknowledge the alarm on the screen, then press Done - the runner will light the LEDs and ask you to pull it again."},{"kind":"do","text":"LEDs at maximum. Pull the LEFT thermistor connector NOW, then press Done."},{"kind":"do","text":"Reconnect the LEFT thermistor and acknowledge the alarm, then press Done."},{"kind":"do","text":"Disconnect the BACK LED thermistor only (open circuit), then press Done."},{"kind":"do","text":"Reconnect the BACK thermistor and acknowledge the alarm on the screen, then press Done - the runner will light the LEDs and ask you to pull it again."},{"kind":"do","text":"LEDs at maximum. Pull the BACK thermistor connector NOW, then press Done."},{"kind":"do","text":"Reconnect the BACK thermistor and acknowledge the alarm, then press Done."},{"kind":"do","text":"Disconnect the DOOR LED thermistor only (open circuit), then press Done."},{"kind":"do","text":"Reconnect the DOOR thermistor and acknowledge the alarm on the screen, then press Done - the runner will light the LEDs and ask you to pull it again."},{"kind":"do","text":"LEDs at maximum. Pull the DOOR thermistor connector NOW, then press Done."},{"kind":"do","text":"Reconnect the DOOR thermistor and acknowledge the alarm, then press Done."}],"DVT-SAF-005":[{"kind":"do","text":"Disconnect the RIGHT LED fan only, then press Done."},{"kind":"do","text":"Reconnect the RIGHT fan, then press Done - the LEDs will go to maximum."},{"kind":"do","text":"Pull the RIGHT fan connector NOW, then press Done."},{"kind":"do","text":"Reconnect the RIGHT fan, then press Done."},{"kind":"do","text":"Disconnect the LEFT LED fan only, then press Done."},{"kind":"do","text":"Reconnect the LEFT fan, then press Done - the LEDs will go to maximum."},{"kind":"do","text":"Pull the LEFT fan connector NOW, then press Done."},{"kind":"do","text":"Reconnect the LEFT fan, then press Done."},{"kind":"do","text":"Disconnect the BACK LED fan only, then press Done."},{"kind":"do","text":"Reconnect the BACK fan, then press Done - the LEDs will go to maximum."},{"kind":"do","text":"Pull the BACK fan connector NOW, then press Done."},{"kind":"do","text":"Reconnect the BACK fan, then press Done."},{"kind":"do","text":"Disconnect the DOOR LED fan only, then press Done."},{"kind":"do","text":"Reconnect the DOOR fan, then press Done - the LEDs will go to maximum."},{"kind":"do","text":"Pull the DOOR fan connector NOW, then press Done."},{"kind":"do","text":"Reconnect the DOOR fan, then press Done."}],"DVT-SAF-006":[{"kind":"do","text":"Disconnect the chamber cooling fan, then press Done."},{"kind":"do","text":"Reconnect the cooling fan and press Done - the runner will heat the chamber and start a cooling cycle, then ask you to disconnect the fan again."},{"kind":"do","text":"Disconnect the cooling fan NOW, then press Done."},{"kind":"do","text":"Reconnect the cooling fan and press Done."}],"DVT-SAF-020":[{"kind":"yesno","text":"Do all 2 of these events appear in the machine's persistent log with a timestamp? (codes: 9001, 9050)","field":"all_logged"}],"DVT-SAF-007":[{"kind":"do","text":"Set the voltage selector to 220 V and feed the unit 110 V at the inlet (the heater gets about a quarter of its power), then press Done."},{"kind":"value","text":"Selector position","field":"selector_position","type":"string"},{"kind":"value","text":"Input voltage (measured at the inlet) - the machine cannot sense it, so you enter it","field":"applied_voltage","unit":"V","type":"float"},{"kind":"value","text":"Heater branch current while heating","field":"heater_branch_current","unit":"A","type":"float"},{"kind":"yesno","text":"Did any fuse open?","field":"fuse_opened"},{"kind":"yesno","text":"Did the thermal cutout trip?","field":"thermal_cutout_tripped"},{"kind":"yesno","text":"Is there visible damage?","field":"visible_damage"},{"kind":"do","text":"Restore the correct selector position for the applied mains, then press Done."}],"DVT-SAF-017":[{"kind":"do","text":"Set the voltage selector to the MIDDLE (between 110 V and 230 V) and the mains input to 220 V, then press Done."},{"kind":"value","text":"Heater branch current with HEAT commanded (expected zero)","field":"heater_branch_current","unit":"A","type":"float"},{"kind":"do","text":"Set the selector to the correct detent for the applied mains, then press Done."}],"DVT-THM-001":[{"kind":"value","text":"Selector position","field":"selector_position","type":"string"}],"DVT-THM-002":[{"kind":"value","text":"LED current at the working point","field":"led_current","unit":"A","type":"float"}],"DVT-THM-003":[{"kind":"value","text":"Peak-to-peak spread across the 16 grid channels at the point of maximum cooling rate","field":"uniformity_pp_during_cooling","unit":"C","type":"float"},{"kind":"value","text":"Grid position of the largest gradient","field":"max_gradient_position","type":"string"}],"DVT-THM-006":[{"kind":"do","text":"Selector at 110 V, mains at 230 V, TC-08 CH1 bonded to the heater body. Power the unit up but do NOT command heat. Press Done."},{"kind":"yesno","text":"Is the selector confirmed and photographed at 110 V?","field":"selector_position_verified"},{"kind":"do","text":"De-energise, isolate and let it cool, then identify which fuse opened."},{"kind":"yesno","text":"Did a fuse open?","field":"fuse_opened"},{"kind":"value","text":"Which fuse opened?","field":"which_fuse_opened","type":"enum","values":["heater_branch_5A","inlet_15A","both","none"]},{"kind":"do","text":"Replace the fuse, set the selector to 230 V, power up, then press Done."}],"DVT-SAF-009":[{"kind":"do","text":"Switch the external heater supply ON now and leave it on - do not interrupt it until the runner says the recording is complete. Fire watch at the bench. Press Done when it is on."},{"kind":"do","text":"the body is climbing again from 194.2 C - the cutout closed; recording complete - switch the external heater supply OFF now, then press Done."}],"DVT-SAF-011":[{"kind":"do","text":"Disconnect the 40-pin flat cable of the CM5 NOW, then press Done. The runner times everything from that press."},{"kind":"yesno","text":"Did the heater SSR switch off?","field":"heater_ssr_switched_off"},{"kind":"do","text":"Reconnect the 40-pin flat cable of the CM5, then press Done."}],"DVT-SAF-012":[{"kind":"do","text":"Darken the room, close and latch the door, hold the meter head flush against the door seam and press Done."},{"kind":"do","text":"Wearing UV eye protection, scan the door seam, hinge line, damper, vents, cable entries and every panel joint with the meter head held flush against the light source. The runner keeps the highest reading - press Done when you have covered everything."},{"kind":"value","text":"Where was the meter when the maximum was read?","field":"leak_location","type":"string"},{"kind":"do","text":"Hold the meter head at the operator position at the front of the machine (eye height, facing the door) and press Done - the runner then averages the meter for 10 s."}],"DVT-SAF-013":[{"kind":"do","text":"Unplug the door switch connector, then press Done."},{"kind":"do","text":"Plug the door switch connector back in, then press Done."}],"DVT-SAF-014":[{"kind":"do","text":"Kill the screen (UI) process only - leave the firmware running. Press Done the moment it is gone."},{"kind":"value","text":"What is on the display now?","field":"display_state","type":"string"},{"kind":"do","text":"Restore the machine to normal operation (restart what you stopped, reconnect, remount read-write), then press Done."}],"DVT-SAF-015":[{"kind":"yesno","text":"Is what the message claims about which fan true for this case? Message: \"LED panel sensor fault - check the thermistor connection\"","field":"claim_is_correct"},{"kind":"value","text":"Airflow at the panel inlet, if an anemometer is fitted (skip if not)","field":"airflow","unit":"m/s","type":"float"},{"kind":"do","text":"Restore normal cooling, then press Done."}],"DVT-SAF-016":[{"kind":"do","text":"With the unit de-energised, open the right panel at led_string_open. Re-energise and press Done."},{"kind":"yesno","text":"Is the right string confirmed open or its driver unpowered on the DMM / clamp?","field":"panel_confirmed_dark"},{"kind":"do","text":"Restore the right connection, acknowledge the alarm, then press Done - the runner will start a cure and ask you to open it again."},{"kind":"do","text":"Open the right connection NOW, then press Done."},{"kind":"do","text":"Restore the right connection and press Done."}],"DVT-GAS-007":[{"kind":"value","text":"N2 flow from the flow meter","field":"n2_flow","unit":"L/min","type":"float"},{"kind":"value","text":"Chamber volume","field":"chamber_volume","unit":"L","type":"float"},{"kind":"value","text":"Analyser reading in air (span check)","field":"o2_reading_air","unit":"%","type":"float"},{"kind":"value","text":"Configured nitrogen purge duration on this machine","field":"program_purge_time_s","unit":"s","type":"float"},{"kind":"do","text":"Chamber closed, both O2 probes in place. Press Done and the runner opens the valve."},{"kind":"do","text":"Press Now the moment the CENTRE probe first reads O2 at or below 4.8 %."},{"kind":"do","text":"Press Now the moment the CORNER probe first reads O2 at or below 4.8 %."},{"kind":"value","text":"Lowest O2 reached during the purge","field":"o2_min_during_purge","unit":"%","type":"float"},{"kind":"do","text":"Press Now the moment the CENTRE probe rises back above 4.8 % (or after 60 minutes, whichever comes first)."},{"kind":"value","text":"O2 at the end of the hold","field":"o2_at_hold_end","unit":"%","type":"float"},{"kind":"value","text":"Longest cure that runs after a purge on this machine (sum of the UV steps)","field":"longest_cure_after_purge_s","unit":"s","type":"float"}],"DVT-GAS-001":[{"kind":"do","text":"Set the nitrogen regulator to about 4 bar (above the 3 bar limit). Keep the nitrogen valve closed. Then press Done."},{"kind":"yesno","text":"On the machine screen, try to switch the nitrogen on. Does it stay off (refused)?","field":"ui_refused"},{"kind":"do","text":"Lower the regulator to the normal working pressure (between 1 and 3 bar) and acknowledge the alarm on the screen if it is shown. Then press Done."},{"kind":"do","text":"Nitrogen is flowing. Raise the regulator to about 4 bar NOW, then press Done."},{"kind":"yesno","text":"Did the flow meter drop to zero?","field":"flow_stopped_on_rise"},{"kind":"do","text":"Lower the regulator back to the normal pressure and acknowledge the alarm on the screen. Then press Done."}],"DVT-GAS-002":[{"kind":"do","text":"Disconnect the nitrogen line (the line pressure must be below 0.5 bar), then press Done."},{"kind":"value","text":"What did the screen say?","field":"message_text","type":"string"}],"DVT-GAS-003":[{"kind":"do","text":"Charge the nitrogen line to about 4 bar (the valve stays closed), then close the shut-off valve at the supply so the line is isolated. Press Done."},{"kind":"yesno","text":"If the pressure dropped: bubble-test every fitting from the inlet to the valve. Did you find a leak?","field":"leak_found"},{"kind":"value","text":"Where does it leak?","field":"leak_location","type":"string"},{"kind":"do","text":"Vent the line and return the supply to the normal working pressure (1 to 3 bar). Press Done."}],"DVT-GAS-004":[{"kind":"value","text":"Chamber O2 at the moment the job reported complete","field":"o2_at_job_complete","unit":"%","type":"float"},{"kind":"do","text":"Press Now the moment the chamber O2 first reaches 19.5 %."},{"kind":"yesno","text":"Was the door released before the chamber O2 reached 19.5 %?","field":"door_released_before_safe"},{"kind":"value","text":"O2 at the moment the door was opened","field":"o2_at_door_opening","unit":"%","type":"float"}],"DVT-GAS-005":[{"kind":"value","text":"Room volume","field":"room_volume","unit":"m3","type":"float"},{"kind":"value","text":"Ventilation state","field":"ventilation_state","type":"string"},{"kind":"value","text":"Reference: O2 at the breathing zone now, before any nitrogen is released","field":"o2_reference","unit":"%","type":"float"},{"kind":"do","text":"Press Now at the moment the breathing-zone O2 reaches its minimum."},{"kind":"value","text":"Minimum O2 in the breathing zone","field":"o2_min_breathing_zone","unit":"%","type":"float"},{"kind":"value","text":"N2 released over the two programs","field":"n2_released","unit":"L","type":"float"},{"kind":"value","text":"O2 sixty minutes after the last purge","field":"o2_after_60min","unit":"%","type":"float"}],"DVT-GAS-006":[{"kind":"do","text":"Block the tube between the nitrogen valve and the chamber (clamp or plug). Keep the supply at the normal working pressure (1 to 3 bar). Press Done."},{"kind":"do","text":"Remove the block and acknowledge the alarm on the screen. Press Done."}],"DVT-NFC-001":[{"kind":"value","text":"Serial printed on the tag of the build head you are about to insert","field":"bh_serial_expected","type":"string"},{"kind":"do","text":"Insert the build head to its stop, close the door, then press Done."},{"kind":"yesno","text":"Does the screen show the build head identity (or the message for a missing / unknown tag)?","field":"operator_shown_identity"},{"kind":"value","text":"What does the screen say?","field":"message_text","type":"string"},{"kind":"do","text":"Remove the build head, then press Done."}],"DVT-ENV-001":[{"kind":"do","text":"Install the data logger and the indicators, record their positions, close the crate and ship. Press Done when the unit is back and unpacked."},{"kind":"value","text":"Route","field":"route","type":"string"},{"kind":"value","text":"Distance","field":"distance_km","unit":"km","type":"float"},{"kind":"value","text":"Transit days","field":"transit_days","unit":"days","type":"float"},{"kind":"yesno","text":"Did the impact indicator trigger?","field":"impact_indicator_triggered"},{"kind":"yesno","text":"Did the tilt indicator trigger?","field":"tilt_indicator_triggered"},{"kind":"yesno","text":"Is the crate damaged?","field":"crate_damage"},{"kind":"yesno","text":"Is any glass broken?","field":"glass_broken"},{"kind":"yesno","text":"Is any glass cracked or chipped?","field":"glass_cracked_or_chipped"},{"kind":"value","text":"How many fasteners are loose?","field":"loose_fasteners","type":"int"},{"kind":"value","text":"How many connectors are dislodged?","field":"connector_dislodged","type":"int"},{"kind":"value","text":"Visible damage (write none if there is none)","field":"visible_damage","type":"string"},{"kind":"value","text":"Peak acceleration, X","field":"peak_g_x","unit":"g","type":"float"},{"kind":"value","text":"Peak acceleration, Y","field":"peak_g_y","unit":"g","type":"float"},{"kind":"value","text":"Peak acceleration, Z","field":"peak_g_z","unit":"g","type":"float"}],"DVT-ELE-001":[{"kind":"value","text":"Test current used","field":"test_current","unit":"A","type":"float"},{"kind":"value","text":"Rating of the upstream protective device","field":"protective_device_rating","unit":"A","type":"float"},{"kind":"do","text":"Measure from the PE pin of the inlet to each listed accessible conductive part in turn, one minute per point."},{"kind":"value","text":"Part with the highest reading","field":"part_name","type":"string"},{"kind":"value","text":"Its measured resistance","field":"measured_resistance","unit":"ohm","type":"float"},{"kind":"value","text":"Where the highest resistance occurred","field":"worst_point","type":"string"},{"kind":"yesno","text":"Is the PE conductor uninterrupted by any switch or fuse?","field":"pe_uninterrupted"}],"DVT-ELE-002":[{"kind":"do","text":"Short L and N together at the inlet and apply 500 Vdc between the shorted L+N and PE for 60 s."},{"kind":"value","text":"Insulation resistance L+N to PE","field":"insulation_resistance_lnpe","unit":"Mohm","type":"float"},{"kind":"value","text":"Ambient temperature","field":"ambient_temp","unit":"C","type":"float"},{"kind":"value","text":"Relative humidity","field":"ambient_rh","unit":"%","type":"float"}],"DVT-ELE-003":[{"kind":"value","text":"Test voltage","field":"test_voltage","unit":"V","type":"float"},{"kind":"value","text":"Waveform","field":"waveform","type":"enum","values":["ac","dc"]},{"kind":"value","text":"Dwell time","field":"dwell_time","unit":"s","type":"float"},{"kind":"value","text":"Trip current setting","field":"trip_current_setting","unit":"mA","type":"float"},{"kind":"value","text":"Clause these derive from","field":"clause_reference","type":"string"},{"kind":"do","text":"Apply between the shorted mains conductors and PE / accessible parts."},{"kind":"yesno","text":"Was there a breakdown?","field":"breakdown"},{"kind":"value","text":"Leakage current at the test voltage","field":"leakage_current_at_voltage","unit":"mA","type":"float"},{"kind":"value","text":"Additional insulation barrier tested","field":"barrier_name","type":"string"},{"kind":"yesno","text":"Did that barrier break down?","field":"barrier_breakdown"},{"kind":"value","text":"Insulation resistance after the hipot","field":"post_hipot_insulation_resistance","unit":"Mohm","type":"float"}],"DVT-ELE-004":[{"kind":"value","text":"Touch current in normal condition, worst polarity","field":"touch_current_normal_max","unit":"mA","type":"float"},{"kind":"value","text":"Touch current with PE open","field":"touch_current_pe_open","unit":"mA","type":"float"},{"kind":"value","text":"Load condition of the worst case","field":"load_condition","type":"enum","values":["idle","heater","cure","heater_and_cure"]},{"kind":"value","text":"Worst-case touch current","field":"touch_current_worst","unit":"mA","type":"float"}],"DVT-ELE-005":[{"kind":"value","text":"Selector position","field":"selector_position","type":"enum","values":["110V","220V"]},{"kind":"value","text":"Voltage measured at the inlet","field":"applied_voltage","unit":"V","type":"float"},{"kind":"value","text":"Input power in standby","field":"input_power_idle","unit":"W","type":"float"},{"kind":"value","text":"Input current, heat only","field":"input_current_heat","unit":"A","type":"float"},{"kind":"value","text":"Input power, heat only","field":"input_power_heat","unit":"W","type":"float"},{"kind":"value","text":"Power factor, heat only","field":"power_factor_heat","type":"float"},{"kind":"value","text":"Input current, cure only","field":"input_current_cure","unit":"A","type":"float"},{"kind":"value","text":"Input power, cure only","field":"input_power_cure","unit":"W","type":"float"},{"kind":"value","text":"Power factor, cure only","field":"power_factor_cure","type":"float"},{"kind":"value","text":"Worst-case input current, everything working","field":"input_current_all","unit":"A","type":"float"},{"kind":"value","text":"Worst-case input power","field":"input_power_all","unit":"W","type":"float"},{"kind":"value","text":"Power factor, everything working","field":"power_factor_all","type":"float"},{"kind":"do","text":"From cold, switch the unit on at least three times at the worst-case phase angle and capture the inrush."},{"kind":"value","text":"How many switch-ons were captured?","field":"inrush_switch_ons","type":"int"},{"kind":"value","text":"Worst peak inrush current","field":"inrush_peak","unit":"A","type":"float"},{"kind":"value","text":"Its duration","field":"inrush_duration","unit":"ms","type":"float"},{"kind":"value","text":"I2t of the worst switch-on","field":"i2t","unit":"A2s","type":"float"},{"kind":"yesno","text":"Is there margin against the inlet fuse rating?","field":"fuse_margin_ok"},{"kind":"yesno","text":"Does it pass a type B 16 A breaker characteristic?","field":"breaker_type_b_ok"},{"kind":"yesno","text":"Does it pass a type C 16 A breaker characteristic?","field":"breaker_type_c_ok"},{"kind":"yesno","text":"Do the whole-machine current and power agree with the rating label?","field":"label_agreement"}]};   // @sim-prompts
   function detailOf(test) {
     const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
     const steps = test.procedure_steps || [];
@@ -915,10 +1000,11 @@ window.DVT_AUTO = (function () {
       bench,
       kind: sc && sc.kind ? sc.kind : '',
       note: bench ? BENCH_INTRO : sc && sc.intro ? clean(sc.intro[0]) : '',
+      prompts: SIM_PROMPTS[test.test_id] || [],
     };
   }
 
-  return { attach, has, script, card, stepNote, click, start, stop, fromTrace, bare, missingFields, detailOf, BENCH_INTRO, version: VERSION, SCRIPTS, TRACE, P, L, mmss,
+  return { attach, has, script, card, stepNote, click, start, stop, ackAct, fromTrace, bare, missingFields, detailOf, BENCH_INTRO, version: VERSION, SCRIPTS, TRACE, P, L, mmss,
            _host: () => H, _state: (tid) => STATE[tid], _Ctx: Ctx, _tcRead: tcRead };
 })();
 
@@ -933,6 +1019,10 @@ window.DVT_AUTO = (function () {
   const def = (tid, o) => { S[tid] = o; };
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
   const r1 = (v) => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
+  /** The body thermocouple for a log line - a missing reading says so instead of "null" (user, 2026-10-28). */
+  const bodyTxt = (v) => (v === null || v === undefined || !isFinite(v) ? 'body: TC-08 CH1 not connected' : `body ${r1(v)} °C`);
+  /** The heater as the machine reports it in this sample (user, 2026-10-28: the log must show it). */
+  const heatTxt = (s) => (!s ? '' : ` · heater ${s.isHeating || num(s.heaterPwm) > 0 ? 'ON' + (num(s.heaterPwm) !== null ? ' ' + Math.round(num(s.heaterPwm)) + '%' : '') : 'off'}`);
   const r2 = (v) => (v === null || v === undefined ? null : Math.round(v * 100) / 100);
   const stamp = () => new Date().toISOString();
   const mmss_ = A.mmss;
@@ -941,6 +1031,62 @@ window.DVT_AUTO = (function () {
 
   // Columns of the watch() trace: [t, chamber, heaterPwm, heaterOut, uvOn, R, L, Back, Door, tc08, alerts]
   const C = { T: 0, CHAMBER: 1, PWM: 2, HEATER: 3, UV: 4, R: 5, L: 6, BACK: 7, DOOR: 8, TC: 9, ALERTS: 10, CH2: 11 };
+
+  /**
+   * The chamber thermocouple grid (DVT-THM-001 / -003, user 2026-11-09): 2 x 2 x 4, levels Z1 (top) to Z4
+   * (bottom), in each level 1 = back left, 2 = front left, 3 = back right, 4 = front right. Both TC-08s sit on
+   * the MACHINE's USB; the firmware reports them in /api/dev/picolog/status units[] by serial. The 0031 unit
+   * holds the upper eight (CH1-4 = Z1, CH5-8 = Z2), the 114 unit the bottom eight (CH1-4 = Z3, CH5-8 = Z4).
+   */
+  const GRID_LOGGERS = [{ match: '0031', firstLevel: 1 }, { match: '114', firstLevel: 3 }];
+  const GRID_NAMES = [];
+  for (let z = 1; z <= 4; z++) for (let q = 1; q <= 4; q++) GRID_NAMES.push(`Z${z}-${q}`);
+  const GRID_PLACES = { 1: 'back left', 2: 'front left', 3: 'back right', 4: 'front right' };
+  const gridPlace = (name) => { const m = /^Z(\d)-(\d)$/.exec(name || ''); return m ? `level ${m[1]} of 4 from the top, ${GRID_PLACES[m[2]]}` : ''; };
+
+  /** The 16 grid readings in GRID_NAMES order (null = that thermocouple open), or null when a logger is missing. */
+  function gridRead(p) {
+    const units = p && p.connected && Array.isArray(p.units) ? p.units : [];
+    const out = new Array(16).fill(null);
+    for (const g of GRID_LOGGERS) {
+      const u = units.find((x) => String(x.serial || '').includes(g.match));
+      if (!u || !Array.isArray(u.channels)) return null;
+      for (let i = 0; i < 8; i++) {
+        const v = num(u.channels[i]);
+        out[(g.firstLevel - 1) * 4 + i] = v === null || v < -25 || v > 400 ? null : v;
+      }
+    }
+    return out;
+  }
+
+  /** Which loggers / thermocouples are missing, in words, or '' when all 16 read. */
+  function gridMissing(p) {
+    const units = p && p.connected && Array.isArray(p.units) ? p.units : [];
+    const lost = GRID_LOGGERS.filter((g) => !units.some((x) => String(x.serial || '').includes(g.match))).map((g) => `TC-08 ${g.match}`);
+    if (lost.length) return `${lost.join(' and ')} not seen on the machine's USB`;
+    const g = gridRead(p);
+    const open = GRID_NAMES.filter((n, i) => g[i] === null);
+    return open.length ? `no reading from ${open.join(', ')}` : '';
+  }
+
+  /**
+   * Spatial uniformity over a window of grid rows ([t, 16 values]): each thermocouple's mean over the window,
+   * then the peak-to-peak and the sample standard deviation of those 16 means, and the hottest / coldest place.
+   * Means, not single samples, so one noisy second does not set the result. Null when a position has no data.
+   */
+  function gridUniformity(rows, from, to) {
+    const win = rows.filter((r) => r[0] >= from && r[0] <= to);
+    const means = GRID_NAMES.map((n, i) => {
+      const v = win.map((r) => r[i + 1]).filter((x) => x !== null);
+      return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+    });
+    if (!win.length || means.some((m) => m === null)) return null;
+    const hi = Math.max(...means), lo = Math.min(...means);
+    const avg = means.reduce((a, b) => a + b, 0) / means.length;
+    const sd = Math.sqrt(means.reduce((a, b) => a + (b - avg) ** 2, 0) / (means.length - 1));
+    return { pp: hi - lo, sd, mean: avg, means, samples: win.length,
+             hottest: GRID_NAMES[means.indexOf(hi)], coldest: GRID_NAMES[means.indexOf(lo)] };
+  }
   const PANEL = { right: C.R, left: C.L, back: C.BACK, door: C.DOOR };
   /** A trace row's reference temperature: the CH2 reference thermocouple, else CH1. */
   const refOf = (r) => (r[C.CH2] !== null && r[C.CH2] !== undefined ? r[C.CH2] : r[C.TC]);   // live display only
@@ -984,7 +1130,7 @@ window.DVT_AUTO = (function () {
   // SAF - electrical and heater safety
   // ==========================================================================
 
-  def('DVT-SAF-001', {
+  def('DVT-SAF-018', {
     kind: 'instrumented', minutes: 25, autoRecord: false,
     intro: ['The runner commands HEAT to 80 C and logs the chamber and the heater body (TC-08 on the machine) for 10 minutes or until the fuse opens. It reads the temperature rise, the moment the heater body turns from rising to falling - the fuse opening - and the time to it. It asks you only for the clamp-meter current and for what you see when you open the unit.',
             'הרנר מפעיל חימום ל-80 מעלות ורושם את התא ואת גוף ההיטר (TC-08 במכונה) במשך 10 דקות או עד שהנתיך נפתח. הוא מודד את העלייה בטמפרטורה, את הרגע שבו גוף ההיטר עובר מעלייה לירידה - פתיחת הנתיך - ואת הזמן עד אליו. הוא שואל אותך רק את קריאת מלקחי הזרם ומה אתה רואה כשאתה פותח את היחידה.'],
@@ -1021,6 +1167,9 @@ window.DVT_AUTO = (function () {
       await c.yesno('enclosure_damage', 'Is the enclosure damaged?', 'האם יש נזק למארז?');
       await c.yesno('heater_element_continuity', 'Does the heater element still have continuity?', 'האם עדיין יש רציפות באלמנט החימום?');
       await c.value('wiring_insulation_condition', 'Condition of the wiring insulation', 'מצב בידוד החיווט');
+      // the end of the test: the person confirms with a meter that the fuse really blew (user, 2026-10-25)
+      await c.yesno('fuse_blown_confirmed', 'Take the heater branch fuse out and check it with a meter: did it really blow (open circuit)?',
+                    'הוצא את נתיך ענף גוף החימום ובדוק אותו במודד: האם הוא באמת נשרף (נתק)?');
 
       c.stage(5, 5, 'functional check', 'בדיקה פונקציונלית');
       await c.ask('Replace the opened fuse, set the selector correctly and power the unit up again. Press Done when it is running.',
@@ -1029,7 +1178,7 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-002', {
+  def('DVT-SAF-019', {
     kind: 'instrumented', minutes: 20, autoRecord: false, needs: 'none',
     intro: ['The unit is on a short-circuit rig for this test, so the runner cannot drive it. It walks the measurements in order, keeps each one with its timestamp, and runs the full functional check on the machine at the end.',
             'היחידה נמצאת על מערך קצר בבדיקה הזו, ולכן הרנר לא יכול להפעיל אותה. הוא מוביל את המדידות לפי הסדר, שומר כל אחת עם חותמת זמן, ומריץ בסוף בדיקה פונקציונלית מלאה על המכונה.'],
@@ -1053,7 +1202,7 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-003', {
+  def('DVT-SAF-001', {
     kind: 'guided', minutes: 25,
     intro: ['The runner heats the chamber, waits until the heater body is rising, then asks you to open the circulation fan supply - the one thing it cannot do over the network. From that instant it measures everything itself: the time to the fan-failure alarm, the instant the heater body turns from rising to falling, the peak, the alarm text and code, and whether the alarm clears on its own after you reconnect.',
             'הרנר מחמם את התא, ממתין עד שגוף ההיטר עולה, ואז מבקש ממך לנתק את הזנת מאוורר הסחרור - הדבר היחיד שהוא לא יכול לעשות ברשת. מהרגע הזה הוא מודד הכול בעצמו: הזמן עד התראת כשל המאוורר, הרגע שבו גוף ההיטר עובר מעלייה לירידה, השיא, נוסח ההתראה והקוד שלה, והאם ההתראה מתנקה מעצמה אחרי שאתה מחבר בחזרה.'],
@@ -1066,7 +1215,7 @@ window.DVT_AUTO = (function () {
       const warm = [];
       await c.watch({ sec: 300, hz: 1, tc: true, into: warm,
         on: (s, at) => {
-          c.say(`warming · ${r1(num(s.chamberTemp))} °C · body ${r1(P.maxOf(warm, C.TC))} °C`,
+          c.say(`warming · ${r1(num(s.chamberTemp))} °C · ${bodyTxt(P.maxOf(warm, C.TC))}${heatTxt(s)}`,
                 `מתחמם · ${r1(num(s.chamberTemp))} °C · גוף ${r1(P.maxOf(warm, C.TC))} °C`);
           const rate = P.rate(warm, C.TC, 60);
           return at > 60 && rate !== null && rate > 2 ? 'stop' : undefined;
@@ -1088,7 +1237,7 @@ window.DVT_AUTO = (function () {
         on: (s, at) => {
           const fresh = P.fresh(before, s);
           if (alarmAt === null && fresh.length) { alarmAt = at; alarmCode = fresh[0]; }
-          c.say(`after the disconnect · ${at} s${alarmCode ? ' · alarm ' + alarmCode : ''} · body ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C`,
+          c.say(`after the disconnect · ${at} s${alarmCode ? ' · alarm ' + alarmCode : ''} · ${bodyTxt(rows.length ? rows[rows.length - 1][C.TC] : null)}${heatTxt(s)}`,
                 `אחרי הניתוק · ${at} שניות${alarmCode ? ' · התראה ' + alarmCode : ''} · גוף ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C`);
           const turned = P.turn(rows, C.TC);
           return alarmAt !== null && turned.turned && at > alarmAt + 20 ? 'stop' : undefined;
@@ -1108,8 +1257,22 @@ window.DVT_AUTO = (function () {
 
       c.stage(4, 5, 'reconnect', 'חיבור מחדש');
       await c.tryPost('/api/chamber/stop');
-      await c.ask('Reconnect the circulation fan supply, then press Done. Do NOT acknowledge the alarm on the screen.',
-                  'חבר בחזרה את הזנת מאוורר הסחרור, ואז לחץ "בוצע". אל תאשר את ההתראה על המסך.');
+      // the machine sees the fan come back itself (user, 2026-11-12): no "Done" - the step ends when FAN_HEATER turns
+      // again. The fan must be commanded to see its tach, so a fan the trip left at 0 % is set to 30 % (the cooldown duty)
+      const s4 = await c.state().catch(() => null);
+      if (!s4 || !((s4.fanDutyEach || {}).FAN_HEATER > 0)) await c.tryPost('/api/fans/chamber_heating?speed=30');
+      const spinning = (s) => (P.rpm(s, 'FAN_HEATER') || 0) >= 300;
+      c.act('RECONNECT the circulation fan supply - the machine goes on when it sees the fan turning. Do NOT acknowledge the alarm on the screen',
+            'חבר בחזרה את הזנת מאוורר הסחרור - המכונה ממשיכה כשהיא רואה את המאוורר מסתובב. אל תאשר את ההתראה על המסך', 300, { ack: false });
+      const back = await c.until(spinning, { sec: 300, poll: 1 });
+      c.actDone();
+      if (!back.ok) {
+        // the tach never came back (a fan that is not driven, or no tach line): fall back to the person's word
+        await c.ask('The machine did not see the circulation fan turn. Reconnect its supply, then press Done. Do NOT acknowledge the alarm on the screen.',
+                    'המכונה לא ראתה את מאוורר הסחרור מסתובב. חבר בחזרה את ההזנה שלו, ואז לחץ "בוצע". אל תאשר את ההתראה על המסך.');
+      }
+      c.put('fan_reconnect_seen', back.ok);
+      c.note(back.ok ? `the machine saw FAN_HEATER turn again at ${r1(P.rpm(back.s, 'FAN_HEATER'))} RPM` : 'the fan reconnect was confirmed by Done (no tach)');
       const still = await c.until((s) => !(s.alerts || []).includes(alarmCode), { sec: 60, poll: 2 });
       c.put('recovery_requires_ack', !still.ok);
 
@@ -1118,91 +1281,8 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  // DVT-SAF-004 is run by the machine-side DVT bench (catalog tool: bench, port 3002), not from here:
+  // DVT-SAF-002 is run by the machine-side DVT bench (catalog tool: bench, port 3002), not from here:
   // the firmware's own clock times the heater-body turn, so there is one path and no second card.
-
-  def('DVT-SAF-005', {
-    kind: 'guided', minutes: 35,
-    intro: ['With a fixed 10 kOhm resistor in place of the heater NTC, the controller sees a plausible reading that never moves. The runner records that frozen reading and the true temperature from the TC-08, commands HEAT to 80 C, and watches both: whether the displayed reading moves at all, when the alarm comes, whether the heater goes off at the alarm and how long that took, and the true peak the chamber reached. It then commands HEAT again to prove heating stays refused.',
-            'עם נגד קבוע של 10 קילו-אוהם במקום ה-NTC של ההיטר, הבקר רואה קריאה סבירה שלא זזה. הרנר רושם את הקריאה הקפואה ואת הטמפרטורה האמיתית מה-TC-08, מפעיל חימום ל-80 מעלות, וצופה בשניהם: האם הקריאה המוצגת זזה בכלל, מתי מגיעה ההתראה, האם ההיטר נכבה בהתראה וכמה זמן זה לקח, ומה השיא האמיתי שהתא הגיע אליו. אחר כך הוא מפעיל חימום שוב כדי להוכיח שהחימום נשאר דחוי.'],
-    async run(c) {
-      c.stage(1, 6, 'fit the resistor', 'התקן את הנגד');
-      await c.ask('With the unit de-energised, fit the fixed 10 kOhm resistor in place of the heater NTC, put the TC-08 reference thermocouple in the chamber, power up, then press Done.',
-                  'כשהיחידה מנותקת מחשמל, התקן נגד קבוע של 10 קילו-אוהם במקום ה-NTC של ההיטר, הנח את תרמוקפל הייחוס של ה-TC-08 בתא, הדלק, ולחץ "בוצע".');
-      const s0 = await P.idle(c);
-      const before = s0.alerts || [];
-      c.put('displayed_temp_fixed', r2(num(s0.chamberTemp)));
-      c.put('reference_temp_start', await P.reference(c));
-
-      c.stage(2, 6, 'HEAT to 80 C', 'חימום ל-80 מעלות');
-      c.put('heat_command_timestamp', stamp());
-      await c.post('/api/cure/heat?target=80');
-      const rows = [];
-      let alarmAt = null, alarmCode = null, offAt = null, alarmText = '';
-      await c.watch({ sec: 600, hz: 2, tc: true, into: rows, live: 'heat',
-        on: (s, at) => {
-          const fresh = P.fresh(before, s);
-          if (alarmAt === null && fresh.length) { alarmAt = at; alarmCode = fresh[0]; alarmText = P.detail(s, alarmCode); }
-          // heaterOut / heaterPwm are null, not false / 0, once the heating loop stops - null counts as off
-          if (alarmAt !== null && offAt === null && !s.isHeating && s.heaterOut !== true && !(num(s.heaterPwm) > 0)) offAt = at;
-          // three numbers, each named for what it is: what the machine shows (the frozen resistor), the chamber's
-          // true temperature on the CH2 reference thermocouple, and the heater body on CH1
-          const last = rows.length ? rows[rows.length - 1] : null;
-          const cham = last ? r1(refOf(last)) : null, body = last ? r1(last[C.TC]) : null;
-          c.say(`heating · ${at} s · displayed ${r1(num(s.chamberTemp))} °C · chamber (CH2) ${cham} °C · heater body (CH1) ${body} °C${alarmCode ? ' · alarm ' + alarmCode : ''}`,
-                `מחמם · ${at} שניות · מוצג ${r1(num(s.chamberTemp))} °C · תא (CH2) ${cham} °C · גוף ההיטר (CH1) ${body} °C${alarmCode ? ' · התראה ' + alarmCode : ''}`);
-          return offAt !== null && at > offAt + 30 ? 'stop' : undefined;
-        } });
-      c.trace('heat', rows);
-      await c.tryPost('/api/chamber/stop');
-
-      c.stage(3, 6, 'reading the trace', 'קורא את העקומה');
-      const shown = rows.map((r) => r[C.CHAMBER]).filter((v) => v !== null);
-      const text = alarmText;                                // captured while watching: the machine may be restarting now
-      c.puts({
-        displayed_reading_changed: shown.length > 1 && Math.max(...shown) - Math.min(...shown) > 0.5,
-        reference_temp_at_3min: rows.length && rows[rows.length - 1][C.T] >= 170 ? r2(nearestAt(rows, refCol(rows), 180)) : null,
-        time_to_alarm: alarmAt,
-        heater_off_at_alarm: alarmAt !== null && offAt !== null,
-        heater_off_delay: alarmAt !== null && offAt !== null ? r2(offAt - alarmAt) : null,
-        max_chamber_temp: r2(P.maxOf(rows, refCol(rows))),
-      });
-      P.putAlarm(c, { raised: alarmAt !== null, code: alarmCode, text });
-      c.put('alarm_names_temperature_reading', P.names(text, ['temperature', 'טמפרטורה', 'sensor', 'חיישן', 'reading', 'קריאה', 'NTC']));
-
-      // The machine restarts itself a minute after 9006, by design (user, 2026-10-01): wait it out, then check that
-      // the latch survived the restart - the second HEAT is refused and 9006 is still raised.
-      if (alarmCode !== null) {
-        const rr = await P.rideRestart(c, 120);
-        c.trace('restart', rr);
-      }
-      c.stage(4, 6, 'HEAT again with the resistor still fitted', 'חימום שוב עם הנגד עדיין מותקן');
-      const again = await c.post('/api/cure/heat?target=80');
-      const heated = await c.until((s) => s.isHeating === true && num(s.heaterPwm) > 0, { sec: 30, poll: 1 });
-      c.put('heat_start_inhibited', again.ok === false || !heated.ok);
-      const s2 = await c.state();
-      c.put('alarm_persists_until_fixed', alarmCode !== null && (s2.alerts || []).includes(alarmCode));
-      await c.tryPost('/api/chamber/stop');
-
-      c.stage(5, 6, 'did the cutout act?', 'האם המנתק פעל?');
-      // The cutout opens around its rating (~250 C; 262 C measured in SAF-013 on the unit). A heater body that
-      // never got near it cannot have tripped it, so that answer comes from the trace; only a body that came
-      // within 50 C of the rating leaves the question to the operator, who can check the cutout's contacts.
-      const bodyPeak = P.maxOf(rows, C.TC);
-      if (bodyPeak !== null && bodyPeak < 200) {
-        c.put('cutout_tripped', false);
-        c.note(`cutout_tripped = false: the heater body peaked at ${r1(bodyPeak)} C, far below the cutout's ~250 C rating`);
-      } else {
-        await c.yesno('cutout_tripped', `The heater body reached ${r1(bodyPeak)} C - did the independent thermal cutout open during the run?`,
-                      `גוף ההיטר הגיע ל-${r1(bodyPeak)} מעלות - האם המנתק התרמי העצמאי נפתח במהלך הריצה?`);
-      }
-
-      c.stage(6, 6, 'refit the NTC', 'החזר את ה-NTC');
-      await c.ask('De-energise, refit the NTC, power up, acknowledge the alarm, then press Done.',
-                  'נתק מחשמל, החזר את ה-NTC, הדלק, אשר את ההתראה, ולחץ "בוצע".');
-      await P.selfCheck(c);
-    },
-  });
 
   // The four LED thermistors as the machine names them in /api/state ledTemps and in its alarm text.
   const LED_POSITIONS = [
@@ -1214,7 +1294,7 @@ window.DVT_AUTO = (function () {
     return Object.prototype.hasOwnProperty.call(lt, key) ? lt[key] === null : null;
   };
 
-  def('DVT-SAF-007', {
+  def('DVT-SAF-004', {
     kind: 'guided', minutes: 40,
     intro: ['One run walks all four LED thermistors in turn - right, left, back, door. For each one: you disconnect that sensor only, the runner waits for the machine to report it missing (and checks the other three still read), tries to start a cure, which must be refused, and reads the alarm, which must name that sensor. Then you reconnect, the LEDs go to maximum, you pull the same connector again and the StarBright times the LEDs going dark. Before the next sensor the runner waits for the alarm to clear, so one sensor\'s alarm is never credited to the next.',
             'ריצה אחת עוברת על ארבעת תרמיסטורי ה-LED בתורם - ימין, שמאל, אחור, דלת. עבור כל אחד: אתה מנתק רק את החיישן הזה, הרנר ממתין שהמכונה תדווח שהוא חסר (ובודק ששלושת האחרים עדיין קוראים), מנסה להתחיל קיור שחייב להידחות, וקורא את האזעקה שחייבת לזהות את החיישן הזה. אחר כך אתה מחבר בחזרה, הלדים עולים למקסימום, אתה שולף שוב את אותו מחבר וה-StarBright מודד את כיבוי הלדים. לפני החיישן הבא הרנר ממתין שהאזעקה תתנקה, כך שאזעקה של חיישן אחד לא תיזקף לבא אחריו.'],
@@ -1319,7 +1399,7 @@ window.DVT_AUTO = (function () {
     return ['right', 'left', 'back', 'door'].map((k) => `${lang === 'he' ? he[k] : k} ${lt[k] === null || lt[k] === undefined ? '—' : r1(lt[k])} °C`).join(' · ');
   }
 
-  def('DVT-SAF-008', {
+  def('DVT-SAF-005', {
     kind: 'guided', minutes: 60,
     intro: ['One guided run over the four LED cooling fans - right, left, back, door. For each fan: you disconnect that fan only, the runner tries to start a cure (it must be refused) and reads the alarm (it must name that fan); you reconnect it (the runner acknowledges the alarm on the machine itself); the LEDs go to maximum, you pull the same fan again and the runner times the LEDs going off. Then on to the next fan, by itself. The four panel temperatures are shown live throughout.',
             'ריצה מודרכת אחת על ארבעת מאווררי קירור ה-LED - ימין, שמאל, אחור, דלת. לכל מאוורר: אתה מנתק רק אותו, הרנר מנסה להתחיל קיור (חייב להידחות) וקורא את האזעקה (חייבת לזהות את המאוורר הזה); אתה מחבר בחזרה (הרנר מאשר את האזעקה במכונה בעצמו); הלדים עולים למקסימום, אתה מנתק שוב את אותו מאוורר והרנר מודד מתי הלדים כבים. ואז הוא ממשיך לבד למאוורר הבא. ארבע טמפרטורות הפאנלים מוצגות בזמן אמת לאורך כל הריצה.'],
@@ -1415,18 +1495,17 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-009', {
+  def('DVT-SAF-006', {
     kind: 'guided', minutes: 20,
     intro: ['The runner proves a job cannot start with the chamber cooling fan failed, reads the alarm and checks the text names that fan, then injects the failure during an active cooling cycle and measures the response time and the chamber peak.',
             'הרנר מוכיח שעבודה לא יכולה להתחיל כשמאוורר קירור התא כשל, קורא את ההתראה ובודק שהנוסח מזהה את המאוורר הזה, ואז מזריק את הכשל במהלך מחזור קירור פעיל ומודד את זמן התגובה ואת שיא התא.'],
     async run(c) {
-      const mode = c.variant.failure_mode || 'as the case defines';
-      c.put('failure_mode', c.variant.failure_mode || null);
+      c.put('failure_mode', 'disconnected');   // disconnection only, no blocked rotor (user, 2026-10-25)
       await P.idle(c);
 
-      c.stage(1, 4, 'fail the fan', 'הכשל את המאוורר');
-      await c.ask(`Apply the failure to the chamber cooling fan (${mode}), then press Done.`,
-                  `הפעל את הכשל על מאוורר קירור התא (${mode}), ואז לחץ "בוצע".`);
+      c.stage(1, 4, 'disconnect the fan', 'ניתוק המאוורר');
+      await c.ask('Disconnect the chamber cooling fan, then press Done.',
+                  'נתק את מאוורר קירור התא, ואז לחץ "בוצע".');
       const before = (await c.state()).alerts || [];
 
       c.stage(2, 4, 'a drying job must not start', 'עבודת ייבוש לא אמורה להתחיל');
@@ -1455,8 +1534,8 @@ window.DVT_AUTO = (function () {
       c.trace('start_alarm', { raised: a.raised, code: a.code, text: a.text, refusal });
 
       c.stage(3, 4, 'the failure during cooling', 'הכשל במהלך קירור');
-      await c.ask('Restore the cooling fan and press Done - the runner will heat the chamber and start a cooling cycle, then ask you to fail the fan again.',
-                  'החזר את מאוורר הקירור ולחץ "בוצע" - הרנר יחמם את התא ויתחיל מחזור קירור, ואז יבקש ממך להכשיל שוב את המאוורר.');
+      await c.ask('Reconnect the cooling fan and press Done - the runner will heat the chamber and start a cooling cycle, then ask you to disconnect the fan again.',
+                  'חבר בחזרה את מאוורר הקירור ולחץ "בוצע" - הרנר יחמם את התא ויתחיל מחזור קירור, ואז יבקש ממך לנתק שוב את המאוורר.');
       // 50 C, not 60: the same cooling cycle (50 -> 30) for the fan failure, minutes sooner (user, 2026-10-01)
       await P.heatRun(c, { target: 50, sec: 900, untilTarget: true, tc: false, keepHot: true });
       await c.post('/api/cure/cool?target=30&mode=medium');
@@ -1464,7 +1543,7 @@ window.DVT_AUTO = (function () {
       if (!cooling.ok) throw new Error(A.L('the cooling cycle never started', 'מחזור הקירור לא התחיל'));
       const before2 = (await c.state()).alerts || [];
       let mid = null;                                         // the first alarm the cooling-stage failure raised
-      const failed = await c.ask('Fail the cooling fan NOW, then press Done.', 'הכשל עכשיו את מאוורר הקירור, ואז לחץ "בוצע".');
+      const failed = await c.ask('Disconnect the cooling fan NOW, then press Done.', 'נתק עכשיו את מאוורר הקירור, ואז לחץ "בוצע".');
       const t0 = c.sec;
       const rows = [];
       let respAt = null;
@@ -1497,14 +1576,14 @@ window.DVT_AUTO = (function () {
       await P.allOff(c);
 
       c.stage(4, 4, 'restore', 'החזרה למצב תקין');
-      await c.ask('Restore the cooling fan and press Done.', 'החזר את מאוורר הקירור ולחץ "בוצע".');
+      await c.ask('Reconnect the cooling fan and press Done.', 'חבר בחזרה את מאוורר הקירור ולחץ "בוצע".');
     },
   });
 
-  def('DVT-SAF-010', {
+  def('DVT-SAF-020', {
     kind: 'auto', minutes: 2,
-    intro: ['A review with no machine driving: the runner reads the central error registry from the machine, collects every code recorded in SAF-003 to SAF-009 on this unit, and checks them itself - each code unique, each one in the registry, each message naming the component and stating what the operator must do.',
-            'סקירה בלי הפעלת המכונה: הרנר קורא את מרשם השגיאות המרכזי מהמכונה, אוסף כל קוד שנרשם ב-SAF-003 עד SAF-009 ביחידה הזו, ובודק אותם בעצמו - כל קוד ייחודי, כל אחד מופיע במרשם, כל הודעה מזהה את הרכיב ואומרת מה על המפעיל לעשות.'],
+    intro: ['A review with no machine driving: the runner reads the central error registry from the machine, collects every code recorded in DVT-SAF-001 to DVT-SAF-006 on this unit, and checks them itself - each code unique, each one in the registry, each message naming the component and stating what the operator must do.',
+            'סקירה בלי הפעלת המכונה: הרנר קורא את מרשם השגיאות המרכזי מהמכונה, אוסף כל קוד שנרשם ב-DVT-SAF-001 עד DVT-SAF-006 ביחידה הזו, ובודק אותם בעצמו - כל קוד ייחודי, כל אחד מופיע במרשם, כל הודעה מזהה את הרכיב ואומרת מה על המפעיל לעשות.'],
     async run(c) {
       c.stage(1, 3, 'read the error registry', 'קריאת מרשם השגיאות');
       let registry = null;
@@ -1518,8 +1597,8 @@ window.DVT_AUTO = (function () {
       for (const e of entries) byCode[String(e.code)] = e;
       c.note(`registry: ${Object.keys(byCode).length} codes`);
 
-      c.stage(2, 3, 'collect the codes recorded in SAF-003..009', 'איסוף הקודים שנרשמו ב-SAF-003..009');
-      const want = ['DVT-SAF-003', 'DVT-SAF-004', 'DVT-SAF-005', 'DVT-SAF-007', 'DVT-SAF-008', 'DVT-SAF-009'];
+      c.stage(2, 3, 'collect the codes recorded in DVT-SAF-001..006', 'איסוף הקודים שנרשמו ב-DVT-SAF-001..006');
+      const want = ['DVT-SAF-001', 'DVT-SAF-002', 'DVT-SAF-004', 'DVT-SAF-005', 'DVT-SAF-006'];   // DVT-SAF-003 removed (user, 2026-11-12)
       const seen = [];
       const all = H_results();
       for (const id of Object.keys(all)) {
@@ -1529,8 +1608,8 @@ window.DVT_AUTO = (function () {
         for (const k of ['error_code', 'open_chain_error_code']) if (v[k]) seen.push({ run: id, test: tid, code: String(v[k]), text: v.alarm_text || v.message_text || '' });
       }
       c.trace('codes_seen', seen);
-      if (!seen.length) throw new Error(A.L('no error codes have been recorded in SAF-003..009 on this unit yet - run those tests first',
-                                            'עדיין לא נרשמו קודי שגיאה ב-SAF-003..009 ביחידה הזו - הרץ קודם את הבדיקות האלה'));
+      if (!seen.length) throw new Error(A.L('no error codes have been recorded in DVT-SAF-001..006 on this unit yet - run those tests first',
+                                            'עדיין לא נרשמו קודי שגיאה ב-DVT-SAF-001..006 ביחידה הזו - הרץ קודם את הבדיקות האלה'));
 
       c.stage(3, 3, 'check them', 'בדיקה');
       const codes = seen.map((x) => x.code);
@@ -1558,14 +1637,16 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-011', {
-    kind: 'instrumented', minutes: 70, autoRecord: false,
-    intro: ['Under-powered heating: the runner commands HEAT and logs the chamber for an hour or until the setpoint, and reads out the heat-up time, the plateau it settled at, the time to that plateau, the peak, and the alarm with its code and text. It asks you only for the inlet voltage and the clamp current - and computes the delivered power from them.',
-            'חימום בתת-הספק: הרנר מפעיל חימום ורושם את התא במשך שעה או עד לנקודת היעד, ומחלץ את זמן החימום, את הרמה היציבה שהגיע אליה, את הזמן אליה, את השיא, ואת ההתראה עם הקוד והנוסח שלה. הוא שואל אותך רק את מתח הכניסה ואת זרם המלקחיים - ומחשב מהם את ההספק שנמסר.'],
+  def('DVT-SAF-007', {
+    kind: 'instrumented', minutes: 20, autoRecord: false,
+    intro: ['Under-powered heating (selector on 220 V, input 110 V): the runner commands HEAT and logs the chamber for 10 minutes or until 80 C - if 80 C is not reached by then the machine must have raised an alarm, and reads out the heat-up time, the plateau it settled at, the time to that plateau, the peak, and the alarm with its code and text. It asks you only for the inlet voltage and the clamp current - and computes the delivered power from them.',
+            'חימום בתת-הספק: הרנר מפעיל חימום ורושם את התא במשך 10 דקות או עד 80 מעלות - אם 80 מעלות לא הושגו עד אז המכונה חייבת הייתה להעלות התראה, ומחלץ את זמן החימום, את הרמה היציבה שהגיע אליה, את הזמן אליה, את השיא, ואת ההתראה עם הקוד והנוסח שלה. הוא שואל אותך רק את מתח הכניסה ואת זרם המלקחיים - ומחשב מהם את ההספק שנמסר.'],
     async run(c) {
       c.stage(1, 5, 'the rig', 'המערך');
+      await c.ask('Set the voltage selector to 220 V and feed the unit 110 V at the inlet (the heater gets about a quarter of its power), then press Done.',
+                  'כוון את בורר המתח ל-220 V והזן את היחידה ב-110 V בכניסה (גוף החימום מקבל בערך רבע מההספק), ואז לחץ "בוצע".');
       await c.value('selector_position', 'Selector position', 'מצב הבורר');
-      await c.value('applied_voltage', 'Measured voltage at the inlet', 'המתח שנמדד בכניסה');
+      await c.value('applied_voltage', 'Input voltage (measured at the inlet) - the machine cannot sense it, so you enter it', 'מתח הכניסה (נמדד בכניסה) - המכונה אינה חשה אותו, ולכן מזינים אותו');
       const s0 = await P.idle(c);
       c.put('unit_powers_up', true);
       const before = s0.alerts || [];
@@ -1576,7 +1657,7 @@ window.DVT_AUTO = (function () {
       await c.post(`/api/cure/heat?target=${target}`);
       const rows = [];
       let alarmAt = null, alarmCode = null, reachedAt = null;
-      await c.watch({ sec: 3600, hz: 0.5, tc: true, into: rows,
+      await c.watch({ sec: 600, hz: 0.5, tc: true, into: rows,   // 10 minutes: the machine must see it is not heating (user, 2026-10-25)
         on: (s, at) => {
           const t = num(s.chamberTemp);
           if (reachedAt === null && t !== null && t >= target) reachedAt = at;
@@ -1620,10 +1701,10 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-021', {
-    kind: 'instrumented', minutes: 15, autoRecord: false,
-    intro: ['Selector in the mid detent: the heater gets no power at all. The runner commands HEAT to 80 C and logs the chamber and the heater body until the alarm (up to 5 minutes) - the machine must raise Err 9007 after two minutes of drive without the chamber rising, switch the heater off, and name both causes: the voltage selector and the heater fuse. It reads out both total rises, the time to the alarm, its text and code.',
-            'הבורר במצב האמצעי: ההיטר לא מקבל הספק כלל. הרנר מפעיל חימום ל-80 מעלות ורושם את התא ואת גוף ההיטר עד ההתראה (עד 5 דקות) - המכונה חייבת להעלות שגיאה 9007 אחרי שתי דקות של חימום בלי עלייה בתא, לכבות את ההיטר, ולציין את שתי הסיבות: בורר המתח ונתיך ההיטר. הוא מחלץ את שתי העליות הכוללות, את הזמן עד ההתראה, את הנוסח והקוד שלה.'],
+  def('DVT-SAF-017', {
+    kind: 'instrumented', minutes: 25, autoRecord: false,
+    intro: ['Selector in the mid detent: the heater gets no power at all. The runner commands HEAT to 80 C and logs the chamber and the heater body until the alarm (up to 12 minutes) - the machine must raise Err 9007 after ten minutes of drive at full output without the chamber rising, switch the heater off, and name both causes: the voltage selector and the heater fuse. It reads out both total rises, the time to the alarm, its text and code.',
+            'הבורר במצב האמצעי: ההיטר לא מקבל הספק כלל. הרנר מפעיל חימום ל-80 מעלות ורושם את התא ואת גוף ההיטר עד ההתראה (עד 12 דקות) - המכונה חייבת להעלות שגיאה 9007 אחרי 10 דקות של חימום בהספק מלא בלי עלייה בתא, לכבות את ההיטר, ולציין את שתי הסיבות: בורר המתח ונתיך ההיטר. הוא מחלץ את שתי העליות הכוללות, את הזמן עד ההתראה, את הנוסח והקוד שלה.'],
     async run(c) {
       c.stage(1, 4, 'the rig', 'המערך');
       // nothing to ask: the runner says how the rig must be and records it as set (user, 2026-10-01)
@@ -1641,7 +1722,7 @@ window.DVT_AUTO = (function () {
       await c.post('/api/cure/heat?target=80');
       const rows = [];
       let alarmAt = null, alarmCode = null;
-      await c.watch({ sec: 300, hz: 1, tc: true, into: rows, live: 'heat',
+      await c.watch({ sec: 720, hz: 1, tc: true, into: rows, live: 'heat',   // Err 9007 needs 10 min of full output (1.0.87)
         on: (s, at) => {
           const fresh = P.fresh(before, s);
           if (alarmAt === null && fresh.length) { alarmAt = at; alarmCode = fresh[0]; }
@@ -1671,8 +1752,7 @@ window.DVT_AUTO = (function () {
                     'זרם ענף ההיטר כשהחימום מופעל (הציפייה: אפס)');
 
       c.stage(4, 4, 'inspection and functional check', 'בדיקה ויזואלית ופונקציונלית');
-      await c.yesno('fuse_opened', 'Did any fuse open?', 'האם נפתח נתיך כלשהו?');
-      await c.yesno('visible_damage', 'Is there visible damage?', 'האם יש נזק גלוי?');
+      // fuse_opened / visible_damage no longer asked - not needed (user, 2026-11-12)
       await c.ask('Set the selector to the correct detent for the applied mains, then press Done.',
                   'העבר את הבורר למצב הנכון עבור מתח הרשת, ואז לחץ "בוצע".');
       await P.selfCheck(c);
@@ -1694,6 +1774,12 @@ window.DVT_AUTO = (function () {
     for (let i = 1; i < v.length; i++) if ((vals[i - 1] - mean) < 0 && (vals[i] - mean) >= 0) cross.push(v[i][C.T]);
     const period = cross.length >= 2 ? r2((cross[cross.length - 1] - cross[0]) / (cross.length - 1) / 60) : null;
     return { amplitude, period, mean: r2(mean) };
+  }
+
+  /** Time (s) the trace first reached `temp` on the way up. */
+  function upAt(rows, col, temp) {
+    for (const r of rows) if (r[col] !== null && r[col] >= temp) return r[C.T];
+    return null;
   }
 
   /** Time (s) the trace first reached `temp` on the way down. */
@@ -1719,12 +1805,22 @@ window.DVT_AUTO = (function () {
       if (!c.known('selector_position')) await c.value('selector_position', 'Selector position', 'מצב הבורר');
       if (!c.known('mains_voltage')) await c.value('mains_voltage', 'Mains voltage at the inlet', 'מתח הרשת בכניסה');
 
+      // the 16-point grid is read from the machine (both TC-08s on its USB); a missing logger is said now, not at the end
+      const g0 = await c.get('/api/dev/picolog/status').catch(() => null);
+      const missing0 = gridMissing(g0);
+      if (missing0) c.say(`thermocouple grid: ${missing0} - plug both TC-08s into the machine; uniformity is asked by hand if it stays missing`,
+                          `רשת התרמוקפלים: ${missing0} - חבר את שני ה-TC-08 למכונה; אם לא, האחידות תישאל ידנית`);
+      else c.note('thermocouple grid: all 16 read from the machine (TC-08 0031 = Z1-Z2, TC-08 114 = Z3-Z4)');
+
       c.stage(2, 4, `step to ${target} C`, `מדרגה ל-${target} מעלות`);
       await c.post(`/api/cure/heat?target=${target}`);
       const rows = [];
+      const grid = [];
       let reachedAt = null, settledFrom = null, settledAt = null;
       await c.watch({ sec: 7200, hz: 1, tc: true, into: rows,
-        on: (s, at) => {
+        on: (s, at, _rows, p) => {
+          const g = gridRead(p);
+          if (g) grid.push([at, ...g.map(r2)]);
           const t = num(s.chamberTemp);
           if (t === null) return undefined;
           if (reachedAt === null && t >= target) reachedAt = at;
@@ -1739,8 +1835,13 @@ window.DVT_AUTO = (function () {
       c.stage(3, 4, 'descent', 'ירידה');
       await c.tryPost('/api/chamber/stop');
       await c.watch({ sec: tail, hz: 1, tc: true, into: rows,
-        on: (s, at) => { c.say(`descent · ${mmss_(at)} · ${r1(num(s.chamberTemp))} °C`, `ירידה · ${mmss_(at)} · ${r1(num(s.chamberTemp))} °C`); } });
+        on: (s, at, _rows, p) => {
+          const g = gridRead(p);
+          if (g) grid.push([at, ...g.map(r2)]);
+          c.say(`descent · ${mmss_(at)} · ${r1(num(s.chamberTemp))} °C`, `ירידה · ${mmss_(at)} · ${r1(num(s.chamberTemp))} °C`);
+        } });
       c.trace('step_response', rows);
+      if (grid.length) c.trace('grid', { columns: ['t_s', ...GRID_NAMES.map((n) => n + '_c')], samples: grid });
 
       c.stage(4, 4, 'reading the trace', 'קורא את העקומה');
       const soakRows = rows.filter((r) => r[C.T] <= endOfSoak);
@@ -1763,10 +1864,92 @@ window.DVT_AUTO = (function () {
         descent_logged: true,
         descent_linked_run_id: c.run.id,
       });
+      // uniformity over the same steady-state window as the steady-state error: the last 20 minutes of the soak
+      const u = gridUniformity(grid, Math.max(0, endOfSoak - 1200), endOfSoak);
+      if (u) {
+        c.puts({ uniformity_pp: r2(u.pp), uniformity_sd: r2(u.sd), hottest_position: u.hottest, coldest_position: u.coldest });
+        c.note(`grid over the last 20 min of the soak (${u.samples} samples): mean ${r2(u.mean)} C, ` +
+               `hottest ${u.hottest} (${gridPlace(u.hottest)}) ${r2(Math.max(...u.means))} C, ` +
+               `coldest ${u.coldest} (${gridPlace(u.coldest)}) ${r2(Math.min(...u.means))} C; ` +
+               GRID_NAMES.map((n, i) => `${n} ${r2(u.means[i])}`).join(', '));
+        return;
+      }
+      c.say(`thermocouple grid incomplete at steady state (${gridMissing(await c.get('/api/dev/picolog/status').catch(() => null)) || 'no grid samples in the window'}) - enter the uniformity by hand`,
+            'רשת התרמוקפלים לא שלמה במצב היציב - הזן את האחידות ידנית');
       await c.value('uniformity_pp', 'Peak-to-peak spread across the 16 grid channels at steady state', 'הפרש מקסימלי בין 16 ערוצי הרשת במצב יציב');
       await c.value('uniformity_sd', 'Standard deviation across the 16 grid channels', 'סטיית התקן בין 16 ערוצי הרשת');
-      await c.value('hottest_position', 'Hottest grid position', 'המיקום החם ביותר ברשת');
-      await c.value('coldest_position', 'Coldest grid position', 'המיקום הקר ביותר ברשת');
+      await c.value('hottest_position', 'Hottest grid position (Z<level>-<pos>, e.g. Z1-1 = top, back left)', 'המיקום החם ביותר ברשת (Z<קומה>-<מיקום>)');
+      await c.value('coldest_position', 'Coldest grid position (Z<level>-<pos>)', 'המיקום הקר ביותר ברשת (Z<קומה>-<מיקום>)');
+    },
+  });
+
+  def('DVT-THM-007', {
+    kind: 'auto', minutes: 45, autoRecord: false,
+    intro: ['Chamber Heating Uniformity: the runner records ambient and the start temperature, steps the chamber to 80 C, logs the control sensor and the 16-point grid (both TC-08s on the machine) every second, records the heat-up time, holds 80 C for 5 minutes and computes the uniformity over the hold. 220 V only. Nothing to do once it starts.',
+            'אחידות חימום התא: הרנר רושם את טמפרטורת הסביבה ואת נקודת ההתחלה, מעלה את התא ל-80 מעלות, רושם את חיישן הבקרה ואת רשת 16 הנקודות (שני ה-TC-08 על המכונה) כל שנייה, רושם את זמן החימום, מחזיק 80 מעלות 5 דקות ומחשב את האחידות על פני ההחזקה. 220 V בלבד. אין מה לעשות אחרי ההתחלה.'],
+    async run(c) {
+      const target = num(Number(c.variant.setpoint)) === null ? 80 : Number(c.variant.setpoint);
+      const hold = 300, maxHeat = 3600;
+      c.put('setpoint', target);
+      c.put('mains_voltage', num(Number(c.variant.mains_voltage)) === null ? 220 : Number(c.variant.mains_voltage));
+      const s0 = await P.idle(c);
+
+      c.stage(1, 4, 'ambient and grid', 'סביבה ורשת');
+      c.puts({ start_temp: r2(num(s0.chamberTemp)), ambient_temp: await P.ambient(c, s0) });
+      const g0 = await c.get('/api/dev/picolog/status').catch(() => null);
+      const missing0 = gridMissing(g0);
+      if (missing0) c.say(`thermocouple grid: ${missing0} - plug both TC-08s into the machine; uniformity is asked by hand if it stays missing`,
+                          `רשת התרמוקפלים: ${missing0} - חבר את שני ה-TC-08 למכונה; אם לא, האחידות תישאל ידנית`);
+      else c.note('thermocouple grid: all 16 read from the machine (TC-08 0031 = Z1-Z2, TC-08 114 = Z3-Z4)');
+
+      c.stage(2, 4, `heat-up to ${target} C`, `חימום ל-${target} מעלות`);
+      await c.post(`/api/cure/heat?target=${target}`);
+      const rows = [], grid = [];
+      let reachedAt = null;
+      await c.watch({ sec: maxHeat + hold, hz: 1, tc: true, into: rows, live: 'heat',
+        on: (s, at, _rows, p) => {
+          const g = gridRead(p);
+          if (g) grid.push([at, ...g.map(r2)]);
+          const t = num(s.chamberTemp);
+          if (t === null) return undefined;
+          if (reachedAt === null && t >= target) {
+            reachedAt = at;
+            c.stage(3, 4, `hold ${target} C for 5 min`, `החזקה ב-${target} מעלות 5 דקות`);
+          }
+          if (reachedAt === null) {
+            c.say(`heat-up · ${mmss_(at)} · ${r1(t)} / ${target} °C`, `חימום · ${mmss_(at)} · ${r1(t)} / ${target} °C`);
+            return at >= maxHeat ? 'stop' : undefined;
+          }
+          c.say(`hold · ${mmss_(at - reachedAt)} of 05:00 · ${r1(t)} °C`, `החזקה · ${mmss_(at - reachedAt)} מתוך 05:00 · ${r1(t)} °C`);
+          return at >= reachedAt + hold ? 'stop' : undefined;
+        } });
+      await c.tryPost('/api/chamber/stop');
+      c.trace('heat_up', rows);
+      if (grid.length) c.trace('grid', { columns: ['t_s', ...GRID_NAMES.map((n) => n + '_c')], samples: grid });
+
+      c.stage(4, 4, 'uniformity', 'אחידות');
+      c.puts({ reached_setpoint: reachedAt !== null, heat_up_time: reachedAt === null ? null : r2(reachedAt / 60) });
+      if (reachedAt === null) {
+        c.note(`the chamber did not reach ${target} C in ${maxHeat / 60} min - no hold, no uniformity`);
+        return;
+      }
+      const end = rows.length ? rows[rows.length - 1][C.T] : reachedAt;
+      c.put('hold_time', r2((end - reachedAt) / 60));
+      const u = gridUniformity(grid, reachedAt, end);
+      if (u) {
+        c.puts({ uniformity_pp: r2(u.pp), uniformity_sd: r2(u.sd), grid_mean: r2(u.mean), hottest_position: u.hottest, coldest_position: u.coldest });
+        c.note(`grid over the ${r1((end - reachedAt) / 60)} min hold (${u.samples} samples): mean ${r2(u.mean)} C, ` +
+               `hottest ${u.hottest} (${gridPlace(u.hottest)}) ${r2(Math.max(...u.means))} C, ` +
+               `coldest ${u.coldest} (${gridPlace(u.coldest)}) ${r2(Math.min(...u.means))} C; ` +
+               GRID_NAMES.map((n, i) => `${n} ${r2(u.means[i])}`).join(', '));
+        return;
+      }
+      c.say(`thermocouple grid incomplete during the hold (${gridMissing(await c.get('/api/dev/picolog/status').catch(() => null)) || 'no grid samples in the hold'}) - enter the uniformity by hand`,
+            'רשת התרמוקפלים לא שלמה בזמן ההחזקה - הזן את האחידות ידנית');
+      await c.value('uniformity_pp', 'Peak-to-peak spread across the 16 grid channels over the hold', 'הפרש מקסימלי בין 16 ערוצי הרשת בזמן ההחזקה');
+      await c.value('uniformity_sd', 'Standard deviation across the 16 grid channels', 'סטיית התקן בין 16 ערוצי הרשת');
+      await c.value('hottest_position', 'Hottest grid position (Z<level>-<pos>)', 'המיקום החם ביותר ברשת (Z<קומה>-<מיקום>)');
+      await c.value('coldest_position', 'Coldest grid position (Z<level>-<pos>)', 'המיקום הקר ביותר ברשת (Z<קומה>-<מיקום>)');
     },
   });
 
@@ -1828,6 +2011,57 @@ window.DVT_AUTO = (function () {
         c.puts({ computed_tj: r2(tj), tj_margin: r2(100 - tj) });
         c.note(`Tj = back face ${r2(hot.temp)} + I*Vf*Rth (${amps} A x ${vf} V x ${rth} C/W)`);
       }
+    },
+  });
+
+  def('DVT-THM-005', {
+    kind: 'auto', minutes: 90,
+    intro: ['Drying, measured by the machine on itself, from a cold start. The runner starts Drying to the highest set point drying allows (50 C) and logs the chamber at 1 Hz until it has held that for 15 minutes. From the trace it reads how long the chamber took to reach 30, 40, 50 and 60 C and the highest temperature it reached; the curve is kept so the drying time for any temperature can be read off it. Drying is capped at 50 C, so 60 C is expected to stay empty. Nothing needs to be done by hand - start it with the chamber at room temperature, door closed.',
+            'ייבוש שהמכונה מודדת על עצמה, מהתחלה קרה. הרנר מפעיל ייבוש לנקודת ההגדרה הגבוהה ביותר שהייבוש מרשה (50 מעלות) ורושם את התא ב-1 הרץ עד שהוא החזיק אותה 15 דקות. מהעקומה הוא קורא כמה זמן לקח לתא להגיע ל-30, 40, 50 ו-60 מעלות ומהי הטמפרטורה הגבוהה ביותר שהגיע אליה; העקומה נשמרת כדי שאפשר יהיה לקרוא ממנה את זמן הייבוש לכל טמפרטורה. הייבוש מוגבל ל-50 מעלות, ולכן 60 מעלות צפוי להישאר ריק. אין מה לעשות ביד - מתחילים כשהתא בטמפרטורת החדר והדלת סגורה.'],
+    async run(c) {
+      const target = 50, hold = 900, limit = 7200;          // the highest drying set point; hold it 15 min; give up after 2 h
+      c.put('setpoint', target);
+      const s0 = await P.idle(c);
+
+      c.stage(1, 3, 'ambient and start', 'סביבה והתחלה');
+      const start = num(s0.chamberTemp);
+      c.puts({ start_temp: r2(start), ambient_temp: await P.ambient(c, s0) });
+
+      c.stage(2, 3, `drying to ${target} C`, `ייבוש ל-${target} מעלות`);
+      await c.post(`/api/cure/dry?target=${target}`);
+      const rows = [];
+      let reachedAt = null, damperAt = null, damperTemp = null;
+      await c.watch({ sec: limit, hz: 1, tc: false, into: rows,
+        on: (s, at) => {
+          const t = num(s.chamberTemp);
+          if (t === null) return undefined;
+          if (reachedAt === null && t >= target - 0.5) reachedAt = at;
+          if (damperAt === null && s.damperOpen === true) { damperAt = at; damperTemp = t; }
+          c.say(`drying · ${mmss_(at)} · ${r1(t)} / ${target} °C${reachedAt !== null ? ' · holding' : ''}`,
+                `ייבוש · ${mmss_(at)} · ${r1(t)} / ${target} °C${reachedAt !== null ? ' · מחזיק' : ''}`);
+          return reachedAt !== null && at >= reachedAt + hold ? 'stop' : undefined;
+        } });
+      c.trace('drying', rows);
+      await P.allOff(c);
+
+      c.stage(3, 3, 'reading the trace', 'קורא את העקומה');
+      // the time to a temperature, from the start of drying; empty when the chamber began above it or never got there
+      const minutesTo = (temp) => {
+        if (start !== null && start >= temp) return null;
+        const sec = upAt(rows, C.CHAMBER, temp);
+        return sec === null ? null : r2(sec / 60);
+      };
+      const peak = P.maxOf(rows, C.CHAMBER);
+      c.puts({
+        reached_setpoint: reachedAt !== null,
+        time_to_30: minutesTo(30), time_to_40: minutesTo(40), time_to_50: minutesTo(50), time_to_60: minutesTo(60),
+        max_temp: r2(peak),
+        time_to_max: peak === null ? null : r2(P.firstAt(rows, (r) => r[C.CHAMBER] === peak) / 60),
+        overshoot: peak === null ? null : r2(Math.max(0, peak - target)),
+        damper_opened: damperAt !== null,
+        damper_open_temp: r2(damperTemp),
+        raw_log_attached: true,
+      });
     },
   });
 
@@ -1910,7 +2144,7 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-THM-004', {
+  def('DVT-THM-006', {
     kind: 'instrumented', minutes: 30, autoRecord: false,
     intro: ['Over-driven heater on 230 V with the selector at 110 V. The runner first proves nothing is energised before the HEAT command - the heater body must stay flat - then commands HEAT to 80 C and watches the body climb until it turns, which is the fuse opening. It records that turn, its time from the command, the temperature at it, the peak, and what the software reported and when.',
             'היטר בהנעת-יתר על 230 וולט כשהבורר על 110 וולט. הרנר קודם מוכיח ששום דבר לא מופעל לפני פקודת החימום - גוף ההיטר חייב להישאר שטוח - ואז מפעיל חימום ל-80 מעלות וצופה בגוף מטפס עד להיפוך, שהוא פתיחת הנתיך. הוא רושם את ההיפוך, את הזמן שלו מהפקודה, את הטמפרטורה בו, את השיא, ומה התוכנה דיווחה ומתי.'],
@@ -1926,7 +2160,7 @@ window.DVT_AUTO = (function () {
       c.stage(2, 4, 'the body must stay flat before HEAT', 'הגוף חייב להישאר שטוח לפני החימום');
       const quiet = [];
       await c.watch({ sec: 180, hz: 1, tc: true, into: quiet,
-        on: (s, at) => c.say(`idle · ${at} s · body ${r1(quiet.length ? quiet[quiet.length - 1][C.TC] : null)} °C`,
+        on: (s, at) => c.say(`idle · ${at} s · ${bodyTxt(quiet.length ? quiet[quiet.length - 1][C.TC] : null)}${heatTxt(s)}`,
                              `במנוחה · ${at} שניות · גוף ${r1(quiet.length ? quiet[quiet.length - 1][C.TC] : null)} °C`) });
       c.trace('before_heat', quiet);
       const drift = P.rate(quiet, C.TC, 180);
@@ -1942,7 +2176,7 @@ window.DVT_AUTO = (function () {
         on: (s, at) => {
           const fresh = P.fresh(before, s);
           if (alarmAt === null && fresh.length) { alarmAt = at; alarmCode = fresh[0]; }
-          c.say(`heating · ${at} s · body ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C${alarmCode ? ' · alarm ' + alarmCode : ''}`,
+          c.say(`heating · ${at} s · ${bodyTxt(rows.length ? rows[rows.length - 1][C.TC] : null)}${heatTxt(s)}${alarmCode ? ' · alarm ' + alarmCode : ''}`,
                 `מחמם · ${at} שניות · גוף ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C${alarmCode ? ' · התראה ' + alarmCode : ''}`);
           const turn = P.turn(rows, C.TC, { fall: 1.0 });
           return turn.turned && at > turn.at + 60 ? 'stop' : undefined;
@@ -1974,7 +2208,7 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-THM-005', {
+  def('DVT-THM-004', {
     kind: 'auto', minutes: 45,
     intro: ['Fully automatic. The runner sets the LED cooling fans to this row\'s duty, drives the LEDs to maximum, and logs the four panel thermistors until every panel has settled - rise under 0.1 C per minute over five minutes - or until one reaches the 75 C working limit. It then records the settled temperature of each panel, the hottest one, its margin to the limit, the tach reading at that duty and any alarm the firmware raised.',
             'אוטומטי לחלוטין. הרנר מכוון את מאווררי קירור הלד למחזור העבודה של השורה הזו, מעלה את הלדים למקסימום, ורושם את ארבעת תרמיסטורי הפאנלים עד שכל פאנל התייצב - עלייה מתחת ל-0.1 מעלות לדקה במשך חמש דקות - או עד שאחד מגיע לגבול העבודה של 75 מעלות. אחר כך הוא רושם את הטמפרטורה היציבה של כל פאנל, את החם ביותר, את המרווח שלו לגבול, את קריאת הטכומטר במחזור העבודה הזה וכל התראה שהקושחה העלתה.'],
@@ -2049,9 +2283,70 @@ window.DVT_AUTO = (function () {
 
   A.limitsUntouched = LIMITS_UNTOUCHED;         // the trace analyser answers the same fields the same way
 
-  // DVT-SAF-013 has ONE path: the tc08_record card on its step 2. The operator drives the heater from an
-  // external supply, the card switches the fan on, records CH1, and on stop DVT_AUTO.fromTrace reads the
-  // three numbers and marks the graph. A whole-test runner here only competed with it (user, 2026-09-27).
+  // DVT-SAF-009 runs automatically from the site as well (user, 2026-10-25: "an automatic run that saves the
+  // graphs"): the same recording the tc08_record card makes on the page - heater fan on, CH1 + the chamber logged
+  // at 1 Hz, the same auto-stop and the same trace reading (A.autoStop / A.TRACE) - stored as the run's
+  // tc08_record, so the graph is drawn and its CSV goes up with the result.
+  def('DVT-SAF-009', {
+    kind: 'guided', minutes: 45, autoRecord: false,
+    intro: ['The independent thermal cutout, recorded automatically. You enter the cutout\'s rating and switch the external heater supply on when asked; the runner switches the heater fan on, logs the heater body (TC-08 CH1) and the chamber every second, stops by itself once the cutout has opened and closed again (or 20 minutes after it opened), reads the time to the cut-off, the cut-off and the reset temperatures from the trace and saves the graph with the result.',
+            'המנתק התרמי העצמאי, נרשם אוטומטית. אתה מזין את הדירוג של המנתק ומדליק את ההזנה החיצונית של גוף החימום כשמתבקש; הרנר מדליק את מאוורר גוף החימום, רושם את גוף החימום (TC-08 ערוץ 1) ואת התא כל שנייה, עוצר מעצמו כשהמנתק נפתח ונסגר שוב (או 20 דקות אחרי שנפתח), קורא מהגרף את הזמן עד הניתוק, את טמפרטורת הניתוק ואת טמפרטורת הסגירה, ושומר את הגרף עם התוצאה.'],
+    async run(c) {
+      const DA = window.DVT_AUTO;
+      await P.idle(c);
+      c.stage(1, 3, 'the cutout rating and the heater fan', 'דירוג המנתק ומאוורר גוף החימום');
+      const rated = await c.value('rated_trip_temp', 'Rated trip temperature of the thermal cutout (from its marking / datasheet)',
+                                  'טמפרטורת הניתוק הנקובה של המנתק התרמי (מהסימון / גיליון הנתונים)');
+      if (num(rated) === null) throw new Error(A.L('the cutout rating is needed for the verdict', 'הדירוג של המנתק נדרש לתוצאה'));
+      // the manual abort: above the rating + 10 % the cutout has already failed - stop there, not before it could open
+      const ceilingC = Math.round(Math.max(250, num(rated) * 1.1 + 5));
+      const prep = await DA.prepare(c.test);
+      if (!prep.ok) throw new Error(prep.message);
+      c.log('info', prep.message, prep.message);
+      const rows = [];
+      const sample = async (t0) => {
+        const s = await c.state().catch(() => ({}));
+        const body = await P.tc(c).catch(() => null);
+        rows.push([r2(c.sec - t0), r2(body), r2(num(s.chamberTemp)), s.isHeating === true, (s.alerts || []).join('|'), s.isHeating === true, num(s.heaterPwm)]);
+        return body;
+      };
+      const t0 = c.sec;
+      for (let i = 0; i < 20; i++) { await sample(t0); await c.sleep(1); }   // the baseline before the heater
+
+      c.stage(2, 3, 'heater on from the external supply - recording', 'גוף החימום מוזן מההזנה החיצונית - רושם');
+      await c.ask('Switch the external heater supply ON now and leave it on - do not interrupt it until the runner says the recording is complete. Fire watch at the bench. Press Done when it is on.',
+                  'הדלק עכשיו את ההזנה החיצונית של גוף החימום והשאר אותה דלוקה - אל תפסיק עד שהרנר אומר שהרישום הושלם. צופה אש ליד העמדה. לחץ "בוצע" כשהיא דלוקה.');
+      const fake = { autos: { tc08_record: { kind: 'tc08_record', samples: rows } } };
+      let stopWhy = '', ceiling = false;
+      while (c.sec - t0 < 90 * 60) {
+        const body = await sample(t0);
+        const st = DA.autoStop(c.test, fake);
+        c.say(`recording · ${mmss_(c.sec - t0)} · ${bodyTxt(body)}${fake.marks && fake.marks.trip_s ? ' · cut-off at ' + mmss_(fake.marks.trip_s) : ''}`,
+              `רושם · ${mmss_(c.sec - t0)} · גוף ${r1(body)} °C${fake.marks && fake.marks.trip_s ? ' · ניתוק ב-' + mmss_(fake.marks.trip_s) : ''}`);
+        if (rows.length % 10 === 0) c.drawLive('tc08', rows);
+        if (st.stop) { stopWhy = st.why; break; }
+        if (body !== null && body >= ceilingC && !(fake.marks && fake.marks.trip_s)) { ceiling = true; break; }
+        await c.sleep(1);
+      }
+      if (ceiling) {
+        await c.ask(`The heater body passed ${ceilingC} C and the cutout has NOT opened. Cut the supply at the contactor NOW, then press Done.`,
+                    `גוף החימום עבר ${ceilingC} מעלות והמנתק לא נפתח. נתק עכשיו את ההזנה במגען, ואז לחץ "בוצע".`);
+        c.note(`manual abort at the ${ceilingC} C ceiling: the cutout did not open - a FAIL of the cutout`);
+      } else {
+        await c.ask(`${stopWhy || A.L('recording complete', 'הרישום הושלם')} - switch the external heater supply OFF now, then press Done.`,
+                    `${stopWhy || 'הרישום הושלם'} - כבה עכשיו את ההזנה החיצונית של גוף החימום, ואז לחץ "בוצע".`);
+      }
+      await DA.finish(c.test);
+
+      c.stage(3, 3, 'reading the trace', 'קורא את הגרף');
+      A._host().setAuto(c.rec, { kind: 'tc08_record', test: c.tid, at: new Date().toISOString(), machine: c.machine, status: 'DONE',
+                         columns: ['t_s', 'ch1_c', 'machine_chamber_c', 'machine_heating', 'alerts', 'heater_commanded', 'heater_pwm_pct'], samples: rows });
+      const why = A.TRACE['DVT-SAF-009'](rows, (k, v) => c.put(k, v), c.rec);
+      if (typeof why === 'string' && why) { c.note(why); c.log('warn', why, why); }
+      if (stopWhy) c.log('info', stopWhy, stopWhy);
+      c.save();
+    },
+  });
 
   /**
    * Did the firmware really stop? The API runs in the firmware process, so a frozen or killed firmware stops
@@ -2070,91 +2365,79 @@ window.DVT_AUTO = (function () {
     'the firmware is still answering - the heartbeat was NOT stopped, so the watchdog has nothing to cut. Freeze or kill the firmware process on the unit (e.g. sudo systemctl kill -s SIGSTOP scurebox-ui), then run again',
     'התוכנה עדיין עונה - פעימת הלב לא נעצרה, ולכן לשומר אין מה לנתק. הקפא או הרוג את תהליך התוכנה במכונה (למשל sudo systemctl kill -s SIGSTOP scurebox-ui), ואז הרץ שוב'];
 
-  def('DVT-SAF-014', {
-    kind: 'guided', minutes: 30,
-    intro: ['Three ways of losing the controller, each measured on the output rather than in the log. The runner heats the chamber, asks you to stop the heartbeat, and takes the heater-body turn as the SSR de-energisation; then repeats with UV at maximum and takes the fall of the StarBright reading below a tenth of its plateau; then repeats by killing the control process. It then checks that nothing restarted on its own.',
-            'שלוש דרכים לאבד את הבקר, כל אחת נמדדת על המוצא ולא ביומן. הרנר מחמם את התא, מבקש ממך לעצור את פעימת הלב, ולוקח את נקודת ההיפוך של גוף ההיטר כניתוק ה-SSR; אחר כך חוזר עם UV במקסימום ולוקח את הירידה של קריאת ה-StarBright מתחת לעשירית מהרמה היציבה; אחר כך חוזר על ידי הריגת תהליך הבקרה. לבסוף הוא בודק ששום דבר לא עלה מחדש מעצמו.'],
+  def('DVT-SAF-010', {
+    kind: 'auto', minutes: 25, autoRecord: false,
+    intro: ['The second line of defence. The runner heats at full output and puts the UV at maximum, then makes the firmware hang on purpose: its heartbeat and every output write freeze, and it switches nothing off itself. The separate output watchdog must then cut the heater and the UV - the runner proves it on the StarBright (UV below 10 %) and on the heater-body thermocouple (rise turning to fall), and checks that nothing comes back by itself after the hang and that an alarm asks for a restart.',
+            'קו ההגנה השני. הרנר מחמם בהספק מלא ומעלה את ה-UV למקסימום, ואז תוקע את התוכנה בכוונה: הפעימה וכל כתיבה ליציאות קופאות, והיא לא מכבה כלום בעצמה. שומר היציאות הנפרד חייב אז לנתק את החימום ואת ה-UV - הרנר מוכיח את זה ב-StarBright (UV מתחת ל-10%) ובתרמוקפל גוף החימום (עלייה שהופכת לירידה), ובודק ששום דבר לא חוזר לבד אחרי התקיעה ושהתראה מבקשת הפעלה מחדש.'],
     async run(c) {
-      c.put('operating_mode', c.variant.operating_mode || null);
       await P.idle(c);
+      const m = await c.get('/api/dvt/meter').catch(() => ({ present: false }));
+      if (!m.present) throw new Error(A.L('connect the StarBright to the machine - the UV cut is proven on it', 'חבר את ה-StarBright למכונה - ניתוק ה-UV מוכח עליו'));
       const before = (await c.state()).alerts || [];
 
-      c.stage(1, 4, 'heater: heartbeat stopped', 'היטר: פעימת הלב נעצרה');
+      c.stage(1, 3, 'heater rising, UV at maximum', 'החימום עולה, UV במקסימום');
       await c.post('/api/cure/heat?target=80');
       const warm = [];
       await c.watch({ sec: 300, hz: 1, tc: true, into: warm,
-        on: (s, at) => { c.say(`warming · body ${r1(warm.length ? warm[warm.length - 1][C.TC] : null)} °C`,
+        on: (s, at) => { c.say(`warming · ${bodyTxt(warm.length ? warm[warm.length - 1][C.TC] : null)}${heatTxt(s)}`,
                                `מתחמם · גוף ${r1(warm.length ? warm[warm.length - 1][C.TC] : null)} °C`);
                          const rate = P.rate(warm, C.TC, 60);
                          return at > 60 && rate !== null && rate > 2 ? 'stop' : undefined; } });
-      await c.value('heartbeat_stop_method', 'How is the heartbeat stopped? (the method you are about to use)',
-                    'כיצד נעצרת פעימת הלב? (השיטה שאתה עומד להשתמש בה)');
-      const ok = await c.ask('Stop the heartbeat NOW, then press Done.', 'עצור עכשיו את פעימת הלב, ואז לחץ "בוצע".');
-      if (ok === true && !(await firmwareWentSilent(c, 10))) throw new Error(A.L(NOT_STOPPED[0], NOT_STOPPED[1]));
+      await c.post('/api/uv?on=1&intensity=100&wavelength=405');
+      await c.sleep(20);
+      const plateau = [];
+      for (let i = 0; i < 10; i++) { const x = await c.get('/api/dvt/meter').catch(() => null); plateau.push(x ? num(x.reading_mw_cm2) : null); await c.sleep(0.2); }
+      const level = Math.max(...plateau.filter((v) => v !== null));
+      if (!(level > 0.5)) throw new Error(A.L('the StarBright sees no UV - check the head position', 'ה-StarBright לא רואה UV - בדוק את מיקום הראש'));
+      c.put('uv_plateau', r2(level));
+
+      c.stage(2, 3, 'the firmware hangs: the watchdog must cut', 'התוכנה נתקעת: השומר חייב לנתק');
+      // the heater controller pulses the element: hang it while it is driving FULL output, or there may be nothing to cut
+      await c.until((s) => num(s.heaterPwm) >= 99, { sec: 60, poll: 0.5 });
+      const HANG = 240;                                       // the heater-body turn may take up to 200 s (user, 2026-10-25)
+      const h = await c.postJson(`/api/dvt/hang?sec=${HANG}`, {});
+      if (h.ok === false) throw new Error(h.message || A.L('the machine refused the hang command', 'המכונה דחתה את פקודת התקיעה'));
+      if (num(h.heartbeatTimeoutSec) !== null) c.put('watchdog_timeout_s', num(h.heartbeatTimeoutSec));
       const t0 = c.sec;
       const rows = [];
-      await c.watch({ sec: 180, hz: 4, tc: true, into: rows,
-        on: (s, at) => { c.say(`after the heartbeat stop · ${at} s`, `אחרי עצירת פעימת הלב · ${at} שניות`);
-                         const turn = P.turn(rows, C.TC); return turn.turned && at > 20 ? 'stop' : undefined; } });
-      c.trace('heartbeat_heater', rows);
-      const turn = P.turn(rows, C.TC);
-      c.puts({ heater_body_drop_observed: turn.turned, ssr_off_time: ok === true && turn.turned ? turn.at : null });
-
-      c.stage(2, 4, 'UV: heartbeat stopped', 'UV: פעימת הלב נעצרה');
-      await c.ask('Restart the controller, then press Done - the runner will light the LEDs and ask you to stop the heartbeat again.',
-                  'הפעל מחדש את הבקר, ואז לחץ "בוצע" - הרנר ידליק את הלדים ויבקש ממך לעצור שוב את פעימת הלב.');
-      const m = await c.get('/api/dvt/meter').catch(() => ({ present: false }));
-      if (m.present) {
-        await c.post('/api/uv?on=1&intensity=100&wavelength=405');
-        await c.sleep(20);
-        const plateau = [];
-        for (let i = 0; i < 10; i++) { const x = await c.get('/api/dvt/meter'); plateau.push(num(x.reading_mw_cm2)); await c.sleep(0.2); }
-        const level = Math.max(...plateau.filter((v) => v !== null));
-        await c.ask('Stop the heartbeat NOW, then press Done.', 'עצור עכשיו את פעימת הלב, ואז לחץ "בוצע".');
-        if (!(await firmwareWentSilent(c, 10))) throw new Error(A.L(NOT_STOPPED[0], NOT_STOPPED[1]));
-        const t1 = c.sec;
-        const fall = [];
-        let uvOff = null;
-        while (c.sec - t1 < 30) {
-          const x = await c.get('/api/dvt/meter').catch(() => null);
-          const v = x ? num(x.reading_mw_cm2) : null;
-          fall.push([r2(c.sec - t1), v]);
-          if (v !== null && level > 0 && v < level * 0.1) { uvOff = r2(c.sec - t1); break; }
-          await c.sleep(0.1);
+      let uvOff = null;
+      const fall = [];
+      // the StarBright fast (5 Hz), the TC-08 at 2 Hz, until both have proven the cut or the hang is over
+      while (c.sec - t0 < HANG) {
+        const x = await c.get('/api/dvt/meter').catch(() => null);
+        const v = x ? num(x.reading_mw_cm2) : null;
+        fall.push([r2(c.sec - t0), v]);
+        if (uvOff === null && v !== null && v < level * 0.1) uvOff = r2(c.sec - t0);
+        if (fall.length % 2 === 0) {
+          const body = await P.tc(c).catch(() => null);
+          rows.push([r2(c.sec - t0), null, null, null, null, null, null, null, null, r2(body), '', null]);
         }
-        c.trace('heartbeat_uv', { plateau_mw_cm2: r2(level), samples: fall });
-        c.puts({ uv_drop_observed: uvOff !== null, ssr_off_time_uv: uvOff });
-      } else {
-        c.note('no StarBright on the machine: the UV timing has to be read from the Ophir trace');
-        await c.yesno('uv_drop_observed', 'Did the Ophir trace show the UV fall away?', 'האם עקומת האופיר הראתה את ה-UV דועך?');
-        await c.value('ssr_off_time_uv', 'Time from the heartbeat stop to 10 % of the plateau, from the Ophir trace',
-                      'הזמן מעצירת פעימת הלב עד 10 אחוז מהרמה היציבה, מעקומת האופיר');
+        const turn = P.turn(rows, C.TC);
+        c.say(`hung · ${Math.round(c.sec - t0)} s · UV ${uvOff === null ? 'still on' : 'off at ' + uvOff + ' s'} · heater ${turn.turned ? 'off at ' + turn.at + ' s' : bodyTxt(rows.length ? rows[rows.length - 1][C.TC] : null)}`,
+              `תקוע · ${Math.round(c.sec - t0)} שניות · UV ${uvOff === null ? 'עדיין דולק' : 'כבה ב-' + uvOff + ' שניות'} · חימום ${turn.turned ? 'כבה ב-' + turn.at + ' שניות' : 'גוף ' + r1(rows.length ? rows[rows.length - 1][C.TC] : null) + ' °C'}`);
+        if (uvOff !== null && turn.turned) break;
+        await c.sleep(0.2);
       }
+      c.trace('hang_uv', { plateau_mw_cm2: r2(level), samples: fall });
+      c.trace('hang_heater', rows);
+      const turn = P.turn(rows, C.TC);
+      c.puts({ uv_drop_observed: uvOff !== null, uv_off_time: uvOff, heater_body_drop_observed: turn.turned, heater_off_time: turn.turned ? turn.at : null });
 
-      c.stage(3, 4, 'killing the control process', 'הריגת תהליך הבקרה');
-      await c.ask('Restart the controller, command HEAT, wait for the body to rise, then kill the control process and press Done.',
-                  'הפעל מחדש את הבקר, הפעל חימום, המתן שהגוף יעלה, ואז הרוג את תהליך הבקרה ולחץ "בוצע".');
-      const t2 = c.sec;
-      const rows3 = [];
-      await c.watch({ sec: 180, hz: 4, tc: true, into: rows3,
-        on: (s, at) => { const turn = P.turn(rows3, C.TC); return turn.turned && at > 20 ? 'stop' : undefined; } });
-      c.trace('process_kill', rows3);
-      const turn3 = P.turn(rows3, C.TC);
-      c.put('ssr_off_time_process_kill', turn3.turned ? turn3.at : null);
-
-      c.stage(4, 4, 'nothing restarts on its own', 'שום דבר לא עולה מחדש מעצמו');
+      c.stage(3, 3, 'after the hang: nothing restarts by itself', 'אחרי התקיעה: שום דבר לא חוזר לבד');
+      while (c.sec - t0 < HANG + 5) await c.sleep(1);          // the hang is over
       const watch = [];
-      await c.watch({ sec: 180, hz: 1, tc: true, into: watch,
+      await c.watch({ sec: 120, hz: 1, tc: true, into: watch,
         on: (s, at) => c.say(`watching for an automatic restart · ${at} s`, `צופה בהפעלה אוטומטית מחדש · ${at} שניות`) });
       c.trace('no_auto_restart', watch);
       c.put('auto_restart_prevented', !watch.some((r) => r[C.HEATER] === true || r[C.UV] === true));
       const a = await P.alarm(c, before, { sec: 10 });
       P.putAlarm(c, a);
       c.put('logged', a.raised);
+      await P.allOff(c);
     },
   });
 
-  def('DVT-SAF-015', {
+  def('DVT-SAF-011', {
     kind: 'guided', minutes: 30,
     intro: ['One run. The runner switches heating on and waits until the heater body is clearly rising, then asks you to disconnect the CM5\'s 40-pin flat cable - from that press it times the heater body turning from rising to falling on the thermocouple, and asks whether the heater SSR switched off. Then you reconnect the cable; once the machine answers again it watches for two and a half minutes that heating and UV do not resume by themselves and the heater body keeps falling.',
             'ריצה אחת. הרנר מדליק חימום וממתין עד שגוף ההיטר עולה בבירור, ואז מבקש ממך לנתק את כבל הפלט 40 פין של ה-CM5 - מרגע הלחיצה הוא מודד בתרמוקפל מתי גוף ההיטר עובר מעלייה לירידה, ושואל האם ה-SSR של ההיטר כבה. אחר כך אתה מחבר בחזרה את הכבל; ברגע שהמכונה עונה שוב הוא צופה שתי דקות וחצי שהחימום וה-UV לא מתחדשים מעצמם ושגוף ההיטר ממשיך לרדת.'],
@@ -2168,7 +2451,7 @@ window.DVT_AUTO = (function () {
       const warm = [];
       await c.watch({ sec: 300, hz: 1, tc: true, into: warm, live: 'warm_up',
         on: (s, at) => {
-          c.say(`warming · ${r1(num(s.chamberTemp))} °C · body ${r1(P.maxOf(warm, C.TC))} °C`,
+          c.say(`warming · ${r1(num(s.chamberTemp))} °C · ${bodyTxt(P.maxOf(warm, C.TC))}${heatTxt(s)}`,
                 `מתחמם · ${r1(num(s.chamberTemp))} °C · גוף ${r1(P.maxOf(warm, C.TC))} °C`);
           const rate = P.rate(warm, C.TC, 60);
           return at > 60 && rate !== null && rate > 2 ? 'stop' : undefined;
@@ -2181,10 +2464,12 @@ window.DVT_AUTO = (function () {
       if (pulled !== true) throw new Error(A.L('the cable was never disconnected', 'הכבל לא נותק'));
       const rows = [];
       // the TC-08 is on the CM5's USB, so CH1 keeps logging as long as the firmware answers; dropped polls are skipped
-      await c.watch({ sec: 240, hz: 1, tc: true, into: rows, live: 'cable_out',
+      // 10 min (was 4): on the unit the heater body takes at least 5 min to turn after the cable is pulled (user, 2026-11-12);
+      // the watch still ends 30 s after the body has clearly turned
+      await c.watch({ sec: 600, hz: 1, tc: true, into: rows, live: 'cable_out',
         on: (s, at) => {
           const turned = P.turn(rows, C.TC);
-          c.say(`cable out · ${at} s · body ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C${turned.turned ? ' · body falling since ' + turned.at + ' s' : ''}`,
+          c.say(`cable out · ${at} s · ${bodyTxt(rows.length ? rows[rows.length - 1][C.TC] : null)}${heatTxt(s)}${turned.turned ? ' · body falling since ' + turned.at + ' s' : ''}`,
                 `כבל מנותק · ${at} שניות · גוף ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C${turned.turned ? ' · הגוף יורד מ-' + turned.at + ' שניות' : ''}`);
           return turned.turned && at > turned.at + 30 ? 'stop' : undefined;
         } });
@@ -2220,16 +2505,16 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  // ------------------------------------------------------------------------------------------------ DVT-SAF-012 --
-  // Door interlock - UV inhibited with the door open. The six steps of the catalog, which the DVT tool runs one card at
-  // a time (door_open_cure, uv_off_timing, door_lock_check, door_magnet_defeat, door_status_check, door_alarm_check), run
+  // ------------------------------------------------------------------------------------------------ DVT-SAF-008 --
+  // Door interlock - UV inhibited with the door open. The four steps of the catalog (steps 5 door status and 6 alarm removed, user 2026-11-12), which
+  // the DVT tool runs one card at a time (door_open_cure, uv_off_timing, door_lock_check, door_magnet_defeat), run
   // here as one script so the CureBox's runner can do them from sCure Cloud, one after the other, the person at the
   // machine only doing what a hand has to do (open, pull, hold a magnet, close). 405 nm only; the StarBright on the
   // machine's USB gives every irradiance number. The UV is always switched off again, whatever happens.
-  def('DVT-SAF-012', {
+  def('DVT-SAF-008', {
     kind: 'guided', minutes: 40,
-    intro: ['Six parts, one after the other, 405 nm only, with the StarBright on the machine. (1) The door is released and you open it: the runner reads the dark level, then tries a 405 nm program and a direct UV command - both must be refused and the meter must see no UV. (2) With the door closed, a real cure runs at 100 % until the StarBright is stable; you open the door and the meter times the UV going off. (3) A cure at 30 % with the door closed: you pull the door for 10 s - it must stay locked. (4) The door is released, you hold it open and put the magnet to the door sensor for 10 s - the sensor must not be fooled. (5) You close, open and close the door, then hold it closed while the lock is released - the status must follow only the door. (6) The alarm and its code are read from the part-2 cure. Wear UV eye protection near the door.',
-            'שישה חלקים ברצף, 405 ננומטר בלבד, עם ה-StarBright שבמכונה. (1) הדלת משתחררת ואתה פותח אותה: הרנר קורא את רמת החושך, ואז מנסה תוכנית 405 ופקודת UV ישירה - שתיהן חייבות להידחות והמד לא רואה UV. (2) עם דלת סגורה רצה תוכנית אמיתית ב-100% עד שה-StarBright יציב; אתה פותח את הדלת והמד מתזמן את כיבוי ה-UV. (3) תוכנית ב-30% עם דלת סגורה: אתה מושך את הדלת 10 שניות - היא חייבת להישאר נעולה. (4) הדלת משתחררת, אתה מחזיק אותה פתוחה ומקרב מגנט לחיישן הדלת 10 שניות - החיישן אסור שיתבלבל. (5) סוגר, פותח וסוגר, ואז מחזיק סגורה בזמן שחרור הנעילה - הסטטוס חייב לעקוב רק אחרי הדלת. (6) ההתראה והקוד שלה נקראים מהתוכנית של חלק 2. עטה הגנת עיניים מ-UV ליד הדלת.'],
+    intro: ['Four parts, one after the other, 405 nm only, with the StarBright on the machine. (1) The door is released and you open it: the runner reads the dark level, then tries a 405 nm program and a direct UV command - both must be refused and the meter must see no UV. (2) With the door closed, a real cure runs at 100 % until the StarBright is stable; you open the door and the meter times the UV going off. (3) A cure at 30 % with the door closed: you pull the door for 10 s - it must stay locked. (4) The door is released, you hold it open and put the magnet to the door sensor for 10 s - the sensor must not be fooled. Wear UV eye protection near the door.',
+            'ארבעה חלקים ברצף, 405 ננומטר בלבד, עם ה-StarBright שבמכונה. (1) הדלת משתחררת ואתה פותח אותה: הרנר קורא את רמת החושך, ואז מנסה תוכנית 405 ופקודת UV ישירה - שתיהן חייבות להידחות והמד לא רואה UV. (2) עם דלת סגורה רצה תוכנית אמיתית ב-100% עד שה-StarBright יציב; אתה פותח את הדלת והמד מתזמן את כיבוי ה-UV. (3) תוכנית ב-30% עם דלת סגורה: אתה מושך את הדלת 10 שניות - היא חייבת להישאר נעולה. (4) הדלת משתחררת, אתה מחזיק אותה פתוחה ומקרב מגנט לחיישן הדלת 10 שניות - החיישן אסור שיתבלבל. עטה הגנת עיניים מ-UV ליד הדלת.'],
     async run(c) {
       const THRESHOLD = 0.5;                                  // mW/cm2 above the dark reading = UV seen (the catalog's field note)
       const closed = (s) => s.doorClosed === true;
@@ -2240,12 +2525,12 @@ window.DVT_AUTO = (function () {
         return m;
       };
       const readMeter = async () => { const m = await c.get('/api/dvt/meter').catch(() => null); return m && m.present ? num(m.reading_mw_cm2) : null; };
-      const wait = async (pred, sec, say, failEn, failHb) => {
-        const r = await c.until(pred, { sec, poll: 0.25, tick: () => say && c.say(say[0], say[1]) });
-        if (!r.ok) throw new Error(A.L(failEn, failHb));
-        return r.s;
-      };
-      const door = async (what, en, hb) => { c.say(en, hb); await c.tryPost('/api/door/open'); return wait(what, 60, [en, hb], 'the machine did not see the door change - nothing was done', 'המכונה לא ראתה את הדלת משתנה - לא בוצע דבר'); };
+      // every waiting prompt is an instruction to the person: doThis() publishes it as the step and
+      // needs BOTH the press ("I did it") and the machine's own reading before the script goes on
+      const wait = async (pred, sec, say, failEn, failHb) =>
+        say ? c.doThis(say[0], say[1], pred, sec, failEn, failHb)
+            : (async () => { const r = await c.until(pred, { sec, poll: 0.25 }); if (!r.ok) throw new Error(A.L(failEn, failHb)); return r.s; })();
+      const door = async (what, en, hb) => { c.act(en, hb, 60); await c.tryPost('/api/door/open'); return wait(what, 60, [en, hb], 'the machine did not see the door change - nothing was done', 'המכונה לא ראתה את הדלת משתנה - לא בוצע דבר'); };
 
       await P.idle(c);
       const m0 = await meter();
@@ -2254,8 +2539,8 @@ window.DVT_AUTO = (function () {
         if (w.ok === false) throw new Error(w.message || A.L('the meter did not take 405 nm', 'המד לא קיבל 405 ננומטר'));
       }
 
-      // ---- 1/6 the door open: dark level, then both ways of starting UV must be refused and nothing seen
-      c.stage(1, 6, 'door open - a cure must not start', 'דלת פתוחה - אסור שתוכנית תתחיל');
+      // ---- 1/4 the door open: dark level, then both ways of starting UV must be refused and nothing seen
+      c.stage(1, 4, 'door open - a cure must not start', 'דלת פתוחה - אסור שתוכנית תתחיל');
       await door(open, 'OPEN THE DOOR NOW - the lock has been released', 'פתח את הדלת עכשיו - הנעילה שוחררה');
       c.say('door open - reading the dark level', 'הדלת פתוחה - קורא את רמת החושך');
       const trace1 = [];                                       // [t_s, mW/cm2, phase, door_open, uv_on]
@@ -2274,7 +2559,7 @@ window.DVT_AUTO = (function () {
       const dark = Math.max(...darkVals);
 
       c.say('trying to start a 405 nm cure and a direct UV command with the door open', 'מנסה להתחיל תוכנית 405 ופקודת UV ישירה כשהדלת פתוחה');
-      const material = { id: 'dvt-saf-012', name: 'DVT-SAF-012 door interlock', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
+      const material = { id: 'dvt-saf-012', name: 'DVT-SAF-008 door interlock', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
       const rRecipe = await c.postJson('/api/recipe/start', { material }).catch((e) => ({ ok: false, message: String(e.message || e) }));
       let recipeOk = rRecipe.ok === true, recipeStop = null;
       if (recipeOk) {                                         // "started" can still be stopped by the program's own pre-flight a moment later (6015)
@@ -2311,8 +2596,8 @@ window.DVT_AUTO = (function () {
       c.note(`step 1: dark ${r2(dark)}, peak ${r2(peak)} mW/cm2, recipe ${recipeOk ? 'ACCEPTED' : 'refused'}, UV command ${uvOk ? 'ACCEPTED' : 'refused'}`);
       c.save();
 
-      // ---- 2/6 UV-off timing: a real cure at 100 %, the door opened, the meter times the UV going off
-      c.stage(2, 6, 'UV off when the door opens', 'כיבוי UV בפתיחת הדלת');
+      // ---- 2/4 UV-off timing: a real cure at 100 %, the door opened, the meter times the UV going off
+      c.stage(2, 4, 'UV off when the door opens', 'כיבוי UV בפתיחת הדלת');
       await wait(closed, 300, ['CLOSE and latch the door to continue (part 2 runs a real cure)', 'סגור ונעל את הדלת כדי להמשיך (חלק 2 מריץ תוכנית אמיתית)'],
                  'the door was not closed within 5 minutes', 'הדלת לא נסגרה תוך 5 דקות');
       const started = await c.post('/api/dvt/uv-off?wavelength=405&intensity=100');
@@ -2322,8 +2607,11 @@ window.DVT_AUTO = (function () {
         await c.sleep(0.4);
         if (c.stopped() && !aborted) { aborted = true; await c.tryPost('/api/dvt/uv-off/abort'); }
         uo = await c.get('/api/dvt/uv-off?samples=0');
-        c.say(uo.phase === 'open_door' ? 'OPEN THE DOOR NOW' : uo.phase === 'plateau' ? `waiting for the UV to settle (${r2(num(uo.reading))} mW/cm2) - do not touch the door yet` : `${uo.phase} · ${r2(num(uo.reading))} mW/cm2`,
-              uo.phase === 'open_door' ? 'פתח את הדלת עכשיו' : uo.phase === 'plateau' ? `ממתין שה-UV יתייצב (${r2(num(uo.reading))}) - אל תיגע בדלת עדיין` : `${uo.phase} · ${r2(num(uo.reading))}`);
+        // the machine times the UV from the door sensor itself: no press here, it would add nothing
+        // and the measurement is the point - but the instruction is still THE step on screen
+        if (uo.phase === 'open_door') c.act('OPEN THE DOOR NOW', 'פתח את הדלת עכשיו', null, { ack: false });
+        else c.say(uo.phase === 'plateau' ? `waiting for the UV to settle (${r2(num(uo.reading))} mW/cm2) - do not touch the door yet` : `${uo.phase} · ${r2(num(uo.reading))} mW/cm2`,
+                   uo.phase === 'plateau' ? `ממתין שה-UV יתייצב (${r2(num(uo.reading))}) - אל תיגע בדלת עדיין` : `${uo.phase} · ${r2(num(uo.reading))}`);
       } while (uo.running);
       uo = await c.get('/api/dvt/uv-off');
       if (uo.status !== 'OK') throw new Error(uo.error || uo.status);
@@ -2332,10 +2620,10 @@ window.DVT_AUTO = (function () {
       c.note(`step 2: UV off ${uo.uv_off_time_s} s after the door opened, zero at ${uo.uv_zero_time_s} s, residual ${uo.residual_mw_cm2} mW/cm2`);
       c.save();
 
-      // ---- 3/6 the lock: a cure at 30 % with the door closed, the door pulled for 10 s
-      c.stage(3, 6, 'the lock holds against a pull', 'הנעילה מחזיקה מול משיכה');
+      // ---- 3/4 the lock: a cure at 30 % with the door closed, the door pulled for 10 s
+      c.stage(3, 4, 'the lock holds against a pull', 'הנעילה מחזיקה מול משיכה');
       await wait(closed, 300, ['CLOSE and latch the door to continue', 'סגור ונעל את הדלת כדי להמשיך'], 'the door was not closed within 5 minutes', 'הדלת לא נסגרה תוך 5 דקות');
-      const lockMaterial = { id: 'dvt-saf-012-lock', name: 'DVT-SAF-012 lock check', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
+      const lockMaterial = { id: 'dvt-saf-012-lock', name: 'DVT-SAF-008 lock check', steps: [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }] };
       const rLock = await c.postJson('/api/recipe/start', { material: lockMaterial });
       if (rLock.ok === false) throw new Error(rLock.message || A.L('the program did not start', 'התוכנית לא התחילה'));
       c.say('starting the cure at 30 %', 'מתחיל תוכנית ב-30%');
@@ -2343,14 +2631,20 @@ window.DVT_AUTO = (function () {
       if (!lit.ok) throw new Error(A.L('the UV never came on', 'ה-UV לא נדלק'));
       const lockRows = [];
       let pulledOpen = false;
+      // the ten seconds are counted from the moment the person says they are pulling: before this
+      // (user, 2026-10-30) the window ran whether or not anybody had a hand on the door
+      await c.doThis('PULL the door firmly and keep pulling, then press "I am pulling"',
+                     'משוך את הדלת בחוזקה והמשך למשוך, ואז לחץ "אני מושך"', null, 300,
+                     'nobody confirmed the pull within 5 minutes', 'אף אחד לא אישר משיכה תוך 5 דקות');
       const lockEnd = c.sec + 10;
       while (c.sec < lockEnd) {
         const s = await c.state();
         lockRows.push([r2(c.sec), open(s), s.uvOn === true, 'pull']);
         if (open(s)) { pulledOpen = true; break; }
-        c.say(`PULL the door firmly now - ${Math.ceil(lockEnd - c.sec)} s`, `משוך את הדלת בחוזקה עכשיו - ${Math.ceil(lockEnd - c.sec)} שניות`);
+        c.act(`KEEP PULLING - ${Math.ceil(lockEnd - c.sec)} s`, `המשך למשוך - ${Math.ceil(lockEnd - c.sec)} שניות`, lockEnd - c.sec, { ack: false });
         await c.sleep(0.2);
       }
+      c.actDone();
       const rsLock = await c.get('/api/recipe/status').catch(() => ({}));
       const sLock = await c.state();
       await P.allOff(c);
@@ -2359,21 +2653,26 @@ window.DVT_AUTO = (function () {
       c.note(`step 3: the door ${pulledOpen ? 'OPENED under the pull' : 'held'}; program ${rsLock.state || '?'}`);
       c.save();
 
-      // ---- 4/6 the magnet: the door held open, the magnet on the door sensor for 10 s
-      c.stage(4, 6, 'a magnet must not fool the door sensor', 'מגנט אסור שיטעה את חיישן הדלת');
+      // ---- 4/4 the magnet: the door held open, the magnet on the door sensor for 10 s
+      c.stage(4, 4, 'a magnet must not fool the door sensor', 'מגנט אסור שיטעה את חיישן הדלת');
       await c.tryPost('/api/door/open');
-      await wait(open, 30, ['OPEN THE DOOR and keep it open', 'פתח את הדלת והחזק אותה פתוחה'], 'the machine did not see the door open', 'המכונה לא ראתה את הדלת נפתחת');
+      await wait(open, 120, ['OPEN THE DOOR and keep it open', 'פתח את הדלת והחזק אותה פתוחה'], 'the machine did not see the door open', 'המכונה לא ראתה את הדלת נפתחת');
       const magRows = [];
       let fooled = false;
+      await c.doThis('HOLD THE MAGNET against the door sensor from outside, keep the door open, then press "I am holding it"',
+                     'החזק את המגנט מול חיישן הדלת מבחוץ, השאר את הדלת פתוחה, ואז לחץ "אני מחזיק"', null, 300,
+                     'nobody confirmed the magnet within 5 minutes', 'אף אחד לא אישר את המגנט תוך 5 דקות');
       const magEnd = c.sec + 10;
       while (c.sec < magEnd) {
         const s = await c.state();
         magRows.push([r2(c.sec), open(s), s.uvOn === true, 'magnet']);
         if (closed(s)) fooled = true;
-        c.say(`HOLD THE MAGNET against the door sensor, from outside - ${Math.ceil(magEnd - c.sec)} s${fooled ? ' · the machine reads CLOSED' : ''}`,
-              `החזק את המגנט מול חיישן הדלת מבחוץ - ${Math.ceil(magEnd - c.sec)} שניות${fooled ? ' · המכונה קוראת "סגורה"' : ''}`);
+        c.act(`KEEP THE MAGNET on the sensor, door open - ${Math.ceil(magEnd - c.sec)} s${fooled ? ' · the machine reads CLOSED' : ''}`,
+              `השאר את המגנט על החיישן, הדלת פתוחה - ${Math.ceil(magEnd - c.sec)} שניות${fooled ? ' · המכונה קוראת "סגורה"' : ''}`,
+              magEnd - c.sec, { ack: false });
         await c.sleep(0.2);
       }
+      c.actDone();
       if (fooled) {                                            // a door that fell shut also reads closed: the person says which it was
         const heldOpen = await c.confirm(
           A.L('The machine read the door CLOSED while you held the magnet. Was the door still held OPEN by you the whole time? (Yes = the magnet fooled the sensor; No = the door fell shut - the step must be repeated)',
@@ -2385,43 +2684,12 @@ window.DVT_AUTO = (function () {
       c.note(`step 4: the sensor was ${fooled ? 'FOOLED' : 'not fooled'} by the magnet`);
       c.save();
 
-      // ---- 5/6 the door status follows only the door (and not the lock release)
-      c.stage(5, 6, 'the door status follows the door only', 'סטטוס הדלת עוקב רק אחרי הדלת');
-      const stRows = [];
-      const mark = (s, phase) => stRows.push([r2(c.sec), s ? open(s) : null, s ? s.uvOn === true : null, phase]);
-      mark(await wait(closed, 30, ['CLOSE the door', 'סגור את הדלת'], 'the machine did not see the door close', 'המכונה לא ראתה את הדלת נסגרת'), 'closed_1');
-      await c.tryPost('/api/door/open');
-      mark(await wait(open, 30, ['OPEN the door', 'פתח את הדלת'], 'the machine did not see the door open', 'המכונה לא ראתה את הדלת נפתחת'), 'open');
-      mark(await wait(closed, 30, ['CLOSE the door', 'סגור את הדלת'], 'the machine did not see the door close', 'המכונה לא ראתה את הדלת נסגרת'), 'closed_2');
-      c.say('HOLD the door closed - the lock is about to be released', 'החזק את הדלת סגורה - הנעילה עומדת להשתחרר');
-      await c.sleep(2.5);
-      await c.tryPost('/api/door/open');                       // the only software actuator on the door: the lock release
-      let flipped = false;
-      const relEnd = c.sec + 3;
-      while (c.sec < relEnd) {
-        const s = await c.state();
-        mark(s, 'release_held');
-        if (!closed(s)) flipped = true;
-        await c.sleep(0.2);
-      }
-      c.put('door_status_read_only_confirmed', !flipped);
-      c.trace('door_status_check', { columns: ['t_s', 'door_open', 'uv_on', 'phase'], samples: stRows });
-      c.note(`step 5: the status ${flipped ? 'CHANGED with the lock release' : 'followed the door only'}`);
-
-      // ---- 6/6 the alarm of the part-2 cure
-      c.stage(6, 6, 'the alarm of the cure that was interrupted', 'ההתראה של התוכנית שהופסקה');
-      const before = new Set((uo.alerts_before || []).map(String));
-      const codes = [...new Set([...(uo.alerts_after || []).map(String).filter((x) => !before.has(x)),
-        ...(uo.ui_alerts || []).map(String),
-        ...(uo.program_end && uo.program_end.error_code ? [String(uo.program_end.error_code)] : []),
-        ...(uo.door_aborted ? ['6016'] : [])])];
-      c.puts({ alarm_raised: codes.length > 0, error_code: codes.join(', ') });
-      c.note(`step 6: alarm ${codes.length ? codes.join(', ') : 'none'}`);
+      // steps 5 (door status) and 6 (alarm) were removed from the test (user, 2026-11-12)
       await P.allOff(c);
     },
   });
 
-  def('DVT-SAF-016', {
+  def('DVT-SAF-012', {
     kind: 'instrumented', minutes: 30,
     intro: ['405 nm only, and every number comes from the StarBright on the machine\'s USB - nothing is typed in. The runner sets the meter to 405 nm, reads the dark room with the LEDs off, drives the LEDs to maximum at 405 nm and samples the meter continuously while you scan the enclosure with the meter head; the meter head is held flush against each possible light source, and the highest reading of the scan is the maximum. It then averages the meter at the operator position and computes the permitted daily exposure from that level against the UV-A eye limit of IEC 62471 / EN 62471 clause 4.3.5: 1 mW/cm2 for exposures over 1000 s, 1000 mJ/cm2 below that.',
             '405 ננומטר בלבד, וכל מספר מגיע מה-StarBright שמחובר ל-USB של המכונה - שום דבר לא מוקלד. הרנר מכוון את המד ל-405 ננומטר, קורא את החדר החשוך כשהלדים כבויים, מעלה את הלדים למקסימום ב-405 ננומטר ודוגם את המד ברציפות בזמן שאתה סורק את המארז עם ראש המד; ראש המד מוצמד לכל מקור אור אפשרי, והקריאה הגבוהה ביותר בסריקה היא המקסימום. אחר כך הוא ממצע את המד בעמדת המפעיל ומחשב מהרמה הזו את משך החשיפה היומי המותר לפי מגבלת UV-A לעין בתקן IEC 62471 / EN 62471 סעיף 4.3.5: 1 mW/cm2 לחשיפה מעל 1000 שניות, 1000 mJ/cm2 מתחת לזה.'],
@@ -2502,121 +2770,120 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-017', {
-    kind: 'guided', minutes: 30,
-    intro: ['The interlock chain, broken and then defeated. With the sensor unplugged the runner tries a cure and a heat cycle and records both refusals with the alarm and its code; it then unplugs the sensor mid-cure and times the UV removal on the StarBright. With the chain shorted it tries a cure with the door open and records whether the machine started anyway and whether it noticed.',
-            'שרשרת הבטיחות, שבורה ואז מנוטרלת. כשהחיישן מנותק הרנר מנסה קיור ומחזור חימום ורושם את שני הסירובים עם ההתראה והקוד; אחר כך הוא מנתק את החיישן באמצע קיור ומודד את זמן הסרת ה-UV על ה-StarBright. כששרשרת הבטיחות מקוצרת הוא מנסה קיור כשהדלת פתוחה ורושם האם המכונה בכל זאת התחילה והאם שמה לב.'],
+  def('DVT-SAF-013', {
+    kind: 'guided', minutes: 15,
+    intro: ['The door switch connector unplugged: the runner turns the LEDs on and then the heating, and checks that neither turns on (the heating is watched for 200 seconds). It also records any alarm the machine raises.',
+            'מחבר מתג הדלת מנותק: הרנר מדליק את הלדים ואז את החימום, ובודק שאף אחד מהם לא נדלק (החימום נבדק במשך 200 שניות). הוא רושם גם כל התראה שהמכונה מעלה.'],
     async run(c) {
       await P.idle(c);
-      c.stage(1, 4, 'open chain: a cure and a heat must be refused', 'שרשרת פתוחה: קיור וחימום חייבים להידחות');
-      await c.ask('Unplug the door sensor, then press Done.', 'נתק את חיישן הדלת, ואז לחץ "בוצע".');
+      c.stage(1, 3, 'unplug the door switch', 'ניתוק מתג הדלת');
+      await c.ask('Unplug the door switch connector, then press Done.', 'נתק את מחבר מתג הדלת, ואז לחץ "בוצע".');
       const before = (await c.state()).alerts || [];
-      const rc = await c.postJson('/api/recipe/start', program('saf-017', [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }]));
-      let cureRan = rc.ok === true && (await c.until((s) => s.uvOn === true, { sec: 20, poll: 0.5 })).ok;
+
+      c.stage(2, 3, 'the LEDs and the heating must stay off', 'הלדים והחימום חייבים להישאר כבויים');
+      await c.tryPost('/api/uv?on=1&intensity=30&wavelength=405');
+      const uvRan = (await c.until((s) => s.uvOn === true, { sec: 15, poll: 0.5 })).ok;
       await P.allOff(c);
-      const rh = await c.post('/api/cure/heat?target=60');
-      let heatRan = rh.ok !== false && (await c.until((s) => s.isHeating === true && num(s.heaterPwm) > 0, { sec: 20, poll: 0.5 })).ok;
+      await c.tryPost('/api/cure/heat?target=60');
+      const heatRan = (await c.until((s) => s.isHeating === true && num(s.heaterPwm) > 0, { sec: 200, poll: 1 })).ok;   // 200 s: the heating must stay off the whole time (user, 2026-10-25)
       await c.tryPost('/api/chamber/stop');
-      c.puts({ open_chain_cure_inhibited: !cureRan, open_chain_heat_inhibited: !heatRan });
-      const a = await P.alarm(c, before, { sec: 60 });
+      await P.allOff(c);
+      c.puts({ open_chain_cure_inhibited: !uvRan, open_chain_heat_inhibited: !heatRan });
+      const a = await P.alarm(c, before, { sec: 30 });
       c.puts({ open_chain_alarm: a.raised, open_chain_error_code: a.code === null ? null : String(a.code) });
 
-      c.stage(2, 4, 'unplug mid-cure: how fast does UV go?', 'ניתוק באמצע קיור: כמה מהר ה-UV נעלם?');
-      await c.ask('Plug the door sensor back in and press Done - the runner will light the LEDs and ask you to unplug it again.',
-                  'חבר בחזרה את חיישן הדלת ולחץ "בוצע" - הרנר ידליק את הלדים ויבקש ממך לנתק שוב.');
-      const m = await c.get('/api/dvt/meter').catch(() => ({ present: false }));
-      await c.post('/api/uv?on=1&intensity=100&wavelength=405');
-      await c.sleep(15);
-      let level = null;
-      if (m.present) { const x = await c.get('/api/dvt/meter'); level = num(x.reading_mw_cm2); }
-      await c.ask('Unplug the door sensor NOW, then press Done.', 'נתק עכשיו את חיישן הדלת, ואז לחץ "בוצע".');
-      const t0 = c.sec;
-      let off = null;
-      const fall = [];
-      while (c.sec - t0 < 20) {
-        const x = m.present ? await c.get('/api/dvt/meter').catch(() => null) : null;   // never in parallel: the meter takes one caller at a time
-        const s = await c.state();
-        const v = x ? num(x.reading_mw_cm2) : null;
-        fall.push([r2(c.sec - t0), v, !!s.uvOn]);
-        if ((v !== null && level && v < level * 0.1) || (!m.present && !s.uvOn)) { off = r2(c.sec - t0); break; }
-        await c.sleep(0.1);
-      }
-      c.trace('uv_off_open_chain', { plateau_mw_cm2: r2(level), samples: fall });
-      c.put('open_chain_uv_off_time', off);
-      await P.allOff(c);
-
-      c.stage(3, 4, 'shorted chain', 'שרשרת מקוצרת');
-      await c.ask('Short the interlock chain to simulate a defeated sensor and leave the door OPEN, then press Done. Wear UV eye protection.',
-                  'קצר את שרשרת הבטיחות כדי לדמות חיישן מנוטרל והשאר את הדלת פתוחה, ואז לחץ "בוצע". הרכב משקפי מגן ל-UV.');
-      const before2 = (await c.state()).alerts || [];
-      const rs = await c.postJson('/api/recipe/start', program('saf-017b', [{ step: 1, process: 'Cure', time: 1, uvIntensity: 30 }]));
-      const started = rs.ok === true && (await c.until((s) => s.uvOn === true, { sec: 20, poll: 0.5 })).ok;
-      await P.allOff(c);
-      const a2 = await P.alarm(c, before2, { sec: 30 });
-      c.puts({ shorted_chain_cure_started: started, shorted_chain_detected: a2.raised, shorted_chain_alarm: a2.raised });
-
-      c.stage(4, 4, 'the hardware path and the bypass', 'נתיב החומרה והעקיפה');
-      await c.ask('Restore the interlock chain and the sensor, then press Done.', 'החזר את שרשרת הבטיחות ואת החיישן, ואז לחץ "בוצע".');
-      await c.yesno('hardware_path_broken', 'Is the hardware SSR enable path broken when the chain is open, measured at the SSR drive?',
-                    'האם נתיב האפשור החומרתי של ה-SSR נשבר כששרשרת הבטיחות פתוחה, כפי שנמדד בהנעת ה-SSR?');
-      const has = await c.yesno('bypass_exists', 'Does a service bypass exist?', 'האם קיימת עקיפת שירות?');
-      if (has === true) {
-        await c.yesno('bypass_requires_credential', 'Does it require a tool or credential?', 'האם היא דורשת כלי או הרשאה?');
-        await c.yesno('bypass_time_limited', 'Is it time limited?', 'האם היא מוגבלת בזמן?');
-        await c.yesno('bypass_logged', 'Is it logged?', 'האם היא נרשמת ביומן?');
-        await c.yesno('bypass_indicated', 'Is it visibly indicated while active?', 'האם יש חיווי גלוי כשהיא פעילה?');
-      }
-      await c.yesno('resume_requires_ack', 'Does resuming after an interlock fault require an explicit acknowledgement?',
-                    'האם חידוש אחרי תקלת בטיחות דורש אישור מפורש?');
+      c.stage(3, 3, 'plug it back in', 'חיבור בחזרה');
+      await c.ask('Plug the door switch connector back in, then press Done.', 'חבר בחזרה את מחבר מתג הדלת, ואז לחץ "בוצע".');
     },
   });
 
-  def('DVT-SAF-018', {
-    kind: 'guided', minutes: 20,
-    intro: ['One layer of the software stack is taken out and the outputs are watched, not the log. The runner brings the machine into a heating cure, asks you to apply this row\'s failure, then samples the heater and the LEDs several times a second until both are off - that time is the response time - and keeps watching to prove nothing resumed by itself.',
-            'שכבה אחת של מחסנית התוכנה מוצאת מהמשחק והמוצאים נצפים, לא היומן. הרנר מכניס את המכונה לקיור עם חימום, מבקש ממך להפעיל את הכשל של השורה הזו, ואז דוגם את ההיטר ואת הלדים כמה פעמים בשנייה עד ששניהם כבויים - זה זמן התגובה - וממשיך לצפות כדי להוכיח ששום דבר לא התחדש מעצמו.'],
+  def('DVT-SAF-014', {
+    kind: 'guided', minutes: 25,
+    intro: ['One part of the software stack fails and the outputs are watched, not the log: the StarBright for the UV, the heater-body thermocouple for the heat. Screen killed: the cure must carry on and the screen come back. Storage read-only: the machine must keep answering and raise an alarm. I2C bus lost: the UV must be gone within 25 s and the heater body turn within 200 s. Then nothing may come back by itself.',
+            'חלק אחד במחסנית התוכנה נכשל והיציאות נצפות, לא היומן: ה-StarBright עבור ה-UV ותרמוקפל גוף החימום עבור החימום. מסך שנהרג: הקיור חייב להמשיך והמסך לחזור. אחסון לקריאה בלבד: המכונה חייבת להמשיך לענות ולהעלות התראה. אפיק I2C שאבד: ה-UV חייב להיעלם תוך 25 שניות וגוף החימום לעבור לירידה תוך 200 שניות. אחר כך שום דבר לא חוזר לבד.'],
     async run(c) {
-      const mode = c.variant.failure_mode || c.variant.case || 'the case under test';
-      c.put('failure_mode', c.variant.failure_mode || c.variant.case || null);
+      const kase = String(c.variant.case || 'ui_kill');
+      c.put('failure_mode', kase);
       await P.idle(c);
+      const m = await c.get('/api/dvt/meter').catch(() => ({ present: false }));
+      if (!m.present) throw new Error(A.L('connect the StarBright to the machine - the UV is read on it', 'חבר את ה-StarBright למכונה - ה-UV נקרא עליו'));
       const before = (await c.state()).alerts || [];
+      const meter = async () => { const x = await c.get('/api/dvt/meter').catch(() => null); return x ? num(x.reading_mw_cm2) : null; };
 
-      c.stage(1, 3, 'a job under way', 'עבודה בעיצומה');
-      await c.postJson('/api/recipe/start', program('saf-018', [
+      c.stage(1, 3, 'a heated cure under way', 'קיור עם חימום בעיצומו');
+      const r = await c.postJson('/api/recipe/start', program('saf-014', [
         { step: 1, process: 'Cure', time: 20, temperature: 60, uvIntensity: 50, wavelength: 405 }]));
-      const lit = await c.until((s) => s.uvOn === true || s.isHeating === true, { sec: 180, poll: 1 });
-      if (!lit.ok) throw new Error(A.L('the job never started', 'העבודה לא התחילה'));
+      if (r.ok === false) throw new Error(r.message || A.L('the machine refused the cure', 'המכונה דחתה את הקיור'));
+      const lit = await c.until((s) => s.uvOn === true, { sec: 600, poll: 2 });
+      if (!lit.ok) throw new Error(A.L('the UV never came on', 'ה-UV לא נדלק'));
+      await c.sleep(20);
+      const plateau = [];
+      for (let i = 0; i < 10; i++) { plateau.push(await meter()); await c.sleep(0.2); }
+      const level = Math.max(...plateau.filter((v) => v !== null));
+      c.put('uv_plateau', r2(level));
 
-      c.stage(2, 3, `apply the failure - ${mode}`, `הפעל את הכשל - ${mode}`);
-      const ok = await c.ask(`Apply the failure now (${mode}), then press Done.`, `הפעל עכשיו את הכשל (${mode}), ואז לחץ "בוצע".`);
+      c.stage(2, 3, `the failure - ${kase}`, `הכשל - ${kase}`);
+      const what = {
+        ui_kill: ['Kill the screen (UI) process only - leave the firmware running. Press Done the moment it is gone.', 'הרוג רק את תהליך המסך (UI) - השאר את התוכנה רצה. לחץ "בוצע" ברגע שהוא נעלם.'],
+        storage_loss: ['Force the filesystem read-only now (e.g. remount the data partition ro). Press Done the moment it is applied.', 'הפוך עכשיו את מערכת הקבצים לקריאה בלבד (למשל remount של מחיצת הנתונים ל-ro). לחץ "בוצע" ברגע שזה בוצע.'],
+        i2c_loss: ['Interrupt the I2C bus to the IO board now (pull the I2C link / short SDA). Press Done the moment it is cut.', 'נתק עכשיו את אפיק ה-I2C ללוח ה-IO (נתק את חיבור ה-I2C / קצר את SDA). לחץ "בוצע" ברגע שהוא נותק.'],
+      }[kase] || ['Apply the failure now, then press Done.', 'הפעל עכשיו את הכשל, ואז לחץ "בוצע".'];
+      await c.ask(what[0], what[1]);
       const t0 = c.sec;
       const rows = [];
-      let offAt = null;
-      await c.watch({ sec: 300, hz: 4, tc: true, into: rows,
-        on: (s, at) => {
-          if (offAt === null && !s.uvOn && !s.isHeating) offAt = r2(c.sec - t0);
-          c.say(`after the failure · ${at} s · heat ${s.isHeating ? 'on' : 'off'} · UV ${s.uvOn ? 'on' : 'off'}`,
-                `אחרי הכשל · ${at} שניות · חימום ${s.isHeating ? 'דולק' : 'כבוי'} · UV ${s.uvOn ? 'דולק' : 'כבוי'}`);
-          return offAt !== null && at > offAt + 60 ? 'stop' : undefined;
-        } });
-      c.trace('failure', rows);
-      c.puts({
-        heater_state: rows.length && rows[rows.length - 1][C.HEATER] ? 'on' : 'off',
-        uv_state: rows.length && rows[rows.length - 1][C.UV] ? 'on' : 'off',
-        response_time: ok === true ? offAt : null,
-        auto_resume: rows.filter((r) => r[C.T] > (offAt || 0) + 5).some((r) => r[C.UV] === true || r[C.HEATER] === true),
-      });
+      const fall = [];
+      let uvOff = null, answered = true, uvLow = false;
+      const span = kase === 'i2c_loss' ? 240 : 60;
+      while (c.sec - t0 < span) {
+        const v = await meter();
+        fall.push([r2(c.sec - t0), v]);
+        if (v !== null && v < level * 0.1) { uvLow = true; if (uvOff === null) uvOff = r2(c.sec - t0); }
+        if (fall.length % 2 === 0) {
+          const s = await c.state().catch(() => null);
+          if (!s) answered = false;
+          const body = await P.tc(c).catch(() => null);
+          rows.push([r2(c.sec - t0), s ? num(s.chamberTemp) : null, s ? num(s.heaterPwm) : null, s ? s.isHeating === true : null, s ? s.uvOn === true : null,
+                     null, null, null, null, r2(body), s ? (s.alerts || []).join('|') : '', null]);
+        }
+        const turn = P.turn(rows, C.TC);
+        c.say(`after the failure · ${Math.round(c.sec - t0)} s · UV ${uvOff === null ? 'on' : 'off at ' + uvOff + ' s'} · heater ${turn.turned ? 'off at ' + turn.at + ' s' : 'on'}`,
+              `אחרי הכשל · ${Math.round(c.sec - t0)} שניות · UV ${uvOff === null ? 'דולק' : 'כבה ב-' + uvOff + ' שניות'} · חימום ${turn.turned ? 'כבה ב-' + turn.at + ' שניות' : 'דולק'}`);
+        if (kase === 'i2c_loss' && uvOff !== null && turn.turned) break;
+        await c.sleep(0.2);
+      }
+      c.trace('failure_uv', { plateau_mw_cm2: r2(level), samples: fall });
+      c.trace('failure_heater', rows);
+      const turn = P.turn(rows, C.TC);
+      c.puts({ uv_off_time: uvOff, heater_off_time: turn.turned ? turn.at : null });
       const a = await P.alarm(c, before, { sec: 15 });
       P.putAlarm(c, a);
-      c.put('logged', a.raised);
-
-      c.stage(3, 3, 'what the display shows', 'מה המסך מראה');
+      let ok = false;
+      if (kase === 'ui_kill') {
+        c.put('process_continued', !uvLow && !turn.turned);
+        const back = await c.yesno('screen_back', 'Did the screen come back (restarted by itself, or you started it) showing the running cure?',
+                                   'האם המסך חזר (עלה מעצמו, או שהפעלת אותו) ומציג את הקיור שרץ?');
+        ok = !uvLow && !turn.turned && back === true;
+      } else if (kase === 'storage_loss') {
+        ok = answered && a.raised;
+      } else {
+        ok = uvOff !== null && uvOff <= 25 && turn.turned && turn.at <= 200;
+      }
+      c.put('case_ok', ok);
       await c.value('display_state', 'What is on the display now?', 'מה מוצג כעת על המסך?');
-      await c.ask('Restore the machine to normal operation, then press Done.', 'החזר את המכונה לפעולה תקינה, ואז לחץ "בוצע".');
+
+      c.stage(3, 3, 'restore: nothing comes back by itself', 'החזרה: שום דבר לא חוזר לבד');
+      await P.allOff(c);
+      await c.ask('Restore the machine to normal operation (restart what you stopped, reconnect, remount read-write), then press Done.',
+                  'החזר את המכונה לפעולה תקינה (הפעל מחדש את מה שעצרת, חבר מחדש, remount לכתיבה), ואז לחץ "בוצע".');
+      const watch = [];
+      await c.watch({ sec: 60, hz: 1, tc: true, into: watch,
+        on: (s, at) => c.say(`watching for an automatic restart · ${at} s`, `צופה בהפעלה אוטומטית מחדש · ${at} שניות`) });
+      c.trace('after_restore', watch);
+      c.put('auto_resume', watch.some((r) => r[C.HEATER] === true || r[C.UV] === true));
     },
   });
 
-  def('DVT-SAF-019', {
+  def('DVT-SAF-015', {
     kind: 'auto', minutes: 70,
     intro: ['Degraded LED cooling, applied over the API. The runner records the healthy baseline for this side, then steps the fan duty down 75, 50, 25 % and holds each step until the panel settles, watching for the first alarm. It records the level and the temperature at which it fired, the alarm text and code, the tach reading at that moment, how far the panel rose after the protection acted, and whether any other panel alarmed. Only case C, a blocked air path, needs your hands.',
             'קירור לד מדורדר, מופעל דרך ה-API. הרנר רושם את קו הבסיס התקין של הצד הזה, ואז מוריד את מחזור העבודה של המאוורר ל-75, 50 ו-25 אחוז ומחזיק כל שלב עד שהפאנל מתייצב, בזמן שהוא ממתין להתראה הראשונה. הוא רושם את הרמה והטמפרטורה שבהן היא פעלה, את נוסח ההתראה והקוד, את קריאת הטכומטר באותו רגע, כמה הפאנל עוד עלה אחרי שההגנה פעלה, והאם פאנל אחר התריע. רק מקרה C, חסימת נתיב אוויר, דורש את הידיים שלך.'],
@@ -2639,8 +2906,8 @@ window.DVT_AUTO = (function () {
         on: (s, at) => { const k = shown();
                          c.say(`baseline · ${mmss_(at)} · ${r1(base.length ? base[base.length - 1][k] : null)} °C`,
                                `קו בסיס · ${mmss_(at)} · ${r1(base.length ? base[base.length - 1][k] : null)} °C`);
-                         const rate = P.rate(base, k, 300);
-                         return at > 300 && rate !== null && Math.abs(rate) < 0.1 ? 'stop' : undefined; } });
+                         const rate = P.rate(base, k, 120);   // steady: at most 1 C in 2 minutes (user, 2026-10-25)
+                         return at > 300 && rate !== null && Math.abs(rate) <= 0.5 ? 'stop' : undefined; } });
       c.trace('baseline', base);
       if (!side) {
         const hot = hottestPanel(base);
@@ -2655,6 +2922,11 @@ window.DVT_AUTO = (function () {
       c.puts({ baseline_temp: r2(P.maxOf(base, col)), baseline_tach: P.rpm(sBase, fanName) });
 
       c.stage(2, 4, 'degrade it in steps', 'הדרדרות בשלבים');
+      // the settled temperature of every step, for the final duty-versus-temperature graph (user, 2026-10-25)
+      const settled = (list, k) => { const end = list.length ? list[list.length - 1][C.T] : 0;
+                                     const tail = list.filter((r) => r[C.T] >= end - 60 && num(r[k]) !== null);
+                                     return tail.length ? r2(tail.reduce((a, r) => a + r[k], 0) / tail.length) : null; };
+      const curve = [[100, settled(base, col), P.rpm(sBase, fanName)]];
       const steps = blocked ? ['operator 75 %', 'operator 50 %', 'operator 25 %'] : [75, 50, 25];
       const rows = [];
       let alarmAt = null, alarmCode = null, levelAtAlarm = null, tempAtAlarm = null, tachAtAlarm = null;
@@ -2676,13 +2948,16 @@ window.DVT_AUTO = (function () {
             c.say(`${step} % · ${mmss_(at)} · ${r1(rows.length ? rows[rows.length - 1][col] : null)} °C${alarmCode ? ' · alarm ' + alarmCode : ''}`,
                   `${step} אחוז · ${mmss_(at)} · ${r1(rows.length ? rows[rows.length - 1][col] : null)} °C${alarmCode ? ' · התראה ' + alarmCode : ''}`);
             if (alarmAt !== null) return 'stop';
-            const rate = P.rate(rows, col, 300);
-            return at > 300 && rate !== null && Math.abs(rate) < 0.1 ? 'stop' : undefined;
+            const rate = P.rate(rows, col, 120);
+            return at > 300 && rate !== null && Math.abs(rate) <= 0.5 ? 'stop' : undefined;
           } });
         const sStep = await c.state();
         c.puts({ degradation_level: String(step), settled_panel_temp: r2(P.maxOf(rows, col)), tach_reading: P.rpm(sStep, fanName) });
+        curve.push([Number(String(step).replace(/\D/g, '')), settled(rows.filter((r) => r[C.T] >= t0 - (rows.length ? 0 : 0)), col), P.rpm(sStep, fanName)]);
       }
       c.trace('degradation', rows);
+      c.trace('duty_vs_temp', { columns: ['fan_duty_pct', 'panel_temp_c', 'tach_rpm'], samples: curve,
+                                xy: { x: 'fan_duty_pct', y: 'panel_temp_c', xLabel: blocked ? 'air path open (%)' : 'LED fan duty (%)', yLabel: side + ' panel (°C)' } });
 
       c.stage(3, 4, 'after the protection acts', 'אחרי שההגנה פעלה');
       const after = [];
@@ -2720,15 +2995,21 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-SAF-020', {
+  def('DVT-SAF-016', {
     kind: 'guided', minutes: 40,
-    intro: ['With one LED panel open, the runner starts the LED self-test so the LEDs switch on, times the alarm from that command, reads the text and code, and checks that it names the right panel and tells the operator to check the LED. It then proves a job will not start, restores the panel, starts a cure and asks you to open the same connection with the LEDs on, timing that alarm too.',
+    intro: ['With one LED panel open, the runner switches the machine\'s panel-must-warm check on for the left and right panels (this test only) and lights the LEDs, times the alarm from that command, reads the text and code, and checks that it names the right panel and tells the operator to check the LED. It then proves a job will not start, restores the panel, starts a cure and asks you to open the same connection with the LEDs on, timing that alarm too.',
             'כשפאנל לד אחד מנותק, הרנר מפעיל את בדיקת הלדים כדי שהלדים יידלקו, מודד את הזמן להתראה מאותה פקודה, קורא את הנוסח והקוד, ובודק שהיא מזהה את הפאנל הנכון ומנחה את המפעיל לבדוק את הלד. אחר כך הוא מוכיח שעבודה לא תתחיל, מחזיר את הפאנל, מתחיל קיור ומבקש ממך לפתוח את אותו חיבור כשהלדים דולקים, ומודד גם את ההתראה הזו.'],
     async run(c) {
       const panel = String(c.variant.panel || 'right');
       const point = String(c.variant.disconnect_point || 'led_string_open');
       c.puts({ panel: c.variant.panel || null, disconnect_point: c.variant.disconnect_point || null });
 
+      // the 'panel must warm while lit' check (Err 9004 / 9005) for all four panels, switched on for this test only
+      // (user, 2026-10-25) - the machine keeps it off in normal operation and forgets the override on a restart
+      const lc = await c.postJson('/api/dvt/led-checks?on=1', {}).catch((e) => ({ ok: false, message: String(e.message || e) }));
+      if (lc.ok === false) throw new Error(lc.message || A.L('the machine could not switch the LED panel checks on - update its software (1.0.111+)',
+                                                             'המכונה לא הצליחה להפעיל את בדיקות לוחות הלדים - עדכן את התוכנה שלה (1.0.111 ומעלה)'));
+      try {
       c.stage(1, 4, 'open the panel', 'נתק את הפאנל');
       await c.ask(`With the unit de-energised, open the ${panel} panel at ${point}. Re-energise and press Done.`,
                   `כשהיחידה מנותקת מחשמל, נתק את פאנל ${panel} בנקודה ${point}. הדלק מחדש ולחץ "בוצע".`);
@@ -2738,12 +3019,14 @@ window.DVT_AUTO = (function () {
       const before = s0.alerts || [];
 
       c.stage(2, 4, 'switch the LEDs on', 'הדלקת הלדים');
-      const t0 = c.sec;
-      const test = await c.post('/api/diagnostics/led-test?seconds=30&wavelength=405').catch(() => null);
-      const a = await P.alarm(c, before, { sec: 120,
-        tick: (s, at) => c.say(`LEDs on · ${at} s`, `לדים דולקים · ${at} שניות`) });
-      const text = a.text || (test ? test.message || '' : '');
-      c.puts({ alarm_raised: a.raised || !!(test && String(test.status).toUpperCase() === 'FAIL'), time_to_alarm: a.raised ? a.sec : null });
+      // the check needs 90 s of light before it judges a panel: the LEDs stay on up to 150 s, not a 30 s self-test
+      const test = null;
+      await c.post('/api/cure/uv-only?intensity=100&wavelength=405');
+      const a = await P.alarm(c, before, { sec: 150,
+        tick: (s, at) => c.say(`LEDs on · ${at} s - the panel check judges after 90 s`, `לדים דולקים · ${at} שניות - בדיקת הלוחות שופטת אחרי 90 שניות`) });
+      await P.allOff(c);
+      const text = a.text || '';
+      c.puts({ alarm_raised: a.raised, time_to_alarm: a.raised ? a.sec : null });
       if (a.code !== null) c.put('error_code', String(a.code));
       c.put('alarm_text', text);
       c.puts({
@@ -2780,6 +3063,9 @@ window.DVT_AUTO = (function () {
       const post = await c.post('/api/diagnostics/led-test?seconds=30&wavelength=405').catch(() => null);
       c.put('post_test_panel_functional', !!(post && ['PASS', 'OK'].includes(String(post.status || '').toUpperCase())));
       if (post) c.trace('led_test_after', post);
+      } finally {
+        await c.tryPost('/api/dvt/led-checks?on=0');      // back to the machine's normal setting
+      }
     },
   });
 
@@ -2787,7 +3073,7 @@ window.DVT_AUTO = (function () {
   // GAS - nitrogen
   // ==========================================================================
 
-  def('DVT-GAS-001', {
+  def('DVT-GAS-007', {
     kind: 'instrumented', minutes: 90, autoRecord: false,
     intro: ['The runner reads the line pressure, the damper and the extraction from the machine, opens the valve itself and keeps the clock. The O2 analyser is not on the network, so it asks you to press Now at the two moments that matter - the centre probe and the corner probe first reaching 4.8 % - and works out the times, the purge duration, the hold above 95 % and the margin from its own clock.',
             'הרנר קורא את לחץ הקו, את המדף ואת השאיבה מהמכונה, פותח את השסתום בעצמו ומנהל את השעון. מנתח החמצן לא ברשת, ולכן הוא מבקש ממך ללחוץ "עכשיו" בשני הרגעים שחשובים - כשגשוש המרכז וגשוש הפינה מגיעים לראשונה ל-4.8 אחוז - ומחשב את הזמנים, את משך השטיפה, את זמן ההחזקה מעל 95 אחוז ואת המרווח מהשעון שלו.'],
@@ -2853,60 +3139,66 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-GAS-002', {
-    kind: 'instrumented', minutes: 45, autoRecord: false,
-    intro: ['Over-pressure at the inlet. The runner reads the line pressure from the machine, drives the purge itself, and times the valve closing from the machine\'s own valve state. The flow meter, the chamber pressure gauge and the bubble test are yours - it asks for each at the moment it needs it.',
-            'לחץ-יתר בכניסה. הרנר קורא את לחץ הקו מהמכונה, מפעיל את השטיפה בעצמו, ומודד את סגירת השסתום ממצב השסתום של המכונה עצמה. מד הספיקה, מד לחץ התא ובדיקת הבועות הם שלך - הוא מבקש כל אחד ברגע שהוא צריך אותו.'],
+  def('DVT-GAS-001', {
+    kind: 'guided', minutes: 30,
+    intro: ['Nitrogen over-pressure interlock. You set the regulator; the runner reads the line pressure from the machine, tries to open the nitrogen above 3 bar (it must stay closed), opens it at the normal pressure, and times the valve closing when you raise the pressure while it flows. It records the alarm each time and asks you only what it cannot see: the screen button and the flow meter.',
+            'הגנת לחץ-יתר בחנקן. אתה מכוון את הווסת; הרנר קורא את לחץ הקו מהמכונה, מנסה לפתוח את החנקן מעל 3 בר (הוא חייב להישאר סגור), פותח אותו בלחץ הרגיל, ומודד את סגירת השסתום כשאתה מעלה את הלחץ בזמן שהוא זורם. הוא רושם את ההתראה בכל פעם ושואל אותך רק את מה שהוא לא רואה: הלחצן במסך ומד הזרימה.'],
     async run(c) {
-      const factor = num(c.variant.overpressure_factor) === null ? 1.0 : Number(c.variant.overpressure_factor);
-      c.put('overpressure_factor', factor);
-      c.stage(1, 4, 'apply the pressure', 'הפעל את הלחץ');
-      await c.ask(`Set the inlet supply to ${factor}x the rated maximum, then press Done.`,
-                  `כוון את הזנת הכניסה ל-${factor} כפול המקסימום הנקוב, ואז לחץ "בוצע".`);
-      const s0 = await P.idle(c);
-      const bar = num((s0.n2Pressure || {}).bar);
-      if (bar !== null) c.put('applied_pressure', r2(bar));
-      else await c.value('applied_pressure', 'Applied inlet pressure', 'לחץ הכניסה שהופעל');
+      const bar = (s) => num(s && s.n2Pressure ? s.n2Pressure.bar : s && s.n2LinePressure);
+      const pressureWords = ['pressure', 'לחץ', 'bar', 'בר'];
+      const open = async () => {
+        await c.tryPost('/api/cure/nitrogen?on=1');
+        return (await c.until((s) => s.nitrogenActive === true, { sec: 10, poll: 0.5 })).ok;
+      };
 
-      c.stage(2, 4, 'valve closed, 10 minutes', 'שסתום סגור, 10 דקות');
-      await c.post('/api/cure/nitrogen?on=0');
-      c.say('holding with the valve closed…', 'מחזיק כשהשסתום סגור…');
-      await c.sleep(600);
-      await c.value('closed_valve_flow', 'Inlet flow with the valve closed (expected zero)', 'ספיקת הכניסה כשהשסתום סגור (הציפייה: אפס)');
-      await c.value('o2_closed_valve', 'Chamber O2 with the valve closed', 'חמצן בתא כשהשסתום סגור');
-      await c.yesno('fitting_leak', 'Did the bubble test find a leak on any fitting from the inlet to the valve?',
-                    'האם בדיקת הבועות מצאה דליפה באחד החיבורים מהכניסה עד השסתום?');
+      c.stage(1, 5, 'about 4 bar, valve closed', 'כ-4 בר, שסתום סגור');
+      await P.idle(c);
+      await c.ask('Set the nitrogen regulator to about 4 bar (above the 3 bar limit). Keep the nitrogen valve closed. Then press Done.',
+                  'כוון את ווסת החנקן לכ-4 בר (מעל הגבול של 3 בר). השאר את שסתום החנקן סגור. ואז לחץ "בוצע".');
+      const s1 = await c.state();
+      const before = s1.alerts || [];
+      if (bar(s1) !== null) c.put('applied_pressure_high', r2(bar(s1)));
+      else await c.value('applied_pressure_high', 'Line pressure on the regulator gauge', 'לחץ הקו במד של הווסת');
 
-      c.stage(3, 4, 'purge under over-pressure', 'שטיפה בלחץ-יתר');
-      const before = (await c.state()).alerts || [];
-      await c.post('/api/cure/nitrogen?on=1');
-      await c.sleep(30);
-      await c.value('purge_flow', 'Flow during the purge', 'הספיקה במהלך השטיפה');
-      await c.value('peak_chamber_pressure', 'Peak chamber pressure', 'לחץ התא המרבי');
-      await c.yesno('door_lifted', 'Did the door or the seal lift?', 'האם הדלת או האטם התרוממו?');
-      const t0 = c.sec;
-      await c.post('/api/cure/nitrogen?on=0');
+      c.stage(2, 5, 'it must refuse to open', 'הוא חייב לסרב להיפתח');
+      const opened = await open();
+      await c.tryPost('/api/cure/nitrogen?on=0');
+      c.put('n2_refused_at_high_pressure', !opened);
+      await c.yesno('ui_refused', 'On the machine screen, try to switch the nitrogen on. Does it stay off (refused)?',
+                    'במסך המכונה, נסה להפעיל את החנקן. האם הוא נשאר כבוי (מסרב)?');
+      const a1 = await P.alarm(c, before, { sec: 30 });
+      c.puts({ alarm_raised_high: a1.raised, error_code: a1.code === null ? null : String(a1.code), alarm_text: a1.text || null,
+               alarm_names_pressure: P.names(a1.text, pressureWords) });
+
+      c.stage(3, 5, 'normal pressure: it must open', 'לחץ רגיל: הוא חייב להיפתח');
+      await c.ask('Lower the regulator to the normal working pressure (between 1 and 3 bar) and acknowledge the alarm on the screen if it is shown. Then press Done.',
+                  'הורד את הווסת ללחץ העבודה הרגיל (בין 1 ל-3 בר) ואשר את ההתראה במסך אם היא מוצגת. ואז לחץ "בוצע".');
+      const s3 = await c.state();
+      if (bar(s3) !== null) c.put('normal_pressure', r2(bar(s3)));
+      else await c.value('normal_pressure', 'Line pressure on the regulator gauge', 'לחץ הקו במד של הווסת');
+      c.put('n2_opened_at_normal', await open());
+
+      c.stage(4, 5, 'raise the pressure while it flows', 'העלאת הלחץ בזמן זרימה');
+      const before2 = (await c.state()).alerts || [];
+      await c.ask('Nitrogen is flowing. Raise the regulator to about 4 bar NOW, then press Done.',
+                  'החנקן זורם. העלה את הווסת לכ-4 בר עכשיו, ואז לחץ "בוצע".');
       const closed = await c.until((s) => s.nitrogenActive === false, { sec: 30, poll: 0.2 });
-      c.puts({ valve_closes_after_purge: closed.ok, flow_stop_time: closed.ok ? r2(closed.sec) : null });
-      c.note('flow_stop_time is taken from the machine valve state; confirm it against the flow meter if one is fitted');
-      const a = await P.alarm(c, before, { sec: 20 });
-      P.putAlarm(c, a);
-      await c.value('o2_after_purge', 'Chamber O2 after the purge', 'חמצן בתא אחרי השטיפה');
+      c.puts({ valve_closed_on_rise: closed.ok, close_time: closed.ok ? r2(closed.sec) : null });
+      await c.yesno('flow_stopped_on_rise', 'Did the flow meter drop to zero?', 'האם מד הזרימה ירד לאפס?');
+      const a2 = await P.alarm(c, before2, { sec: 30 });
+      c.put('alarm_raised_on_rise', a2.raised);
+      if (a2.text && !c.known('alarm_text')) c.put('alarm_text', a2.text);
+      await c.tryPost('/api/cure/nitrogen?on=0');
 
-      c.stage(4, 4, 'back to rated, then a normal purge', 'חזרה ללחץ הנקוב, ואז שטיפה רגילה');
-      await c.ask('Return the supply to the rated maximum and hold with the valve closed for 10 minutes, then press Done.',
-                  'החזר את ההזנה למקסימום הנקוב והחזק עם שסתום סגור 10 דקות, ואז לחץ "בוצע".');
-      await c.value('post_test_flow_closed', 'Flow with the valve closed after the test', 'הספיקה כשהשסתום סגור אחרי הבדיקה');
-      await c.post('/api/cure/nitrogen?on=1');
-      await c.sleep(30);
-      await c.post('/api/cure/nitrogen?on=0');
-      await c.yesno('damage', 'Is there damage or deformation on the tubing, fittings or valve?',
-                    'האם יש נזק או עיוות בצנרת, בחיבורים או בשסתום?');
-      await P.selfCheck(c, { heat: false });
+      c.stage(5, 5, 'back to normal', 'חזרה לרגיל');
+      await c.ask('Lower the regulator back to the normal pressure and acknowledge the alarm on the screen. Then press Done.',
+                  'הורד את הווסת בחזרה ללחץ הרגיל ואשר את ההתראה במסך. ואז לחץ "בוצע".');
+      c.put('n2_works_after', await open());
+      await c.tryPost('/api/cure/nitrogen?on=0');
     },
   });
 
-  def('DVT-GAS-003', {
+  def('DVT-GAS-002', {
     kind: 'guided', minutes: 35,
     intro: ['Four ways to lose the nitrogen supply, one per row. The runner does the machine side itself: it tries to enable nitrogen mode, reads back what the screen shows for the line pressure, tries to start a nitrogen program, and watches for the loss to be detected and for what the job then does. You only set the supply state the row calls for.',
             'ארבע דרכים לאבד את הזנת החנקן, אחת לכל שורה. הרנר עושה את צד המכונה בעצמו: מנסה לאפשר מצב חנקן, קורא מה המסך מראה על לחץ הקו, מנסה להתחיל תוכנית חנקן, וצופה בזיהוי האובדן ובמה שהעבודה עושה אז. אתה רק מגדיר את מצב ההזנה שהשורה דורשת.'],
@@ -2916,11 +3208,13 @@ window.DVT_AUTO = (function () {
       await P.idle(c);
 
       if (kase.indexOf('A') === 0) {
-        c.stage(1, 2, 'no supply: enabling must be refused', 'אין הזנה: האפשור חייב להידחות');
-        await c.ask('Disconnect the nitrogen line, then press Done.', 'נתק את קו החנקן, ואז לחץ "בוצע".');
-        c.put('supply_state', 'line disconnected');
+        c.stage(1, 2, 'below 0.5 bar: turning nitrogen on must be refused', 'מתחת ל-0.5 בר: הפעלת חנקן חייבת להידחות');
+        await c.ask('Disconnect the nitrogen line (the line pressure must be below 0.5 bar), then press Done.',
+                    'נתק את קו החנקן (לחץ הקו חייב להיות מתחת ל-0.5 בר), ואז לחץ "בוצע".');
+        c.put('supply_state', 'line disconnected (below 0.5 bar)');
         const before = (await c.state()).alerts || [];
         const r = await c.post('/api/cure/nitrogen?on=1');
+        if (r && r.ok === false && r.message) c.put('message_text', String(r.message));   // the refusal says why: no nitrogen supply
         const on = await c.until((s) => s.nitrogenActive === true, { sec: 20, poll: 0.5 });
         c.put('enable_refused', r.ok === false || !on.ok);
         const s = await c.state();
@@ -2931,9 +3225,9 @@ window.DVT_AUTO = (function () {
         c.puts({ detected_and_handled: c.rec.values.enable_refused === true, cure_ran_in_air: false });
       } else if (kase.indexOf('B') === 0) {
         c.stage(1, 2, 'low pressure: the pre-cure check must refuse', 'לחץ נמוך: בדיקת הקדם-קיור חייבת לדחות');
-        await c.ask('Set the supply to 4 bar (below the 6 bar minimum), then press Done.',
-                    'כוון את ההזנה ל-4 בר (מתחת למינימום של 6 בר), ואז לחץ "בוצע".');
-        c.put('supply_state', '4 bar');
+        await c.ask('Set the supply to about 0.3 bar (below the 0.5 bar minimum), then press Done.',
+                    'כוון את ההזנה לכ-0.3 בר (מתחת למינימום של 0.5 בר), ואז לחץ "בוצע".');
+        c.put('supply_state', 'about 0.3 bar');
         const before = (await c.state()).alerts || [];
         const r = await c.postJson('/api/recipe/start', program('gas-003b', [
           { step: 1, process: 'Nitrogen', time: 2 }, { step: 2, process: 'Cure', time: 2, uvIntensity: 30 }]));
@@ -2995,58 +3289,47 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-GAS-004', {
-    kind: 'guided', minutes: 40, autoRecord: false,
-    intro: ['The valve must be shut whenever it is not being asked to be open. The runner drives a purge and then takes each case away from it - mains cut, door opened, abort pressed - timing the valve closing from the machine\'s own valve state each time, and asks you for the flow-meter figure where one is fitted.',
-            'השסתום חייב להיות סגור בכל רגע שבו לא מבקשים ממנו להיות פתוח. הרנר מפעיל שטיפה ואז לוקח ממנה כל מקרה - ניתוק חשמל, פתיחת דלת, לחיצת ביטול - ומודד בכל פעם את סגירת השסתום ממצב השסתום של המכונה, ומבקש ממך את קריאת מד הספיקה היכן שמותקן כזה.'],
+  def('DVT-GAS-003', {
+    kind: 'guided', minutes: 750, autoRecord: false,
+    intro: ['Nitrogen leak-down. You charge the line to about 4 bar and isolate it; the machine keeps the valve closed and the runner logs the line pressure it reads once a minute for 12 hours, then works out the drop and the drop per hour.',
+            'בדיקת דליפה בחנקן. אתה טוען את הקו לכ-4 בר ומבודד אותו; המכונה משאירה את השסתום סגור והרנר רושם את לחץ הקו שהיא קוראת פעם בדקה במשך 12 שעות, ואז מחשב את הירידה ואת הירידה לשעה.'],
     async run(c) {
-      c.stage(1, 5, '24 hours with the machine off', '24 שעות כשהמכונה כבויה');
-      await c.value('flow_off_24h', 'Flow meter total after 24 h with the machine off and the line pressurised',
-                    'סך הספיקה אחרי 24 שעות כשהמכונה כבויה והקו בלחץ');
-      await c.value('o2_off_24h', 'Chamber O2 after those 24 h', 'החמצן בתא אחרי אותן 24 שעות');
       await P.idle(c);
+      c.stage(1, 3, 'charge and isolate', 'טעינה ובידוד');
+      await c.ask('Charge the nitrogen line to about 4 bar (the valve stays closed), then close the shut-off valve at the supply so the line is isolated. Press Done.',
+                  'טען את קו החנקן לכ-4 בר (השסתום נשאר סגור), ואז סגור את ברז הסגירה בהזנה כך שהקו מבודד. לחץ "בוצע".');
+      const p0 = n2bar(await c.state());
+      if (p0 === null) throw new Error(A.L('the machine does not read the N2 line pressure - the leak-down needs it', 'המכונה לא קוראת את לחץ קו החנקן - בדיקת הדליפה צריכה אותו'));
+      c.put('start_pressure', r2(p0));
 
-      const cases = [
-        { key: 'power_loss', field: 'flow_stop_time_power_loss',
-          en: 'Cut the mains NOW, then restore it and press Done.', hb: 'נתק עכשיו את החשמל, ואז החזר אותו ולחץ "בוצע".' },
-        { key: 'door', field: 'flow_stop_time_door',
-          en: 'Open the door NOW, then press Done.', hb: 'פתח עכשיו את הדלת, ואז לחץ "בוצע".' },
-        { key: 'abort', field: 'flow_stop_time_abort', auto: true,
-          en: '', hb: '' },
-      ];
-      let step = 2;
-      const closedAll = [];
-      for (const k of cases) {
-        c.stage(step++, 5, `purge, then ${k.key}`, `שטיפה, ואז ${k.key}`);
-        const before = (await c.state()).alerts || [];
-        await c.post('/api/cure/nitrogen?on=1');
-        const open = await c.until((s) => s.nitrogenActive === true, { sec: 30, poll: 0.5 });
-        if (!open.ok) { c.note(`${k.key}: the valve never opened`); continue; }
-        await c.sleep(30);
-        if (k.auto) { await c.post('/api/cure/stop?immediate=1'); }
-        else await c.ask(k.en, k.hb);
-        const t0 = c.sec;
-        const closed = await c.until((s) => s.nitrogenActive === false, { sec: 120, poll: 0.2 });
-        c.put(k.field, closed.ok ? r2(closed.sec) : null);
-        closedAll.push(closed.ok);
-        if (k.key === 'power_loss') {
-          const s = await c.state();
-          c.put('drive_low_after_power_loss', s.nitrogenActive === false);
-        }
-        if (k.key === 'door') {
-          const a = await P.alarm(c, before, { sec: 20 });
-          if (a.code !== null) c.put('error_code', String(a.code));
-          await c.ask('Close the door and press Done.', 'סגור את הדלת ולחץ "בוצע".');
-        }
+      c.stage(2, 3, '12 hours of logging', '12 שעות רישום');
+      const rows = [];
+      const t0 = c.sec;
+      let last = p0;
+      while (c.sec - t0 < 12 * 3600) {
+        const s = await c.state().catch(() => null);
+        const b = n2bar(s);
+        if (b !== null) last = b;
+        rows.push([r2(c.sec - t0), b]);
+        const h = (c.sec - t0) / 3600;
+        c.say(`leak-down · ${h.toFixed(1)} / 12 h · ${r2(last)} bar (drop ${r2(p0 - last)} bar)`,
+              `בדיקת דליפה · ${h.toFixed(1)} / 12 שעות · ${r2(last)} בר (ירידה ${r2(p0 - last)} בר)`);
+        await c.sleep(60);
       }
-      c.stage(5, 5, 'the valve is closed in every case', 'השסתום סגור בכל המקרים');
-      c.put('valve_closed_all_cases', closedAll.length > 0 && closedAll.every(Boolean));
-      c.note('the stop times are taken from the machine valve state; confirm them against the flow meter if one is fitted');
-      await P.allOff(c);
+      c.trace('leak_down', { columns: ['t_s', 'n2_bar'], samples: rows });
+      const hours = r2((c.sec - t0) / 3600);
+      c.puts({ end_pressure: r2(last), pressure_drop: r2(p0 - last), drop_per_hour: hours ? r2((p0 - last) / hours) : null, hours_logged: hours });
+
+      c.stage(3, 3, 'where does it leak?', 'היכן הדליפה?');
+      const leaked = await c.yesno('leak_found', 'If the pressure dropped: bubble-test every fitting from the inlet to the valve. Did you find a leak?',
+                                   'אם הלחץ ירד: בדוק בבועות כל מחבר מהכניסה עד השסתום. האם מצאת דליפה?');
+      if (leaked === true) await c.value('leak_location', 'Where does it leak?', 'היכן זה דולף?');
+      await c.ask('Vent the line and return the supply to the normal working pressure (1 to 3 bar). Press Done.',
+                  'שחרר את הלחץ מהקו והחזר את ההזנה ללחץ העבודה הרגיל (1 עד 3 בר). לחץ "בוצע".');
     },
   });
 
-  def('DVT-GAS-005', {
+  def('DVT-GAS-004', {
     kind: 'instrumented', minutes: 40, autoRecord: false,
     intro: ['A nitrogen program with no vent step must be refused - the runner submits exactly that and records the refusal and its code. It then runs the full program with the vent and keeps the clock while you watch the analyser, so the time from the end of the cure to safe O2 comes from its clock and not from your stopwatch.',
             'תוכנית חנקן בלי שלב אוורור חייבת להידחות - הרנר מגיש בדיוק את זה ורושם את הסירוב ואת הקוד שלו. אחר כך הוא מריץ את התוכנית המלאה עם האוורור ומנהל את השעון בזמן שאתה צופה במנתח, כך שהזמן מסוף הקיור עד חמצן בטוח מגיע מהשעון שלו ולא משעון העצר שלך.'],
@@ -3087,7 +3370,7 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-GAS-006', {
+  def('DVT-GAS-005', {
     kind: 'instrumented', minutes: 90, autoRecord: false,
     intro: ['Room depletion. The runner runs the longest nitrogen program the software allows twice back to back and keeps the clock from the first purge, so the time of the minimum is measured against its clock. The analyser readings are yours.',
             'דלדול חמצן בחדר. הרנר מריץ את תוכנית החנקן הארוכה ביותר שהתוכנה מאפשרת פעמיים ברצף ומנהל את השעון מהשטיפה הראשונה, כך שזמן המינימום נמדד מול השעון שלו. קריאות המנתח הן שלך.'],
@@ -3096,6 +3379,9 @@ window.DVT_AUTO = (function () {
       c.stage(1, 3, 'the room', 'החדר');
       await c.value('room_volume', 'Room volume', 'נפח החדר');
       await c.value('ventilation_state', 'Ventilation state', 'מצב האוורור');
+      // the room's own O2 before any nitrogen, as the reference the drop is measured from (user, 2026-10-25)
+      await c.value('o2_reference', 'Reference: O2 at the breathing zone now, before any nitrogen is released',
+                    'ייחוס: החמצן באזור הנשימה עכשיו, לפני שמשתחרר חנקן כלשהו');
 
       c.stage(2, 3, 'two maximum purges back to back', 'שתי שטיפות מקסימליות ברצף');
       const t0 = c.sec;
@@ -3113,6 +3399,8 @@ window.DVT_AUTO = (function () {
                                 'לחץ "עכשיו" ברגע שהחמצן באזור הנשימה מגיע למינימום שלו.');
       c.put('time_of_min', min.ok ? r2((min.sec - t0) / 60) : null);
       await c.value('o2_min_breathing_zone', 'Minimum O2 in the breathing zone', 'החמצן המינימלי באזור הנשימה');
+      const ref = num(c.rec.values.o2_reference), low = num(c.rec.values.o2_min_breathing_zone);
+      if (ref !== null && low !== null) c.put('o2_drop', r2(ref - low));
       await c.value('n2_released', 'N2 released over the two programs', 'כמות החנקן ששוחררה בשתי התוכניות');
       c.say('waiting 60 minutes from the last purge…', 'ממתין 60 דקות מהשטיפה האחרונה…');
       while (c.sec - lastPurge < 3600) { c.say(`waiting · ${mmss_(c.sec - lastPurge)} / 60:00`, `ממתין · ${mmss_(c.sec - lastPurge)} / 60:00`); await c.sleep(10); }
@@ -3120,54 +3408,50 @@ window.DVT_AUTO = (function () {
     },
   });
 
-  def('DVT-GAS-007', {
-    kind: 'auto', minutes: 100, autoRecord: false,
-    intro: ['The solenoid coil, measured on the TC-08 bonded to it. The runner runs two maximum purges back to back and takes the peak, then holds the valve energised for an hour and takes the maximum and whether it settled - a rise under 0.1 C per minute over the last ten minutes - then lets it cool and runs a normal purge to prove the valve still operates.',
-            'סליל הסולנואיד, נמדד על ה-TC-08 שמולחם אליו. הרנר מריץ שתי שטיפות מקסימליות ברצף ולוקח את השיא, אחר כך מחזיק את השסתום מופעל שעה ולוקח את המקסימום והאם התייצב - עלייה מתחת ל-0.1 מעלות לדקה בעשר הדקות האחרונות - ואז נותן לו להתקרר ומריץ שטיפה רגילה כדי להוכיח שהשסתום עדיין פועל.'],
-    async run(c) {
-      const s0 = await P.idle(c);
-      const tc = await P.tcCheck(c, s0);
-      if (!tc.ok) throw new Error(tc.why);
-      const coil0 = tc.ch1;
-      c.put('ambient_temp', await P.ambient(c, s0));
-
-      c.stage(1, 3, 'two maximum purges', 'שתי שטיפות מקסימליות');
-      const rows = [];
-      for (let i = 0; i < 2; i++) {
-        await c.post('/api/cure/nitrogen?on=1');
-        await c.watch({ sec: 300, hz: 1, tc: true, into: rows,
-          on: (s, at) => c.say(`purge ${i + 1}/2 · ${mmss_(at)} · coil ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C`,
-                               `שטיפה ${i + 1}/2 · ${mmss_(at)} · סליל ${r1(rows.length ? rows[rows.length - 1][C.TC] : null)} °C`) });
-        await c.post('/api/cure/nitrogen?on=0');
-      }
-      c.trace('purges', rows);
-      c.put('coil_temp_peak_purges', r2(P.maxOf(rows, C.TC)));
-
-      c.stage(2, 3, 'energised for 60 minutes', 'מופעל 60 דקות');
-      const hold = [];
-      await c.post('/api/cure/nitrogen?on=1');
-      await c.watch({ sec: 3600, hz: 0.2, tc: true, into: hold,
-        on: (s, at) => c.say(`energised · ${mmss_(at)} / 60:00 · coil ${r1(hold.length ? hold[hold.length - 1][C.TC] : null)} °C`,
-                             `מופעל · ${mmss_(at)} / 60:00 · סליל ${r1(hold.length ? hold[hold.length - 1][C.TC] : null)} °C`) });
-      await c.post('/api/cure/nitrogen?on=0');
-      c.trace('hold', hold);
-      const tail = P.rate(hold, C.TC, 600);
-      c.puts({ coil_temp_max: r2(P.maxOf(hold, C.TC)), coil_temp_settled: tail !== null && Math.abs(tail) < 0.1 });
-
-      c.stage(3, 3, 'cool down, then a normal purge', 'קירור, ואז שטיפה רגילה');
-      c.say('cooling for 20 minutes…', 'מתקרר 20 דקות…');
-      await c.sleep(1200);
-      await c.post('/api/cure/nitrogen?on=1');
-      const on = await c.until((s) => s.nitrogenActive === true, { sec: 30, poll: 0.5 });
-      await c.post('/api/cure/nitrogen?on=0');
-      c.put('valve_operates_after', on.ok);
-      await c.value('flow_after', 'Flow on the normal purge after the test', 'הספיקה בשטיפה הרגילה אחרי הבדיקה');
-    },
-  });
-
   // ==========================================================================
   // NFC, transport and the electrical bench
   // ==========================================================================
+
+  const n2bar = (s) => num(s && s.n2Pressure ? s.n2Pressure.bar : s && s.n2LinePressure);
+
+  def('DVT-GAS-006', {
+    kind: 'guided', minutes: 20,
+    intro: ['Nitrogen that does not reach the chamber. You block the tube after the valve; the runner opens the nitrogen and watches the machine notice that the line pressure did not drop - the alarm, how long it took, and that the valve was closed. Then you remove the block and it opens again to record the normal pressure drop with no alarm.',
+            'חנקן שלא מגיע לתא. אתה חוסם את הצינור אחרי השסתום; הרנר פותח את החנקן וצופה במכונה מזהה שלחץ הקו לא ירד - ההתראה, כמה זמן זה לקח, ושהשסתום נסגר. אחר כך אתה מסיר את החסימה והוא פותח שוב כדי לרשום את ירידת הלחץ הרגילה בלי התראה.'],
+    async run(c) {
+      await P.idle(c);
+      c.stage(1, 3, 'block the path', 'חסימת המסלול');
+      await c.ask('Block the tube between the nitrogen valve and the chamber (clamp or plug). Keep the supply at the normal working pressure (1 to 3 bar). Press Done.',
+                  'חסום את הצינור בין שסתום החנקן לתא (מלחציים או פקק). השאר את ההזנה בלחץ העבודה הרגיל (1 עד 3 בר). לחץ "בוצע".');
+      const s1 = await c.state();
+      const before = s1.alerts || [];
+      if (n2bar(s1) !== null) c.put('pressure_before', r2(n2bar(s1)));
+
+      c.stage(2, 3, 'open: the machine must notice', 'פתיחה: המכונה חייבת לזהות');
+      await c.tryPost('/api/cure/nitrogen?on=1');
+      const a = await P.alarm(c, before, { sec: 30, poll: 0.2 });
+      const sA = await c.state();
+      c.puts({ blocked_alarm_raised: a.raised, detection_time: a.raised ? r2(a.sec) : null,
+               error_code: a.code === null ? null : String(a.code), alarm_text: a.text || null,
+               alarm_names_n2: P.names(a.text, ['nitrogen', 'חנקן', 'N2', 'flow', 'זרימה']),
+               valve_closed_after_alarm: sA.nitrogenActive === false });
+      await c.tryPost('/api/cure/nitrogen?on=0');
+
+      c.stage(3, 3, 'path open: no alarm', 'מסלול פתוח: בלי התראה');
+      await c.ask('Remove the block and acknowledge the alarm on the screen. Press Done.',
+                  'הסר את החסימה ואשר את ההתראה במסך. לחץ "בוצע".');
+      const s3 = await c.state();
+      const before3 = s3.alerts || [];
+      const p0 = n2bar(s3);
+      await c.tryPost('/api/cure/nitrogen?on=1');
+      await c.sleep(5);
+      const p5 = n2bar(await c.state());
+      if (p0 !== null && p5 !== null) c.put('normal_drop_bar', r2(p0 - p5));
+      const a3 = await P.alarm(c, before3, { sec: 15 });
+      c.put('normal_no_alarm', !a3.raised);
+      await c.tryPost('/api/cure/nitrogen?on=0');
+    },
+  });
 
   def('DVT-NFC-001', {
     kind: 'guided', minutes: 12,
@@ -3449,7 +3733,7 @@ window.DVT_AUTO = (function () {
     return null;
   }
 
-  A.TRACE['DVT-SAF-013'] = function (rows, put, rec) {
+  A.TRACE['DVT-SAF-009'] = function (rows, put, rec) {
     const turn = P.turn(rows, CH1, { fall: 1.5, minRise: 3, minFall: 20 });   // a cutout trip is a real climb, never a dip
     if (!turn.turned)
       return A.L('the CH1 trace never turned from rising to falling - nothing in this recording shows the cutout opening',
@@ -3503,7 +3787,7 @@ window.DVT_AUTO = (function () {
       }
     }
 
-    // DVT-SAF-013's safety plan puts the operator's abort at 250 C on the body: a turn well below it
+    // DVT-SAF-009's safety plan puts the operator's abort at 250 C on the body: a turn well below it
     // is the cutout doing its job, and a trace that reached it is a run the operator had to stop.
     const CEILING_C = 250;
     put('manual_abort_used', turn.peak !== null && turn.peak >= CEILING_C - 5);
@@ -3563,7 +3847,7 @@ window.DVT_AUTO = (function () {
 
 // ============================================================================
 // What a recording needs of the machine before it starts, and what to release
-// afterwards. DVT-SAF-013 heats from an external supply the machine knows nothing
+// afterwards. DVT-SAF-009 heats from an external supply the machine knows nothing
 // about, so the machine will not run the heater fan on its own - and an element
 // driven with no airflow is a different failure from the one under test.
 // ============================================================================
@@ -3572,7 +3856,7 @@ window.DVT_AUTO = (function () {
   const A = window.DVT_AUTO, P = A.P, L = A.L;
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
 
-  const NEEDS_HEATER_FAN = ['DVT-SAF-013'];
+  const NEEDS_HEATER_FAN = ['DVT-SAF-009'];
   const FAN = 'FAN_HEATER';
 
   /** Called by the page before a TC-08 recording starts. Returns { ok, message }. */
@@ -3594,7 +3878,7 @@ window.DVT_AUTO = (function () {
 
     if (!NEEDS_HEATER_FAN.includes(tid)) return { ok: true, message: '' };
 
-    // SAF-013 ends and records itself; the cutout's rating is the one value the verdict needs that no
+    // DVT-SAF-009 ends and records itself; the cutout's rating is the one value the verdict needs that no
     // trace can supply, so it has to be in before the recording starts, not remembered afterwards.
     try {
       const run = A._host().run(tid);
@@ -3646,7 +3930,7 @@ window.DVT_AUTO = (function () {
 
   /** Per test: given the rows so far, is the recording complete? Returns { stop, why } - pure, no I/O. */
   const AUTO_STOP = {
-    'DVT-SAF-013'(rows, rec) {
+    'DVT-SAF-009'(rows, rec) {
       // stop as soon as the trace holds all three numbers: the trip and then the body climbing again (the
       // cutout closed). The old ten-minute wait after the trip fed chamber fields the test no longer has.
       const turn = P.turn(rows, CH1, { fall: 1.5, minRise: 3, minFall: 20 });

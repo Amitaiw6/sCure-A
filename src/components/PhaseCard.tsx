@@ -1,6 +1,7 @@
 import CircularGauge from './CircularGauge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PauseCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type PhaseType = 'heating' | 'drying' | 'cure' | 'cooling' | 'bleacher' | 'nitrogen'
@@ -15,7 +16,10 @@ interface PhaseCardProps {
   minElapsed: string
   secElapsed: string
   percentComplete: string
+  /** Abort = end the run for good (confirmation dialog). */
   onAbort?: () => void
+  /** Pause = temporary stop: outputs off, door released, Continue later. */
+  onPause?: () => void
   /** Overrides the cure gauge's center caption (default "UV + HEAT") —
    *  e.g. "UV ONLY" / "UV + VENT" for a no-heat cure step */
   centerLabel?: string
@@ -34,7 +38,7 @@ const GAUGE_SIZE = 130
 
 export default function PhaseCard({
   type, status, gaugeValue, gaugeLabel, gaugeProgress,
-  minElapsed, secElapsed, percentComplete, onAbort, centerLabel,
+  minElapsed, secElapsed, percentComplete, onAbort, onPause, centerLabel,
 }: PhaseCardProps) {
   const config = phaseConfig[type]
   const isActive = status === 'active'
@@ -97,11 +101,22 @@ export default function PhaseCard({
         </div>
       </div>
 
-      {/* Abort button — below the time stats */}
-      {isActive && onAbort && (
-        <Button variant="destructive" size="sm" onClick={onAbort} className="mt-2 bg-destructive text-destructive-foreground hover:bg-destructive/90 text-xs px-6">
-          Abort
-        </Button>
+      {/* Pause (temporary, door released) + Abort (final) — below the time stats */}
+      {isActive && (onPause || onAbort) && (
+        <div className="flex gap-2 mt-2">
+          {onPause && (
+            // White button, outline in the active phase's state color (same as the card border)
+            <Button variant="outline" size="sm" onClick={onPause} className={cn('bg-white text-neutral-900 border-2 hover:bg-white/90 hover:text-neutral-900 text-xs px-4', config.borderColor)}>
+              <PauseCircle size={14} />
+              Pause
+            </Button>
+          )}
+          {onAbort && (
+            <Button variant="destructive" size="sm" onClick={onAbort} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 text-xs px-5">
+              Abort
+            </Button>
+          )}
+        </div>
       )}
     </div>
   )

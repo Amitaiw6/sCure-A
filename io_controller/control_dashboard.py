@@ -44,8 +44,8 @@ SYSTEM_NAME = "CureBox"
 FAN_LAYOUT = [
     ("FAN_LEFT",    "Left Side",  "TEMP_LEFT"),
     ("FAN_RIGHT",   "Right Side", "TEMP_RIGHT"),
-    ("FAN_BACK",    "Rear",       "TEMP_BACK_ORIGIN"),
-    ("FAN_DOOR",    "Door",       "TEMP_DOOR_ORIGIN"),
+    ("FAN_BACK",    "Rear",       "TEMP_BACK"),
+    ("FAN_DOOR",    "Door",       "TEMP_DOOR"),
     ("FAN_HEATER",  "Heater",     "TEMP_CHAMBER"),
     ("FAN_COOLING", "Cooling",    "TEMP_CHAMBER"),
 ]

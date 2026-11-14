@@ -33,7 +33,7 @@ Legend: **Met** — implemented and exercised by a test or the smoke run · **Pa
 
 | Req | Requirement | Status | Where / evidence |
 |---|---|---|---|
-| SRS-DVT-094 | `sweep` parameter → run set = tests × units × sweep values | **Met** | `Catalog.runs` (matrix rows and case matrices); THM-001 = 10 × 5 = 50 runs (tested) |
+| SRS-DVT-094 | `sweep` parameter → run set = tests × units × sweep values | **Met** | `Catalog.runs` (matrix rows and case matrices); DVT-THM-001 = 10 × 5 = 50 runs (tested) |
 | SRS-DVT-095 | Comparison view grouped by sweep parameter (curve per unit) | **Met** | *Statistics* page: per test and numeric field, x = sweep value / repetition, one curve per unit, pass limit drawn; plus the tests × machines verdict matrix and the temperature-by-component comparison (SRS-DVT-195 below) |
 | SRS-DVT-096 | Verdict per sweep value + rolled-up verdict, PASS only if every value passes | **Met** | `Engine.test_verdict` (per test / per unit); dashboard "Result" column; `test_sweep_rollup_and_reject_rescinds_children` |
 
@@ -41,7 +41,7 @@ Legend: **Met** — implemented and exercised by a test or the smoke run · **Pa
 
 | Req | Requirement | Status | Where / evidence |
 |---|---|---|---|
-| SRS-DVT-097 | `co_executed_with` presented as one continuous execution | **Partial** | `Catalog.parent_row_for` knows the pairing and the child is linked to its parent run (`Store.link_parent`). **Gap:** the wizard does not yet chain the THM-003 stages onto the end of the THM-001 row automatically — the operator starts THM-003 separately. Proposed: after a THM-001 80 °C row reaches *Verdict*, offer "Continue with DVT-THM-003 (fast) on the descent" and auto-link |
+| SRS-DVT-097 | `co_executed_with` presented as one continuous execution | **Partial** | `Catalog.parent_row_for` knows the pairing and the child is linked to its parent run (`Store.link_parent`). **Gap:** the wizard does not yet chain the DVT-THM-003 stages onto the end of the DVT-THM-001 row automatically — the operator starts DVT-THM-003 separately. Proposed: after a DVT-THM-001 80 °C row reaches *Verdict*, offer "Continue with DVT-THM-003 (fast) on the descent" and auto-link |
 | SRS-DVT-098 | Both runs linked in both directions, own verdict / trace / column | **Met** (data) | `parent_run_id`; each run keeps its own verdict and row |
 | SRS-DVT-099 | Rejecting a parent rescinds co-executed children with the reason | **Met** | `Store.reject_run` → children `REJECTED`, reason "parent rejected: …" (tested) |
 | SRS-DVT-100 | Supplementary runs storable, retrievable, excluded from progress | **Met** (data) | `Store.add_supplementary` (`supplementary=1`, excluded from `Engine.progress`, included in exports). **Gap:** no UI button yet to record a supplementary descent from the wizard |
@@ -59,9 +59,9 @@ Legend: **Met** — implemented and exercised by a test or the smoke run · **Pa
 | Rule | Status | Where |
 |---|---|---|
 | Phases gated; next phase opens only when the previous is closed for that unit | **Met** | `Engine.phase_closed`, blocker `PHASE` |
-| Earth before power (ELE-001 before every powered test) | **Met** | blocker `EARTH` |
+| Earth before power (DVT-ELE-001 before every powered test) | **Met** | blocker `EARTH` |
 | Destructive last (unit that went through Phase 5 is a different article) | **Met** | blocker `DESTRUCTIVE` |
-| Hipot once (ELE-003 not repeated except after transport) | **Partial** | single repetition in the catalog; no explicit guard against a second *supplementary* hipot — add a rule if supplementary runs get a UI |
+| Hipot once (DVT-ELE-003 not repeated except after transport) | **Partial** | single repetition in the catalog; no explicit guard against a second *supplementary* hipot — add a rule if supplementary runs get a UI |
 | Phase 0: configuration frozen and signed before anything | **Met** | `Store.freeze_config`, blocker `CONFIG` |
 
 ## §2 NASA-framework items the software carries
@@ -90,7 +90,7 @@ Legend: **Met** — implemented and exercised by a test or the smoke run · **Pa
 
 1. **Rev A requirements SRS-DVT-001…075** — the text is not in the repo; Rev B says they "stand unchanged". They cannot be checked until the Rev A document is added under `DVT/docs/`. (SRS-DVT-012 and -053 are referenced by Rev B and are implemented as described there.)
 2. **VCRM** (`requirement_ids`) — only REQ-29 and REQ-48 are linked; the other 66 MVP requirements must be entered in the catalog before baseline (framework item 4).
-3. **Catalog CONFIRM items** — ENV-001 unit (currently null → 0 runs), LED thresholds `warning` / `protective_shutdown` (SAF-019 evaluates as BLOCKED until set), SAF-020 detection means (per-panel current sense or light-sensor sequence — none exists today) and its `time_to_alarm` limit, all "CONFIRM" limits.
+3. **Catalog CONFIRM items** — DVT-ENV-001 unit (currently null → 0 runs), LED thresholds `warning` / `protective_shutdown` (DVT-SAF-015 evaluates as BLOCKED until set), DVT-SAF-016 detection means (per-panel current sense or light-sensor sequence — none exists today) and its `time_to_alarm` limit, all "CONFIRM" limits.
 4. Comparison / statistics view (095) and archive export (093) — proposed above; not blocking execution.
 
 Gaps marked **Partial** that are pure software (086 report redlines, 093 archive, 097 auto-chaining, 100 UI) are tracked as the next increments of `dvt_tool`.

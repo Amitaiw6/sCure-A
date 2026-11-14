@@ -12,13 +12,15 @@ import { useMaterials } from '@/context/MaterialContext'
 import { usePrintHistory } from '@/context/PrintHistoryContext'
 import { useSystemConfig } from '@/context/SystemConfigContext'
 import { useHardware } from '@/context/HardwareContext'
+import { useAlerts } from '@/context/AlertsContext'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import type { Material } from '@/context/MaterialContext'
 import type { PrintLog } from '@/context/PrintHistoryContext'
 
 function SmallStatusIcon({ status }: { status: PrintLog['status'] }) {
   switch (status) {
     case 'completed': return <CheckCircle size={14} className="text-green-500 shrink-0" />
-    case 'aborted': return <AlertTriangle size={14} className="text-yellow-500 shrink-0" />
+    case 'aborted': return <AlertTriangle size={14} className="text-orange-500 shrink-0" />
     case 'error': return <XCircle size={14} className="text-destructive shrink-0" />
   }
 }
@@ -42,6 +44,10 @@ export default function HomePage() {
   const hasOrg = !!config.organizationId
   const [showBuilder, setShowBuilder] = useState(false)
   const [n2Error, setN2Error] = useState(false)
+  // A critical alert (fan failure, sensor open, …) greys Start Cure; pressing it explains and leads to the Alerts screen
+  const { criticalAlerts, getErrorDef } = useAlerts()
+  const hasCritical = criticalAlerts.length > 0
+  const [criticalBlock, setCriticalBlock] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -72,7 +78,15 @@ export default function HomePage() {
   const materialFromPrint = selectedPrint ? materials.find(m => m.name === selectedPrint.materialName) : null
   const activeMaterialId = selectedMaterialId ?? materialFromPrint?.id ?? null
 
+  // The door must be CLOSED to start: with it open the button is greyed out
+  // and inert (previously a run started and was aborted by the door alert
+  // a second later). doorClosed===false is a real "open" reading; a missing
+  // reading (null/undefined) does not block.
+  const doorOpen = hw.doorClosed === false
+  const canStart = !!activeMaterialId && !doorOpen
+
   const handleStartCure = () => {
+    if (!canStart) return
     const mat = materials.find(m => m.id === activeMaterialId)
     if (!mat) return
     // If all non-nitrogen steps would be empty after filtering, can't run
@@ -89,7 +103,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="px-4 pb-16 relative">
+    <main className="px-4 pb-20 relative">   {/* clears the 54 px Start Cure button at bottom-4 */}
       {/* Recent Prints Section */}
       <div className="flex items-center justify-between mb-3 mt-4">
         <h2 className="text-white text-base font-semibold">Recent Prints</h2>
@@ -231,13 +245,45 @@ export default function HomePage() {
         ))
       )}
 
-      {/* Start Cure Button */}
+      {/* Start Cure Button — 1.5x the standard button (h-9 / text-sm / 16 px icon).
+          Grey + inert while the door is open (or no program is selected). */}
       <div className="fixed bottom-4 right-4">
-        <Button onClick={handleStartCure} disabled={!activeMaterialId} className="gap-2 rounded-xl px-5 py-2.5 text-sm">
+        <Button
+          onClick={hasCritical ? () => setCriticalBlock(true) : handleStartCure}
+          disabled={!canStart}
+          aria-disabled={!canStart || hasCritical}
+          title={doorOpen ? 'Close the door to start the cure' : hasCritical ? 'A critical alert is active' : undefined}
+          className={cn(
+            'gap-3 rounded-2xl h-[54px] px-[30px] text-[21px] font-semibold shadow-lg shadow-black/50',
+            !canStart && 'disabled:opacity-100 bg-neutral-600 text-neutral-300 shadow-none',
+            hasCritical && 'bg-neutral-600 text-neutral-300 shadow-none hover:bg-neutral-600',
+          )}
+        >
           Start Cure
-          <Play size={16} fill="currentColor" />
+          <Play size={24} fill="currentColor" />
         </Button>
       </div>
+
+      {/* Start pressed while a critical alert is active: explain, offer the Alerts screen */}
+      <Dialog open={criticalBlock} onOpenChange={setCriticalBlock}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive"><AlertTriangle size={20} /> Critical alert active</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-left">
+                <p className="text-sm text-foreground">A cure cannot start while a critical alert is active. Handle {criticalAlerts.length === 1 ? 'it' : 'them'} on the Alerts screen first:</p>
+                <ul className="text-sm text-destructive font-semibold list-disc pl-5">
+                  {criticalAlerts.slice(0, 4).map(a => <li key={a.id}>{a.code} — {getErrorDef(a.code)?.message ?? ''}{a.detail ? ` (${a.detail})` : ''}</li>)}
+                </ul>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setCriticalBlock(false)}>Close</Button>
+            <Button onClick={() => { setCriticalBlock(false); navigate('/alerts') }}>Go to alerts</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modals */}
       <CsvBuilderModal isOpen={showBuilder} onClose={handleCloseBuilder} editMaterial={editingMaterial} />

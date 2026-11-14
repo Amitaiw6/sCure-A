@@ -80,6 +80,7 @@ Identifiers continue the Rev B numbering. Each requirement has a verification me
 | **SRS-DVT-141** | A run shall be executed as a **wizard with one screen per stage**: Overview → Safety plan (if defined) → Equipment & calibration → Preconditions → Step 1 … N → Verdict → Done. Each stage states what to do; Next is refused until the stage's conditions are met. | D |
 | **SRS-DVT-142** | Each procedure step screen shall show only that step's instruction and its data fields, validate type and plausible range on Next, and save on Next so that a restart resumes at the same stage (SRS-DVT-088). | T |
 | **SRS-DVT-143** | The wizard shall show elapsed time of the current step, allow a redline (as-run deviation with reason) and file attachments at any step, and show the connected machine's state alongside. | D |
+| **SRS-DVT-198** | A procedure step that records an alarm (`alarm_raised`, `error_code`, `alarm_text`, `time_to_alarm`) shall be **witnessed by the console**: the software shall read the machine's active-alarm list through its API while the step is open, keep the first appearance of every code with the seconds elapsed since the step opened, and write the code, the machine's own alarm text and that time into the run's values. Next shall stay locked until the console has seen an alarm; the operator may instead record that **no alarm appeared** (writes `alarm_raised = false`, so the run commits FAIL, not BLOCKED) or — only while the machine is unreachable, as in the tests that take it off the air on purpose — record the step **by hand**, which is logged as not witnessed by the console. A step may declare the codes it expects (`expect_alert:` in the catalog); a code that appears but is not expected shall not lock the step: what the machine really raised is recorded and flagged for the verdict page. Every alarm seen, and every acknowledgement, shall be a campaign event. | T |
 | **SRS-DVT-144** | On Finish the software shall evaluate the pass criteria automatically and commit PASS / FAIL / **BLOCKED** (a referenced value missing or a catalog threshold still undefined — never silently PASS); FAIL shall open an NCR automatically. | T |
 
 ### 4.4 Progress and status — the project view
@@ -179,6 +180,38 @@ Identifiers continue the Rev B numbering. Each requirement has a verification me
 | Independent witnessing (decision pending) | 4.3 witness field; enforcement TBD |
 | Measurement equipment calibrated and traceable | 173 |
 | Closure report with unverified list | 178 |
+
+---
+
+## 7b. Open issues — alarm codes to confirm (SRS-DVT-198)
+
+`expect_alert:` is declared only where the code is pinned by the firmware or by the
+error registry (`public/config/errors.json`):
+
+| Test | Codes | Grounded in |
+|---|---|---|
+| DVT-SAF-002 | 9010, 9001 | registry "Chamber Temperature Sensor Disconnected"; the firmware bench runner matches on 9010 (9001 before the 2026-10-21 split) |
+| DVT-SAF-003 | 9006 | registry "Temperature Reading Frozen"; `components.json frozen_reading` names this test |
+| DVT-SAF-004 | 9011, 9012, 9013, 9014, 9050 | one code per panel in the firmware's sensor supervision; the step walks all four |
+| DVT-SAF-006 | 9034, 9003 | registry "Chamber Cooling Fan Not Spinning"; the firmware's cooling-fan pre-flight names this test |
+| DVT-SAF-017 | 9007 | registry "Heater Not Heating — Check Voltage Selector / Fuse"; `components.json no_heat` names this test |
+
+The remaining tests that record an alarm are watched generically (any alarm the machine
+raises opens the step) until their code is confirmed — **not guessed**:
+
+DVT-SAF-001, 005, 007, 008, 010, 014, 015, 016, DVT-GAS-001, 002, 004, 006, DVT-NFC-001,
+DVT-THM-004, DVT-THM-006.
+
+Also open:
+
+- The N2 codes used by DVT-GAS-001/002/004/006 (9008 / 9009 / 9015 / 9016 in the firmware
+  work in progress) are **not in the error registry yet** — add them there first.
+- Three simulated faults have no registry code at all: mains dropout, thermal cutout
+  tripped, LED over-temperature. The simulator still raises its own numbers for them
+  (3001 / 2210 / 2320), and 3001 now means "Serial Number Restore Failed" in the registry.
+- Resolution of `time_to_alarm` is the DUT poll interval (2 s). Tests needing better than
+  that (DVT-SAF-003 asks for the heater to be off within 2 s **of the alarm**) still take
+  it from the TC-08 trace, not from the console.
 
 ---
 

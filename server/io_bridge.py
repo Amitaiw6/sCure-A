@@ -68,12 +68,16 @@ RGB_AUTO_STATUS = True
 
 # LED diagnostic: the board thermistor sitting at each LED module
 LED_TEST_SENSORS = [
-    ('Left LED',  'TEMP_LEFT_ORIGIN'),
-    ('Right LED', 'TEMP_RIGHT_ORIGIN'),
-    ('Back LED',  'TEMP_BACK_ORIGIN'),
-    ('Door LED',  'TEMP_DOOR_ORIGIN'),
+    ('Left LED',  'TEMP_LEFT_UV'),
+    ('Right LED', 'TEMP_RIGHT_UV'),
+    ('Back LED',  'TEMP_BACK'),
+    ('Door LED',  'TEMP_DOOR'),
 ]
 LED_TEST_MAX_TEMP = 80.0
+# Second thermistor on the Left / Right modules (U6 ch1 / ch3). Reported in
+# /api/state ledTemps as left2 / right2 for telemetry only - NOT part of the
+# LED start-up check or the sensor supervision (those use the ORIGIN sensors).
+LED_SECOND_SENSORS = [('left2', 'TEMP_LEFT'), ('right2', 'TEMP_RIGHT')]
 
 # Temperature-sensor supervision (policy defined with the user 2026-09-09):
 # an NTC that reads open-circuit (at the 3.3 V pull-up rail -> no temperature)
@@ -83,12 +87,70 @@ LED_TEST_MAX_TEMP = 80.0
 # and again right before every process start). The Back / Door LED
 # thermistors only raise a warning (9050) - processes run as usual.
 SENSOR_OPEN_ALERT_SEC = 60.0
-CRITICAL_TEMP_SENSORS = {'TEMP_CHAMBER': 'chamber', 'TEMP_LEFT_ORIGIN': 'left',
-                         'TEMP_RIGHT_ORIGIN': 'right'}
-WARNING_TEMP_SENSORS = {'TEMP_BACK_ORIGIN': 'back', 'TEMP_DOOR_ORIGIN': 'door'}
+# Noise filter (2026-09-16, 10 s per the user): a sensor counts as a real problem only when it
+# reads open CONTINUOUSLY for at least SENSOR_GLITCH_SEC. A shorter dropout
+# (I2C / connector noise) is ignored everywhere - the immediate heater alert,
+# the pre-start check and the start-up log line. Same window as the heater
+# safety in io_controller (heater.thermistor_glitch_sec).
+SENSOR_GLITCH_SEC = 10.0
+CRITICAL_TEMP_SENSORS = {'TEMP_CHAMBER': 'chamber', 'TEMP_LEFT_UV': 'left',
+                         'TEMP_RIGHT_UV': 'right'}
+WARNING_TEMP_SENSORS = {'TEMP_BACK': 'back', 'TEMP_DOOR': 'door'}
 ERR_TEMP_SENSOR_DISCONNECTED = 9001      # critical - errors.json
+# The heater is controlled on the chamber NTC (io_controller heater.thermistor): it is never switched on while
+# that sensor does not read (enable_heater pre-flight), and a running heater is switched off at once when it stops
+# reading (heater_health_check). 9001 then carries this detail so the screen pops the heater fault.
+HEATER_THERMISTOR = 'TEMP_CHAMBER'
+HEATER_SENSOR_DETAIL = 'Heater temperature sensor (chamber NTC TEMP_CHAMBER) is not reading - the heater is off'
 ERR_LED_TEMP_SENSOR_DISCONNECTED = 9050  # warning  - errors.json
 SENSOR_VALID_C = (-20.0, 120.0)          # HSI valid range for every NTC
+
+# Fan wear supervision (components.json "fan_health"): a fan running below its
+# measured nominal RPM for a full minute -> 9051 warning (replace it) at
+# warn_below_pct, or 9002 critical at critical_below_pct: every output is
+# stopped, no process may start, the alert names the exact fan.
+ERR_FAN_FAILURE = 9002                   # critical - errors.json
+ERR_FAN_WEAR_WARNING = 9051              # warning  - errors.json
+ERR_LED_FAN_STOPPED = 9003               # critical - errors.json: an LED cooling fan does not spin -> the job does not start
+FAN_HEALTH_DEFAULTS = {'warn_below_pct': 10, 'critical_below_pct': 20,
+                       'persist_sec': 60, 'settle_sec': 5, 'min_eval_duty': 30,
+                       'stopped_persist_sec': 5,    # a fan reading ~0 RPM (disconnected / seized) trips after this, not after persist_sec
+                       'led_fan_min_rpm': 100,      # pre-flight before the LEDs go on: every LED fan must spin at least this fast
+                       'critical_below_pct_by_fan': {},   # per-fan override of critical_below_pct
+                       'nominal_rpm_damper_open': {},     # nominal while the damper is OPEN (slower duct)
+                       'nominal_rpm': {}}
+
+# LED connection supervision (components.json "led_heating"): a lit LED
+# module warms the thermistor sitting on it. A panel that is commanded ON at
+# >= min_eval_intensity % system power but has NOT risen by min_rise_c after
+# check_after_sec of accumulated light is not receiving current (open
+# connector / driver output) -> 9004 critical "check the LED connection",
+# the alert names the panel. Per the user (2026-09-14) the check uses the
+# REGULAR Left / Right thermistors (TEMP_LEFT / TEMP_RIGHT, U6 ch3 / ch1),
+# not the ORIGIN ones, so only the Left and Right panels are supervised
+# (Back / Door carry an ORIGIN thermistor only). Bench 2026-09-14 (30 %,
+# 405 nm, LED fans at 100 %): TEMP_LEFT / TEMP_RIGHT rose +1.3 / +1.2 C
+# after 60 s, +1.8 / +1.7 C after 90 s, +2.4 / +2.2 C after 150 s (the ORIGIN
+# ones about twice that) - hence 90 s and 1.0 C, a 1.7x margin.
+# rest_sec keeps the thermal window: a panel re-lit within rest_sec of its
+# last light continues the previous window (it is still warm, so a fresh
+# baseline would see no rise) instead of starting a new one.
+# led_heating.panels in components.json may override the panel -> sensor map.
+# Mid-process drop (9005): once a lit panel has proved it heats, its peak
+# temperature is tracked; a fall of drop_c below that peak - after taking off
+# any fall of the chamber temperature over the same time - that persists for
+# drop_persist_sec means the panel stopped receiving current mid-process
+# (loose connector, driver output dropped) -> 9005 critical naming the panel.
+# A power-level change or a re-light re-arms the peak after drop_settle_sec.
+ERR_LED_NOT_HEATING = 9004               # critical - errors.json
+ERR_LED_TEMP_DROP = 9005                 # critical - errors.json
+LED_HEATING_DEFAULTS = {'min_eval_intensity': 30, 'check_after_sec': 90,
+                        'min_rise_c': 1.0, 'rest_sec': 120,
+                        'drop_c': 1.0, 'drop_persist_sec': 30, 'drop_settle_sec': 120}
+LED_PANEL_LABELS = {'LED_LEFT': 'Left LED', 'LED_RIGHT': 'Right LED',
+                    'LED_BACK': 'Back LED', 'LED_DOOR': 'Door LED'}
+LED_PANEL_SENSORS = {'LED_LEFT': ('Left LED', 'TEMP_LEFT'),
+                     'LED_RIGHT': ('Right LED', 'TEMP_RIGHT')}
 
 
 class StatusLeds(threading.Thread):
@@ -99,9 +161,8 @@ class StatusLeds(threading.Thread):
                process running  -> busy color (yellow) as a comet MOVING
                                    right-to-left (heating / cooling / UV —
                                    any active cure step)
-               no internet      -> the comet runs in the no_internet color
-                                   (blue) while a process is running; solid
-                                   no_internet color while idle
+               no internet      -> SOLID no_internet color (blue), whether a
+                                   process is running or not
                otherwise        -> solid normal color
     Colors / brightness / blink + chase rates come from "rgb"."status".
     Best-effort by design: any LED error is swallowed - the strip must never
@@ -123,6 +184,8 @@ class StatusLeds(threading.Thread):
         # chase_sec = time per one-LED step of the moving busy animation
         self.chase_sec = max(0.03, float(st.get('chase_sec', 0.12)))
         self.chase_tail = max(1, int(st.get('chase_tail', 5)))
+        # busy_style 'comet' (default) = the busy color moves; 'solid' = steady. The no-internet-while-busy state is ALWAYS solid blue.
+        self.busy_style = str(st.get('busy_style', 'comet')).lower()
         self.rtl = str(st.get('busy_direction', 'rtl')).lower() != 'ltr'
         # status_sec = how often the machine state is (re)classified AND the
         # door-open safety is enforced; animation keeps its own faster ticks.
@@ -162,6 +225,7 @@ class StatusLeds(threading.Thread):
         # steady orange, no comet / no blink - so it is visually distinct from
         # a running cure program (moving comet) and from door-open (blinking).
         self.color_manual = p(str(st.get('manual_heat', 'ff8c00')))
+        self.color_warn = p(str(st.get('warning', 'yellow')))      # a warning on the Alerts screen: pulsing yellow
         self.brightness = float(st.get('brightness', 40))
 
     def _reload_colors(self):
@@ -212,12 +276,21 @@ class StatusLeds(threading.Thread):
             cool = {}
         if b.temp.fault or b.sys.heater_fault or b.sys.led_fault or cool.get('fault'):
             return 'fault'
+        # The notifications on the machine's screen drive the strip: any undismissed CRITICAL alert -> pulsing
+        # red, any WARNING -> pulsing yellow (below), all cleared -> the normal solid green. The UI reports its
+        # counts (POST /api/rgb/alerts) on every change and every 30 s; a report older than 90 s is ignored.
+        ui = getattr(b, '_ui_alerts', None)
+        ui_fresh = bool(ui) and time.time() - ui.get('at', 0) < 90
+        if ui_fresh and ui.get('critical', 0) > 0:
+            return 'fault'
         # A door abort stays RED until the user acknowledges the Err 6016
         # alert in the UI (POST /api/door-abort/ack) or starts a new process.
         if b._door_abort_ts:
             return 'fault'
         if b.sys.door_open() is True:     # None (sensor unreadable) is not "open"
             return 'door'
+        if ui_fresh and ui.get('warning', 0) > 0:
+            return 'warn'
         # Manual chamber heating (Settings slider, /api/chamber/temperature):
         # its own steady color, checked BEFORE the generic busy animation.
         if (b.temp.active and getattr(b, '_manual_heat', False)
@@ -243,6 +316,14 @@ class StatusLeds(threading.Thread):
         try:
             b._sensor_tick()              # NTC open-circuit supervision (60 s rule)
         except Exception:                 # noqa: BLE001 - never disturb the door safety
+            pass
+        try:
+            b._fan_tick()                 # fan wear supervision (60 s rule)
+        except Exception:                 # noqa: BLE001
+            pass
+        try:
+            b._led_heat_tick()            # LED connection supervision (thermistor rise)
+        except Exception:                 # noqa: BLE001
             pass
         try:
             outputs_on = False
@@ -298,15 +379,23 @@ class StatusLeds(threading.Thread):
                 if now - last_eval >= self.status_sec:
                     last_eval = now
                     mode = self._evaluate()
+                    self.mode = mode                      # exposed in /api/state as stripMode
                 # Manual /api/rgb override active -> leave the strip alone;
                 # force a repaint of the status color when it ends.
                 if getattr(self.bridge, '_rgb_state', {}).get('on'):
                     self._last_frame = None
                     continue
-                if mode in ('busy', 'busy_no_net'):
+                if mode == 'busy_no_net' or (mode == 'busy' and self.busy_style == 'solid'):
+                    # process running with no internet: SOLID blue (a moving blue comet read as a warning);
+                    # busy_style 'solid' makes the busy color steady as well
+                    frame = self.color_no_net if mode == 'busy_no_net' else self.color_busy
+                    if frame != self._last_frame:
+                        self.leds.fill(frame, self.brightness)
+                        self._last_frame = frame
+                    continue
+                if mode == 'busy':
                     offset = (offset + 1) % self.leds.count
-                    self._paint_chase(offset, self.color_no_net
-                                      if mode == 'busy_no_net' else None)
+                    self._paint_chase(offset)
                     self._last_frame = (mode, offset)
                     continue
                 # blink phase derived from wall time (loop ticks at chase_sec)
@@ -315,6 +404,8 @@ class StatusLeds(threading.Thread):
                     frame = self.color_fault if blink_on else (0, 0, 0)
                 elif mode == 'door':
                     frame = self.color_door if blink_on else (0, 0, 0)
+                elif mode == 'warn':          # a warning on the Alerts screen: pulsing yellow
+                    frame = self.color_warn if blink_on else (0, 0, 0)
                 elif mode == 'manual_heat':   # Settings-slider heating: solid orange
                     frame = self.color_manual
                 elif mode == 'no_net':    # idle + no internet: solid blue
@@ -371,8 +462,23 @@ class IOBridge:
             self.available = True
             # temperature-sensor supervision (see SENSOR_OPEN_ALERT_SEC)
             self._sensor_open_since = {}  # sensor name -> time.time() it went open
+            self._sensor_open_logged = set()  # open past SENSOR_GLITCH_SEC and logged once
             self._sensor_alerts = set()   # active registry codes (9001 / 9050)
+            self._sensor_details = {}     # code -> which sensor (alertDetails)
             self._sensor_check(startup=True)
+            # fan wear supervision (see FAN_HEALTH_DEFAULTS / components.json)
+            self._fan_health = {}         # fan -> {duty, rpm, expected, deficitPct, status, since}
+            self._fan_duty_seen = {}      # fan -> (duty, time it was last changed)
+            self._fan_below_since = {}    # fan -> (level, time.time() first below)
+            self._fan_alerts = {}         # code -> detail text (active)
+            self._fan_critical = set()    # fans latched critical (block processes)
+            self._fan_override = set()    # fans the operator chose to run WITHOUT ("continue anyway"): reported, never acted on
+            # LED connection supervision (see LED_HEATING_DEFAULTS)
+            self._led_heat = {}           # led -> thermal window {base, lit_sec, lit_at, last_lit, verdict}
+            self._led_health = {}         # led -> {lit, intensity, baseline, rise, litSec, status}
+            self._led_failed = {}         # led -> detail text (latched until it heats again)
+            self._led_dropped = {}        # led -> detail text (fell mid-process, latched until it recovers)
+            self._led_alerts = {}         # code -> detail text (active)
             # RGB strip: manual ON/OFF via /api/rgb for now. The automatic
             # status colors (StatusLeds above) are ready but not enabled yet —
             # flip RGB_AUTO_STATUS to True to turn them on.
@@ -424,10 +530,15 @@ class IOBridge:
         door_open = self.sys.door_open()
         # fans = commanded duty % (same meaning as the simulation payload);
         # the measured tachometer readings go in fanRpm.
-        fan_rpm = {}
+        fan_rpm, fan_rpm_each = {}, {}
         for ui_name, group in FAN_GROUPS.items():
-            rpm = self.sys.read_rpm(group[0])
-            fan_rpm[ui_name] = int(rpm) if rpm else 0
+            vals = []
+            for name in group:
+                r = self.sys.read_rpm(name)
+                fan_rpm_each[name] = int(r) if r else 0
+                if r is not None:
+                    vals.append(int(r))
+            fan_rpm[ui_name] = min(vals) if vals else 0    # the WORST fan of the group: a stopped LED fan shows as 0, not hidden behind its neighbours
         led_temps = {}
         for name, sensor in LED_TEST_SENSORS:
             key = name.split()[0].lower()          # 'Left LED' -> 'left'
@@ -436,6 +547,13 @@ class IOBridge:
                     led_temps[key] = round(self.sys.io.read_temp(sensor)['temp'], 1)
             except Exception:             # noqa: BLE001
                 led_temps[key] = None
+        for key, sensor in LED_SECOND_SENSORS:
+            try:
+                with self.sys.lock:
+                    led_temps[key] = round(self.sys.io.read_temp(sensor)['temp'], 1)
+            except Exception:             # noqa: BLE001
+                led_temps[key] = None
+        n2p = self._read_pressure()
         target = None
         if self.temp.active:
             target = heat.get('target')
@@ -471,9 +589,18 @@ class IOBridge:
             'damperDriver': self._damper_driver(),         # 'pio' (hardware-timed) / 'lgpio' (software PWM)
             'fans': dict(self._fan_duty),
             'fanRpm': fan_rpm,
+            'fanRpmEach': fan_rpm_each,                    # every tachometer fan by name
+            'fanOverride': sorted(self._fan_override),     # fans the operator chose to continue without
+            'stripMode': getattr(self.status_leds, 'mode', None) if self.status_leds else None,   # what the RGB strip shows right now
+            'uiAlerts': dict(getattr(self, '_ui_alerts', {}) or {}),
             'ledTemps': led_temps,
             'nitrogenActive': self._n2_on,
-            'n2LinePressure': None,       # no line-pressure sensor on this board
+            # SMC ISE20 analog pressure sensor on U7 AIN3 (components.json
+            # pressure_sensor): {volts, mpa, bar, on, saturated, mode, setPointMPa}
+            # or null when the ADC read fails; n2LinePressure (bar) feeds the
+            # Settings 6 bar guard and is null while the reading is not usable
+            'n2Pressure': n2p,
+            'n2LinePressure': (n2p or {}).get('bar'),
             'bofaOn': self._bofa_on,
             'atTemp': bool(heat.get('at_temp')),
             'heaterPwm': heat.get('pwm'),         # commanded average power %
@@ -486,7 +613,11 @@ class IOBridge:
                 'led': self.sys.led_fault,
             },
             'sensors': self.sensors_state(),       # per-NTC ok / open seconds
-            'alerts': sorted(self._sensor_alerts), # active registry codes
+            'fanHealth': dict(self._fan_health),   # per-fan rpm vs nominal
+            'ledHealth': dict(self._led_health),   # per-panel thermistor rise while lit
+            'alerts': sorted(self._sensor_alerts | set(self._fan_alerts)
+                             | set(self._led_alerts)),  # active registry codes
+            'alertDetails': {**self._sensor_details, **self._fan_alerts, **self._led_alerts},  # code -> which sensor / fan / panel
             'hwSource': 'io_controller',
         }
 
@@ -518,6 +649,9 @@ class IOBridge:
                 print(f'[HW] LED calibration unavailable ({e}) - factors 1.0',
                       flush=True)
                 factors, zone_for = factors or {}, lambda _led: None
+            ok, why = self._led_fan_preflight(mode)   # every LED cooling fan must spin before an LED goes on
+            if not ok:
+                return False, why
             lit, outputs = [], {}
             for led in self.sys.allowed_leds(mode):
                 zone = zone_for(led)
@@ -533,6 +667,76 @@ class IOBridge:
                         'wavelength': 450 if mode == '450nm' else 405,
                         'outputs': outputs}
             return True, None
+
+    def set_ui_alerts(self, critical, warning):
+        """The UI's undismissed notification counts (Alerts screen): they drive the RGB strip — critical -> pulsing
+        red, warning -> pulsing yellow, none -> solid green. Reported on every change and as a 30 s heartbeat."""
+        self._ui_alerts = {'critical': max(0, int(critical)), 'warning': max(0, int(warning)), 'at': time.time()}
+        return True, None
+
+    def set_fan_override(self, fan, on=True):
+        """The operator chose to continue WITHOUT this fan (UI dialog "Continue anyway"): the fan keeps being
+        measured and reported, but it no longer stops outputs, blocks a start or fails the LED pre-flight.
+        Cleared by the UI when the process ends. Logged."""
+        if fan == 'all':
+            fans = [f for g in FAN_GROUPS.values() for f in g]
+        elif fan in FAN_GROUPS:
+            fans = list(FAN_GROUPS[fan])
+        elif fan in self.PCA_CHANNELS:
+            fans = [fan]
+        else:
+            return False, f'unknown fan: {fan}'
+        for f in fans:
+            if on:
+                self._fan_override.add(f); self._fan_critical.discard(f)
+            else:
+                self._fan_override.discard(f)
+        if not self._fan_critical - self._fan_override:
+            self._fan_alerts.pop(ERR_FAN_FAILURE, None)
+        if on:
+            self._fan_alerts.pop(ERR_LED_FAN_STOPPED, None)
+        print(f"[FAN] override {'ON' if on else 'off'} for {', '.join(fans)} (operator: continue anyway)", flush=True)
+        return True, None
+
+    def _led_fan_preflight(self, mode):
+        """Before the LEDs go on: spin the cooling fan of every LED about to be
+        lit, measure each tachometer and refuse — code 9003, the fan named — if
+        one does not turn. An LED never runs without its fan. Skipped while the
+        LEDs are already on and for 30 s after a pass (the same command is
+        often re-sent)."""
+        now = time.time()
+        if self._uv.get('on') or now - getattr(self, '_led_fan_ok_at', 0) < 30:
+            return True, None
+        fans = []
+        for led in self.sys.allowed_leds(mode):
+            fan = (getattr(self.sys, 'leds', {}).get(led) or {}).get('fan')
+            if fan and fan in self.PCA_CHANNELS and fan not in fans:
+                fans.append(fan)
+        if not fans:
+            return True, None
+        min_rpm = float(self._fan_cfg().get('led_fan_min_rpm', 100))
+        with self.sys.lock:
+            for fan in fans:
+                self.sys.io.pca.set_duty(self.PCA_CHANNELS[fan], 100)
+        time.sleep(1.5)                                    # spin-up
+        stopped = []
+        for fan in fans:
+            rpm = self.sys.measure_rpm(fan, window=0.5)
+            if fan in self._fan_override:
+                continue                                   # "continue anyway" chosen for this fan
+            if rpm is None or rpm < min_rpm:
+                stopped.append(f"{fan} ({'?' if rpm is None else int(rpm)} RPM)")
+        if stopped:
+            with self.sys.lock:
+                for fan in fans:
+                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[fan], 0)
+            why = f"[{ERR_LED_FAN_STOPPED}] LED cooling fan not spinning: {', '.join(stopped)} - job start refused"
+            self._fan_alerts[ERR_LED_FAN_STOPPED] = why
+            print(f'[FAN] {why}', flush=True)
+            return False, why
+        self._fan_alerts.pop(ERR_LED_FAN_STOPPED, None)
+        self._led_fan_ok_at = now
+        return True, None
 
     # ------------------------------------------------------------------
     #  UV-only ventilation (no-heat cure): damper + intake fan together
@@ -802,6 +1006,19 @@ class IOBridge:
             return False, f'strip write failed: {e}'
         return True, None
 
+    def _read_pressure(self):
+        """One reading of the N2 line pressure sensor for /api/state."""
+        try:
+            with self.sys.lock:
+                r = self.sys.io.read_pressure(self.sys.config)
+        except Exception:                 # noqa: BLE001 - ADC / config problem
+            return None
+        return {'volts': round(r['voltage'], 3),
+                'mpa': round(r['mpa'], 3) if r['mpa'] is not None else None,
+                'bar': round(r['bar'], 2) if r['bar'] is not None else None,
+                'on': bool(r['on']), 'saturated': bool(r['saturated']),
+                'mode': r['mode'], 'setPointMPa': r['set_point_mpa']}
+
     def door_abort(self):
         """SAFETY: the door opened while outputs were live. Kill EVERY output
         immediately - heater, UV, cooling, fans, nitrogen, BOFA, damper - and
@@ -857,6 +1074,11 @@ class IOBridge:
         except Exception as e:            # noqa: BLE001 - pinctrl unavailable
             return False, f'nitrogen valve failed: {e}'
         self._n2_on = bool(on)
+        if on:
+            # Opening the purge valve starts a process step, exactly like
+            # heating / cure / cooling do: a door abort latched by an EARLIER
+            # run must not kill a program whose first step is the N2 purge.
+            self._door_abort_ts = None
         return True, None
 
     def set_bofa(self, on):
@@ -951,47 +1173,188 @@ class IOBridge:
     # ------------------------------------------------------------------
     #  Diagnostics
     # ------------------------------------------------------------------
+    def _fan_nominal_points(self, fan, cfg):
+        """The measured duty->RPM points this fan is judged against: the
+        damper-OPEN table while the damper is open (an open duct slows the
+        intake fan), otherwise the regular nominal_rpm table."""
+        if self._damper_open:
+            open_pts = (cfg.get('nominal_rpm_damper_open') or {}).get(fan)
+            if open_pts:
+                return open_pts
+        return (cfg.get('nominal_rpm') or {}).get(fan)
+
+    def _fan_verdict(self, cfg, fan, rpm, duty, min_rpm):
+        """OK / WARN / FAIL for one measured fan, on the SAME policy as the wear
+        supervision (_fan_tick): the reading is compared with the nominal RPM at
+        the duty the fan was measured at. Before 0.9.93 the test only asked
+        "is it turning at all" (>= min_fan_rpm), so a fan at a third of its
+        nominal speed - the very wear 9051/9002 exist for - still said OK."""
+        expected = self._fan_expected_rpm(self._fan_nominal_points(fan, cfg), duty)
+        entry = {'rpm': rpm, 'duty': int(round(duty)),
+                 'expected': int(expected) if expected else None,
+                 'deficitPct': None, 'status': 'OK'}
+        if rpm < min_rpm:                      # not turning at all (disconnected, seized)
+            entry['status'] = 'FAIL'
+            return entry
+        if not expected:
+            return entry                       # no measured nominal for this fan: only the floor applies
+        deficit = round((1 - rpm / expected) * 100, 1)
+        crit = float((cfg.get('critical_below_pct_by_fan') or {}).get(fan, cfg['critical_below_pct']))
+        entry['deficitPct'] = deficit
+        entry['status'] = ('FAIL' if deficit >= crit
+                           else 'WARN' if deficit >= float(cfg['warn_below_pct']) else 'OK')
+        return entry
+
+    @staticmethod
+    def _fan_test_message(fans, names, min_rpm):
+        """One line per fan that is not OK: what it read against what it owes."""
+        parts = []
+        for name in names:
+            f = fans[name]
+            if f['rpm'] < min_rpm or not f['expected']:
+                parts.append(f"{name}: {f['rpm']} RPM — not spinning")
+            else:
+                parts.append(f"{name}: {f['rpm']} RPM, {f['expected']} RPM expected at "
+                             f"{f['duty']} % duty ({f['deficitPct']:.0f} % below nominal)")
+        return ', '.join(parts) or None
+
     def run_fan_test(self, fan=None):
-        """Spin the requested fan up (unless a control loop already owns it)
-        and measure the real tachometer RPM. `fan` is a UI group name
-        (led_cooling / chamber_intake / chamber_heating); default = heater fan."""
-        group = FAN_GROUPS.get(fan or 'chamber_heating')
+        """Spin every fan of the requested group up (unless a control loop
+        already owns it) and measure the real tachometer RPM of EACH fan.
+        `fan` is a UI group name (led_cooling / chamber_intake / chamber_heating);
+        default = heater fan. The group fails if any one of its fans fails, and
+        the failing fans are named — an LED cooling fan hidden behind three
+        healthy neighbours used to pass this test.
+        Each reading is judged against the fan's nominal RPM at the duty it was
+        measured at (fan_health): FAIL below critical_below_pct (or not turning
+        at all), WARN below warn_below_pct, otherwise OK — the same thresholds
+        the wear supervision raises 9002 / 9051 on."""
+        group = [f for g in FAN_GROUPS.values() for f in g] if fan == 'all' else FAN_GROUPS.get(fan or 'chamber_heating')
         if not group:
             return {'rpm': 0, 'status': 'FAIL', 'message': f'unknown fan: {fan}'}
-        name = group[0]
-        with self._op:
-            if name == 'FAN_HEATER':
-                fan_busy = self.sys.is_heater_on() or self.temp.active
-            elif name == 'FAN_COOLING':
-                fan_busy = bool(self.sys.cooling_status().get('active'))
-            else:
-                fan_busy = False
-            if not fan_busy:
-                with self.sys.lock:
-                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], 100)
-                time.sleep(2.0)           # spin-up
-            rpm = self.sys.measure_rpm(name, window=1.0)
-            if not fan_busy:
-                with self.sys.lock:
-                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], 0)
-        rpm = int(rpm or 0)
         min_rpm = self.sys.heater_cfg().get('min_fan_rpm', 100)
-        return {'rpm': rpm, 'status': 'OK' if rpm >= min_rpm else 'FAIL'}
+        cfg = self._fan_cfg()
+        try:
+            heat = self.temp.status()
+        except Exception:                 # noqa: BLE001
+            heat = {}
+        try:
+            cool = self.sys.cooling_status()
+        except Exception:                 # noqa: BLE001
+            cool = {}
+        with self._op:
+            busy, duty_at = {}, {}
+            for name in group:
+                # a fan already being driven (heating, cooling, a heater-fan cooldown run-on, lit LEDs) is measured as it
+                # runs and left alone — the test must never switch off a fan that a process relies on
+                prev = self._pca_duty(name)
+                if prev is not None:
+                    busy[name] = prev > 0
+                elif name == 'FAN_HEATER':
+                    busy[name] = self.sys.is_heater_on() or self.temp.active
+                elif name == 'FAN_COOLING':
+                    busy[name] = bool(self.sys.cooling_status().get('active'))
+                else:
+                    busy[name] = False
+                # the duty the reading is judged at: its own while a process drives it
+                # (a cooldown run-on at 30 % must not be measured against the 100 % nominal),
+                # 100 % for every fan the test drives itself
+                duty_at[name] = (prev if prev is not None
+                                 else self._fan_commanded_duty(name, heat, cool)) if busy[name] else 100.0
+            with self.sys.lock:
+                for name in group:
+                    if not busy[name]:
+                        self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], 100)
+            time.sleep(2.0)           # spin-up
+            # read every tachometer at the same time (each has its own pulse counter): 1 s for the whole group, not 1 s per fan
+            measured = {}
+            def _measure(name):
+                measured[name] = self.sys.measure_rpm(name, window=1.0)
+            workers = [threading.Thread(target=_measure, args=(name,), daemon=True) for name in group]
+            for w in workers: w.start()
+            for w in workers: w.join(timeout=5.0)
+            fans = {}
+            for name in group:
+                rpm = int(measured.get(name) or 0)
+                fans[name] = self._fan_verdict(cfg, name, rpm, duty_at[name], min_rpm)
+            with self.sys.lock:
+                for name in group:
+                    if not busy[name]:
+                        self.sys.io.pca.set_duty(self.PCA_CHANNELS[name], 0)
+        failed = [n for n, f in fans.items() if f['status'] == 'FAIL']
+        warned = [n for n, f in fans.items() if f['status'] == 'WARN']
+        worst = min(f['rpm'] for f in fans.values())
+        return {'rpm': worst, 'status': 'FAIL' if failed else 'WARN' if warned else 'OK', 'fans': fans,
+                'message': self._fan_test_message(fans, failed + warned, min_rpm)}
 
-    def run_led_test(self):
-        """Read the thermistor at each LED module and validate the reading."""
-        results = []
-        for name, sensor in LED_TEST_SENSORS:
+    def run_led_test(self, seconds=15.0, intensity=100, wavelength=405, min_rise_c=0.8, precool_above_c=30.0, precool_s=20.0):
+        """Settings > LED Test, in three stages:
+          1. every LED thermistor must give a valid reading (and be under the max);
+          2. ALL panels on at `intensity` % for `seconds` (15 s: a panel rises ~0.2 C/s at 100 %);
+          3. every thermistor must have RISEN by at least `min_rise_c` — a panel whose
+             sensor does not warm is not emitting (or its sensor is not on the module).
+        LEDs off at the end whatever happens. Refused while a process runs.
+        The answer names the sensors that did not read / did not heat up."""
+        def read_all():
+            out = {}
+            for name, sensor in LED_TEST_SENSORS:
+                try:
+                    with self.sys.lock:
+                        out[name] = self.sys.io.read_temp(sensor)['temp']
+                except Exception:         # noqa: BLE001
+                    out[name] = None
+            return out
+        if self._uv.get('on') or self.temp.active or self.sys.cooling_status().get('active'):
+            return {'ok': False, 'status': 'FAIL', 'stage': 'busy', 'results': [],
+                    'message': 'a process is running - run the LED test when the machine is idle'}
+        start = read_all()
+        # panels still warm from a previous run (>= precool_above_c) cool faster than a small heat input warms them, so
+        # a lit panel could look cold: wait precool_s with the LEDs off, then take the real starting point
+        precooled = False
+        if any(v is not None and v >= precool_above_c for v in start.values()):
+            # the four LED cooling fans at full speed for the cool-down (they are off while the LEDs are off), then back
+            led_fans = FAN_GROUPS.get('led_cooling', [])
+            prev = {f: (self._pca_duty(f) or 0.0) for f in led_fans}
+            with self.sys.lock:
+                for f in led_fans:
+                    self.sys.io.pca.set_duty(self.PCA_CHANNELS[f], 100)
             try:
+                time.sleep(float(precool_s))
+            finally:
                 with self.sys.lock:
-                    t = self.sys.io.read_temp(sensor)['temp']
-            except Exception:             # noqa: BLE001
-                t = None
-            ok = t is not None and t < LED_TEST_MAX_TEMP
-            results.append({'name': name,
-                            'temp': round(t, 1) if t is not None else None,
-                            'status': 'OK' if ok else 'FAIL'})
-        return {'results': results}
+                    for f in led_fans:
+                        self.sys.io.pca.set_duty(self.PCA_CHANNELS[f], prev[f])
+            start = read_all(); precooled = True
+        results = [{'name': n, 'temp': round(t, 1) if t is not None else None,
+                    'status': 'OK' if (t is not None and t < LED_TEST_MAX_TEMP) else 'FAIL'} for n, t in start.items()]
+        bad = [r['name'] for r in results if r['status'] == 'FAIL']
+        if bad:
+            return {'ok': True, 'status': 'FAIL', 'stage': 'sensors', 'results': results,
+                    'message': 'no valid temperature reading: ' + ', '.join(bad)}
+        ok, why = self.set_uv(True, intensity, wavelength)     # door interlock + LED-fan pre-flight apply
+        if not ok:
+            return {'ok': True, 'status': 'FAIL', 'stage': 'uv', 'results': results,
+                    'message': f'LEDs could not be switched on: {why}'}
+        try:
+            time.sleep(float(seconds))
+            end = read_all()
+        finally:
+            self.set_uv(False)
+        # at 450 nm the door panel's string leaves too little heat at its sensor to judge (+0.5 C in 30 s from cold on
+        # the test unit, against +1.7 … +2.3 C on the other panels): its rise is reported, not judged
+        not_judged = {'Door LED'} if int(wavelength) == 450 else set()
+        results = []
+        for name, _sensor in LED_TEST_SENSORS:
+            t0, t1 = start.get(name), end.get(name)
+            rise = None if (t0 is None or t1 is None) else round(t1 - t0, 1)
+            status = 'INFO' if name in not_judged else ('OK' if (rise is not None and rise >= min_rise_c) else 'FAIL')
+            results.append({'name': name, 'start': round(t0, 1) if t0 is not None else None,
+                            'temp': round(t1, 1) if t1 is not None else None, 'rise': rise, 'status': status})
+        cold = [r for r in results if r['status'] == 'FAIL']
+        note = ', '.join(f"{r['name']} not judged at {int(wavelength)} nm ({'?' if r['rise'] is None else f'{r['rise']:+.1f}'} C)" for r in results if r['status'] == 'INFO')
+        return {'ok': True, 'status': 'FAIL' if cold else 'OK', 'stage': 'heating', 'seconds': seconds, 'wavelength': int(wavelength), 'precooled': precooled,
+                'intensity': intensity, 'min_rise_c': min_rise_c, 'results': results,
+                'message': ('did not heat up: ' + ', '.join(f"{r['name']} ({'?' if r['rise'] is None else f'{r['rise']:+.1f}'} C in {int(seconds)} s)" for r in cold) + (f'; {note}' if note else '')) if cold else (note or None)}
 
     # ------------------------------------------------------------------
     #  Temperature-sensor supervision (open-circuit NTC detection)
@@ -1006,6 +1369,13 @@ class IOBridge:
             return False
         return t is not None and SENSOR_VALID_C[0] <= t <= SENSOR_VALID_C[1]
 
+    def _heating_wanted(self):
+        """Heating is active, commanded, or was just refused / switched off by the heater safety."""
+        try:
+            return bool(self.temp.active or self.sys.is_heater_on() or self.sys.heater_fault or self.temp.fault)
+        except Exception:                 # noqa: BLE001
+            return False
+
     def _sensor_check(self, startup=False):
         """One supervision pass over all NTCs. Tracks how long each has been
         open and raises / clears the registry alert after SENSOR_OPEN_ALERT_SEC.
@@ -1017,16 +1387,30 @@ class IOBridge:
             code = ERR_TEMP_SENSOR_DISCONNECTED if is_critical else ERR_LED_TEMP_SENSOR_DISCONNECTED
             if self._sensor_read_ok(name):
                 if name in self._sensor_open_since:
-                    print(f'[SENSOR] {name} reads again', flush=True)
+                    if name in self._sensor_open_logged:
+                        print(f'[SENSOR] {name} reads again', flush=True)
                     del self._sensor_open_since[name]
+                self._sensor_open_logged.discard(name)
                 continue
-            open_now.add(name)
             since = self._sensor_open_since.setdefault(name, now)
-            if startup:
+            if now - since < SENSOR_GLITCH_SEC:
+                continue                  # dropout shorter than the noise filter: not (yet) a problem
+            open_now.add(name)
+            # The heater's own thermistor (TEMP_CHAMBER) open while heating is active or commanded: the
+            # heater safety has already switched the element off - raise 9001 right after the noise
+            # filter so the screen pops the fault now, not a minute later
+            if name == HEATER_THERMISTOR and code not in self._sensor_alerts and self._heating_wanted():
+                self._sensor_alerts.add(code)
+                self._sensor_details[str(code)] = HEATER_SENSOR_DETAIL
+                print(f'[SENSOR] {name} open while heating -> heater OFF, Err {code} at once', flush=True)
+            if startup or name not in self._sensor_open_logged:
+                self._sensor_open_logged.add(name)
                 kind = 'REQUIRED, processes blocked' if is_critical else 'LED sensor, warning only'
-                print(f'[SENSOR] start-up check: {name} OPEN (no thermistor) - {kind}', flush=True)
+                print(f'[SENSOR] {"start-up check: " if startup else ""}{name} OPEN for {int(now - since)} s - {kind}', flush=True)
             if now - since >= SENSOR_OPEN_ALERT_SEC and code not in self._sensor_alerts:
                 self._sensor_alerts.add(code)
+                self._sensor_details[str(code)] = (HEATER_SENSOR_DETAIL if name == HEATER_THERMISTOR
+                                                   else f'Temperature sensor disconnected: {name}')
                 sev = 'critical' if is_critical else 'warning'
                 print(f'[SENSOR] {name} open for {SENSOR_OPEN_ALERT_SEC:.0f}s -> Err {code} ({sev})', flush=True)
         # clear an alert only when every sensor of its class reads again
@@ -1034,6 +1418,7 @@ class IOBridge:
                             (ERR_LED_TEMP_SENSOR_DISCONNECTED, WARNING_TEMP_SENSORS)):
             if code in self._sensor_alerts and not (open_now & set(group)):
                 self._sensor_alerts.discard(code)
+                self._sensor_details.pop(str(code), None)
                 print(f'[SENSOR] Err {code} cleared - sensors read again', flush=True)
         return open_now
 
@@ -1041,19 +1426,378 @@ class IOBridge:
         """Called every status_sec by the status loop."""
         self._sensor_check()
 
+    # ------------------------------------------------------------------
+    #  Fan wear supervision (tachometer RPM vs measured nominal)
+    # ------------------------------------------------------------------
+    def _fan_cfg(self):
+        cfg = dict(FAN_HEALTH_DEFAULTS)
+        try:
+            from io_controller import load_component_config   # not a module global here
+            c = load_component_config().get('fan_health', {})
+            cfg.update({k: v for k, v in c.items() if not k.startswith('_')})
+        except Exception:                 # noqa: BLE001 - keep defaults
+            pass
+        return cfg
+
+    def _pca_duty(self, fan):
+        """The duty last written to the fan's PCA channel, or None if the driver does not keep it."""
+        cache = getattr(getattr(self.sys.io, 'pca', None), 'last_duty', None)
+        ch = self.PCA_CHANNELS.get(fan)
+        if cache is None or ch is None or ch not in cache:
+            return None
+        return float(cache[ch])
+
+    def _fan_commanded_duty(self, fan, heat, cool):
+        """What the fan is being driven at right now (0-100), from whichever
+        loop owns it: heater fan by the heating loop (or its run-on), the
+        intake fan by the cooling loop, LED fans by their lit LED; otherwise
+        the last manual / group write."""
+        real = self._pca_duty(fan)
+        if real is not None:
+            return real                   # what the channel is really driven at — a fan someone switched off is not "expected" to spin
+        if fan == 'FAN_HEATER':
+            if self.temp.active or self.sys.is_heater_on():
+                return float(heat.get('fan_pwm') or 0)
+            if heat.get('cooldown'):
+                try:
+                    return float(getattr(self.temp, 'cfg', {}).get('cooldown_fan_pwm', 30))
+                except Exception:         # noqa: BLE001
+                    return 30.0
+            return float(self._fan_duty.get('chamber_heating', 0))
+        if fan == 'FAN_COOLING':
+            if cool.get('active'):
+                return float(cool.get('pwm') or 0)
+            return float(self._fan_duty.get('chamber_intake', 0))
+        led = {'FAN_LEFT': 'LED_LEFT', 'FAN_RIGHT': 'LED_RIGHT',
+               'FAN_BACK': 'LED_BACK', 'FAN_DOOR': 'LED_DOOR'}.get(fan)
+        if led and led in getattr(self.sys, '_leds_on', set()):
+            return float(self.sys.leds.get(led, {}).get('fan_speed', 100))
+        return float(self._fan_duty.get('led_cooling', 0))
+
+    @staticmethod
+    def _fan_expected_rpm(points, duty):
+        """Nominal RPM at `duty` from the measured duty->rpm points (linear
+        interpolation; proportional below the lowest point)."""
+        pts = sorted((float(k), float(v)) for k, v in (points or {}).items())
+        if not pts:
+            return None
+        if duty <= pts[0][0]:
+            return pts[0][1] * duty / pts[0][0]
+        for (d0, r0), (d1, r1) in zip(pts, pts[1:]):
+            if d0 <= duty <= d1:
+                return r0 + (r1 - r0) * (duty - d0) / (d1 - d0)
+        return pts[-1][1] * duty / pts[-1][0]
+
+    def _fan_tick(self):
+        """Once per status_sec: compare every tach fan to its nominal RPM at
+        the commanded duty. Below nominal by warn_below_pct for persist_sec
+        -> 9051 (replace fan); by critical_below_pct for persist_sec -> 9002:
+        all outputs off, processes blocked, the fan named in the alert."""
+        cfg = self._fan_cfg()
+        warn = float(cfg['warn_below_pct'])
+        by_fan = cfg.get('critical_below_pct_by_fan') or {}   # the heater fan stops at its own limit (user 2026-10-08)
+        persist, settle = float(cfg['persist_sec']), float(cfg['settle_sec'])
+        min_duty = float(cfg['min_eval_duty'])
+        now = time.time()
+        try:
+            heat = self.temp.status()
+        except Exception:                 # noqa: BLE001
+            heat = {}
+        try:
+            cool = self.sys.cooling_status()
+        except Exception:                 # noqa: BLE001
+            cool = {}
+        health = {}
+        for fan in self.PCA_FANS:
+            duty = self._fan_commanded_duty(fan, heat, cool)
+            prev = self._fan_duty_seen.get(fan)
+            if prev is None or abs(prev[0] - duty) > 0.5:
+                self._fan_duty_seen[fan] = (duty, now)
+            changed_at = self._fan_duty_seen[fan][1]
+            rpm = self.sys.read_rpm(fan)
+            rpm = int(rpm) if rpm is not None else None
+            expected = self._fan_expected_rpm(self._fan_nominal_points(fan, cfg), duty) if duty > 0 else None
+            entry = {'duty': duty, 'rpm': rpm, 'expected': int(expected) if expected else None,
+                     'deficitPct': None, 'status': 'idle', 'since': None}
+            evaluate = (duty >= min_duty and expected and rpm is not None
+                        and now - changed_at >= settle)
+            if evaluate:
+                deficit = round((1 - rpm / expected) * 100, 1)
+                # a fan that is not turning at all (disconnected, seized) is not wear: it trips after stopped_persist_sec, not persist_sec
+                p_this = float(cfg.get('stopped_persist_sec', 5)) if rpm <= 0.05 * expected else persist
+                entry['deficitPct'] = deficit
+                crit = float(by_fan.get(fan, cfg['critical_below_pct']))
+                level = 'critical' if deficit >= crit else 'warn' if deficit >= warn else 'ok'
+                if level == 'ok':
+                    self._fan_below_since.pop(fan, None)
+                    entry['status'] = 'ok'
+                else:
+                    lvl0, since = self._fan_below_since.get(fan, (level, now))
+                    # a deeper deficit keeps the earlier start; a shallower one restarts
+                    if lvl0 == 'critical' and level == 'warn':
+                        since = now
+                    self._fan_below_since[fan] = (level, since)
+                    entry['since'] = int(now - since)
+                    entry['status'] = level if now - since >= p_this else f'{level}-pending'
+                    if now - since >= p_this:
+                        detail = (f'{fan}: {rpm} RPM measured, {int(expected)} RPM expected at '
+                                  f'{duty:.0f} % duty ({deficit:.0f} % below nominal for '
+                                  f'{int(now - since)} s)')
+                        if fan in self._fan_override:
+                            entry['status'] = 'overridden'      # the operator chose to continue without this fan: shown, not acted on
+                        elif level == 'critical':
+                            self._fan_alerts[ERR_FAN_FAILURE] = detail
+                            if fan not in self._fan_critical:
+                                self._fan_critical.add(fan)
+                                print(f'[FAN] CRITICAL {detail} -> Err {ERR_FAN_FAILURE}: '
+                                      f'stopping every output', flush=True)
+                                try:
+                                    self.stop_all(True)
+                                except Exception as e:  # noqa: BLE001
+                                    print(f'[FAN] stop_all failed: {e}', flush=True)
+                        elif ERR_FAN_WEAR_WARNING not in self._fan_alerts \
+                                or fan in self._fan_alerts[ERR_FAN_WEAR_WARNING]:
+                            if ERR_FAN_WEAR_WARNING not in self._fan_alerts:
+                                print(f'[FAN] WARNING {detail} -> Err {ERR_FAN_WEAR_WARNING}: '
+                                      f'replace the fan', flush=True)
+                            self._fan_alerts[ERR_FAN_WEAR_WARNING] = detail
+            else:
+                self._fan_below_since.pop(fan, None)
+            health[fan] = entry
+        self._fan_health = health
+        # release the critical latch only after the fan has read OK for persist_sec
+        for fan in list(self._fan_critical):
+            e = health.get(fan, {})
+            ok_for = self._fan_ok_since.get(fan) if hasattr(self, '_fan_ok_since') else None
+            if e.get('status') == 'ok':
+                if not hasattr(self, '_fan_ok_since'):
+                    self._fan_ok_since = {}
+                self._fan_ok_since.setdefault(fan, now)
+                if now - self._fan_ok_since[fan] >= persist:
+                    self._fan_critical.discard(fan)
+                    self._fan_ok_since.pop(fan, None)
+                    print(f'[FAN] {fan} back to nominal - critical latch released', flush=True)
+            elif hasattr(self, '_fan_ok_since'):
+                self._fan_ok_since.pop(fan, None)
+        if not self._fan_critical and ERR_FAN_FAILURE in self._fan_alerts:
+            self._fan_alerts.pop(ERR_FAN_FAILURE, None)
+            print(f'[FAN] Err {ERR_FAN_FAILURE} cleared', flush=True)
+        if ERR_FAN_WEAR_WARNING in self._fan_alerts and not any(
+                e.get('status') in ('warn', 'critical') for e in health.values()):
+            self._fan_alerts.pop(ERR_FAN_WEAR_WARNING, None)
+            print(f'[FAN] Err {ERR_FAN_WEAR_WARNING} cleared', flush=True)
+
+    def fan_issues_now(self):
+        """Fans currently flagged (for the cure-history indication)."""
+        return [{'fan': f, 'deficitPct': e.get('deficitPct'), 'critical': e.get('status') == 'critical'}
+                for f, e in self._fan_health.items() if e.get('status') in ('warn', 'critical')]
+
+    # ------------------------------------------------------------------
+    #  LED connection supervision (thermistor rise while the panel is lit)
+    # ------------------------------------------------------------------
+    def _led_heat_cfg(self):
+        cfg = dict(LED_HEATING_DEFAULTS)
+        cfg['panels'] = dict(LED_PANEL_SENSORS)
+        try:
+            from io_controller import load_component_config
+            c = load_component_config().get('led_heating', {})
+            for k in LED_HEATING_DEFAULTS:
+                if k in c:
+                    cfg[k] = float(c[k])
+            panels = c.get('panels')
+            if isinstance(panels, dict) and panels:
+                cfg['panels'] = {led: (LED_PANEL_LABELS.get(led, led), str(sensor))
+                                 for led, sensor in panels.items()
+                                 if led in LED_PANEL_LABELS and sensor}
+        except Exception:                 # noqa: BLE001 - keep defaults
+            pass
+        return cfg
+
+    def _led_heat_tick(self):
+        """Once per status_sec: every supervised LED panel (Left / Right by
+        default, via their regular thermistors) that is lit must warm that
+        thermistor. Baseline = the panel temperature when its light started
+        (a re-light within rest_sec continues the same window); after
+        check_after_sec of accumulated light at >= min_eval_intensity % the
+        rise must be >= min_rise_c, otherwise the panel is not being powered
+        -> 9004 critical, the alert names the panel and says to check its
+        connection. A panel latched failed clears as soon as it heats again.
+        Once a panel has proved it heats, its peak is tracked: a fall of
+        drop_c below the peak (chamber cooling taken off) for drop_persist_sec
+        while still lit -> 9005 critical "panel fault", cleared when the
+        panel climbs back to within drop_c/2 of its peak."""
+        cfg = self._led_heat_cfg()
+        min_int, check_after = cfg['min_eval_intensity'], cfg['check_after_sec']
+        min_rise, rest = cfg['min_rise_c'], cfg['rest_sec']
+        drop_c, drop_persist = cfg['drop_c'], cfg['drop_persist_sec']
+        drop_settle = cfg['drop_settle_sec']
+        now = time.time()
+        uv = self._uv
+        lit = set(getattr(self.sys, '_leds_on', set())) if uv.get('on') else set()
+        intensity = float(uv.get('intensity') or 0) if uv.get('on') else 0.0
+        chamber = None
+        if lit:
+            try:
+                with self.sys.lock:
+                    chamber = self.sys.io.read_temp('TEMP_CHAMBER')['temp']
+            except Exception:             # noqa: BLE001
+                chamber = None
+        health = {}
+        panels = cfg['panels']
+        for led, (label, sensor) in panels.items():
+            st = self._led_heat.get(led)
+            is_lit = led in lit
+            entry = {'lit': is_lit, 'intensity': intensity if is_lit else 0,
+                     'baseline': None, 'rise': None, 'litSec': None, 'status': 'off'}
+            if is_lit and intensity >= min_int:
+                try:
+                    with self.sys.lock:
+                        t = self.sys.io.read_temp(sensor)['temp']
+                except Exception:         # noqa: BLE001
+                    t = None
+                if t is None or not (SENSOR_VALID_C[0] <= t <= SENSOR_VALID_C[1]):
+                    entry['status'] = 'no-sensor'   # open / invalid thermistor: not judged
+                    health[led] = entry
+                    continue
+                if st is None or (st['lit_at'] is None and now - st['last_lit'] > rest):
+                    st = {'base': t, 'lit_sec': 0.0, 'lit_at': now, 'last_lit': now,
+                          'verdict': None, 'fail_at': check_after,
+                          'peak': None, 'peak_chamber': None, 'int_seen': None,
+                          'settle_until': 0.0, 'drop_since': None}
+                elif st['lit_at'] is None:
+                    # re-lit while still warm: same window (baseline kept), but
+                    # the panel cooled during the gap - give it check_after_sec
+                    # of light again before a 'not heating' verdict, and let it
+                    # climb back before the peak is tracked again
+                    st['lit_at'] = now
+                    st['fail_at'] = st['lit_sec'] + check_after
+                    # re-judge: the rise rule again (it must climb back), then
+                    # the peak restarts from the re-light temperature at once -
+                    # a panel that lost power during the gap only cools from here
+                    st.update({'verdict': None, 'peak': None, 'drop_since': None,
+                               'int_seen': None, 'settle_until': now})
+                else:
+                    st['lit_sec'] += now - st['lit_at']
+                    st['lit_at'] = now
+                st['last_lit'] = now
+                rise = t - st['base']
+                entry.update({'baseline': round(st['base'], 1), 'rise': round(rise, 2),
+                              'litSec': int(st['lit_sec'])})
+                dropped = led in self._led_dropped
+                if st['verdict'] == 'ok' or rise >= min_rise:
+                    # proved heating in this window: the rise rule is done with
+                    # it - a later fall belongs to the drop rule below
+                    entry['status'] = 'ok'
+                    if st['verdict'] != 'ok':
+                        st['verdict'] = 'ok'
+                    if led in self._led_failed and rise >= min_rise:
+                        self._led_failed.pop(led, None)
+                        print(f'[LED] {label} heats again (+{rise:.1f} C) - Err '
+                              f'{ERR_LED_NOT_HEATING} latch released', flush=True)
+                elif st['lit_sec'] >= st['fail_at'] and not dropped:
+                    entry['status'] = 'fail'
+                    detail = (f'{label}: +{rise:.1f} C after {int(st["lit_sec"])} s at '
+                              f'{intensity:.0f} % (at least {min_rise:.1f} C expected) - '
+                              f'check that the {label} connector is plugged in')
+                    if st['verdict'] != 'fail':
+                        st['verdict'] = 'fail'
+                        print(f'[LED] {detail} -> Err {ERR_LED_NOT_HEATING}', flush=True)
+                    self._led_failed[led] = detail
+                else:
+                    entry['status'] = 'warming'
+                # --- mid-process drop: armed once the panel has proved it heats
+                if st['verdict'] == 'ok':
+                    if st['int_seen'] is None:
+                        st['int_seen'] = intensity            # first arm: track at once
+                    elif abs(intensity - st['int_seen']) > 0.5:
+                        # new power level: the panel settles to a new temperature
+                        st.update({'int_seen': intensity, 'peak': None, 'drop_since': None,
+                                   'settle_until': now + drop_settle})
+                    if now >= st['settle_until']:
+                        if st['peak'] is None or t > st['peak']:
+                            st['peak'], st['peak_chamber'] = t, chamber
+                        comp = 0.0                            # the chamber cooled too?
+                        if chamber is not None and st['peak_chamber'] is not None:
+                            comp = max(0.0, st['peak_chamber'] - chamber)
+                        drop = (st['peak'] - t) - comp
+                        entry.update({'peak': round(st['peak'], 1), 'drop': round(drop, 2)})
+                        if drop >= drop_c:
+                            st['drop_since'] = st['drop_since'] or now
+                            if now - st['drop_since'] >= drop_persist:
+                                detail = (f'{label}: fell {drop:.1f} C below its {st["peak"]:.1f} C '
+                                          f'peak while lit at {intensity:.0f} % (chamber cooling '
+                                          f'taken off) for {int(now - st["drop_since"])} s - the '
+                                          f'panel stopped heating mid-process, check the {label} '
+                                          f'connector and driver output')
+                                if not dropped:
+                                    print(f'[LED] {detail} -> Err {ERR_LED_TEMP_DROP}', flush=True)
+                                self._led_dropped[led] = detail
+                        else:
+                            st['drop_since'] = None
+                            if dropped and drop <= drop_c / 2:
+                                self._led_dropped.pop(led, None)
+                                print(f'[LED] {label} back near its peak - Err '
+                                      f'{ERR_LED_TEMP_DROP} latch released', flush=True)
+                if led in self._led_dropped:
+                    entry['status'] = 'drop'
+            else:
+                if st is not None and st['lit_at'] is not None:
+                    # light stopped somewhere since the last lit tick: count
+                    # only the light seen between lit ticks, not the gap
+                    st['last_lit'] = st['lit_at']
+                    st['lit_at'] = None
+                if is_lit:
+                    entry['status'] = 'low'   # below min_eval_intensity: not judged
+                if led in self._led_failed:
+                    entry['status'] = 'fail'  # latched until it heats again
+                if led in self._led_dropped:
+                    entry['status'] = 'drop'  # latched until it climbs back while lit
+            if st is not None:
+                self._led_heat[led] = st
+            health[led] = entry
+        self._led_health = health
+        if self._led_failed:
+            self._led_alerts[ERR_LED_NOT_HEATING] = '; '.join(
+                self._led_failed[led] for led in LED_PANEL_LABELS if led in self._led_failed)
+        elif ERR_LED_NOT_HEATING in self._led_alerts:
+            self._led_alerts.pop(ERR_LED_NOT_HEATING, None)
+            print(f'[LED] Err {ERR_LED_NOT_HEATING} cleared - every panel heats', flush=True)
+        if self._led_dropped:
+            self._led_alerts[ERR_LED_TEMP_DROP] = '; '.join(
+                self._led_dropped[led] for led in LED_PANEL_LABELS if led in self._led_dropped)
+        elif ERR_LED_TEMP_DROP in self._led_alerts:
+            self._led_alerts.pop(ERR_LED_TEMP_DROP, None)
+            print(f'[LED] Err {ERR_LED_TEMP_DROP} cleared - no panel below its peak', flush=True)
+
+    def led_issues_now(self):
+        """Panels currently latched (not heating / dropped) for the cure-history indication."""
+        return ([{'led': led, 'code': ERR_LED_NOT_HEATING, 'detail': d} for led, d in self._led_failed.items()]
+                + [{'led': led, 'code': ERR_LED_TEMP_DROP, 'detail': d} for led, d in self._led_dropped.items()])
+
     def sensor_preflight(self):
-        """Right before a process starts: the REQUIRED NTCs (chamber, Left,
-        Right) must read. Up to 3 reads 0.5 s apart to ride out a glitch;
-        still open -> refuse with the critical code (carried to the UI)."""
-        bad = []
-        for attempt in range(3):
-            bad = [n for n in CRITICAL_TEMP_SENSORS if not self._sensor_read_ok(n)]
-            if not bad:
-                return True, None
-            if attempt < 2:
-                time.sleep(0.5)
+        """Right before a process starts: a fan latched critical (9002) blocks
+        the start, then the REQUIRED NTCs (chamber, Left, Right) must read.
+        Re-read every 0.5 s for SENSOR_GLITCH_SEC: a single valid read passes,
+        so only a sensor that stays open for the whole window refuses the
+        start with the critical code (carried to the UI)."""
+        if self._fan_critical - self._fan_override:
+            fans = ', '.join(sorted(self._fan_critical - self._fan_override))
+            return False, (f'[{ERR_FAN_FAILURE}] Fan below minimum speed: {fans} - '
+                           f'the system cannot run until the fan is replaced')
+        pending = set(CRITICAL_TEMP_SENSORS)
+        deadline = time.time() + SENSOR_GLITCH_SEC
+        while True:
+            pending = {n for n in pending if not self._sensor_read_ok(n)}
+            if not pending or time.time() >= deadline:
+                break
+            time.sleep(0.5)
+        bad = [n for n in CRITICAL_TEMP_SENSORS if n in pending]
+        if not bad:
+            return True, None
         names = ', '.join(f'{n} ({CRITICAL_TEMP_SENSORS[n]})' for n in bad)
         self._sensor_alerts.add(ERR_TEMP_SENSOR_DISCONNECTED)
+        self._sensor_details[str(ERR_TEMP_SENSOR_DISCONNECTED)] = (
+            HEATER_SENSOR_DETAIL if HEATER_THERMISTOR in bad else f'Temperature sensor disconnected: {names}')
         for n in bad:
             self._sensor_open_since.setdefault(n, time.time())
         print(f'[SENSOR] process refused: {names} open -> Err {ERR_TEMP_SENSOR_DISCONNECTED}', flush=True)
@@ -1061,11 +1805,14 @@ class IOBridge:
                        f'{names} - reconnect the sensor before starting a process')
 
     def sensors_state(self):
-        """Per-NTC supervision snapshot for /api/state."""
+        """Per-NTC supervision snapshot for /api/state (and the cure-history
+        sensorIssues). A dropout shorter than SENSOR_GLITCH_SEC still reads ok."""
         now = time.time()
         out = {}
         for name, key in list(CRITICAL_TEMP_SENSORS.items()) + list(WARNING_TEMP_SENSORS.items()):
             since = self._sensor_open_since.get(name)
+            if since is not None and now - since < SENSOR_GLITCH_SEC:
+                since = None
             out[key] = {'sensor': name, 'ok': since is None,
                         'openSec': int(now - since) if since else None,
                         'critical': name in CRITICAL_TEMP_SENSORS}

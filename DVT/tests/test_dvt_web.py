@@ -44,6 +44,12 @@ def filled(test, pick):
     return vals
 
 
+def test_simulation_prompts_are_current():
+    """The portal's Simulate plays the questions of the real run: SIM_PROMPTS in dvt-auto.js must match what the scripts ask."""
+    r = subprocess.run(["node", str(WEB / "build_sim_prompts.cjs"), "--check"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 def test_catalog_js_is_current():
     r = subprocess.run([sys.executable, str(WEB / "build_dvt_web.py"), "--check"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
@@ -91,9 +97,9 @@ def test_known_expressions(expr, values, verdict):
 
 AUTO_HARNESS = WEB / "dvt-auto.test.cjs"
 # Automated by their own cards in dvt-tool.html rather than by dvt-auto.js: the two UV linearity
-# rows by the page itself, SAF-004 by the machine-side DVT bench (catalog tool: bench).
-# (SAF-012 has both: its six cards in the page, and since 0.9.101 one script that runs them in a row from sCure Cloud.)
-NOT_IN_AUTO = {"DVT-OPT-001", "DVT-OPT-002", "DVT-SAF-004", "DVT-SAF-013"}   # SAF-013: the tc08_record card + fromTrace
+# rows by the page itself, DVT-SAF-002 by the machine-side DVT bench (catalog tool: bench).
+# (DVT-SAF-008 has both: its six cards in the page, and since 0.9.101 one script that runs them in a row from sCure Cloud.)
+NOT_IN_AUTO = {"DVT-OPT-001", "DVT-OPT-002", "DVT-SAF-002"}   # DVT-SAF-009 runs automatically too since 2026-10-25 (same recording as its tc08_record card)
 
 
 @pytest.fixture(scope="module")
@@ -124,7 +130,7 @@ def test_no_script_leaves_the_machine_running(auto_results):
 def test_scripts_measure_rather_than_ask(auto_results):
     # Every test whose values the machine can supply must fill some of them without asking.
     # The bench-only rows (a hipot set, a shipment) have nothing the API can measure.
-    bench_only = {"DVT-SAF-002", "DVT-ELE-001", "DVT-ELE-002", "DVT-ELE-003", "DVT-ELE-004", "DVT-SAF-016"}
+    bench_only = {"DVT-SAF-019", "DVT-ELE-001", "DVT-ELE-002", "DVT-ELE-003", "DVT-ELE-004", "DVT-SAF-012"}
     thin = {t: x["measured"] for t, x in auto_results.items() if t not in bench_only and x["measured"] < 1}
     assert not thin, thin
 
@@ -133,8 +139,8 @@ def test_measured_traces_are_stored_per_step(auto_results):
     # A test that logs the machine continuously keeps each trace as its own rec.autos entry, so no
     # step overwrites another's samples and each gets its own CSV (dvt-tool.html setAuto / syncNow).
     # The event-driven tests (a valve opening, a tag appearing) have no continuous trace to keep.
-    logging_tests = ["DVT-SAF-003", "DVT-SAF-005", "DVT-THM-001", "DVT-THM-003",
-                     "DVT-THM-005", "DVT-SAF-019"]
+    logging_tests = ["DVT-SAF-001", "DVT-THM-001", "DVT-THM-003",   # DVT-SAF-003 removed 2026-11-12
+                     "DVT-THM-004", "DVT-SAF-015"]
     thin = {t: auto_results[t].get("traces") for t in logging_tests if not auto_results[t].get("traces")}
     assert not thin, thin
     multi = [t for t in logging_tests if auto_results[t]["traces"] >= 2]
@@ -154,7 +160,7 @@ def test_ambient_comes_from_the_instrument_not_the_operator(auto_results):
 
 
 def test_saf013_values_are_read_out_of_the_tc08_recording():
-    # SAF-013 is operator-driven (the machine has no no-setpoint heat command), so the TC-08 log is the
+    # DVT-SAF-009 is operator-driven (the machine has no no-setpoint heat command), so the TC-08 log is the
     # only record of the run. DVT_AUTO.fromTrace must read the three numbers the test exists for out of
     # it - the rise-to-fall turn of CH1, the climb before it, the body climbing again when the cutout
     # closes - and mark the graph. Since the 2026-09-27 trim those are the ONLY fields the catalog has,
@@ -183,12 +189,12 @@ def test_saf013_values_are_read_out_of_the_tc08_recording():
 
 
 def test_external_heat_makes_the_open_probe_rule_a_warning_only_where_the_heat_is_external():
-    # DVT-SAF-013 feeds the heater from an external supply: the machine never reports heating while the
+    # DVT-SAF-009 feeds the heater from an external supply: the machine never reports heating while the
     # body is genuinely hot, so the cold-junction rule refused a correct run (182 C, Start disabled, no fan).
     # The catalog says so, the page turns the rule into a steady-reading warning + confirm there, runs the
     # heater fan from the readiness check, and draws the graph live. Every other test keeps the hard stop.
-    assert CAT.tests["DVT-SAF-013"].get("external_heat") is True
-    assert all(not t.get("external_heat") for tid, t in CAT.tests.items() if tid != "DVT-SAF-013")
+    assert CAT.tests["DVT-SAF-009"].get("external_heat") is True
+    assert all(not t.get("external_heat") for tid, t in CAT.tests.items() if tid != "DVT-SAF-009")
     js = (WEB / "dvt-catalog.js").read_text(encoding="utf-8")
     assert '"external_heat": true' in js
     html = (WEB / "dvt-tool.html").read_text(encoding="utf-8")
@@ -198,7 +204,7 @@ def test_external_heat_makes_the_open_probe_rule_a_warning_only_where_the_heat_i
 
 
 def test_every_script_trace_gets_a_chart_and_a_png_beside_its_csv():
-    # "add a graph - a picture of the graph" (SAF-005): every rec.autos['auto_<name>'] trace with the runner's
+    # "add a graph - a picture of the graph" (DVT-SAF-003): every rec.autos['auto_<name>'] trace with the runner's
     # watch() columns is drawn under the automatic step (displayed / CH2 reference / CH1 heater body against
     # minutes, heater and UV bands, the first alarm marked with its code) and syncNow writes a PNG next to the CSV.
     html = (WEB / "dvt-tool.html").read_text(encoding="utf-8")
@@ -209,7 +215,7 @@ def test_every_script_trace_gets_a_chart_and_a_png_beside_its_csv():
     sync = html[html.index("async function syncNow()"):html.index("function persist(")]
     assert "isTrace(a) && !a.graph_file" in sync and "tracePng(a)" in sync and ".png" in sync
     assert html.count("trRef:") == 2 and html.count("trBody:") == 2
-    # A SAF-004 run refused in prepare (heater thermistor left open from the previous attempt) looked like a
+    # A DVT-SAF-002 run refused in prepare (heater thermistor left open from the previous attempt) looked like a
     # half-recorded run: the bench's English error on the status line, and a timestamp + raw_log_attached
     # from a run four days earlier still on the card. Now the readiness rows show the reason before Start,
     # a refusal reads "did not start: ..." in the operator's language, and a new run clears the old fields.
@@ -243,17 +249,16 @@ def test_a_guided_step_that_passed_goes_on_to_the_next_step_by_itself():
     assert out["step2_pass"]["next"] == "door_lock_check" and out["step2_pass"]["checked"] == ["uv_off_time <= 1"]
     assert out["step2_slow"]["next"] is None and "uv_off_time" in out["step2_slow"]["why"]   # the catalog's limit, not the page's
     assert out["step3_pass"]["next"] == "door_magnet_defeat"
-    assert out["step4_pass"]["next"] == "door_status_check"
+    assert out["step4_pass"]["next"] is None and out["step4_pass"]["why"] == "last step"   # steps 5 and 6 removed (user, 2026-11-12)
     assert out["step4_fail"]["next"] is None and "defeat_by_magnet_possible" in out["step4_fail"]["why"]
-    assert out["step5_pass"]["next"] == "door_alarm_check"
-    assert out["step6_last"]["next"] is None and out["step6_last"]["why"] == "last step"
+    assert out["step4_last"]["next"] is None
     html = (WEB / "dvt-tool.html").read_text(encoding="utf-8")
     assert "await autoAdvance(tid, tool, advanceValues)" in html and "autoAdvance(tid, 'door_open_cure', v)" in html
     assert html.count("gCloseToContinue:") == 2
 
 
 def test_a_transient_folder_write_failure_does_not_stop_the_recording_reaching_the_folder():
-    # A 734-sample SAF-013 run never reached the results folder: one failed write (a CSV open in Excel,
+    # A 734-sample DVT-SAF-009 run never reached the results folder: one failed write (a CSV open in Excel,
     # OneDrive holding the file) set the folder "lost", every later persist() queued silently and nothing
     # retried. Only a lost permission may take the folder away; anything else is retried with backoff,
     # a periodic sweep flushes what is queued, and stopping a recording that is not on disk says so out loud.
@@ -271,7 +276,7 @@ def test_a_transient_folder_write_failure_does_not_stop_the_recording_reaching_t
 
 def test_the_heater_fan_tach_is_read_where_the_machine_puts_it():
     # The machine keys fanRpm by role and fanRpmEach by fan name; fanRpm[FAN_HEATER] is null on the
-    # unit while the fan spins, which made every DVT-SAF-013 start say "the heater fan is not turning".
+    # unit while the fan spins, which made every DVT-SAF-009 start say "the heater fan is not turning".
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
     assert "rpm(s, fan) {" in src
     prepare = src[src.index("A.prepare = async function"):src.index("A.finish = async function")]
@@ -358,12 +363,12 @@ def test_fan_tach_is_read_the_way_the_machine_reports_it(auto_results):
     import re
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
     assert not re.search(r"fanRpm \|\| \{\}\)\[", src), "a script still reads fanRpm[<fan name>] directly - use P.rpm"
-    assert auto_results["DVT-THM-005"]["status"] == "OK" and auto_results["DVT-SAF-019"]["status"] == "OK"
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-005", "DVT-SAF-019"],
+    assert auto_results["DVT-THM-004"]["status"] == "OK" and auto_results["DVT-SAF-015"]["status"] == "OK"
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-004", "DVT-SAF-015"],
                        capture_output=True, text=True, encoding="utf-8", timeout=300)
     got = {x["test"]: x for x in json.loads(r.stdout)}
-    assert got["DVT-THM-005"]["measured"] >= 17, "tach_rpm is no longer measured on THM-005"
-    assert got["DVT-SAF-019"]["measured"] >= 19, "baseline_tach / tach_reading are no longer measured on SAF-019"
+    assert got["DVT-THM-004"]["measured"] >= 17, "tach_rpm is no longer measured on DVT-THM-004"
+    assert got["DVT-SAF-015"]["measured"] >= 19, "baseline_tach / tach_reading are no longer measured on DVT-SAF-015"
 
 
 def test_saf013_recording_ends_by_itself_and_records_its_own_verdict():
@@ -404,7 +409,7 @@ def test_saf007_walks_all_four_thermistors_in_one_run():
     # One run, four sensors in turn (user, 2026-10-01): each disconnected alone, each refused, each with its own alarm
     # naming that sensor. The simulator removes exactly the sensor the prompt names, as the unit's ledTemps does.
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-007"], capture_output=True, text=True,
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-004"], capture_output=True, text=True,
                        encoding="utf-8", timeout=300, env=env)
     x = json.loads(r.stdout)[0]
     v = x["valuesSeen"]
@@ -426,7 +431,7 @@ def test_saf008_walks_all_four_led_fans_in_one_guided_run():
     # error recorded per side. Run 2 on the unit stopped with "the LEDs did not light for the mid-job part" because the
     # old script lit the LEDs while the fan alarm was still latched; the walk now waits for a clean machine first.
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-008"], capture_output=True, text=True,
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-005"], capture_output=True, text=True,
                        encoding="utf-8", timeout=300, env=env)
     x = json.loads(r.stdout)[0]
     v = x["valuesSeen"]
@@ -440,7 +445,7 @@ def test_saf008_walks_all_four_led_fans_in_one_guided_run():
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
     assert "the LEDs never came on for the mid-job part" not in src
     # sCureBox 1.0.60+: the runner acknowledges the fan alarm itself - the operator only touches fans
-    body = src[src.index("def('DVT-SAF-008'"):src.index("def('DVT-SAF-009'")]
+    body = src[src.index("def('DVT-SAF-005'"):src.index("def('DVT-SAF-006'")]
     assert "/api/fans/ack" in body and "acknowledge the alarm" not in body and "ואשר את האזעקה" not in body
 
 def test_led_temperatures_are_read_by_place():
@@ -455,11 +460,11 @@ def test_ambient_and_reference_come_from_the_ch2_thermocouple():
     # In the simulator CH2 follows the chamber (21.6 C at rest) and the cold junction sits at 21.7 C, so the value
     # recorded tells which source was used.
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-001", "DVT-SAF-005"],
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-001"],
                        capture_output=True, text=True, encoding="utf-8", timeout=300, env=env)
     got = {x["test"]: x for x in json.loads(r.stdout)}
     # CH2 follows the simulated chamber (21.0 .. 22.0 C, cooling while idle); the cold junction is pinned at 21.7 C
-    for tid, field in (("DVT-THM-001", "ambient_temp"), ("DVT-SAF-005", "reference_temp_start")):
+    for tid, field in (("DVT-THM-001", "ambient_temp"),):   # DVT-SAF-003 (reference_temp_start) removed 2026-11-12
         v = got[tid]["valuesSeen"][field]
         assert v != 21.7 and 21.0 <= v <= 22.0, (tid, v)
 
@@ -479,7 +484,7 @@ def test_saf009_a_drying_start_is_refused_with_9003_naming_the_cooling_fan():
     # stage 1 starts a drying job; the refusal and its 9003 text come back in the start response. (Before: a program
     # starting with a heat step was sent - first as 'Heat', refused as malformed and scored "inhibited" - 0.9.78.)
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-009"], capture_output=True, text=True,
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-006"], capture_output=True, text=True,
                        encoding="utf-8", timeout=300, env=env)
     x = json.loads(r.stdout)[0]
     v = x["valuesSeen"]
@@ -488,11 +493,11 @@ def test_saf009_a_drying_start_is_refused_with_9003_naming_the_cooling_fan():
     assert v["job_start_inhibited"] is True and v["alarm_raised"] is True and v["error_code"] == "9003"
     assert v["alarm_identifies_correct_fan"] is True and "FAN_COOLING" in v["alarm_text"]
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
-    assert "/api/cure/dry?target=40" in src[src.index("def('DVT-SAF-009'"):src.index("def('DVT-SAF-010'")]
+    assert "/api/cure/dry?target=40" in src[src.index("def('DVT-SAF-006'"):src.index("def('DVT-SAF-020'")]
 
 
 def test_every_program_step_uses_the_machines_process_names():
-    # SAF-009 r1 (2026-10-01) sent process 'Heat'; the machine's ProcessType is Heating / Drying / Cure / Cooling /
+    # DVT-SAF-006 r1 (2026-10-01) sent process 'Heat'; the machine's ProcessType is Heating / Drying / Cure / Cooling /
     # Bleacher / Nitrogen, so the start was refused as a malformed program and scored as "start inhibited".
     import re
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
@@ -514,7 +519,7 @@ def test_saf015_pulls_the_cm5_cable_while_heating_in_one_run():
     # user, 2026-10-01: one run; heating on, "disconnect the 40-pin flat cable of the CM5", then "did the heater SSR
     # switch off?" - beside the measured heater-body turn - then reconnect and nothing may resume by itself
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-015"], capture_output=True, text=True,
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-011"], capture_output=True, text=True,
                        encoding="utf-8", timeout=300, env=env)
     x = json.loads(r.stdout)[0]
     v = x["valuesSeen"]
@@ -522,14 +527,14 @@ def test_saf015_pulls_the_cm5_cable_while_heating_in_one_run():
     assert v["heater_ssr_switched_off"] is True and v["auto_resume_heat"] is False and v["auto_resume_uv"] is False
     assert v["config_intact"] is True
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
-    body = src[src.index("def('DVT-SAF-015'"):src.index("def('DVT-SAF-016'")]
+    body = src[src.index("def('DVT-SAF-011'"):src.index("def('DVT-SAF-012'")]
     assert "40-pin flat cable of the CM5" in body and "Did the heater SSR switch off?" in body and "/api/cure/heat?target=50" in body
 
 
 def test_saf016_reads_every_value_from_the_starbright_at_405_only():
     # user, 2026-10-01: every value comes from the connected sensor automatically, and the test runs at 405 nm only (corrected from 450 the same day)
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-016"], capture_output=True, text=True,
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-012"], capture_output=True, text=True,
                        encoding="utf-8", timeout=300, env=env)
     x = json.loads(r.stdout)[0]
     v = x["valuesSeen"]
@@ -537,14 +542,14 @@ def test_saf016_reads_every_value_from_the_starbright_at_405_only():
     for f in ("max_irradiance_10cm", "irradiance_operator_position", "permitted_exposure_hours"):
         assert isinstance(v.get(f), (int, float)), f
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
-    body = src[src.index("def('DVT-SAF-016'"):src.index("def('DVT-SAF-017'")]
+    body = src[src.index("def('DVT-SAF-012'"):src.index("def('DVT-SAF-013'")]
     assert "/api/dvt/meter/wavelength?nm=405" in body and "wavelength=405" in body
     assert "450" not in body
     assert "c.value('max_irradiance_10cm'" not in body and "c.value('irradiance_operator_position'" not in body
 
 
 def test_a_timed_diagnostic_is_given_its_duration_before_the_runner_gives_up():
-    # SAF-021 r1 (2026-10-01): the functional check's 15 s LED test answered 200 after 18.7 s, but post() aborted at a
+    # DVT-SAF-017 r1 (2026-10-01): the functional check's 15 s LED test answered 200 after 18.7 s, but post() aborted at a
     # fixed 15 s, so the PASS was lost and post_test_functional_pass was recorded false. A seconds=N request now waits N + 30 s.
     src = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
     body = src[src.index("    async post(path, timeoutMs) {"):src.index("    async postJson(")]
@@ -552,34 +557,34 @@ def test_a_timed_diagnostic_is_given_its_duration_before_the_runner_gives_up():
 
 
 def test_the_functional_check_reads_the_firmwares_ok_as_a_passed_led_test():
-    # SAF-021 r1 again (2026-10-01): the LED test answered {status: 'OK', stage: 'heating'} - a pass in the C# firmware -
+    # DVT-SAF-017 r1 again (2026-10-01): the LED test answered {status: 'OK', stage: 'heating'} - a pass in the C# firmware -
     # and the runner, expecting the Python firmware's 'PASS', recorded post_test_functional_pass = false
     env = dict(os.environ, SCURE_DUMP="1")
-    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-021"], capture_output=True, text=True,
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-017"], capture_output=True, text=True,
                        encoding="utf-8", timeout=300, env=env)
     x = json.loads(r.stdout)[0]
     fc = x["tracesSeen"]["functional_check"]
     assert fc["led"]["status"] == "OK" and fc["ledOk"] is True
 
 
-def _saf012(fault=""):
+def _saf012(fault="", no_press="", late_press=""):
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
-    env = dict(os.environ, SCURE_DUMP="1", SCURE_DOOR_FAULT=fault)
-    r = subprocess.run([node, str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-012"], capture_output=True, text=True, encoding="utf-8", timeout=300, env=env)
+    env = dict(os.environ, SCURE_DUMP="1", SCURE_DOOR_FAULT=fault, SCURE_NO_PRESS=no_press, SCURE_LATE_PRESS=late_press, SCURE_LATE_POLLS="100")
+    r = subprocess.run([node, str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-008"], capture_output=True, text=True, encoding="utf-8", timeout=300, env=env)
     assert r.returncode == 0, r.stdout[-1500:] + r.stderr[-1500:]
     return json.loads(r.stdout)[0]
 
 
-def test_saf012_runs_all_six_steps_in_one_run_and_passes_on_a_good_door():
+def test_saf012_runs_all_four_steps_in_one_run_and_passes_on_a_good_door():
     x = _saf012()
     assert x["status"] == "OK" and "PASSED" in x["line"], x["line"]
     v = x["valuesSeen"]
     assert v["cure_start_inhibited"] is True and v["lock_engaged"] is True
-    assert v["defeat_by_magnet_possible"] is False and v["door_status_read_only_confirmed"] is True
-    assert v["alarm_raised"] is True and v["error_code"] == "6016" and v["uv_off_time"] == 0.4
-    assert x["traces"] == 5, "each of the five measuring steps keeps its own trace (CSV in the cloud)"
+    assert v["defeat_by_magnet_possible"] is False and v["uv_off_time"] == 0.4
+    assert "door_status_read_only_confirmed" not in v and "alarm_raised" not in v, "steps 5 and 6 were removed (user, 2026-11-12)"
+    assert x["traces"] == 4, "each of the four measuring steps keeps its own trace (CSV in the cloud)"
     assert x["left_on"] is False, "UV must be off at the end"
 
 
@@ -594,3 +599,111 @@ def test_saf012_fails_when_the_interlock_fails_and_still_switches_everything_off
     assert x["valuesSeen"][field] is wrong, x["valuesSeen"]
     assert "FAILED" in x["line"], x["line"]
     assert x["left_on"] is False, "the UV must be off even when the machine let it on"
+
+
+def test_the_drying_test_reads_times_to_temperature_and_the_maximum_off_the_trace():
+    # DVT-THM-005 (user, 2026-10-23): dry from a cold start to the highest drying set point (50 C), then read how long the chamber
+    # took to reach 30 / 40 / 50 / 60 C and the highest temperature it reached. On the fake machine (drying +0.7 C per second, the damper
+    # opens 1.5 C below the set point, a 1.2 C overshoot) the numbers are known; 60 C is never reached (drying is capped at 50 C).
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    env = dict(os.environ, SCURE_DUMP="1")
+    r = subprocess.run([node, str(AUTO_HARNESS), "DVT-THM-005"], capture_output=True, text=True, encoding="utf-8", timeout=120, env=env)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    out = json.loads(r.stdout)[0]
+    v = out["valuesSeen"]
+    assert out["status"] == "OK" and out["cls"] == "pass" and out["traces"] == 1 and out["prompts"] == 0 and not out["left_on"]
+    assert 0 < v["time_to_30"] < v["time_to_40"] < v["time_to_50"], "the times only grow with the temperature"
+    assert "time_to_60" not in v, "60 C is never reached while drying is capped at 50 C - the field stays empty"
+    assert v["max_temp"] == pytest.approx(51.2, abs=0.05) and v["overshoot"] == pytest.approx(1.2, abs=0.05)
+    assert v["damper_opened"] is True and v["damper_open_temp"] == pytest.approx(48.5, abs=1.0)
+    assert v["reached_setpoint"] is True and v["setpoint"] == 50
+
+
+def test_thm001_uniformity_is_computed_from_the_16_point_grid_on_the_machine():
+    # User 2026-11-09: both TC-08s are read straight from the machine (firmware 1.0.163 reports every unit in
+    # /api/dev/picolog/status units[]) and the runner does the arithmetic. Grid 2 x 2 x 4: TC-08 0031 = Z1-Z2,
+    # TC-08 114 = Z3-Z4, in each level 1 = back left, 2 = front left, 3 = back right, 4 = front right. The
+    # simulator offsets each point by a fixed amount: Z1-3 +1.05 C (hottest), Z4-2 -1.35 C (coldest).
+    env = dict(os.environ, SCURE_DUMP="1")
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-001"], capture_output=True, text=True,
+                       encoding="utf-8", timeout=300, env=env)
+    x = json.loads(r.stdout)[0]
+    v = x["valuesSeen"]
+    assert x["status"] == "OK", x["error"]
+    assert v["uniformity_pp"] == pytest.approx(2.4, abs=0.02)
+    assert v["hottest_position"] == "Z1-3" and v["coldest_position"] == "Z4-2"
+    assert v["uniformity_sd"] == pytest.approx(0.75, abs=0.02)
+    assert x["prompts"] == 1, "only the selector position is asked - the four uniformity values are no longer typed in"
+
+
+def test_thm007_chamber_heating_uniformity_runs_by_itself_at_220v():
+    # User 2026-11-09: one test on the same TC-08 grid - heat to 80 C, hold 5 minutes, log the heat-up time,
+    # compute the uniformity, 220 V only. No operator question at all.
+    assert CAT.tests["DVT-THM-007"]["title"] == "Chamber Heating Uniformity"
+    assert CAT.variants("DVT-THM-007") == [{"setpoint": 80, "mains_voltage": 220}]
+    env = dict(os.environ, SCURE_DUMP="1")
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-007"], capture_output=True, text=True,
+                       encoding="utf-8", timeout=300, env=env)
+    x = json.loads(r.stdout)[0]
+    v = x["valuesSeen"]
+    assert x["status"] == "OK", x["error"]
+    assert x["prompts"] == 0 and not x["left_on"]
+    assert v["setpoint"] == 80 and v["mains_voltage"] == 220 and v["reached_setpoint"] is True
+    assert isinstance(v["heat_up_time"], (int, float)) and v["hold_time"] == pytest.approx(5, abs=0.05)
+    assert v["uniformity_pp"] == pytest.approx(2.4, abs=0.02) and v["uniformity_sd"] == pytest.approx(0.75, abs=0.02)
+    assert v["hottest_position"] == "Z1-3" and v["coldest_position"] == "Z4-2"
+    assert "PASSED" in x["line"]
+
+
+def test_saf012_says_the_press_is_missing_when_the_machine_saw_the_door():
+    # user, 2026-11-12 (CureBox-3): the door sensor read OPEN, nobody pressed "I did it", and the run said
+    # "the machine did not see the door open" - the message must name the missing half
+    x = _saf012(no_press="OPEN THE DOOR and keep it open")
+    assert x["status"] == "ERROR", x
+    assert 'nobody pressed "I did it" within 120 s' in x["error"], x["error"]
+    assert "did not see the door" not in x["error"]
+    assert x["left_on"] is False, "UV must be off after the stop"
+
+
+def test_saf012_takes_a_late_press_when_the_machine_saw_the_door_open_earlier():
+    # user, 2026-11-12: "I mark that I opened, it does not recognise the reading - it has to look back". The press
+    # arrives through the site after the door has swung shut again: the step counts what the machine saw since the
+    # instruction appeared, not only the reading at the moment of the press
+    x = _saf012(late_press="OPEN THE DOOR and keep it open")
+    assert x["status"] == "OK", x["error"]
+    assert "nobody pressed" not in x["error"] and "did not see" not in x["error"]
+    assert x["left_on"] is False
+
+
+def _saf001(no_tach=False):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    env = dict(os.environ, SCURE_DUMP="1", SCURE_SIM_PROMPTS="1", SCURE_NO_TACH="1" if no_tach else "")
+    r = subprocess.run([node, str(WEB / "dvt-auto.test.cjs"), "DVT-SAF-001"], capture_output=True, text=True, encoding="utf-8", timeout=300, env=env)
+    assert r.returncode == 0, r.stdout[-1500:] + r.stderr[-1500:]
+    return json.loads(r.stdout)[0]
+
+
+def test_saf001_sees_the_fan_reconnected_itself_without_a_done():
+    # user, 2026-11-12: "it says connect the fan and it detects the fan that is connected" - no Done press
+    x = _saf001()
+    assert x["status"] == "OK" and "PASSED" in x["line"], x["line"]
+    asked = [a["text"] for a in x["asked"]]
+    assert not any("Reconnect" in t for t in asked), asked
+    assert x["left_on"] is False
+
+
+def test_saf001_falls_back_to_done_when_the_fan_has_no_tach():
+    x = _saf001(no_tach=True)
+    assert x["status"] == "OK", x["error"]
+    asked = [a["text"] for a in x["asked"]]
+    assert any(t.startswith("The machine did not see the circulation fan turn") for t in asked), asked
+
+
+def test_saf011_watches_the_heater_body_long_enough_after_the_cable_is_pulled():
+    # user, 2026-11-12: on the unit the heater body takes at least 5 min to turn down after the CM5 cable is pulled
+    js = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
+    assert "await c.watch({ sec: 600, hz: 1, tc: true, into: rows, live: 'cable_out'," in js

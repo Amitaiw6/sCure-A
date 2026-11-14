@@ -38,6 +38,7 @@ class Engine:
     def __init__(self, catalog: Catalog, store: Store):
         self.cat, self.store = catalog, store
         store.ensure_units(catalog.units)
+        store.apply_renames(catalog.renames)          # before the run set is reconciled, so nothing recorded is orphaned
         store.ensure_runs(catalog.runs(), catalog.version)
         store.set_meta("catalog_version", catalog.version)
 
@@ -97,8 +98,18 @@ class Engine:
         if not self.store.phase_signed(unit, phase["id"]):
             b.append(Blocker("TRR", trf("readiness checklist for phase {phase} not signed for {unit}", phase=phase["id"], unit=unit)))
         # earth before power, destructive last, hipot once
-        if run["test_id"] != "DVT-ELE-001" and self.test_verdict("DVT-ELE-001", unit) != "PASS" and "DVT-ELE-001" in self.cat.tests:
-            b.append(Blocker("EARTH", tr("protective earth bonding (ELE-001) not PASS on this unit")))
+        # (DVT-ELE-001 is done once, by hand, on one unit: a unit without its own DVT-ELE-001 run relies on that unit's result)
+        if run["test_id"] != "DVT-ELE-001" and "DVT-ELE-001" in self.cat.tests:
+            earth_units = self.cat.applicable_units("DVT-ELE-001")
+            earth_unit = unit if unit in earth_units else (earth_units[0] if earth_units else None)
+            if earth_unit and self.test_verdict("DVT-ELE-001", earth_unit) != "PASS":
+                b.append(Blocker("EARTH", tr("protective earth bonding (DVT-ELE-001) not PASS on this unit")))
+        # after_all (the fault-alarm review): every other test owed by this unit must have a result first
+        if t.get("after_all"):
+            open_tests = [tid for tid in self.cat.tests if tid != run["test_id"] and unit in self.cat.applicable_units(tid)
+                          and self.test_verdict(tid, unit) not in ("PASS", "FAIL", "WAIVED", "BLOCKED")]
+            if open_tests:
+                b.append(Blocker("LAST", trf("runs last: {n} other test(s) on {unit} have no result yet", n=len(open_tests), unit=unit)))
         for d in t.get("dependencies") or []:
             dep_units = self.cat.applicable_units(d)
             check_unit = unit if unit in dep_units else (dep_units[0] if dep_units else None)

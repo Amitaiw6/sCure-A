@@ -2,10 +2,1240 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.9.131",
+      "date": "2026-11-13",
+      "notes": [
+        "tools/error-editor.html is now the languages & errors editor (user, 2026-11-13: one JSON for every language, and the editor arranged by the languages): it loads sCureBox-CS config/errors.json (the English error registry) and/or config/languages.json (every UI language in one file). A language selector lists English plus every language in the file with how much is translated; English edits title / description / steps / support URL / video in errors.json as before (and keeps the English of languages.json in step); any other language edits its translation of the errors (Critical / Warnings), the 775 screen texts and the 59 firmware messages, each beside the English, with search, right-to-left fields for Hebrew, and live checks - placeholders that must survive, the same number of troubleshooting steps, texts still in English listed first. + Add language creates a new entry. Saves errors.json and languages.json separately.",
+        "Tests: the editor's logic was run on the real files (node, stub DOM): 10 languages, 918/918 texts each, 0 problems; Hebrew error cards render right to left."
+      ]
+    },
+    {
+      "version": "0.9.130",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT-SAF-017 (voltage selector in the mid position): the manual inspection step 'confirm no protective device operated and no damage occurred' (fuse_opened, visible_damage) is removed from the test and its pass criteria - not needed (user, 2026-11-12). Catalog 0.63 (English and Hebrew). The run no longer asks those two questions.",
+        "Tests: test_dvt_tool - SAF-017 passes on the machine's numbers whatever was recorded for fuse_opened / visible_damage."
+      ]
+    },
+    {
+      "version": "0.9.129",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT-SAF-003 (heater temperature sensor replaced by a fixed 10 kOhm resistor - frozen plausible reading) removed from the campaign (user, 2026-11-12): catalog 0.62 (English and Hebrew) - 42 tests, 317 runs; its script, process figure and catalog entry are gone, and DVT-SAF-020 no longer collects codes from it. The historical rename DVT-SAF-003 -> DVT-012 (2026-10-25 running numbers) stays so old records still map.",
+        "Tests: test_dvt_tool / test_dvt_web updated (run set 317, no DVT-SAF-003); the wizard's alarm-lock test now runs on DVT-SAF-017 (9007, voltage selector) instead."
+      ]
+    },
+    {
+      "version": "0.9.128",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT-SAF-011 (controller link lost): after the CM5 cable is pulled the runner watches the heater body for up to 10 min (was 4) - on the unit the body takes at least 5 min to turn down (user, 2026-11-12). The watch still ends 30 s after the body has clearly turned. The pass criterion heater_off_time <= 80 s is unchanged."
+      ]
+    },
+    {
+      "version": "0.9.127",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT-SAF-001: the reconnect step no longer waits for Done - it says 'RECONNECT the circulation fan supply' and goes on when the machine sees FAN_HEATER turn again (>= 300 RPM; a fan the trip left at 0 % is commanded to 30 %, the cooldown duty, so its tach can be read). If the tach never comes back within 5 min it falls back to asking for Done. The 60 s check that the alarm waits for an acknowledgement starts from the moment the fan was seen (user, 2026-11-12).",
+        "Tests: test_dvt_web - SAF-001 passes with no Reconnect/Done prompt; with no tach it falls back to Done."
+      ]
+    },
+    {
+      "version": "0.9.126",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT steps (\"do this, then press I did it\") look back: a step is done when the machine saw the change at any moment since the instruction appeared AND the person pressed, not only when the reading is still true at the moment the press arrives. The press travels through sCure Cloud for seconds; a door opened and let go had swung back by then and the press was not taken (user, 2026-11-12, DVT-SAF-008 on CureBox-3).",
+        "Tests: test_dvt_web test_saf012_takes_a_late_press_when_the_machine_saw_the_door_open_earlier (press arrives 100 polls late, door already shut)."
+      ]
+    },
+    {
+      "version": "0.9.125",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT runner: a re-test (Run from sCure Cloud on a test already recorded) now starts from an empty record. 0.9.124 kept the old values and verdict, so the engine saw a finished run and ended at once with the old FAIL, without doing a step (user, 2026-11-12, DVT-SAF-008 on CureBox-3: 'done FAIL' 40 s after Start).",
+        "Tests: runner.test.cjs - the re-test's record has none of the old values and not the old FAIL."
+      ]
+    },
+    {
+      "version": "0.9.124",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT runner: Run from sCure Cloud on a test whose every run is already recorded (PASS / FAIL / BLOCKED / WAIVED) now runs it again - the confirmation goes to the machine and the new result replaces the old one on the machine (the portal keeps every published run). Before, the request ended at once as 'every run is already recorded' and nothing reached the machine (user, 2026-11-12: DVT-SAF-008 on CureBox-3 could not be started again after its FAIL).",
+        "Tests: runner.test.cjs - a recorded FAIL is offered again at the machine."
+      ]
+    },
+    {
+      "version": "0.9.123",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT-SAF-008 (door interlock) now has four steps: step 5 (the door status follows the door only, door_status_check) and step 6 (the alarm and error code of the interrupted cure, door_alarm_check) were removed (user, 2026-11-12). The pass criteria no longer include door_status_read_only_confirmed and alarm_raised; the fields door_status_read_only_confirmed, alarm_raised and error_code are gone from the test. Catalog 0.61 (English and Hebrew).",
+        "Found on the same run on CureBox-3: the step-6 error code was recorded as 'critical, warning, at, 6016' because the machine's ui_alerts holds the screen's alert counts, not codes - moot now that step 6 is removed.",
+        "Tests: test_dvt_web - the four-step run passes on a good door with four traces and no step-5/6 fields; guided sequence ends after the magnet step."
+      ]
+    },
+    {
+      "version": "0.9.122",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT runner: every call to sCure Cloud has a deadline (25 s; a long poll its hold time plus 25 s, cfg.portalTimeoutSec), and the run's report loop makes one try per report instead of four with pauses. A hung Apps Script execution had no limit (Node's own is 5 min), so the loop that carries the site's \"I did it\" presses to the machine stalled and the presses never arrived (user, 2026-11-12, DVT-SAF-008 step 4 on CureBox-3: pressed several times, run stopped after 120 s). A call slower than 8 s is logged as [slow].",
+        "Tests: runner.test.cjs - a report that never answers is cut at its deadline and the press still reaches the engine."
+      ]
+    },
+    {
+      "version": "0.9.121",
+      "date": "2026-11-12",
+      "notes": [
+        "DVT step instructions (\"do this, then press I did it\"): a press is now kept for the whole step. The instruction text changes while the step waits (\"- pressed, but the machine does not see it yet\" / \"- the machine sees it\"), and each change cleared the press, so a press given before the machine saw the door was lost.",
+        "When the machine saw the change but nobody pressed \"I did it\", the run now says exactly that ('the machine saw it, but nobody pressed \"I did it\" within 120 s - ...'). Before, it said 'the machine did not see the door open' while the door sensor read OPEN (user, 2026-11-12, DVT-SAF-008 step 4 on CureBox-3).",
+        "DVT-SAF-008: the two 'OPEN the door' steps give the person 120 s instead of 30 s.",
+        "Tests: test_dvt_web test_saf012_says_the_press_is_missing_when_the_machine_saw_the_door (operator who never presses on step 4)."
+      ]
+    },
+    {
+      "version": "0.9.120",
+      "date": "2026-11-09",
+      "notes": [
+        "DVT runner: a test started from sCure Cloud now always gets its verdict. Scripts marked autoRecord: false (DVT-THM-001, DVT-THM-007 and ~10 others) leave the verdict to the operator's Record press in the DVT tool; the runner on the machine has no such press, so such a run reached the portal with an empty verdict and the request closed as 'done' - on 2026-11-09 DVT-THM-007 on UUT-02 measured a 9.29 C spread (limit 5) and was never marked FAIL. The runner now records the verdict itself when the script finished on its own (status OK, not stopped from the site). Test: runner.test.cjs case 1b.",
+        "That run (request 46, DVT-THM-007|UUT-02|setpoint=80,mains_voltage=220|1) was repaired by hand: verdict FAIL committed in the unit's results.json and re-sent to the portal."
+      ]
+    },
+    {
+      "version": "0.9.119",
+      "date": "2026-11-09",
+      "notes": [
+        "New DVT test DVT-THM-007 'Chamber Heating Uniformity' (user, 2026-11-09), catalog 0.60, Performance phase after DVT-THM-001: one row - 80 C at 220 V only, once per unit (+5 runs). Fully automatic, no operator question: the runner records ambient and the start temperature, steps the chamber to 80 C, logs the control sensor and the 16-point TC-08 grid from the machine every second (traces heat_up and grid), records heat_up_time (control sensor first at 80 C, at most 60 min) and reached_setpoint, holds 80 C for 5 minutes, stops heating and computes uniformity_pp / uniformity_sd / grid_mean / hottest_position / coldest_position over the hold. Pass: reached_setpoint == true AND uniformity_pp <= 5 (CONFIRM; the heat-up time is recorded, not judged, until REQ-48 is settled).",
+        "English + Hebrew catalog, figure spec, dvt-catalog.js and SIM_PROMPTS rebuilt; tests test_thm007_chamber_heating_uniformity_runs_by_itself_at_220v and the run-set count (43 tests, 322 runs).",
+        "sCure Cloud redeployed (web app version @69, PORTAL_BUILD 0.9.147 so open tabs reload). The DVT runner on UUT-02 / CureBox-2 (sCureBox-CS 1.0.165) pushed catalog 0.60 at start, so the DVT tab lists DVT-THM-007."
+      ]
+    },
+    {
+      "version": "0.9.118",
+      "date": "2026-11-09",
+      "notes": [
+        "DVT-THM-001 reads the 16-point chamber grid from the machine and computes the uniformity itself (user, 2026-11-09). Both TC-08s go on the machine's USB (sCureBox-CS 1.0.163 reports them in /api/dev/picolog/status units[]); the runner maps TC-08 0031 CH1-8 to Z1-Z2 and TC-08 114 CH1-8 to Z3-Z4, logs all 16 every second through the heat-up, soak and descent (trace 'grid'), and over the last 20 minutes of the soak - the same window as the steady-state error - takes each thermocouple's mean and records uniformity_pp (max - min of the 16 means), uniformity_sd (sample standard deviation of the means), hottest_position and coldest_position (Z<level>-<pos>). A note on the run lists all 16 means. A missing logger is said at the start; if the grid is still incomplete at the end the four values are asked by hand as before.",
+        "Simulator: the sim machine reports both loggers with fixed offsets per point; new test test_thm001_uniformity_is_computed_from_the_16_point_grid_on_the_machine. SIM_PROMPTS rebuilt (THM-001 now asks only the selector position)."
+      ]
+    },
+    {
+      "version": "0.9.117",
+      "date": "2026-11-09",
+      "notes": [
+        "DVT catalog 0.59: DVT-THM-001 (chamber heat-up / uniformity) now states the thermocouple grid (user, 2026-11-09) - 2 x 2 x 4, four levels Z1 (top) to Z4 (bottom), in each level 1 = back left, 2 = front left, 3 = back right, 4 = front right. TC-08 0031 holds the upper eight (CH1-4 = Z1, CH5-8 = Z2), TC-08 114 the bottom eight (CH1-4 = Z3, CH5-8 = Z4). hottest_position / coldest_position are written as Z<level>-<pos>. English and Hebrew catalogs, dvt-catalog.js rebuilt; dvt-auto.js VERSION brought back in step with VERSION."
+      ]
+    },
+    {
+      "version": "0.9.116",
+      "date": "2026-11-01",
+      "notes": [
+        "io_controller (py + cpp): Left UV sensor on U6 AIN2, Temp Back on U7 AIN0 (user, 2026-11-01 - the 2026-10-01 swap undone), and the ORIGIN thermistor names renamed: TEMP_LEFT_ORIGIN -> TEMP_LEFT_UV, TEMP_RIGHT_ORIGIN -> TEMP_RIGHT_UV, TEMP_BACK_ORIGIN -> TEMP_BACK, TEMP_DOOR_ORIGIN -> TEMP_DOOR - in io_bridge, the control dashboards, the QA tool, errors.json (9011 / 9012 now 'Left / Right UV Temperature Sensor Disconnected') and the SRS. HSI sCure (3).xlsx updated to match (backup 'before UV-sensor rename 2026-11-01'); same change as sCureBox-CS 1.0.139."
+      ]
+    },
+    {
+      "version": "0.9.115",
+      "date": "2026-10-30",
+      "notes": [
+        "sCure Cloud: sign in with a Google account instead of the shared password (user, 2026-10-30), and a people list where each person has an access: Viewer (sees everything, changes nothing), Service (also requests / cancels / answers DVT tests, sends programs to a machine, edits DVT units and the race) or Admin (also approves electrical-safety runs and manages people). The server checks the access on every action, not only the screen; a refused action says which access it needs.",
+        "Admins get a People screen (header button): add someone by Google email with a name and an access, change the access in the list, remove someone (their open session stops at once). The owner (OWNER_EMAIL) and the last admin cannot be removed. Recent activity (sign-ins, refusals, every change and every service / admin action) is kept in the 'audit' sheet and shown under a fold.",
+        "Turning it on: a Google Cloud OAuth client (Web application) with the web app's /exec URL as redirect URI, then GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the script properties - the People screen shows the exact URI. Until then the shared password still signs in, as an admin; once on, the password no longer works. An approval of a safety run is signed with the signed-in person's name and email.",
+        "Tests: test_code.cjs (sign-in round trip with Google played by the test, refusals - not on the list, unverified, other app, expired, cancelled, made-up state - every action per access, role change / removal taking effect at once, last admin, audit) and test_people.cjs (browser: the Google button, the header, adding / changing / removing people, a viewer refused, phone width)."
+      ]
+    },
+    {
+      "version": "0.9.114",
+      "date": "2026-10-30",
+      "notes": [
+        "DVT: every action a person performs is confirmed with a press. An instruction published by a guided script (c.act / the new c.doThis) carries an 'I did it' button - 48 px, on the phone too - and the script goes on only when BOTH hold: the person pressed it AND, where the machine can see the action, the machine agrees. The press never stands in for a reading: while they disagree the step says which half is missing ('pressed, but the machine does not see it yet' / 'the machine sees it; press \"I did it\" to go on') and the wait continues. New portal route /api/dvt/acted -> portalDvtActed, delivered to the runner once (like an answer) and handed to the script by A.ackAct.",
+        "Timed holds start from the press. DVT-SAF-008: 'PULL the door firmly and keep pulling, then press I am pulling' and 'HOLD THE MAGNET against the door sensor ... press I am holding it' now begin their ten seconds when the person confirms - until now the window ran whether or not anybody had a hand on the door or a magnet on the sensor, and the recorded lock_engaged / defeat_by_magnet_possible could come from an empty bench.",
+        "A step the machine witnesses by itself is shown WITHOUT a button, because a press would add nothing to the measurement: the UV-off timing ('OPEN THE DOOR NOW', timed from the door sensor) and the machine bench's own prompts. Bench prompts (sCureBox-CS :3002, e.g. 'DISCONNECT THE HEATER THERMISTOR NOW') now reach the site as the step instead of being buried in the status line; the bench has no route to take a confirmation yet - noted in DVT/README.md as the one gap left.",
+        "The simulated operator in DVT/web/dvt-auto.test.cjs presses too, from inside the machine poll (the scripts' waits run on virtual time, so a real-time timer never got a turn); all 39 guided scripts still play through, DVT-SAF-008 records its 14 values with 14 presses and leaves nothing on.",
+        "Tests: the press round trip and the refusal to press a machine-watched step (test_code.cjs), the press reaching the engine through the runner (runner.test.cjs), and the phone QA - the button is 48 px, it sends, it cannot be pressed twice, and a machine-watched step shows no button (test_phone.cjs, 54 checks)."
+      ]
+    },
+    {
+      "version": "0.9.113",
+      "date": "2026-10-30",
+      "notes": [
+        "DVT portal: the step the person has to do now is the headline, not a grey line. A guided script can publish an instruction with c.act() (dvt-auto.js) instead of c.say(); the runner sends it to the site as its own field with the seconds left and the stage it belongs to, and the run card shows it big and amber in 'What to do now' - 'OPEN THE DOOR and keep it open · 24 s · step 4 of 6' - and marks it 'DO NOW:' in the run log. Every waiting prompt of DVT-SAF-008 (open / close / pull the door, hold the magnet, hold the door closed, the UV-off 'OPEN THE DOOR NOW') now goes out this way.",
+        "Why: on 2026-10-29 DVT-SAF-008 failed with 'the machine did not see the door open'. The runner had asked for the door at 21:00:49, but the instruction reached the portal as an ordinary status line while the big box said 'The test is running by itself - nothing to do. Stay clear of the machine' - so nobody opened the door and the 30 s wait timed out. The door reading itself was correct.",
+        "A run that ends (done / failed / cancelled, or stopped from the site) clears its step, so no finished card is left telling someone to open a door. dvt_requests gains an 'act' column (added at the end, existing sheets migrate in place); PORTAL_BUILD 0.9.145 makes open tabs reload.",
+        "Pass criteria short-circuit in the JavaScript evaluator too (dvt-criteria.js), matching criteria.py from 0.9.112: one conjunct that is definitely false makes the run FAIL even when a later field was never recorded. The Python/JS parity test caught the mismatch.",
+        "The local console (dvt-tool.html) shows the same instructions in 17 px amber, and dvt-catalog.js was rebuilt for catalog 0.58.",
+        "Tests: the step's round trip through the portal (test_code.cjs), the runner sending it and clearing it at the end (runner.test.cjs), and the phone QA checking it is the headline, amber, with the countdown and the stage, and never says 'nothing to do' while it waits (test_phone.cjs - 50 checks)."
+      ]
+    },
+    {
+      "version": "0.9.112",
+      "date": "2026-10-29",
+      "notes": [
+        "DVT console: alarms are pulled from the machine (SRS-DVT-198). A procedure step that records an alarm (alarm_raised / error_code / alarm_text / time_to_alarm - 20 tests) is now witnessed by the console: while the step is open it reads the machine's active-alarm list from /api/state, keeps the first appearance of every code with the seconds from the step's start, and writes the code, the machine's own text and that time into the run. Next stays locked until an alarm is seen; 'No alarm appeared' records alarm_raised = false (the run commits FAIL, not BLOCKED) and 'No link to the machine' (offered only while it is unreachable, for DVT-SAF-010 / 014) records the step by hand and logs that the console did not witness it. New dvt_tool/alarms.py, card 'Alarms from the machine' in the wizard, every alarm seen is a campaign event.",
+        "Why: on 2026-10-29 DVT-SAF-003 ran with a fixed 10 kOhm resistor in place of the chamber NTC. The firmware's frozen-reading rule (Err 9006) never fired - it asks for less than 0.01 C of movement in 90 s at >= 50 % output, while the reading's own quantisation is 0.0043 C and a steady input wanders ~0.02 C over that window (measured on the unit, 154 samples) - so the heater kept driving and the wizard walked on to the next step with nothing recorded. The firmware rule itself is unchanged here, pending a decision on frozen_reading.min_delta_c / min_duty_pct.",
+        "DVT catalog 0.58: new step key expect_alert - the error codes the console must see on that step - declared where the firmware or the error registry pins the code (DVT-SAF-002 9010/9001, DVT-SAF-003 9006, DVT-SAF-004 9011-9014/9050, DVT-SAF-006 9034/9003, DVT-SAF-017 9007); validated at load. A code that appears but is not the declared one does not lock the step: what the machine really raised is recorded and flagged red for the verdict page. The other 15 tests with alarm fields are watched generically until their code is confirmed (Open Issues in docs/SRS-DVT-Tool.md).",
+        "DVT DUT reader fixed: the firmware's alerts: [9011] + alertDetails shape is now understood (it only spoke the simulator's [{code, message}], so alarm_text was always empty against a real machine), and doorOpen is derived from the firmware's doorClosed - the wizard header said 'door closed' when it simply did not know.",
+        "DVT pass criteria short-circuit like Python: one conjunct that is definitely false makes the run FAIL even when a later field was never recorded (a silent machine is a result, not missing data). An undecided criterion is still BLOCKED.",
+        "DVT simulator speaks the machine's error codes (registry 90xx / 6016 instead of the retired 1xxx-2xxx numbers) and gains a 'heater sensor replaced by a fixed resistor' fault: the reading sticks where it was fitted, the real chamber keeps climbing and 9006 follows 90 s later, so DVT-SAF-003 can be rehearsed without hardware. Three faults still have no registry code (mains dropout, thermal cutout, LED over-temperature) - listed as Open Issues.",
+        "Tests: 12 new cases in DVT/tests/test_dvt_tool.py - both alert shapes, the gate, a wrong code, an alarm already active when the step opened, a silent machine committing FAIL, record-by-hand, the catalog declarations, the frozen-reading alarm end to end on the simulator, and the wizard itself (Next refused on DVT-SAF-003's alarm step until the console sees 9006, then the fields, the run values and the campaign event are filled by the console)."
+      ]
+    },
+    {
+      "version": "0.9.109",
+      "date": "2026-10-21",
+      "notes": [
+        "Error editor (tools/error-editor.html): each error's title is editable and has a 'Repair video URL' field (https only; a link to preview it, a Video badge on the card, a 'legacy' tag on the grouped codes no longer raised) - the service team sets one video per code.",
+        "Per-component error codes from firmware 1.0.106 (one per thermistor, fan and LED panel: 9010-9014, 9020-9025, 9030-9034, 9040-9045, 9060-9065) added to public/config/errors.json (4.0.0, videoUrl on every error); the cure screen and Settings compare families (src/lib/error-codes.ts) so 9010 and the old 9001 both open the heater fault, every 902x / 903x fan alert pauses the cure, and an LED panel that does not heat raises its own code (9040 / 9041 / 9044 / 9045).",
+        "sCure Cloud 'Errors today': the title of each code comes from the registry (cloud/google/ErrorRegistry.gs, generated by build_errors.py from errors.json) and a code with a repair video gets a 'Video' link (new tab). Tests: test_code.cjs (title + video per alert) and test_errors_page.cjs (browser).",
+        "QA tool: 'One Error Code Per Component + Repair Video' checks every per-component code (title names its part, family severity, troubleshooting, videoUrl empty or https) and the family rules of the cure screen; SRS §9 lists the new codes."
+      ]
+    },
+    {
+      "version": "0.9.108",
+      "date": "2026-10-21",
+      "notes": [
+        "sCure Cloud DVT run window: once a run is queued it shows What to do now for each stage (wait for the runner / press Start at the CureBox / answer the question / nothing to do while it runs / the result and the next step), the CureBox status from its last sync (online, chamber temperature, door, UV, heating, cooling, sync age) and a timed run log of every status, machine line and question."
+      ]
+    },
+    {
+      "version": "0.9.107",
+      "date": "2026-10-21",
+      "notes": [
+        "tools/error-editor.html showed the critical / warning counts but an empty list (user, 2026-10-21): it was written for codes like 'E-1001' and split each code on '-'; the registry now uses plain numbers (9007), so drawing the first card threw and nothing appeared. Codes are read as text now (E / W shown from the severity), the title comes from 'message' (was 'title'), every shown field is HTML-escaped, and the error's layer is shown with the other locked fields.",
+        "Step 4 of the help names both copies: sCureBox-CS/config/errors.json (the machine's alert screen - needs a firmware install) and sCure-A/public/config/errors.json (the web app). Checked in Chrome with both real files: 15 critical + 33 warnings drawn, every field of every error kept on load."
+      ]
+    },
+    {
+      "version": "0.9.106",
+      "date": "2026-10-21",
+      "notes": [
+        "sCure Cloud DVT guide window stays open after Queue: a status bar under the title follows the run live (queued, waiting at the machine, running, done / failed with the verdict), shows the machine's questions with their answer buttons and a Stop the run button; Cancel becomes Close, a click outside no longer closes it once a run is queued, and Run again re-queues after it ends."
+      ]
+    },
+    {
+      "version": "0.9.105",
+      "date": "2026-10-21",
+      "notes": [
+        "sCure Cloud DVT tab: Run on a test now opens a guide window first - purpose, safety plan, equipment, what to prepare, the numbered procedure and the pass criteria - with Cancel / Queue on <CureBox>; nothing is queued until Queue is pressed (Esc or a click outside closes it).",
+        "sCure Cloud DVT guide window: a Simulation area - Simulate a passing / failing run plays the procedure steps and checks the pass criteria against made-up readings (a small criteria evaluator: AND/OR/NOT, comparisons, max/min/abs, catalog thresholds), showing each check and the simulated verdict; nothing is sent or recorded.",
+        "sCure Cloud sign-in: pressing Enter in the password field signed in but left the page on Sign in (the focused field counted as 'busy', so the page never redrew); it now opens the portal."
+      ]
+    },
+    {
+      "version": "0.9.100",
+      "date": "2026-10-14",
+      "notes": [
+        "A CureBox is one unit (user, 2026-10-12: 'there is only one machine'): the DVT tab of a CureBox shows only its own unit - the one its DVT runner is set to and the ones it has runs of - and no unit row when that is a single unit; the catalog's other UUTs are the campaign plan and appear only under All CureBoxes.",
+        "On 2026-10-14 a tab left open from before that change queued DVT-SAF-007 for UUT-02 on CureBox-1 (cancelled). Now the portal refuses a request for a unit other than the one the CureBox's runner reported ('CureBox-1 is unit UUT-01 - reload the page'), the runner refuses one too before any dialog, and the page shows 'This page is out of date - Reload' when the portal was deployed after the tab was opened (PORTAL_BUILD).",
+        "Tests: test_code.cjs (other-unit request refused, build reported) and runner.test.cjs (other-unit request refused before the confirmation)."
+      ]
+    },
+    {
+      "version": "0.9.99",
+      "date": "2026-10-12",
+      "notes": [
+        "Run DVT tests from sCure Cloud, confirmed at the machine (user, 2026-10-12: 'there is no option to start a test' - 'we confirm the start at the machine'). In the DVT tab of a CureBox every automated test has a Run button and the unit has 'Run all open tests'; the request goes to a queue in Code.gs (dvt_requests) and the DVT runner on that CureBox takes it. Nothing turns on until someone at the machine presses Start on its screen: Decline, no answer in 10 minutes, or Cancel on the site mean the test never starts.",
+        "While a test runs the site shows its live line, and a step that needs a person (open the door, pull a sensor, read a meter) is asked in the request's row with Done / Yes / No / Skip or a value box - the answer goes back to the machine. Cancel stops a running test (the engine turns everything off). The panel shows whether the CureBox's runner is online.",
+        "DVT/runner/dvt-runner.cjs: the runner. It loads the very dvt-catalog.js / dvt-criteria.js / dvt-auto.js the DVT tool uses (one engine, no second copy of the tests), refuses a machine busy with a process and tests without an automatic script, asks for the confirmation through the firmware (127.0.0.1:3001/api/dvt/remote-confirm), relays prompts and answers, records the verdict with the catalog's criteria and uploads the run and its raw samples under its CureBox. install-runner.sh (on the machine, sudo) installs it as the scure-dvt-runner service; deploy-runner.ps1 packs, copies and installs it from the PC.",
+        "Tests: test_code.cjs covers the queue (no duplicates, oldest first, one machine's queue, waiting / prompt / answer handed over once / cancel before and during a run / done with verdict); DVT/runner/runner.test.cjs covers Start, Decline, expiry, cancel before Start and while running, a busy machine, a manual test and the hello + catalog (pytest drives it and checks the confirmation comes before the engine); QA mirror 'DVT From The Site: Nothing Runs Without Start At The Machine'."
+      ]
+    },
+    {
+      "version": "0.9.98",
+      "date": "2026-10-12",
+      "notes": [
+        "sCure Cloud shows each CureBox's NetBird state on its machine card (user, 2026-10-12: 'can the API ping the machine?'). NetBird's API has no ping, but its peer list says whether a peer is connected and when it was last seen; Code.gs reads it read-only (GET /api/peers, cached 30 s) with a NetBird token and maps each CureBox to its peer name (NETBIRD_TOKEN / NETBIRD_PEERS, or the git-ignored secrets file through build_secrets.py). Of several registrations of one machine (a reflash re-enrols it) the connected / newest one counts; the rest are reported as stale.",
+        "The pill reads 'NetBird connected' or 'NetBird offline · seen <date>', and its tooltip says what the pair of states means: syncing here but off NetBird = the machine runs, remote access (SSH, screen) is down; off both = no power or no network. First reading: CureBox-1 has been off NetBird since 2026-10-09 20:42 UTC while it keeps syncing, and three stale registrations of it sit in the NetBird dashboard.",
+        "The web app needs the external-request permission for this (script.external_request); the owner approved it in the editor before the deploy, so machine sync never stopped (checked live: CureBox-1 online after the deploy).",
+        "Tests: test_code.cjs covers the newest-registration choice, the 30 s cache, and a refused token shown as an error; the live QA (28 checks) covers the pill on the real portal."
+      ]
+    },
+    {
+      "version": "0.9.97",
+      "date": "2026-10-12",
+      "notes": [
+        "The portal's DVT tab is laid out like the DVT tool (user, 2026-10-12: 'why is it not broken down this way, why do all the tests show in the tool'): the five counters (runs owed / pass / fail / blocked / open) and the progress bar for the chosen unit, then every phase with its gate and P / F / B / owed counts, and inside it EVERY test the catalog owes on that unit - recorded or not - with its status, safety-critical / auto badges, done / owed runs and the time estimate. A test opens to its owed runs (variant, repetition, verdict, operator, date), a run opens to its values and raw files.",
+        "Why the tab had only 13 tests: the portal knew only the runs that were uploaded, not the catalog. The DVT tool now publishes its catalog (kind 'dvt_catalog': phases, gates, and per test its units and the variant|rep runs it owes) on its first sync and on every Sync all; Code.gs keeps it in the dvt_catalog sheet and serves it with the runs. Runs the current catalog no longer owes (an older catalog's repetitions) are listed under 'Other uploaded runs' instead of being counted, so the numbers match the tool.",
+        "Each run shows the date it was recorded in the tool, not when it reached the portal (v11 of the web app).",
+        "Tests: test_code.cjs covers storing / replacing / refusing the catalog; cloud-check.cjs checks the catalog body the page sends (owed run keys per variant and repetition, auto / safety flags) and that it goes before the runs."
+      ]
+    },
+    {
+      "version": "0.9.96",
+      "date": "2026-10-12",
+      "notes": [
+        "DVT belongs to a CureBox (user, 2026-10-12: a separate tab inside the CureBoxes, with the CureBox chosen from a list). The portal's DVT left the row of CureBox chips: under the chips there are now two tabs, Machine and DVT, and the DVT tab shows the runs of the CureBox chosen in the chips or in its own 'CureBox' list (All CureBoxes / each CureBox / Not assigned to a CureBox), with a CureBox column in the run table.",
+        "DVT tool: the Cloud bar has a CureBox list filled from the portal (kind 'dvt_machines' - names only, readable with the DVT key). The choice is remembered per DVT unit; every run carries its unit's CureBox, and choosing a CureBox re-sends that unit's runs so the portal files them under it. Runs uploaded before a choice are shown under 'Not assigned'.",
+        "Code.gs: dvt_runs gained a 'machine' column (in front of the values chunks); a sheet from 0.9.95 is migrated in place on first use, rows and values intact.",
+        "Tests: test_code.cjs covers the CureBox column, the CureBox list and the migration; cloud-check.cjs covers loading the list, assigning a unit and re-filing its runs; the pytest field contract and the QA mirror include the CureBox."
+      ]
+    },
+    {
+      "version": "0.9.95",
+      "date": "2026-10-12",
+      "notes": [
+        "The DVT campaign now appears in sCure Cloud (user, 2026-10-12). cloud/google/Code.gs gained two sheets - dvt_runs (unit, test, variant, repetition, verdict, operator, times, note, every recorded value) and dvt_files (the raw measurement files, kept in a Drive folder 'sCure DVT files' with only their ids in the sheet) - plus the uploads kind 'dvt_run' / 'dvt_file' / 'dvt_delete_runs' and the reader portalDvt. The DVT tool authenticates with its OWN key (script property DVT_KEY): a machine key cannot write DVT rows, and the DVT key cannot touch machines, reports or alerts.",
+        "Portal: a DVT tab next to Machines and Errors - per unit how many tests and runs were recorded with pass / fail counts and when the last one arrived, then every run newest-first; a run opens to its values, its note and download links to its raw sweep CSV / graph PNG (served by the portal to the signed-in browser, the Drive files stay private).",
+        "DVT/web/dvt-tool.html got a Cloud bar (portal URL + DVT key, both remembered in the browser): every recorded run is published in the background about a second after it is recorded, with its raw samples; 'Sync all' uploads everything the browser already holds, including runs recorded before the cloud was set up. A portal that cannot be reached only re-queues the run and retries every minute - the results folder stays the record, so nothing recorded can be lost by the network.",
+        "Fly.io is gone from the repo with the account (user, 2026-10-12): cloud/portal.py, Dockerfile, fly.toml and the generated portal_config.json were deleted. cloud/google/Page.html used to be generated from portal.py and is now the portal page itself, edited by hand; build_page.py became build_secrets.py, which only writes Secrets.gs (and mints the DVT key on first run).",
+        "Tests: cloud/google/test_code.cjs covers the DVT sheets, the Drive round-trip, the key separation and the delete path; DVT/web/cloud-check.cjs drives the page's uploader against a fake portal (including a refused upload); two pytest cases in DVT/tests/test_dvt_web.py, and the QA mirror 'DVT → Cloud Upload Contract'."
+      ]
+    },
+    {
+      "version": "0.9.94",
+      "date": "2026-10-11",
+      "notes": [
+        "components.json fan_health synced with the unit's measured values (user, 2026-10-11): FAN_HEATER nominal re-measured after the heater fan / airflow fix - 100 % 5,925 / 80 % 5,227 / 50 % 3,669 / 30 % 2,363 RPM (was 3,530 / 2,925 / 1,870 / 915). Every wear verdict and the Settings fan test now judge the heater fan against the speed it really has.",
+        "critical_below_pct_by_fan: the heater fan raises 9002 (every output stops) at 11.8 % below nominal - the user's limit of 5,227 RPM at 100 %, its 80 %-duty speed - while 9051 still warns at 10 % (5,333 RPM). Every other fan keeps critical_below_pct 20. The supervision reads the per-fan limit, so the Python machine and the C# firmware now stop on the same number.",
+        "nominal_rpm_damper_open (cooling 4,075 @100 / 2,470 @60): while the damper is OPEN the cooling fan is judged against the open-duct table - the open duct slows it ~14 %, which alone raised the 10 % wear warning in every fast cooling. The supervision and the fan test both use it.",
+        "QA: the fan-policy mirror carries the new table, the heater fan's own stop limit and the damper-open table (it also had a wrong assertion - 8 % below nominal was expected to warn, while the warning starts at 10 %)."
+      ]
+    },
+    {
+      "version": "0.9.93",
+      "date": "2026-10-11",
+      "notes": [
+        "Settings > fan Test now has a real pass criterion (user, 2026-10-11: 'why does it say OK, the fan has a problem'). Every reading is judged against the fan's nominal RPM at the duty it was measured at (components.json fan_health) instead of the old flat 'is it turning at all' floor of 100 RPM: FAIL below critical_below_pct (or under min_fan_rpm), WARN below warn_below_pct, OK otherwise - the same thresholds the wear supervision raises 9002 / 9051 on. A heater fan reading a third of its nominal speed used to show OK here while the supervision would stop the machine over it.",
+        "A fan a control loop already drives is judged at ITS duty, not at 100 %: a heater-fan cooldown run-on at 30 % is compared with the 30 % nominal (915 RPM on the reference table), so a healthy fan no longer looks failed - and the measured duty, the expected RPM and the deficit now come back per fan (fans[name] = {rpm, duty, expected, deficitPct, status}).",
+        "The row shows OK (green) / WARN (amber) / FAIL (red) with a line naming every fan that is not OK and what it read against what it owes; every fan group gets that line, not only LED cooling. Only FAIL holds a process start (CureProcessPage pre-flight) - a worn fan still moves its air and is carried as the 9051 warning.",
+        "QA: 'Fan Test Criterion (nominal RPM, not \"is it turning\")' and 'Fan Test Gate: Only FAIL Holds A Start'."
+      ]
+    },
+    {
+      "version": "0.9.92",
+      "date": "2026-10-10",
+      "notes": [
+        "sCure Cloud on Google (cloud/google/Code.gs): a machine can delete reports (kind 'delete_reports', runIds) - a cure run the user deletes on the machine (one or all) also goes from the site. The site keeps the newest 25 reports per machine (was 50), matching the machine's 25-run history. Deployed as web app version @6."
+      ]
+    },
+    {
+      "version": "0.9.91",
+      "date": "2026-10-10",
+      "notes": [
+        "sCure Cloud portal can be shown inside Google Sites (user, 2026-10-10: a site to see the machines): over HTTPS the login cookie is SameSite=None; Secure; Partitioned, so the login sticks inside the embedded frame; plain-HTTP self-hosting keeps SameSite=Lax. The portal sends no X-Frame-Options, so Google Sites 'Embed > By URL' shows it."
+      ]
+    },
+    {
+      "version": "0.9.90",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT runner: a passed LED test is status 'OK' in the C# firmware (CureController.RunLedTest: 'OK' when every panel warmed, 'FAIL' otherwise); the runner only accepted the Python firmware's 'PASS'. SAF-021 r1 (17:33) passed 11 of 12 criteria and failed only post_test_functional_pass because of it - sensors, fans, heater and the LED test were all fine. Fixed in the functional check and in SAF-020's post-test panel check; the simulator now answers 'OK' like the unit."
+      ]
+    },
+    {
+      "version": "0.9.89",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT runner: a timed diagnostic (seconds=N) is given N + 30 s to answer instead of a fixed 15 s. SAF-021 r1 on the unit passed 11 of 12 criteria (Err 9007 after 2.08 min naming the selector and the fuse, heater off) and FAILED only on post_test_functional_pass: the functional check's 15 s LED test answered 200 after 18.7 s, the runner had already given up at 15 s and scored the LEDs as failed. The two 30 s LED tests (SAF-019 / SAF-020 paths) had the same flaw."
+      ]
+    },
+    {
+      "version": "0.9.88",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-021 asks nothing about the rig (user, 2026-10-01): the runner instructs 'set the voltage selector to the MIDDLE and the mains input to 220 V' and records selector_position and applied_voltage = 220 as set. Catalog EN/HE: source 220 V (was 230 V), preconditions and first step reworded; the stale CONFIRM note about Err 7004 replaced by the Err 9007 rule."
+      ]
+    },
+    {
+      "version": "0.9.87",
+      "date": "2026-10-01",
+      "notes": [
+        "Err 9007 'Heater Not Heating - Check Voltage Selector / Fuse' in the error registry (errors.json) and the SRS (supervision rules + error table) - sCureBox 1.0.64: heater at >= 50 % output for 2 min with < 0.5 C chamber rise -> heater off, alert names the selector and the fuse.",
+        "DVT-SAF-021 judges that rule: the run watches up to 5 min (was 35), time_to_alarm <= 2.5 min (was 30), new field alarm_names_fuse, error_code expected 9007; catalog EN/HE reworded.",
+        "DVT-SAF-015 rewritten (user, 2026-10-01): ONE run (was 4 mains dropouts with an AC source) - heating on to 50 C until the heater body is clearly rising, 'Disconnect the 40-pin flat cable of the CM5', the yes/no 'Did the heater SSR switch off?' beside the measured heater-body turn (heater_off_time <= 80 s, as SAF-003/004), reconnect, then 2.5 min that heating and UV do not resume and the body keeps falling; config / log intact. Door-lock and job-record fields dropped (no power cut any more). Owed runs 427 -> 412; SAF-015 joins the TC-08 bench block."
+      ]
+    },
+    {
+      "version": "0.9.86",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-016 pass criterion now taken from IEC 62471:2006 / EN 62471:2008 clause 4.3.5 (UV-A hazard exposure limit for the eye; user decision 2026-10-01): irradiance_operator_position <= 1 mW/cm2 AND permitted_exposure_hours >= 8. At <= 1 mW/cm2 (10 W/m2, the limit for exposures over 1000 s) there is no daily limit; above it the permitted time is 1000 mJ/cm2 / E. The old 3 mJ/cm2 figure was the actinic UV limit (200-315 nm, clause 4.3.1), whose weighting is zero above 400 nm. The standard is written into the run as exposure_limit_standard, in the run notes, the test intro and the catalog EN/HE; the blue-light limit (clauses 4.3.3/4.3.4, radiance) is noted as not measurable with the StarBright"
+      ]
+    },
+    {
+      "version": "0.9.85",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-016: the meter head is held flush against the light source (door seam, joints, vents) instead of 10 cm away (user, 2026-10-01) - dark-room and scan prompts, intro and catalog EN/HE steps; field names unchanged"
+      ]
+    },
+    {
+      "version": "0.9.84",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-016 runs at 405 nm only (user correction 2026-10-01 - 0.9.83 said 450 by mistake): the meter is set to 405 nm and the LEDs are lit at 405 nm at maximum; everything else unchanged - every number still comes from the StarBright, only leak_location is asked. Catalog EN/HE and the QA test follow"
+      ]
+    },
+    {
+      "version": "0.9.83",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-016 (UV emission outside the enclosure) runs at 450 nm only and reads every number from the StarBright on the machine's USB - nothing is typed in (user decision 2026-10-01): the runner sets the meter to 450 nm, reads the dark room with the LEDs off, lights the LEDs at maximum at 450 nm, samples the meter at 4 Hz while the operator scans the enclosure (live 'now / max' line; the maximum is max_irradiance_10cm), then averages 10 s at the operator position (irradiance_operator_position) and computes permitted_exposure_hours; the whole meter trace is kept with the run. Only leak_location (where the meter was at the maximum) is still a question. Catalog EN/HE equipment, preconditions and steps updated",
+        "QA: test_dvt_web - SAF-016 fills all three numeric fields from the meter in the simulator, commands 450 nm on the meter and the LEDs, never 405, and asks for none of them"
+      ]
+    },
+    {
+      "version": "0.9.82",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-009 stage 1 starts a DRYING job (POST /api/cure/dry): sCureBox 1.0.63 spin-tests the chamber cooling fan before every drying and cooling step only, not before heating or UV, so the old program (heat first) would have started. The refusal and its '[9003] Chamber cooling fan not spinning ... (FAN_COOLING)' text come back in the start response and are recorded as the stage's alarm; job_start_inhibited keeps its meaning. Catalog step reworded in both languages.",
+        "A refusal that carries a machine error code ([NNNN]) is never taken for a malformed program."
+      ]
+    },
+    {
+      "version": "0.9.81",
+      "date": "2026-10-01",
+      "notes": [
+        "Error registry + SRS section 9: the chamber cooling fan pre-flight (9003) applies to drying and cooling steps only - the steps that use the fan - not to heating or UV (user decision 2026-10-01, sCureBox 1.0.63); a Heat-then-Cool program starts and its cooling step is the one refused when the fan is out"
+      ]
+    },
+    {
+      "version": "0.9.80",
+      "date": "2026-10-01",
+      "notes": [
+        "Error registry + SRS section 9: Err 9003 now covers the chamber cooling fan too - sCureBox 1.0.62 spin-tests FAN_COOLING before any process starts and refuses the start with 9003 naming it (DVT-SAF-009 finding of 2026-10-01: a job started with the chamber fan unplugged and the fault surfaced only in the cooling step); message 'Cooling Fan Not Spinning - Job Not Started', description and troubleshooting widened"
+      ]
+    },
+    {
+      "version": "0.9.79",
+      "date": "2026-10-01",
+      "notes": [
+        "Trace charts: when a trace carries fan_cooling_rpm / fan_heater_rpm (runner traces since 0.9.78) they are drawn dashed on a second, right-hand rpm axis, and damper_open as a band along the bottom beside heater-on / UV-on - the damper position is read off the cooling fan's speed (user ask on DVT-SAF-009); traces without those columns are drawn as before"
+      ]
+    },
+    {
+      "version": "0.9.78",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT runner: programs sent process 'Heat', which is not a machine step (ProcessType is Heating / Drying / Cure / Cooling / Bleacher / Nitrogen). SAF-009 r1 (11:48Z) was refused as 'Invalid material ... could not be converted to ProcessType' - a malformed program, not the fan - and was scored job_start_inhibited = true. All three programs now use 'Heating'; a refusal of the program itself (validation) stops the run as an error instead of counting as 'start inhibited'; the simulator now refuses unknown step names like the unit, and a test pins every step name to the machine's list.",
+        "SAF-009: the alarm verdict covers both stages - the cooling-stage alarm is captured during the watch (r1 showed 9002 from t=0, response 0.1 s, yet alarm_raised false); alarm_raised / error_code / alarm_text / alarm_identifies_correct_fan come from the alarm that names the cooling fan, from either stage.",
+        "Every watch() trace now also records fan_cooling_rpm, fan_cooling_duty, fan_heater_rpm and damper_open (user: read the damper position from the fan RPM) - appended, so existing columns keep their places."
+      ]
+    },
+    {
+      "version": "0.9.77",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-009: job_start_inhibited means the machine REFUSED the start. SAF-009 r1 on the unit was accepted in 3 ms (the pre-flight spin-tests only the LED fans) yet scored 'inhibited' because the heater was not seen on within 25 s. Now an accepted start, a running/paused/preflight program, or heating/cooling seen all count as started; the attempt is kept in a 'start_attempt' trace (accepted, message, seen running).",
+        "SAF-009 keeps the alarm text in the run (new data field alarm_text), so a FAIL is diagnosable from the record."
+      ]
+    },
+    {
+      "version": "0.9.76",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-009 (chamber cooling fan failure) is owed once per unit, not twice (user, 2026-10-01): repetitions 2 -> 1. Owed runs 432 -> 427."
+      ]
+    },
+    {
+      "version": "0.9.75",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-009 heats the chamber to 50 C instead of 60 C before the cooling cycle (user, 2026-10-01: 'let's heat to 50 to save time') - both the Heat step of the start-inhibit program and the heat-up before the mid-cooling fan failure. The cooling target stays 30 C, so 50 -> 30 is still a real cooling cycle for the fan failure."
+      ]
+    },
+    {
+      "version": "0.9.74",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-008: the runner acknowledges the fan alarm on the machine itself (POST /api/fans/ack, sCureBox 1.0.60) before each fan, after each reconnect and at the end of each fan - the operator only disconnects and reconnects fans, no more 'acknowledge the alarm on the screen'. The machine keeps the latch of a fan that is driven and still failing, so the ack never hides a dead fan; only if an alarm is still active after it does the runner ask the operator to check the fans.",
+        "A run that waited on '[1/12] right fan: waiting for a clean machine' because of a stuck 9002 from an earlier manual test now clears it at the start by itself."
+      ]
+    },
+    {
+      "version": "0.9.73",
+      "date": "2026-10-01",
+      "notes": [
+        "Trace chart: a trace holding several timed passes (DVT-SAF-008's mid_job - one pass per fan, each timed from 0) drew a stroke from the end of one pass back to the start of the next, a tangle of lines across the chart; the line now restarts wherever the time goes backwards, so each pass is its own line"
+      ]
+    },
+    {
+      "version": "0.9.72",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-008 is one guided run over the four LED cooling fans (user, 2026-10-01): the runner asks to disconnect the right fan, tries a cure (must be refused), reads the alarm (must name that fan), has it reconnected, waits for the alarm to clear, lights the LEDs and times them going off when the same fan is pulled again - then left, back, door by itself. The error each fan raised is recorded per side (error_right/left/back/door); repetitions 8 -> 1 (failure mode: disconnection). Owed runs 467 -> 432.",
+        "Fixes the SAF-008 run that stopped with 'the LEDs did not light for the mid-job part': the old script lit the LEDs while the fan alarm was still latched. It now waits for a clean machine and, if the LEDs still refuse, records the machine's own refusal and active alerts instead of stopping."
+      ]
+    },
+    {
+      "version": "0.9.71",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-008 shows each LED panel's temperature live (user, 2026-10-01). The minute of LEDs at maximum before the fan failure is injected is now logged instead of slept through, and it and the mid-job watch form one 'mid_job' trace drawn live on the page (with the panel lines added in 0.9.70); the status line shows all four panels every poll - right, left, back, door - in the operator's language."
+      ]
+    },
+    {
+      "version": "0.9.70",
+      "date": "2026-10-01",
+      "notes": [
+        "Trace charts draw all four LED panel temperatures when the trace carries them - right, left, back and door (led_*_c columns), each its own colour in the legend - so DVT-SAF-008's live 'mid_job' trace shows every panel; a trace without panel readings shows no panel lines"
+      ]
+    },
+    {
+      "version": "0.9.69",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-006 (LED thermistor detached from the MCPCB) is removed from the campaign entirely (user, 2026-10-01, chosen over keeping it as a dispositioned entry): its catalog block in both languages, its place in phase 2, the SAF-010 dependency on it, its process figure, and its runner script. The campaign is now 41 tests and 467 owed runs. Two documents still mention it and were not changed here: docs/DVT_Verification_Plan_SRS_RevB.md and docs/figures/index.html.",
+        "DVT-SAF-007 records the error for each LED side separately (user, 2026-10-01): error_right, error_left, error_back and error_door, each holding the code and the machine's own text for that sensor (or 'no alarm'), in place of one combined error_code."
+      ]
+    },
+    {
+      "version": "0.9.68",
+      "date": "2026-10-01",
+      "notes": [
+        "HSI + io_controller: the LEFT ORIGIN and BACK ORIGIN thermistors were crossed (user, 2026-10-01) - the probe on U7 AIN0 is the Left LED origin, the one on U6 AIN2 the Back LED origin. HSI sCure (3).xlsx rows TEMP_LEFT_ORIGIN (now U7 / I2C1 / AIN0) and TEMP_BACK_ORIGIN (now U6 / I2C0 / AIN2) swapped with a dated note (backup kept: 'HSI sCure (3) - backup before ORIGIN swap 2026-10-01.xlsx'); io_controller.py and io_controller.cpp TEMP_SENSORS maps swapped the same way. sCureBox-CS 1.0.53 carries the same map"
+      ]
+    },
+    {
+      "version": "0.9.67",
+      "date": "2026-10-01",
+      "notes": [
+        "A scripted run waits for a restarting machine before it starts. Started during the machine's own Err 9006 restart and boot self-test, DVT-SAF-005 stopped at once with 'signal timed out' - its first status request hung until the per-call timeout. Every run now waits up to four minutes for the machine to answer, and for the start-up self-test's UV to go off, before its first command; once running, every wait already treats a timeout and a refused connection alike.",
+        "The end of a scripted run says the verdict in plain words (user, 2026-10-01: 'update on the screen that the test passed'): 'the test finished and PASSED - N values measured' in green, 'the test finished - FAILED: <clause>' in red, 'BLOCKED: <reason>' in amber, or 'finished - waiting for: <fields>'. It is evaluated with the page's own criteria evaluator and thresholds over the same values the recorded verdict uses, so the line and the badge cannot disagree. The test harness now loads the real evaluator; doing so showed that DVT-SAF-019 can only ever be BLOCKED, because led_temperature_thresholds.protective_shutdown is not set in the catalog."
+      ]
+    },
+    {
+      "version": "0.9.66",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-005 rides through the machine restarting itself after Err 9006. The machine restarts a minute after the alarm by design (user, 2026-10-01: 'the machine is supposed to reboot itself - don't fail on that'), and the run used to end 'stopped: Failed to fetch' when its next command hit the restart. After the heat watch the runner now waits up to two minutes for the API to go silent, then up to four for it to come back, notes the restart in the run, and only then checks that the latch survived it - the second HEAT refused and 9006 still raised. The alarm text is captured while watching, so reading it never needs the machine in the middle of a restart."
+      ]
+    },
+    {
+      "version": "0.9.65",
+      "date": "2026-10-01",
+      "notes": [
+        "Live trace chart: a run's PNG is written only from the finished trace, never from a live snapshot (a save of the run mid-run - the operator typing a note, the minute sweep - would otherwise have fixed the picture at a few seconds and never replaced it)"
+      ]
+    },
+    {
+      "version": "0.9.64",
+      "date": "2026-10-01",
+      "notes": [
+        "The temperature graph draws while a scripted test runs, not only at the end (user, 2026-10-01). watch() takes a `live` trace name and every 2 s hands the rows so far to the page as the same auto_<name> record the final trace will write, marked live and not persisted; the page creates the chart on the first call and redraws it after. The results folder still gets the trace and its picture once, at the end. Wired for DVT-SAF-005's heat watch and for every test that heats through the shared heat run (SAF-001, SAF-009, SAF-011, SAF-021, THM-001 ...)."
+      ]
+    },
+    {
+      "version": "0.9.63",
+      "date": "2026-10-01",
+      "notes": [
+        "Live trace chart, page side: the runner gets two hooks - H.drawTraces(tid) redraws the charts of the current run from rec.autos without re-rendering the card, H.hasTraceCanvas(tid) says whether a chart is on screen yet - so a script can publish its watch() rows every couple of seconds and the graph grows while the run is on (the runner side follows in dvt-auto.js)"
+      ]
+    },
+    {
+      "version": "0.9.62",
+      "date": "2026-10-01",
+      "notes": [
+        "The trace charts of an automatic run (0.9.58) were hooked on steps carrying tool: auto_script - and the whole-test runs (DVT-SAF-005 and the other scripted tests) have no such step, so no graph ever appeared under them. The charts now follow the test's own Start card, for every scripted test, so the SAF-005 run shows displayed / chamber CH2 / heater body CH1 with the 9006 mark"
+      ]
+    },
+    {
+      "version": "0.9.61",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-005 never mixes the heater body into the chamber reference. The reference fell back from CH2 to CH1 row by row, so a single CH2 gap at the 3-minute row recorded the heater body as the chamber: reference_temp_at_3min 174.4 C on the unit while max_chamber_temp was 45.3 C. The whole trace now uses one column - CH2 if it gave even one reading, CH1 only when no thermocouple was on CH2 at all - and the 3-minute value is the nearest row to 180 s that has a reading in that column (empty if the run did not last that long)."
+      ]
+    },
+    {
+      "version": "0.9.60",
+      "date": "2026-10-01",
+      "notes": [
+        "The functional check at the end of a test waits for the machine to answer before it starts. The step before it is usually 'power the unit back up' - and since sCureBox 1.0.51 an Err 9006 also restarts the machine a minute after the alert - and on the unit DVT-SAF-005 recorded post_test_functional_pass = false with only 'Failed to fetch' in its report: the check had run against a machine that was not answering. It now waits up to four minutes and only then checks sensors, fans, heater and LEDs.",
+        "DVT-SAF-005 answers cutout_tripped from the trace when the answer is certain: a heater body that peaked under 200 C cannot have opened a cutout rated ~250 C (262 C measured in SAF-013 on this unit), so it is recorded false with the peak noted. Only a body that came within 50 C of the rating still asks the operator, now with the peak shown. On the unit the question had been answered yes on a run whose body stayed around 180 C, which failed the test."
+      ]
+    },
+    {
+      "version": "0.9.59",
+      "date": "2026-10-01",
+      "notes": [
+        "Error registry + SRS section 9: Err 9006 also restarts the machine one minute after the alert (sCureBox 1.0.51; user's decision 2026-10-01), with the latch kept on disk so heating stays refused after the restart - the 9006 record's description and troubleshooting say so"
+      ]
+    },
+    {
+      "version": "0.9.58",
+      "date": "2026-10-01",
+      "notes": [
+        "A graph for every automatic run, and a picture of it in the results folder (asked on DVT-SAF-005): every trace a script records (rec.autos['auto_<name>'] with the runner's watch() columns) is drawn under the automatic step - displayed chamber sensor (orange), chamber reference on TC-08 CH2 (blue), heater body on TC-08 CH1 (red), LED panels when present, against minutes; heater-on and UV-on shown as bands along the bottom; the first alarm marked with its code and time. The same chart is written as a PNG beside the trace's CSV (sweeps/<unit>/<test>/<stem>_auto_<name>_<time>.png, graph_file on the record) the first time the run reaches the folder",
+        "QA: test_dvt_web - the chart, the PNG path in syncNow, both redraw sites, both languages"
+      ]
+    },
+    {
+      "version": "0.9.57",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-005 now sees the heater go off after the alarm. The machine reports heaterOut and heaterPwm as null - not false / 0 - once its heating loop stops, so the check 'heaterOut === false or heaterPwm === 0' never became true: on the unit 9006 fired at ~95 s and switched the heater off, and the run kept watching to its 600 s limit with heater_off_at_alarm empty. Null now counts as off (not heating, no drive commanded). The other heater reads in the runner only test for 'on', where null already meant not on."
+      ]
+    },
+    {
+      "version": "0.9.56",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-005's live status line names each temperature for what it is: displayed (the frozen resistor reading), chamber (CH2, the reference thermocouple) and heater body (CH1). It used to print CH1 as the 'true' temperature, which on this test is the heater body (98 C on the unit) and read as if the chamber were at 98 while the reference said 38 (user, 2026-10-01)."
+      ]
+    },
+    {
+      "version": "0.9.55",
+      "date": "2026-10-01",
+      "notes": [
+        "The automatic runner takes the ambient and the chamber reference from the reference thermocouple on TC-08 CH2 (user, 2026-10-01; sCureBox 1.0.50 reports ch2Available/ch2). P.ambient prefers CH2, then the TC-08 cold junction, then the chamber sensor, and writes into the run's timeline which one it used; a new P.reference gives CH2 else CH1 for SAF-005's reference_temp_start. Every watch() trace gains a last column tc08_ch2_c (existing columns unchanged, CSV header updated), and SAF-005's reference_temp_at_3min and max_chamber_temp read it, falling back to CH1 row by row while nothing is on CH2. The simulator reports CH2 and a test proves the values come from CH2, not the cold junction."
+      ]
+    },
+    {
+      "version": "0.9.54",
+      "date": "2026-10-01",
+      "notes": [
+        "TC-08 card: the ambient / reference temperature a run records comes from the REAL reference thermocouple on TC-08 CH2 when one is plugged in (sCureBox 1.0.50 reports it as ch2 in /api/dev/picolog/status) - the row reads 'Reference thermocouple in the chamber (TC-08 CH2)' and ambient_temp is filled from it; without a CH2 probe the TC-08 cold junction stays the fallback, as before. The open-probe rule keeps using the cold junction as its reference. User's decision 2026-10-01 for DVT-SAF-005: the reading of the ambient temperature is the real CH2 sensor"
+      ]
+    },
+    {
+      "version": "0.9.53",
+      "date": "2026-10-01",
+      "notes": [
+        "Error registry: new code 9006 TEMP_READING_FROZEN 'Temperature Reading Frozen - Heater Switched Off' (critical / safety / daemon) in public/config/errors.json, matching sCureBox 1.0.49. DVT-SAF-005 on the unit (2026-10-01): a fixed 10 kOhm resistor in place of the chamber NTC read a steady 40.9 C, the heater ran at 100 % and the heater body passed 180 C with no alarm - the firmware had no check for a reading that is plausible but does not move. Rule (the user's words): no change of 0.1 C in a minute and a half with the heater driving -> heater off at once, 9006 naming the reading and the stuck number, HEAT refused until the reading moves 1 C or goes open",
+        "SRS section 9: the frozen-reading rule under temperature-sensor supervision and the 9006 row in the error table"
+      ]
+    },
+    {
+      "version": "0.9.52",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-007 is one run that walks all four LED thermistors in turn - right, left, back, door (user, 2026-10-01). For each: the operator disconnects that sensor only; the runner waits until ledTemps[that place] is null and checks the other three still read; a cure must be refused; the alarm must name that sensor; then reconnect, LEDs to maximum, pull the same connector, and the StarBright times the LEDs going dark. Before each next sensor the runner waits for the alarm to clear (asking the operator to acknowledge it if needed), so one sensor's alarm is never credited to the next. The verdict holds only if every sensor passed on its own; error_code lists the code per sensor and led_off_time is the slowest of the four. Catalog (EN + HE) rewritten around it: repetitions 4 -> 1, sensor_position replaced by positions_tested; the campaign drops to 472 owed runs.",
+        "Bug found on the way, affecting every LED temperature the runner logged: the machine keys /api/state ledTemps by place (right, left, back, door) and the runner read TEMP_RIGHT etc. - so on the unit the four LED columns of every trace were null (THM-002, THM-005, SAF-006, SAF-008, SAF-019). It now reads them by place, and the simulator uses the unit's keys so a wrong read fails the suite."
+      ]
+    },
+    {
+      "version": "0.9.51",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-005 (heater sensor replaced by a fixed resistor) is owed once per unit, not three times (user, 2026-10-01): repetitions 3 -> 1; the campaign drops to 487 owed runs."
+      ]
+    },
+    {
+      "version": "0.9.50",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-005 uses the 5 kOhm fixed resistor the bench actually has, in place of 10 kOhm (user, 2026-10-01). With the firmware's NTC constants (10 kOhm at 25 C, beta 3934, 10 kOhm series, 3.3 V divider) 5 kOhm reads a constant 41.5 C instead of 25 C: still a plausible reading inside the valid band (-20..120 C) and still below the 80 C setpoint, so the controller heats at full power and the test proves the same thing. Title, purpose, equipment, precondition, step 1 and the displayed_temp_fixed note are updated in both languages; the NTC's own rating (10 kOhm at 25 C) is unchanged."
+      ]
+    },
+    {
+      "version": "0.9.49",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-003 (chamber circulation fan failure) is owed once per unit, not three times (user, 2026-10-01): repetitions 3 -> 1; the campaign drops to 497 owed runs."
+      ]
+    },
+    {
+      "version": "0.9.48",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-003 (chamber circulation fan failure) heater-off limit 5 s -> 80 s (user, 2026-10-01). Like SAF-004, heater_off_time is the rise-to-fall turn of the heater-body thermocouple, and the heat already stored in the element takes about 70 s to clear before the body visibly falls - the 5 s limit could not be met on that trace however fast the drive dropped. Catalog comment states the reason; the console tests pin 70 s PASS and 85 s FAIL."
+      ]
+    },
+    {
+      "version": "0.9.47",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-004 bench card: a run that failed AFTER its measurement phases keeps every value it measured. The first real run on the unit measured nine values (disconnect at 51.9 C, heater command off at once, alarm 9001 after 1.07 s, body turn after 60.5 s, peak 76.8 C) and then ended ERROR because the thermistor was not seen back within 180 s - and the card showed nothing, because it filled only on status OK. Now the values are filled whenever the run reached the disconnect; only the failed phase's own fields stay empty (here recovery_requires_ack), and the status line says which phase failed and how many values were kept",
+        "DVT-SAF-004 pass criterion: heater_off_time <= 80 s (was 2 s), the user's decision in their words - 'the off time must be 80 seconds from the disconnect'. heater_off_time is the rise-to-fall turn on the heater-body thermocouple; the first real run showed the firmware's heater command dropping in the same sample as the sensor opened, the alarm after 1.07 s and the body turning 60.5 s later on the element's stored heat (peak +25 C), so 2 s on the body was physically unreachable. Catalog comment says the same; dvt-catalog.js rebuilt; test_dvt_tool pins 60.48 -> PASS and 85 -> FAIL",
+        "QA: test_dvt_web - the fill condition and the failed-at line, both languages"
+      ]
+    },
+    {
+      "version": "0.9.46",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-004 bench card: what the run would refuse on is shown BEFORE Start, as readiness rows like the TC-08 card - machine, the bench service on port 3002 (and whether it is busy), CH1 of the TC-08 (a body still hot from an earlier test is amber, not a stop: the bench waits for it to cool), the heater thermistor TEMP_CHAMBER reading (from the machine's own sensor state), and the machine idle. Start is enabled only when all are green. A run the user started with the thermistor left open from the previous attempt was refused in 3 s with an English sentence nobody read as 'never started'",
+        "A refused or aborted run says 'did not start: <reason>' in the operator's language for the known reasons (thermistor disconnected - reconnect it, the bench tells you when to pull it; machine busy; software not answering; TC-08 missing; floating probe; bench busy), the bench's own words otherwise",
+        "A new bench run starts clean: the fields and marks the previous run filled (a disconnect timestamp and raw_log_attached from four days earlier were still on the card) are cleared when Start is pressed, so a run never shows another run's values",
+        "QA: test_dvt_web - the readiness check reads sensors.chamber.ok, the run refuses without it, clears the old fields, and says 'did not start' with a translated reason; both languages"
+      ]
+    },
+    {
+      "version": "0.9.45",
+      "date": "2026-10-01",
+      "notes": [
+        "DVT-SAF-004 (heater sensor open circuit) is owed once per unit, not three times (user, 2026-10-01): repetitions 3 -> 1; the run selector shows a single run and the campaign drops to 507 owed runs."
+      ]
+    },
+    {
+      "version": "0.9.44",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-014 no longer waits on a heartbeat stop that never happened. Pressing Done after 'stop the heartbeat now' proved nothing: on the unit nobody had stopped anything, the heartbeat file was 0 s old, the watchdog was armed with nothing to cut, and the card waited on as if the watchdog had failed. After Done the runner now checks for ten seconds that the firmware really went silent (the API lives in the firmware process); if it is still answering the run stops with that said plainly and how to freeze the process. The automatic path - a separate bench process that freezes the firmware and measures the cut on the heater body - is the user's chosen way and is being built in the DVT bench."
+      ]
+    },
+    {
+      "version": "0.9.43",
+      "date": "2026-09-27",
+      "notes": [
+        "The automatic runner no longer refuses to start after a program has ended. /api/state keeps the last program in `recipe` after it finishes, and P.idle treated any state other than 'idle' as a running process - so one aborted SAF-012 attempt ('Aborted by operator') made every script say 'a process is running on the machine - stop it first' with nothing running. Only a program that is still going (running, paused, starting, preflight, waiting) counts now."
+      ]
+    },
+    {
+      "version": "0.9.42",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 finds the trip when the recording starts with the body already hot. The second run on the unit began at 255 C, climbed 7 C to 262.6, tripped, fell 62 C and climbed again - and the 0.9.35 rule (the peak must stand 20 C above the low before it) rejected that trip as a cooling tail, so the recording never stopped. The trip is now recognised by some climb before it (3 C) and a big drop after it (20 C): a cooling tail at the start has no climb and is still skipped, a hot start is found. When a run starts hot, time_to_trip is measured from the start of the recording, not from ambient - only a run started cold gives the true time."
+      ]
+    },
+    {
+      "version": "0.9.41",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 stops as soon as it has its three numbers. autoStop waited ten minutes after the trip before looking for the reset - a leftover from the chamber fields the test no longer has - so a run that had already tripped and reset kept recording. It now stops the moment the body climbs 2 C above its low after the trip and holds it for 20 s (the cutout closed), or 20 minutes after the trip if it never does. autoStop also writes the graph marks from the live trace every tick, so the lines follow the current run. Step 4 of the catalog says the same in both languages."
+      ]
+    },
+    {
+      "version": "0.9.40",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-012 goes on by itself: when a step finishes and its own part of the catalog criteria passes (the clauses its fields appear in - uv_off_time <= 1 for the UV-off timing, lock_engaged for the lock, and so on - each through the page's evaluator with the catalog thresholds), the next step starts without the operator pressing Start. Steps that need the door closed to start (2 and 3) first ask 'close the door to continue to step N'; the others count down 3 s with a ■ to stay put. A step that did not pass stays where it is and the log says which clause failed. Step 1 (the cure with the door open) advances to step 2 the same way. The page holds no threshold of its own: 'under 2 seconds' is whatever the catalog says, so a change of limit is a catalog change only",
+        "TC-08 card: a new recording starts clean - the values and graph marks the previous recording's analysis had put on the run (78.91 C / 0 min / 73.23 C from an earlier reading were showing during a live run) are cleared when Start is pressed, so a run never shows another run's numbers",
+        "QA: DVT/web/guided-check.cjs runs the page's decision against the real catalog and evaluator (pass -> next step, uv_off_time 1.5 -> stays, last step -> none); test_dvt_web asserts it and the two call sites"
+      ]
+    },
+    {
+      "version": "0.9.39",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-012 (door interlock) is owed once per unit, not three times (user, 2026-09-27): repetitions 3 -> 1 in the catalog; the run selector shows a single run and the phase's owed-run count drops by two per unit."
+      ]
+    },
+    {
+      "version": "0.9.38",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 finishes itself (user: 'I do not want to stop the process - it should do everything and tell me it completed successfully'). DVT_AUTO.autoStop watches the stored samples once a second from the TC-08 card: not before the trip, not in the ten minutes after it, and then the moment the body climbs again (the cutout closed), or twenty minutes after a trip with no reset - the catalog step, applied by the tool. The card stops the recording itself, reads the trace, and DVT_AUTO.completed records the verdict when every criteria field is filled, through the page's own evaluator and thresholds, so the sentence the operator reads - 'the test finished on its own and PASSED - CUT-OFF at 128.3 °C after 4.97 min, closed again at 31.6 °C' - says PASSED or FAILED exactly as the recorded verdict does, never 'successfully' on a failing run.",
+        "The cutout's rated trip temperature is the one value the verdict needs that no trace supplies, so the recording refuses to start without it (DVT_AUTO.prepare) instead of finishing thirty minutes later with a field to come back for. The page hooks (0.9.37) are guarded, so a page without these functions still records by hand."
+      ]
+    },
+    {
+      "version": "0.9.37",
+      "date": "2026-09-27",
+      "notes": [
+        "Results folder: a recording could silently stop reaching the folder. One failed write - a CSV open in Excel, OneDrive or an antivirus holding the file for a moment - marked the folder as lost, every later save queued without a word and nothing ever retried, so a 734-sample DVT-SAF-013 run stayed only in the browser. Now only a lost permission (NotAllowedError/SecurityError) takes the folder away for the operator to reconnect; any other failure keeps the folder, isolates the failing file so the other runs, runs.csv and values.csv still land, retries in 5 / 15 / 60 s (the top bar says 'a write failed - retrying, nothing is lost'), and a sweep every minute flushes whatever is still queued. A run that is in the browser and not in the folder is written the moment the folder is back",
+        "Stopping a recording whose trace is not on disk says so out loud (log + dialog: reconnect the folder before closing the page)",
+        "DVT-SAF-013 ends by itself and reports completion: the TC-08 card asks the analyser every second whether the run is over (DVT_AUTO.autoStop - the trip seen, then the reset or the wait after it) and stops the recording; on stop, when every value the criteria need came out of the trace (DVT_AUTO.completed), the verdict is recorded and the card shows one line - 'the test finished - CUT-OFF at ...' or 'finished - FAILED: ...'. Nothing changes for other tests until their analyser says otherwise",
+        "QA: test_dvt_web - only the permission branch may take the folder away, the retry/sweep/not-saved paths exist, the card calls autoStop/completed"
+      ]
+    },
+    {
+      "version": "0.9.36",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 pass criterion, as the user stated it: the heater body may not pass the cutout's rated trip temperature by more than 10 % - `cutout_trip_temp <= rated_trip_temp * 1.1`, in place of the +/-10 C band. One-sided on purpose: a cutout that opens early is the safe direction and is not a failure. time_to_trip > 0 and the graph stay; reset_temp stays recorded, not judged. Both criteria evaluators already handle multiplication; the console test covers 9.6 % over (pass), 12 % over (fail), an early trip (pass) and a missing rating (blocked)."
+      ]
+    },
+    {
+      "version": "0.9.35",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013's first real run on the unit read the wrong turn. The body was still cooling from an earlier attempt when the recording started - 78.9 C falling to 73.2 in the first twenty seconds - and the analyser took that dip for the cut-off: trip 78.91 C, time to trip 0 min, reset 73.23 C, while the graph beside them plainly showed the climb to 260 C and the trip eleven minutes in. The turn detector now takes a `minRise`: the peak has to stand at least that far above the lowest point before it, and a dip that does not is passed over and the search restarts from its bottom. SAF-013 asks for 20 C - a cutout trip is a real climb, never a dip - so the first climb-then-fall is the one returned. The synthetic run in trace-check.cjs now starts the same way the real one did, so this exact mistake fails the suite.",
+        "Press 'Read the recording again' on the run already made: the stored trace is re-read with the corrected detector and the three numbers and the marks come out right without repeating the heat-up."
+      ]
+    },
+    {
+      "version": "0.9.34",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 has one way to run it. The whole-test 'Run the test' card at the top of the run was a second path to the same recording the tc08_record card on step 2 already makes - and it still carried the old nine-step intro, still stopped for prompts about fields the test no longer has, and stopped on the operator when the two paths crossed. The user runs it from step 2 and it works; the top card is gone for this test (37 scripts now). Step 2 is the path: the card switches the heater fan on, refuses a floating probe, records CH1 with the chamber and the machine's own heater command, and on stop reads the three numbers and draws the graph."
+      ]
+    },
+    {
+      "version": "0.9.33",
+      "date": "2026-09-27",
+      "notes": [
+        "The two remaining scripts that read fan tachs read them the way the machine reports them. DVT-THM-005 (tach_rpm) and DVT-SAF-019 (baseline_tach, tach_reading, tach_at_alarm) read fanRpm[FAN_x], which the machine keys by ROLE - on the unit those fields were recorded empty while the fans spun. Both now go through DVT_AUTO.P.rpm (0.9.32): fanRpmEach by fan first, then the group reading where the group is that one fan. P.rpm's role map is corrected on the way - FAN_COOLING is the chamber_intake group, not led_cooling, which is the four LED fans and so never a single fan's exact reading - and the old-host fallback (fanRpm keyed by fan name) is dropped.",
+        "The simulated machine in DVT/web/dvt-auto.test.cjs now reports fanRpm by role and fanRpmEach by fan exactly as the unit does, which is why the harness had agreed with the bug until now; a new test asserts both scripts still measure their tachs against that shape and that no script reads fanRpm[<fan>] directly."
+      ]
+    },
+    {
+      "version": "0.9.32",
+      "date": "2026-09-27",
+      "notes": [
+        "The heater fan was reported as 'not turning' on every DVT-SAF-013 start although it ran at 3600 rpm: the recording's prepare step read fan speed as fanRpm[FAN_HEATER], but the machine keys fanRpm by role (led_cooling, chamber_intake, chamber_heating) and puts the per-fan names in fanRpmEach, so the tach came back null and the recording (and the fan row on the TC-08 card) refused. New helper DVT_AUTO.P.rpm(state, fan) reads fanRpmEach first, then the role's reading (exact for FAN_HEATER and FAN_COOLING, the only fans of their groups), then the old host's fan-keyed shape; the SAF-013 prepare uses it. The same wrong read in DVT-THM-005 and DVT-SAF-019, and the script simulator that agreed with it, are the next entry",
+        "QA: test_dvt_web - the SAF-013 prepare reads the tach through P.rpm; script suite green"
+      ]
+    },
+    {
+      "version": "0.9.31",
+      "date": "2026-09-27",
+      "notes": [
+        "The automatic runner's thermocouple check tells a hot body from a floating probe on a test whose heat comes from outside the machine (catalog external_heat, DVT-SAF-013). The 0.9.24 rule read 'nothing running' as 'nothing hot' and refused a correct run - the heater body at 182 C from the external supply with the machine idle looked exactly like an open probe. The level cannot decide that case; behaviour can: an open input floats tens of degrees within seconds (the unit was seen at 105, 141, 180 C with nothing changing), a real body moves under a degree. On an external-heat test DVT_AUTO.P.tcCheck now samples CH1 four times over three seconds - more than 5 C of spread is an open input and is refused with the readings shown, a steady reading far above the cold junction is accepted and noted as external heat. Same thresholds as the TC-08 card (0.9.30), so the card and the runner agree."
+      ]
+    },
+    {
+      "version": "0.9.30",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 on the TC-08 card: with the heater fed from the external supply the machine never reports heating, so the open-thermocouple rule (CH1 far above the cold junction while nothing runs) marked a genuinely hot heater body (182 C) as an open probe, Start stayed disabled, and neither the fan nor the recording ever started. The catalog now declares external_heat: true on DVT-SAF-013; for such a test the rule is a warning (amber row, both temperatures shown) and Start asks the operator to confirm that the heater is fed externally and the thermocouple seated - it stays a hard stop for every other test",
+        "Heater fan for an external heater runs from the moment the TC-08 is seen on the machine, not only once Start is pressed: a fifth readiness row shows it turning on, its rpm, or why it did not start (retried every 10 s, e.g. through the start-up UV self-test); Start needs it green. The fan goes back to the machine when the recording stops",
+        "The TC-08 graph is live: the card draws its canvas as soon as the recording starts and adds a point every second (heater body and chamber against minutes), instead of showing only the previous run until the recording was stopped",
+        "QA: test_dvt_web - DVT-SAF-013 declares external_heat and the page carries the warning/confirm path and the live redraw; catalog js rebuilt"
+      ]
+    },
+    {
+      "version": "0.9.29",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 trimmed to what its graph gives (user, 2026-09-27). The test used to carry 22 data fields and a nine-step procedure written for a machine that removes its own software limits; the machine cannot do that and the user drives the heater from an external supply instead. The catalog block is rewritten around that in both languages - purpose, safety plan, equipment, preconditions, four procedure steps - and the data fields are now five: rated_trip_temp (the one value typed in, the reference the trip is judged against) and four read out of the TC-08 trace on stop - time_to_trip from where the body started climbing, cutout_trip_temp at the rise-to-fall turn, reset_temp where the body climbed again, and graph_attached. Pass criteria: the trip within 10 C of the rating, a positive time to trip, and the graph. reset_temp is recorded, not judged.",
+        "The graph is the fourth deliverable. The TC-08 card draws the recording whenever the run holds one: heater body (CH1) in blue and chamber in orange against minutes, with the heating onset, the cut-off and the reset marked as dashed lines, and the three numbers in the corner. The analyser stores the marks it read (onset, trip, reset, in seconds) with the run, so the graph and the values cannot disagree.",
+        "The process figure for SAF-013 (dvt_tool/figures.py, docs/figures/DVT-SAF-013.svg) is redrawn for the four steps: the machine's controller and SSR shown off throughout, the heater fed past them, the cutout the only thing that opens. Everything the analyser still knows how to derive from the trace - chamber overshoot, cooling rate, the machine's own protection - is kept in the stored recording and in the run's JSON, just no longer as catalog fields."
+      ]
+    },
+    {
+      "version": "0.9.28",
+      "date": "2026-09-27",
+      "notes": [
+        "The note written into limits_removed_how follows the operator's language. It was filled in English on a Hebrew page - a value the tool writes into the record on the operator's behalf has to read the way the rest of their screen does, or it looks like somebody else's text pasted into their run."
+      ]
+    },
+    {
+      "version": "0.9.27",
+      "date": "2026-09-27",
+      "notes": [
+        "The page says which version of itself is running, next to the catalog line. The tool is opened straight off disk (file:///.../DVT/web/dvt-tool.html), so a browser that serves a cached dvt-auto.js shows yesterday's behaviour with today's file on disk - and there was no way to tell the two apart. Now there is: if the number shown is not the current one, the browser is serving a cached copy and a hard reload (Ctrl+Shift+R) fixes it.",
+        "A recording already in hand can be read again. The analysis used to run only at the moment a recording stopped, so a run measured before an improvement to it kept its empty fields for good. The TC-08 card now offers 'Read the recording again' whenever the run holds samples and has not been recorded yet, which re-runs the current analysis over the stored trace - no need to repeat a two-hour test to benefit from a better reading of it."
+      ]
+    },
+    {
+      "version": "0.9.26",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 leads with the three numbers the test exists for. The result line now opens with the cut-off temperature, how long the heating took to reach it and the temperature the cutout closed again at, before the detail: 'CUT-OFF at 128.3 C after 4.97 min of heating, closed again at 31.6 C'. Everything else the trace gives is still recorded, but it is no longer what the operator has to read past.",
+        "The heater fan is switched on before the recording starts and released when it stops. The heat in this test comes from an external supply the machine knows nothing about, so it never runs the fan on its own - and an element driven with no airflow is a different failure from the one under test. The recording refuses to start if the fan does not turn (page hooks DVT_AUTO.prepare / DVT_AUTO.finish).",
+        "CH1 is accepted up to 400 C, following the machine (sCureBox 1.0.46). At 250 the reading stopped where a cutout rated up to 250 C actually trips."
+      ]
+    },
+    {
+      "version": "0.9.25",
+      "date": "2026-09-27",
+      "notes": [
+        "The TC-08 readiness gate rejects an open thermocouple too. 0.9.24 stopped the automatic runner from recording a floating probe, but the card the operator actually uses still showed CH1 green at 249.2 C with the instrument's own terminal block at 24.5 C and said 'everything is connected - you can start'. It now applies the same rule as DVT_AUTO.P.tcCheck: an in-band reading more than 60 C above the cold junction while nothing is heating and no UV is on marks CH1 red, keeps Start disabled, and says the thermocouple is open or badly seated rather than hot - with both numbers shown, so it is obvious why.",
+        "The readiness poll now also reads /api/state, since the rule only applies while nothing is running: the same 249 C during a real heat-up is a genuine reading and is left alone."
+      ]
+    },
+    {
+      "version": "0.9.24",
+      "date": "2026-09-27",
+      "notes": [
+        "An open thermocouple is refused instead of being recorded as a temperature. A disconnected or badly seated TC-08 probe does not read null - it floats near the top of the driver's valid band, and the unit sitting at room temperature was seen reading 249.31 C, which is inside -25..250 and would have gone into a run as a real near-cutout body temperature (and, being within 5 C of DVT-SAF-013's 250 C abort ceiling, would have recorded manual_abort_used as true on a test nobody had started).",
+        "The cold junction is the reference the check needed: the TC-08's own terminal block sits at ambient, so a probe reading more than 60 C above it while nothing is heating and no UV is on is open, not hot, and the run stops with that said in plain words. The same reading once something IS running is left alone, so a genuine hot body is never refused. DVT-SAF-013 and DVT-GAS-007, the two tests that cannot be measured at all without a trustworthy CH1, now start with this check instead of only testing for a null reading."
+      ]
+    },
+    {
+      "version": "0.9.23",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-004 is no longer scripted in dvt-auto.js: it is run by the machine-side DVT bench (catalog tool: bench), which times the heater-body turn on the machine's own clock instead of across the network. One test, one path, no second card - and the 39 scripts become 38.",
+        "DVT/tests/test_dvt_web.py: SAF-004 joins OPT-001, OPT-002 and SAF-012 in the set of tests driven by their own cards, so the assertion that every other catalog test has a script keeps its teeth."
+      ]
+    },
+    {
+      "version": "0.9.22",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-004 (heater thermistor disconnected) runs by itself from the DVT web page: one Start button hands the whole test to the DVT bench process on the machine (sCureBox 1.0.42, port 3002) - it heats, waits for the heater body to rise, shows DISCONNECT / RECONNECT prompts, takes the instant of the disconnection from the machine's own sensor state, times the heater-body turn, records the alarm and whether its text says to check the cable, sends a heat command that must be refused, and checks heating does not resume by itself. All 10 fields are filled and locked; the 5 Hz trace (heater body, chamber, firmware state) and a graph with the marks go to the results folder. The operator's only actions are pulling and reconnecting the plug",
+        "Catalog: SAF-004 step 1 text (EN + HE), tool: bench; the page derives the bench address from the machine address (port 3002) and says so when the machine's software is too old for it",
+        "Checked end to end against the bench process in simulation: page -> bench -> prompts -> 10 fields (heater off 0.0 s after the disconnect, alarm 9001 in 0.01 s, heat refused, no resume) -> graph saved"
+      ]
+    },
+    {
+      "version": "0.9.21",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 stops asking the operator for what the recording already shows. Sixteen fields now come out of the trace instead of four. manual_abort_used is read from where the body turned: the test's own safety plan puts the operator's abort at 250 C, so a turn far below it is the cutout doing its job and not somebody stopping the run. heater_power_removed is read from the fall after that turn - a heater body cannot fall while its element is still delivering heat, which is the same evidence this campaign uses for every other shutdown.",
+        "The question 'how were the software temperature limits removed?' is gone, and so is 'are the production limits back?'. They were questions about something that never happens: the heater is driven externally, so the machine's limits stand untouched for the whole run, and limits_removed_how, limits_restored and heater_command_percent are all answers to that one fact.",
+        "resume_requires_ack is filled only when the answer is unambiguous - the cutout closed again, heat was available, and the machine's drive stayed off, so something held it off. When the drive did come back the tool cannot see whether the operator acknowledged an alarm on the screen first, so that case is left to them rather than recorded as a failure they may not have had."
+      ]
+    },
+    {
+      "version": "0.9.20",
+      "date": "2026-09-27",
+      "notes": [
+        "A run with the heater driven externally now also proves what the machine's own protection did. Each tc08_record row carries the machine's heater command as well (columns t_s, ch1_c, machine_chamber_c, machine_heating, alerts, heater_commanded, heater_pwm_pct), and the analyser reads it: if the machine was commanding heat of its own, the instant its drive goes low while the thermocouple keeps climbing is the protection acting, and the card says so - at what body and chamber temperature it let go, and that the body kept rising afterwards because the remaining heat is external. If it was commanding heat and never let go, that is reported as a finding. If it was not commanding heat at all, the card says plainly that nothing in the run tests its heater cut-off, so nobody reads coverage into a run that has none.",
+        "Where the run does show it, heater_off_time, heater_off_delay, heater_off_at_alarm and heater_body_drop_observed are filled from the same trace.",
+        "fromTrace no longer throws away the values it had already measured when a later part of the analysis fails: it keeps them, locks them, and reports what went wrong alongside them."
+      ]
+    },
+    {
+      "version": "0.9.19",
+      "date": "2026-09-27",
+      "notes": [
+        "The TC-08 recording fills the run by itself. DVT-SAF-013 is operator-driven - the heater is bridged in hardware because the machine has no no-setpoint heat command - so the TC-08 log is the only record of what happened, and until now it was written to the results folder and nothing read it: steps 4 and 6 to 8 sat there as empty boxes. Stopping the recording now runs DVT_AUTO.fromTrace over the samples and fills what the trace genuinely determines - cutout_trip_temp and chamber_temp_at_trip from the rise-to-fall turn of CH1, time_to_trip measured from where the body actually started climbing (the machine's own heating flag stays false throughout, since the heater is not under its control), chamber_time_to_peak, chamber_overshoot_after_trip and chamber_cooling_rate_after_trip over the five minutes after that peak, self_resetting and reset_temp from the body climbing a second time when the cutout closes, and alarm_raised, error_code and time_to_alarm. Eleven values, all locked against typing, and the card says how many it read.",
+        "The alarm is read back out of the trace rather than off the screen: each tc08_record row now carries the machine's alert codes ([t_s, ch1_c, machine_chamber_c, machine_heating, alerts]) and the recording names its own CSV columns, so the header always matches the row.",
+        "What the trace cannot tell apart is still the operator's: a body trace looks identical whether the cutout opened or somebody pulled the power, so manual_abort_used and heater_power_removed (which needs the DMM at the SSR output) stay manual, as do limits_restored and post_test_functional_pass."
+      ]
+    },
+    {
+      "version": "0.9.18",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 says what the machine can and cannot do. Step 3 of the catalog asks for the heater ON at 100 % with no setpoint, and there is no such command anywhere: every heat command the machine accepts takes a setpoint and is clamped to 80 C (RecipeValidator HeatTargetMin 30 / TempMax 80) and nothing reaches the heater SSR past that. The old prompt read as though the tool or the page would send it, so the SSR was never commanded and the operator was left waiting. The card now states plainly that the machine cannot do this and that the heater has to be driven in hardware, at the SSR or the heater supply, before Done is pressed. Decision of the user (2026-09-27): the runner does NOT gain a way to drive the heater past its limits - this test stays operator-driven and the runner only measures.",
+        "The StarBright is never read in parallel with anything else: the SAF-017 interlock timing used to fetch /api/dvt/meter and /api/state together, and concurrent callers interleave control transfers on the meter's USB handle (seen wedging it with LIBUSB_ERROR_IO on the unit). The two reads are now sequential."
+      ]
+    },
+    {
+      "version": "0.9.17",
+      "date": "2026-09-27",
+      "notes": [
+        "The automatic runner takes ambient from the instrument too: every script that records ambient_temp (THM-001, THM-002, THM-003, THM-005, SAF-013, GAS-007) now reads the TC-08's own cold junction through /api/dev/picolog/status `ambient` (sCureBox 1.0.39+) rather than the chamber sensor, which was never the room temperature. With no TC-08 on the machine it falls back to the chamber sensor at rest and writes which of the two it used into the run's timeline, so a fallback is never mistaken for a measurement.",
+        "DVT/tests/test_dvt_web.py: a test that no script asks the operator for ambient_temp while a probe is on the machine (17 tests, all passing)."
+      ]
+    },
+    {
+      "version": "0.9.16",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-012 step 2: the operator opens the door with the UV on - the page no longer has the machine release the door (that switched the UV off first). Prompt 'THE UV IS ON - OPEN THE DOOR NOW'; needs sCureBox 1.0.38. The decay graph starts 2 s before the door opens so the lit level shows",
+        "The page says 'the machine software does not have <endpoint> - install a newer sCureBox' instead of a bare 'Not found' when the machine is older than the page",
+        "Catalog: SAF-012 step 2 text (EN + HE) follows",
+        "SAF-013 TC-08 card: ambient_temp is filled and locked from the TC-08's own cold junction (/api/dev/picolog/status ambient, sCureBox 1.0.39+) instead of being typed - a fourth readiness row shows it; on older machine software the field stays for the operator (it had been showing the chamber temperature)"
+      ]
+    },
+    {
+      "version": "0.9.15",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT automatic runner (DVT/web/dvt-auto.js): one \"Run the test\" button per DVT test, at the top of the run. It drives the machine over its own API, logs /api/state at 1-5 Hz (plus the TC-08 on /api/dev/picolog/status and the StarBright on /api/dvt/meter), reads the moments that matter out of the trace - the heater-body rise-to-fall turn, the first new alert code, the settling of a panel - and writes every value it can measure straight into the run. Measured fields are locked against typing, every trace is kept as its own rec.autos entry with its own CSV in the results folder, and a run whose criteria are all measured records its verdict by itself.",
+        "39 of the 42 catalog tests have a script (the two UV linearity rows and SAF-012 keep their own cards). A script stops for the operator only where the catalog needs a physical act with no API (pull a connector, apply a magnet, seat a build head), an instrument that is not on the network (clamp meter, O2 analyser, hipot set) or a human judgement (visible damage) - one prompt at a time, inside the card, at the moment it is needed rather than as a form afterwards.",
+        "DVT-SAF-013 is deliberately not automated end to end: the runner never removes the software temperature limits, it asks the operator to do that and to command the heater, and measures the cutout from there. Every script turns the machine off when it ends, including on an error or a stop.",
+        "DVT/web/dvt-auto.test.cjs: a simulated machine on a virtual clock runs all 39 scripts to the end with the prompts answered, so a two-hour test is checked in milliseconds; wired into DVT/tests/test_dvt_web.py (status, nothing left running, values measured rather than asked, traces kept per step).",
+        "dvt-tool.html: one script tag, the whole-test card above the procedure, an auto_script case in the step-render switch, one click line and one DVT_AUTO.attach() in init()."
+      ]
+    },
+    {
+      "version": "0.9.14",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-012 steps 2-6 each have a Start button and fill their fields from the machine: step 2 runs a real 405 nm cure at 100 %, waits for a stable StarBright reading, releases the door and asks the operator to open it, and the machine (sCureBox 1.0.36, /api/dvt/uv-off) times the UV to 10 % and to zero on its own clock at 20 Hz - uv_off_time, the new uv_zero_time and residual_irradiance are filled and locked, the irradiance-vs-time graph (door open at t = 0, release / door open / zero / 10 % marked) is saved as a PNG next to the raw CSV in the results folder; step 3 runs a 30 % cure and watches the door sensor while the operator pulls the door (lock_engaged); step 4 releases the door and watches the sensor while the operator holds a magnet to it (defeat_by_magnet_possible, with one confirmation when the sensor reads closed, since a door that fell shut reads the same); step 5 checks the door reading follows close / open / close and does not change on the lock release alone; step 6 takes alarm_raised / error_code from how the step 2 cure ended",
+        "Step 1 now releases the door lock before asking the operator to open the door (the door is locked on the unit)",
+        "Every automatic step keeps its own record in the run (autos) and its own CSV in sweeps/ (<run>_<step tool>_<time>.csv), so steps of one test no longer overwrite each other; the folder is read back the same way",
+        "Catalog: SAF-012 steps 2-6 texts and tools (EN + HE), new field uv_zero_time (recorded, not judged); tests/test_dvt_tool.py follows",
+        "Checked in simulation against sCureBox 1.0.36: all five steps run end to end (step 2: 152 samples, graph saved; step 3 found the program left running after a pass - fixed; step 4 asks when the sensor reads closed). Simulation limits: the release opens the simulated door by itself, so steps 4-5 verdicts there are not meaningful"
+      ]
+    },
+    {
+      "version": "0.9.13",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-013 step 2 (catalog tool tc08_record): a readiness panel checks every 2 s that the machine is connected, the TC-08 is connected to the machine and CH1 (the thermocouple at the cutout) gives a valid reading (-25..250 C, shown); Start stays disabled until all three are green and says what is missing - e.g. 'the TC-08 driver (Pico libusbtc08) is not installed on the machine', which is the state of the unit on 1.0.35 today. Start logs CH1 with the machine's chamber temperature and heater state at 1 Hz for the whole run (saved to the results folder every 30 s, raw CSV in sweeps/), fills and locks start_temp; Stop ends it. The machine reads CH1 only (chamber reference on another channel: CONFIRM)",
+        "Automatic steps may name their own sample columns (rec.auto.columns) for the results folder CSV",
+        "Checked in simulation: all green -> Start -> 6 samples -> Stop, start_temp 23.88 C locked, ambient editable, CSV + journal written; without the TC-08 driver the device row is red with the reason and Start disabled"
+      ]
+    },
+    {
+      "version": "0.9.12",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT-SAF-012 step 1 runs by itself (catalog tool door_open_cure): the operator presses Start and opens the door; the page waits for the machine's door sensor to report it open, takes a 2 s StarBright dark reading, then tries to start a cure twice with the door open - a 405 nm program at 30 % (the operator's way) and a direct UV command - while the StarBright watches the door opening for 5 s at ~5 Hz. UV more than 0.5 mW/cm2 over the dark reading (threshold CONFIRM), or a start the machine accepts, fails the step and the LEDs are commanded off at once; the door closing during the attempt makes the run invalid (nothing recorded). Fills door_open_detected, cure_start_refused, uv_command_refused, uv_detected, uv_peak_above_dark and cure_start_inhibited; the trace goes to sweeps/ in the results folder",
+        "Catalog: SAF-012 step 1 text, new fields with notes, a safety plan (UV eyewear near the door during step 1), the StarBright precondition on the machine's USB for step 1; Hebrew overlay in step",
+        "Finding on the C# unit software: POST /api/recipe/start answers 'Program started' with the door open and the program's pre-flight stops it within 0.7 s (state error, 6015 'Door is Open - Operation Disabled', UV never on). The step counts a start stopped by the machine within 3 s as refused and records the stop; a program still running after 3 s fails",
+        "Checked: against the C# API in simulation (inhibited), a fake machine with a broken interlock (UV seen 12.3 mW/cm2 -> fails, LEDs off), and the door closing mid-attempt (run invalid, nothing recorded)"
+      ]
+    },
+    {
+      "version": "0.9.11",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT web page finds the machine by itself - no address to type: for the selected unit it tries the address that worked last (name and the IP the machine reports), scurebox.local, then scans the known /24 networks for the machine's serial. Every unit (UUT-01..05) is paired with its machine's serial: the page connects only to that machine, warns when the machine it reached is paired with another unit, lists the machines when several answer and it does not know which; Connect or a choice from the list re-pairs (logged). The machine serial is shown and goes into runs.csv with every automatic measurement",
+        "Fix before release: a search started for one unit and finishing after a unit switch could pair the machine with the wrong unit - every search now belongs to the unit it started for and a newer one makes it stale. Checked against the real unit (1.0.32, serial 9d63faba): connected in 0.2 s from an empty browser, warned on UUT-02, scanned 192.168.154.0/24 in 8.5 s for a unit whose machine was absent, re-paired from the list"
+      ]
+    },
+    {
+      "version": "0.9.10",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT web page: every result is written to a results folder on the PC, laid out for analysis - runs.csv (one row per run: verdict, operator, times, note, measuring machine), values.csv (one row per value in long format, with unit, type and source machine / manual), journal.jsonl (append-only history of every record, reopen and automatic measurement), runs/<unit>/<test>/*.json (the full run), sweeps/.../*.csv (raw samples of every automatic measurement, never overwritten), reports/ (saved reports). Recording and automatic runs are refused until a folder is chosen; the folder is remembered and asked for again after a browser restart. Choosing the folder on another PC reads the runs back (newer wins), so the folder - not the browser - is the record. Export / Import data (JSON) removed",
+        "Checked end to end: SAF-004 runs typed on PC 1 (one with a Hebrew note with quotes and commas), OPT-001 measured automatically against the C# API, the same folder opened on PC 2 with an empty browser (3 runs read back, a 3rd run recorded, the raw sweep file untouched)"
+      ]
+    },
+    {
+      "version": "0.9.9",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT web page: DVT-OPT-001 / 002 run by themselves - 'Run on the machine' checks the StarBright on the machine's USB, sets it to the test wavelength if it is on the other one, starts the sweep on the machine, shows the phase / step / reading live, then fills all 22 values (irradiance per step, dark, fit slope / intercept / R2, max deviation, gain at 30 and 100 %, monotonic, hottest LED, meter head and wavelength), draws the irradiance-vs-command graph from the stored sweep and judges the criteria - the operator only records the verdict. Measured values are locked (not typed over); the sweep's samples are kept with the run and go out with Export data. Works against the C# unit (sCureBox 1.0.34) and the Python machine software (same /api/dvt JSON)",
+        "Checked end to end on this PC against the C# API with a simulated meter: meter moved from 405 to 450 nm by the page, 440 samples in 90 s, PASS recorded in one click"
+      ]
+    },
+    {
+      "version": "0.9.8",
+      "date": "2026-09-27",
+      "notes": [
+        "DVT web page DVT/web/dvt-tool.html - the QA tool's look and simplicity for the DVT campaign: pick the unit and operator, the five phases list the tests that unit owes (527 runs over UUT-01..05), each test opens with purpose, safety plan, equipment, preconditions and its steps, every run (sweep row / case x repetition) takes the step values, and the pass criteria are judged live (PASS / FAIL / BLOCKED) with the console's rules before Record verdict. Results are kept in the browser, Export / Import data (JSON) moves them between PCs, Export report gives a text report per unit; English / Hebrew from the catalog overlay. Data is generated from the catalog by DVT/web/build_dvt_web.py",
+        "DVT catalog fix: DVT-SAF-018 heater_state / uv_state offered False / True instead of off / on (bare off / on are YAML booleans), so its criterion heater_state == 'off' could never pass - the values are quoted, and Catalog.load now refuses a boolean enum value",
+        "DVT console fix: a pass criterion comparing values of different types with == (e.g. a boolean with 'off') was reported BLOCKED because every comparison operator was computed at once; only the requested operator runs now, so it is FAIL",
+        "QA: DVT/tests/test_dvt_web.py - the page's data is current with the catalog, and the page's evaluator gives the console's verdict and detail on every test's criteria with empty and filled values, plus fixed cases (abs / max / thresholds / OR / NOT / null threshold / bool vs string)"
+      ]
+    },
+    {
+      "version": "0.9.7",
+      "date": "2026-09-16",
+      "notes": [
+        "Network page: the WireGuard IP row shows the machine's NetBird / WireGuard tunnel address (reachable from anywhere) instead of a fixed dash: /api/network/status wireguardIp (sCureBox 1.0.19), else the UP wt0 / wg0 interface of the status payload; still a dash when the unit is not enrolled. QA: net_wireguard_ip"
+      ]
+    },
+    {
+      "version": "0.9.6",
+      "date": "2026-09-16",
+      "notes": [
+        "Temperature sensor noise filter widened from 3 s to 10 s (user request): Err 9001 / 9050, a heater or cooling stop, a refused process start and a cure-history sensorIssues entry now need a thermistor with NO valid reading for 10 s in a row; any valid reading inside the window resets it. heater.thermistor_glitch_sec = 10, SENSOR_GLITCH_SEC = 10. QA: sensor_glitch_filter, hwc_sensor_policy, heater_sensor_guard updated"
+      ]
+    },
+    {
+      "version": "0.9.5",
+      "date": "2026-09-16",
+      "notes": [
+        "Temperature sensor noise filter: a thermistor now counts as failed only after it reads open / out of range CONTINUOUSLY for 3 s (heater.thermistor_glitch_sec in components.json, SENSOR_GLITCH_SEC in io_bridge). Before, a single bad sample stopped a running heating or cooling step, raised Err 9001 at once and refused a process start (test unit 2026-09-15: chamber / Left / Right thermistors dropping out intermittently). A shorter dropout now holds the last good temperature, raises nothing, is not recorded in the cure-history sensorIssues, and the pre-start check re-reads every 0.5 s for 3 s and passes on any valid read; a sensor that stays open is still caught 3 s after it went open. The 60 s supervision alert is unchanged. QA: sensor_glitch_filter, hwc_sensor_policy, heater_sensor_guard"
+      ]
+    },
+    {
       "version": "0.9.4",
       "date": "2026-09-15",
       "notes": [
         "Cure page: a process start (heat, cure-405/450, uv-only, cool, dry, Settings heating slider) now waits 20 s for the machine's answer instead of 5 s. The machine answers a heated cure start only after its heater-fan spin-up + RPM check (~3 s) and the LED-cooling-fan pre-flight (~3.5 s), so the screen gave up one second early and showed 'Hardware: TimeoutError: signal timed out' with Err 6015 and a red strip while the machine had actually started (test unit, 2026-09-15). A command that really gets no answer now reads 'no answer from the machine within 20 s'. QA: hwc_start_timeout_budget (mirror) + hwc_start_roundtrip (live timing)"
+      ]
+    },
+    {
+      "version": "0.9.3",
+      "date": "2026-09-14",
+      "notes": [
+        "Heater temperature sensor guard: the heater is never switched on while its sensor (the chamber NTC) is not reading - a heating step or the Settings heating slider is refused (Err 9001) and the screen pops the fault (cure page: Retry / Stop process, the program pauses where it is; Settings: OK, the slider returns to OFF); a sensor that stops reading mid-step switches the heater off at once and the machine raises 9001 immediately with the heater detail (not after the 60 s supervision), the cure pauses with the same pop-up; /api/state alertDetails carries the sensor detail"
+      ]
+    },
+    {
+      "version": "0.9.2",
+      "date": "2026-09-14",
+      "notes": [
+        "RGB status strip follows the notifications: any undismissed critical alert -> pulsing red, any warning -> pulsing yellow, all cleared -> solid green; the UI reports its counts to the machine (POST /api/rgb/alerts) on every change and every 30 s, a stale report (> 90 s) is ignored; /api/state carries stripMode and uiAlerts; rgb.status.warning color (default yellow)",
+        "NFC: Err 9052 (reader not detected) is raised only when a reader that was connected since boot disappears while NFC is enabled (unplugged during use); a machine that boots without a reader raises no warning; a 9052 left on the screen from an earlier session is not restored after a reload; /api/state nfcReader.seenSinceBoot"
+      ]
+    },
+    {
+      "version": "0.9.1",
+      "date": "2026-09-14",
+      "notes": [
+        "Settings LED test: a second button tests the 450 nm (bleaching) strings — 30 s, 0.8 C, measured cold on the test unit left/right/back +1.7 … +2.3 C, the door only +0.5 C so its rise is reported but not judged at 450 nm; both tests first cool the panels for 20 s with the LEDs off and the four LED cooling fans at full speed when any panel is still >= 30 C from a previous run (a warm panel cools faster than a small heat input warms it and would look dark); the route takes seconds, min_rise and wavelength; the two buttons are purple (405) and blue (450), the row shows only Running… while a test runs and then PASS, or FAIL with the panel names",
+        "Cure: the in-cure panel check skips panels that are still >= 30 C when the UV comes on (they were emitting a moment ago), uses the 30 s window on bleaching steps and does not judge the door at 450 nm",
+        "RGB status strip: a running process without internet now shows SOLID blue instead of a moving blue comet (which read as a warning); new rgb.status.busy_style ('comet' default, 'solid') for the busy color"
+      ]
+    },
+    {
+      "version": "0.9.0",
+      "date": "2026-09-14",
+      "notes": [
+        "Settings: NFC can no longer be switched on without an NFC reader - the machine detects the USB reader (Eccel Pepper C2) by its USB identity and keeps the NFC switch disabled with a 'no reader' note while none is connected; the setting is now stored on the machine and survives reboots",
+        "Alerts: new warning 9052 'NFC Reader Not Detected' - raised if NFC is switched on with no reader, or while the reader is unplugged with NFC enabled; the top-bar NFC icon shows only while the reader is present",
+        "API: GET/POST /api/nfc (on=1|0) and nfcEnabled + nfcReader {detected, port, model, serial} in /api/state; QA tool: new 'NFC Reader (Settings guard)' category (7 tests)"
+      ]
+    },
+    {
+      "version": "0.8.65",
+      "date": "2026-09-14",
+      "notes": [
+        "Cure: the LED panels are checked while the cure runs — the four LED thermistors are sampled when the UV comes on and checked 15 s later, 30 s below 60 % UV power (panels rise ~0.2 C/s at 100 %, ~0.06 C/s at 30 %); a panel that did not warm (0.8 C at 100 % in 15 s, scaled with power and window, never below 0.35 C — healthy panels gave +0.9 to +1.9 C, a dark one +0.2 C on the test unit) means it is not emitting: every output off, the program paused where it is, a dialog naming the panel with Stop / Continue anyway (the cure then finishes with that panel dark); new registry code 9004 raised on the Alerts screen with the panel and its measured rise; the machine as built shows no fault for an unplugged panel — this check is what finds it"
+      ]
+    },
+    {
+      "version": "0.8.64",
+      "date": "2026-09-14",
+      "notes": [
+        "Settings > LED Test now proves the panels emit: first every LED thermistor must give a valid reading, then ALL panels are switched on at 100 % for 15 s (a panel rises ~0.2 C/s at 100 %) and every thermistor must have risen by at least 0.8 C (a dark panel shows +0.2 C, the slowest healthy one +0.9 C; the UI passes seconds and min_rise to the machine); the row says OK, or FAIL naming the sensors that did not read / the panels that did not heat up (with their rise); refused while a process runs; LEDs off at the end; door interlock and LED-fan pre-flight apply"
+      ]
+    },
+    {
+      "version": "0.8.63",
+      "date": "2026-09-14",
+      "notes": [
+        "LED panel fault mid-process (new Err 9005 'LED Panel Fault - Temperature Dropped During Cure', critical): once a supervised panel (Left / Right, regular thermistors) has proved it heats, io_bridge tracks its peak temperature at the current power level while it stays lit; a fall of >= drop_c (1.0 C) below that peak - after taking off any fall of the chamber temperature over the same time, so a chamber cooling down between steps is not a panel fault - that lasts drop_persist_sec (30 s) raises 9005 naming the panel with the measured fall in /api/state.alertDetails. A power-level change waits drop_settle_sec (120 s) before the peak is tracked again; a re-light re-judges the panel (rise rule again, then the peak restarts from the re-light temperature); the latch clears when the panel climbs back to within drop_c/2 of its peak while lit. The process is not aborted. components.json led_heating: drop_c / drop_persist_sec / drop_settle_sec (live re-read); /api/state.ledHealth adds peak / drop and status 'drop'",
+        "Fix in the 9004 rule: once a panel has proved it heats in a window, the rise rule is done with it (a later fall belongs to the drop rule - a chamber cooling between steps used to trip a false 9004); a panel re-lit within rest_sec (baseline kept) is re-judged with check_after_sec of light again - it cooled during the gap, so the old timer would have failed a healthy panel at once",
+        "errors.json 9005, SRS bullet + §9 catalog row, QA mirrors (io_state_led_health accepts status 'drop' and 9005 details; hwc_led_heating_policy checks the drop rule and the chamber compensation)"
+      ]
+    },
+    {
+      "version": "0.8.62",
+      "date": "2026-09-14",
+      "notes": [
+        "Fans, machine UI: before ANY process every fan (six) is spun and read; a fan that does not turn holds the start with a dialog naming it — Cancel, or Continue anyway (the machine then runs without that fan: POST /api/fans/override, recorded, cleared when the process ends); a fan failing DURING a cure (0 RPM for 5 s, alert 9002/9003) switches every output off, pauses the program where it is and shows the same dialog — Stop process, or Continue anyway which resumes exactly where it stopped",
+        "Home: Start Cure is greyed while a critical alert is active; pressing it opens a dialog listing the critical alerts with a Go-to-alerts button; hardware context exposes the machine's active alert codes (hwAlerts / alertDetails / fanOverride); machine: fan override + fan-test?fan=all (all six fans concurrently); fan supervision now expects what each fan channel is REALLY driven at (PCA last-duty cache) — no phantom failure when a run-on flag is set but the fan was switched off; the fan test measures an already-running fan as it runs and never switches it off afterwards (it used to kill the heater-fan cooldown run-on and trip Err 9002 on a healthy fan); the PCA duty cache lives in io_controller.PCA9685.set_duty (the class the bridge uses); test unit: FAN_HEATER nominal RPM re-measured on the machine (30/50/80/100 % = 774/1752/2825/3620) in its components.json — the 2026-09-09 table read 15 % high at 30 % and would have raised the wear warning on every cooldown run-on"
+      ]
+    },
+    {
+      "version": "0.8.61",
+      "date": "2026-09-14",
+      "notes": [
+        "LED connection supervision (Err 9004) now uses the REGULAR Left / Right thermistors (TEMP_LEFT = U6 ch3, TEMP_RIGHT = U6 ch1) instead of the ORIGIN ones, per the user: only the Left and Right panels are supervised (Back / Door carry an ORIGIN thermistor only; components.json led_heating.panels maps panel -> thermistor and can add them). Threshold re-calibrated on the 2026-09-14 bench for these thermistors: >= 1.0 C after 90 s of light at >= 30 % (measured +1.8 / +1.7 C after 90 s, +1.3 / +1.2 C after 60 s, +2.4 / +2.2 C after 150 s at 30 % 405 nm). /api/state.ledHealth carries LED_LEFT / LED_RIGHT only",
+        "errors.json 9004 text, SRS paragraph and QA tests (io_state_led_health, hwc_led_heating_policy) updated to the regular-thermistor rule"
+      ]
+    },
+    {
+      "version": "0.8.60",
+      "date": "2026-09-14",
+      "notes": [
+        "LED connection supervision (new Err 9004 'LED Panel Not Heating - Check LED Connection', critical): every lit LED panel must warm its own board thermistor (TEMP_*_ORIGIN). Baseline = the panel temperature when its light starts (a re-light within 120 s keeps the baseline, the panel is still warm); while the panel is commanded on at >= 30 % system power, after 60 s of accumulated light the rise must be >= 1.0 C, otherwise the panel is not receiving current (open connector / driver output): alert 9004 names the panel with its measured rise ('Left LED: +0.1 C after 60 s at 30 % ... check that the Left LED connector is plugged in') in /api/state.alertDetails. The process is not aborted; the latch clears by itself as soon as the panel heats again. io_bridge._led_heat_tick (status loop, once a second), components.json 'led_heating' (min_eval_intensity 30, check_after_sec 60, min_rise_c 1.0, rest_sec 120; live re-read), /api/state.ledHealth per panel {lit, intensity, baseline, rise, litSec, status off/low/warming/ok/fail/no-sensor}",
+        "Bench on testingcm5 2026-09-14 at 30 % (LED fans 100 %): 405 nm rise after 60 s Left +2.7, Right +2.3, Back +1.8, Door +1.6 C (after 150 s +4.3 / +3.7 / +3.2 / +3.1); the second Left/Right thermistors +1.3 / +1.2 C; chamber flat. The 450 nm (Door only) run could not be made: the test unit's Door LED fan tachometer reads 0 RPM (fan test: FAN_DOOR 0, the other three ~3,550 RPM) and the new 9003 LED-fan pre-flight refuses the UV command - open until the door fan / its tach is fixed. Scripts DVT/bench/led_panel_warmup.py (thermistor rise per panel per wavelength) and DVT/bench/led_connection_check.py (end-to-end 9004 check with fault injection via min_rise_c)",
+        "SRS: LED connection supervision paragraph under the hardware control section + 9004 in the §9 catalog. QA tool: io_state_led_health (ledHealth structure in /api/state) and hwc_led_heating_policy (policy mirror + window judgement)"
+      ]
+    },
+    {
+      "version": "0.8.59",
+      "date": "2026-09-14",
+      "notes": [
+        "Replaces the 0.8.57 switch-only reading (/api/state.pressureSwitch, components.json pressure_switch) with the analog reading below",
+        "N2 line pressure is now read from the SMC ISE20A/B digital pressure switch's ANALOG output (gray lead -> Analog_IN -> R86 -> ADS1115 U7 AIN3, I2C1 0x49) - not from the I2C ABP2 listed in the old HSI (no device at 0x28 on the test unit). io_controller.pressure_sensor_convert() + IOController.read_pressure(): 1 V = -0.100 MPa, 5 V = 1.000 MPa (datasheet CAT.ES100-114 p. 17; 4-20 mA over a shunt supported; switch-only mode kept). components.json 'pressure_sensor' carries mode, spans, rated range -0.1..1.0 MPa, set range -0.105..1.05 MPa, 0.001 MPa steps, divider, set_point_mpa 0.6 (6 bar guard)",
+        "/api/state.n2Pressure = {volts, mpa, bar, on, saturated, mode, setPointMPa}; n2LinePressure (bar) is now the live value and feeds the Settings 6 bar nitrogen guard (null while unreadable)",
+        "Known limit: the ADS1115 runs from 3.3 V and Analog_IN has no divider, so the 1-5 V output is clamped above ~0.5 MPa - a 6 bar line reads 'saturated' (mpa null) until a 2:1 divider is fitted on Analog_IN (then set pressure_sensor.divider = 2.0). Bench 2026-09-14: 0.52 V with no pressure (not the 1.36 V a powered 1-5 V output gives at 0 MPa), clamped with pressure - lead colour / model code on the unit still to be confirmed",
+        "scripts/pressure_log.py: live console log of the N2 pressure from /api/state (1 s, optional CSV)",
+        "HSI: row N2_PRESSURE-ADS1115_U7-CM5 rewritten for the analog reading (datasheet transfer function, ADC limit, bench data); QA: n2Pressure in /api/state + ISE20 analog transfer-function mirror"
+      ]
+    },
+    {
+      "version": "0.8.58",
+      "date": "2026-09-14",
+      "notes": [
+        "Fans: the fan test spins EVERY fan of the group and reads each tachometer — a disconnected right / back / door LED fan used to pass because only the left fan was measured; the group fails naming the stopped fan(s) (Settings shows the name); fanRpm now reports the worst fan of each group and fanRpmEach every fan",
+        "Fans: pre-flight before the UV LEDs go on — every LED cooling fan is spun up and read; a fan below 100 RPM refuses the UV command with new Err 9003 naming the fan (an LED never runs without its fan); a fan reading ~0 RPM while commanded trips the critical stop (Err 9002) after 5 s instead of the 60 s wear window (fan_health.stopped_persist_sec, led_fan_min_rpm); registry + SRS updated; QA mirror; Settings > LED cooling airflow test lists every fan (Left / Right / Back / Door) with its RPM and OK / FAIL — not rotating; the four tachometers are read concurrently (~3 s) and the UI waits up to 20 s for the test — a timeout is shown as a failed test, never as OK; the row shows just OK when all four pass, and on FAIL only the fan(s) that are not rotating"
+      ]
+    },
+    {
+      "version": "0.8.57",
+      "date": "2026-09-14",
+      "notes": [
+        "N2 line pressure switch (SMC) is now read: it is wired to Analog_IN -> R86 -> ADS1115 U7 AIN3 (I2C1 0x49), not to the I2C ABP2 listed in the HSI (no device at 0x28 on the test unit). io_controller.read_pressure_switch() + components.json 'pressure_switch' (adc / channel / on_above_volts = 2.0 V); /api/state.pressureSwitch = {volts, on, threshold}. Bench 2026-09-14: 0.52 V without N2 pressure, ADC full scale with pressure (the switch output is above the ADC supply - only R86 120 R in series, so a divider/clamp on Analog_IN is needed on the board)",
+        "Pressure switch identified as SMC ISE20 series (datasheet CAT.ES100-114): rated -0.100..1.000 MPa, set range -0.105..1.050 MPa in 0.001 MPa steps, 12-24 VDC, NPN/PNP open collector 80 mA. components.json pressure_switch carries the datasheet figures and set_point_mpa = 0.6 (the 6 bar nitrogen guard, must match the value programmed on the switch); /api/state.pressureSwitch.setPointMPa. HSI: new row N2_PRESSURE_SWITCH-ADS1115_U7-CM5 (U7 AIN3), PRESSURE_IC row marked resolved (ABP2 not populated)",
+        "scripts/pressure_log.py: live console log of the pressure switch reading from /api/state (1 s, optional CSV)",
+        "QA: pressureSwitch key in /api/state; threshold-logic mirror"
+      ]
+    },
+    {
+      "version": "0.8.56",
+      "date": "2026-09-14",
+      "notes": [
+        "Fix: a program whose first step is the N2 purge no longer aborts the instant it starts. A door-open abort (Err 6016) that was never acknowledged stayed latched on the machine (doorAborted); heating / cure / cooling steps clear it when they start but the nitrogen valve command did not, so the UI's door watchdog killed the run at once. Opening the N2 valve now clears the latched abort like every other process start, and the cure screen acknowledges a stale flag at run start and ignores it until it drops",
+        "QA: N2 valve open clears a latched door abort (machine); stale-flag guard on the cure screen (mirror)"
+      ]
+    },
+    {
+      "version": "0.8.55",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT Instruments page: the list is now every external device needed to execute the DVT, once — the catalog's different wordings of a device are grouped (PicoLog TC-08 x4 wordings, AC source x8, O2 analyser x5, thermocouples, StarBright…), each row shows the tests that use it and its catalog wordings, and one calibration record covers all of them; fixtures, consumables, accessories and the machine's own telemetry (spare fuses, sensor fixtures, break-out leads, indicators, stopwatch, tachometer readback, 10 kOhm resistor, Kelvin probes…) are listed apart, never ask for a calibration and never block a run",
+        "DVT-OPT-001/002: the sweep procedure is fixed — 30 → 100 % in 10 % steps, 10 s per step, meter at 5 Hz, mean of the last 5 s — the dwell / rate / steps fields are gone from the step (catalog, Hebrew overlay, figure caption and README say 10 s)",
+        "DVT bench rules: non-instrument words are checked first; DMM / clamp meter split from the current probe / scope; Vernier caliper added; tachometer readback is not a device; pytest + QA-tool mirror; Hebrew"
+      ]
+    },
+    {
+      "version": "0.8.54",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT-OPT-001/002 slimmed to three things: the connection checklist (preconditions: USB to the machine, meter set to the wavelength, head at the chamber centre, door closed, LEDs cold), the schematic of the set-up (process figure) and ONE automatic test step that checks the meter, runs the sweep on the machine and records every value, the CSV log and the graph by itself — no manual value entry, no attach-the-graph step; catalog step key auto: true hides the Record-now card on such steps; Hebrew overlay, figure, tests updated"
+      ]
+    },
+    {
+      "version": "0.8.53",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT Test Plans: names are never elided to '…' — the first column sizes to its content, cells wrap, the tree takes more width; the right side now names what is open (test id + title with subsystem / method / applicability / runs / phase, or the phase / bench group with the tests it contains) above the plan text"
+      ]
+    },
+    {
+      "version": "0.8.52",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT Test Console: the restart / erase is per UUT — 'Restart this unit and erase its data…' (are you sure, irreversible, reason required) puts every run of the selected unit back to NOT_STARTED and erases its values, verdicts, redlines, NCRs, waivers, attachments and phase sign-offs, un-freezes its configuration; journaled (store.reset_unit), so every console applies it; other units untouched; the whole-campaign erase stays as a secondary option; pytest + QA-tool mirror; Hebrew"
+      ]
+    },
+    {
+      "version": "0.8.51",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT Test Console: 'Restart DVT and erase all data…' (danger zone) — a confirmation dialog (are you sure, irreversible) with a required reason and an acknowledgement; erases the campaign locally (campaign.db, exports, journal) and in the shared Drive folder (every console's journal, attachments, csv/charts, campaign exports), writes reset.json + reset_log.jsonl (the reason is the only thing kept), keeps the console settings and restarts empty",
+        "DVT journal: reset marker — events older than the marker are never replayed again by any console; a console that still holds pre-reset data is told at start-up and offered to erase; pytest + QA-tool mirror; Hebrew"
+      ]
+    },
+    {
+      "version": "0.8.50",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT dashboard: 'Progress by subsystem' gained a unit selector (All units, or one UUT) and a bold 'Total — all tests' row; the 'Progress by machine' card under it is no longer shown (its data stays available); Engine.subsystem_progress(unit) computes the rows; pytest + QA-tool mirror; Hebrew"
+      ]
+    },
+    {
+      "version": "0.8.49",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT-OPT-001/002: the UV sweep runs inline on the wizard step instead of a pop-up dialog — meter check, Start, progress bar, live trace and result on the step page; an 'Abort test — LEDs off' button on the step (always available: with nothing running it still switches the LEDs off); when the sweep completes the values and the CSV/PNG are written to the run and the wizard moves to the next step by itself; the meter check runs once when the step becomes visible"
+      ]
+    },
+    {
+      "version": "0.8.48",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT-OPT-001/002: the StarBright no longer needs a calibration certificate id — the DVT verifies it itself: on the Equipment stage the wizard asks the machine (GET /api/dvt/meter) whether the meter is connected and delivering a numeric reading, shows connected · head · reading (or NOT DETECTED) with a 'Check the meter now' button, logs the check, and keeps Next locked until the machine reports a reading; the sensor fixture needs nothing",
+        "DVT catalog: equipment entries may carry verify: live_meter | none — the engine raises no calibration blocker for them (other instruments, and the same meter in SAF-012/007/014, keep their calibration record); pytest + QA-tool mirror; Hebrew"
+      ]
+    },
+    {
+      "version": "0.8.47",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT Test Console: new 'Pick a test' card — choose any catalog test and run it on the selected unit (resumes its IN_PROGRESS run, else opens its first NOT_STARTED run); blockers are listed and need a recorded supervisor override; 'Open the selected run' starts the run highlighted in the runs table (a specific variant / repetition); the guided next action stays the default and --open TEST_ID preselects a test",
+        "DVT: Engine.pending_run(test, unit); pytest + QA-tool mirror; Hebrew"
+      ]
+    },
+    {
+      "version": "0.8.46",
+      "date": "2026-09-14",
+      "notes": [
+        "DVT catalog v0.24: two new tests DVT-OPT-001 (405 nm) and DVT-OPT-002 (450 nm) — UV irradiance against the commanded LED power with the Ophir StarBright plugged into the MACHINE's USB: connect the meter to the machine, verify on the meter (read back by the machine) that it is set to the test's wavelength, then the machine takes a dark reading and steps 30 → 100 % in 10 % steps, 15 s each, meter at 5 Hz; the console draws measured irradiance vs command with a linear fit and fills per-step irradiance, slope, intercept, R², max deviation, gain at 30/100 %, monotonic; new subsystem Optical",
+        "Machine: server/starbright_usb.py (StarBright over pyusb, no Ophir software) + server/uv_sweep.py blueprint — GET /api/dvt/meter (presence, head, units, wavelength setting, reading), POST /api/dvt/meter/wavelength, POST /api/dvt/uv-sweep (refused while running, without a meter, with the door open, or with the meter set to another wavelength unless force=1), GET status with samples + per-step means + hottest LED, POST abort; LEDs always off at the end",
+        "DVT console: wizard tool key uv_linearity → 'Run the UV sweep on the machine…' dialog (meter check + set-wavelength button, live trace, result table, graph, apply); DUT client + simulator support; process figures; Hebrew; pytest + QA-tool mirror; console flag --open TEST_ID opens the console on that test's runs; the dialog shows the operator instruction to set the meter's wavelength (on the meter, or with the 'Set the meter' button), reads the setting back through the machine and keeps the sweep locked until it matches"
+      ]
+    },
+    {
+      "version": "0.8.45",
+      "date": "2026-09-10",
+      "notes": [
+        "/api/state ledTemps now carries all six LED-module thermistors: the second sensor on the Left and Right modules (TEMP_LEFT / TEMP_RIGHT, U6 ch1 / ch3) is reported as left2 / right2 next to the supervised ORIGIN readings - telemetry only, not part of the LED start-up check or the sensor supervision (io_bridge LED_SECOND_SENSORS); the simulator mirrors the keys",
+        "QA: 'Left / Right Second Thermistors in State' checks the six keys are present and each is a number or null"
+      ]
+    },
+    {
+      "version": "0.8.44",
+      "date": "2026-09-10",
+      "notes": [
+        "DVT-THM-005 is automatic: 'Run the fan-duty sweep automatically…' (dvt_tool/instruments/fansweep.py + ui/fansweep_dialog.py) — the console sets the LED-cooling fans to 100 / 90 / 80 / 70 % in turn, switches the LEDs on at maximum, watches the four built-in thermistors until every panel settles (rise < 0.1 °C/min over 5 min) or one reaches the 75 °C limit, stops the sweep there, ends safe (LEDs off, fans 100 %), and hands the operator the final answer (settled temperature per panel per duty, margin, lowest duty with ≥ 5 °C margin) and a temperature-vs-time graph with duty bands + a per-duty bar chart; CSV + PNG attached to every duty row of the unit, the other duty rows completed and committed automatically",
+        "pytest: sweep runner against the accelerated simulator (settle rule, limit stop, safe end, artefacts) and the dialog applying all four rows"
+      ]
+    },
+    {
+      "version": "0.8.42",
+      "date": "2026-09-10",
+      "notes": [
+        "Cure report: new 'Fan speeds' chart - the tachometer RPM of every fan (heater, chamber cooling, four LED fans) over the run, with average / min / max per fan and the share of the run it was running. Every telemetry sample now carries fanRpm (from the IO board's fan supervision); Postgres cure_run_telemetry.fan_rpm + v_cure_history",
+        "Fix: fan health supervision (v0.8.41) never loaded its nominal table (config loader out of scope), so no fan was evaluated - fixed and bench-verified"
+      ]
+    },
+    {
+      "version": "0.8.43",
+      "date": "2026-09-10",
+      "notes": [
+        "DVT catalog v0.23: new test DVT-THM-005 — LED settled back-face temperature against LED-cooling fan duty (100 / 90 / 80 / 70 % PWM sweep), LEDs at maximum in the 80 °C chamber, thermocouples on all four panels, every row judged against the 75 °C working limit; the lowest duty passing on all five units minus a margin is the candidate production fan setting; on all 5 units (+20 runs); Hebrew overlay, process figure, plan doc, live-value mapping for the settled temperatures and tach",
+        "DVT simulator: commanded fan duties stick (fan_override) and reduced LED-cooling airflow warms the panels (~+9 °C at 70 %)",
+        "QA: 'DVT-THM-005 · LED-Cooling Fan Duty Commandable + Reported' readiness test"
+      ]
+    },
+    {
+      "version": "0.8.42",
+      "date": "2026-09-10",
+      "notes": [
+        "DVT catalog v0.22: new test DVT-NFC-001 — build-head NFC identification: registered build head inserted to its stop is read and bound to the print, a swapped head follows the tag (catches a cached UID), no tag / unknown tag / 5 mm short seating / reader disabled are reported to the operator, never a silent bind; 6 cases on all 5 units (+30 runs); Hebrew overlay, process figure (build head + NFC reader elements, tags BH / B2), plan doc row, open issue 29",
+        "QA: 'DVT-NFC-001 · NFC Tag / Build Head In Telemetry' readiness test (expected finding: /api/state has only nfcEnabled)"
+      ]
+    },
+    {
+      "version": "0.8.41",
+      "date": "2026-09-09",
+      "notes": [
+        "Fan health supervision: every tachometer fan (heater, chamber cooling, four LED fans) is compared once a second with its measured nominal RPM at the commanded duty (components.json fan_health, nominal table measured on testingcm5 2026-09-09, linear interpolation, evaluated at >= 30 % duty after a 5 s spin-up). >= 10 % below nominal for a full minute -> 9051 warning 'replace the fan'; >= 20 % below for a full minute -> 9002 critical: all outputs off, process starts refused, fan latched until it runs at nominal for a minute. The alert names the exact fan with measured / expected RPM (/api/state alertDetails, shown on the Alerts screen); /api/state fanHealth per fan",
+        "Cure history: fanIssues [{fan, deficitPct, critical}] recorded per run (JSON store + Postgres cure_runs.fan_issues / v_cure_history), history row + report 'Fans' card; alerts can carry a detail line",
+        "errors.json 9002 / 9051; SRS 7.4 'Fan health supervision' + registry rows + 10.2/10.3; QA: fan policy mirror + /api/state fanHealth test"
       ]
     },
     {

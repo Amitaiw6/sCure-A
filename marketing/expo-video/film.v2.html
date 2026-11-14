@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sCure Box - Expo Film</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --bg:#070a14; --panel:#141a2b; --line:#2a3452; --txt:#f2f5ff; --dim:#98a3c7;
+    --uv:#a66bff; --blue:#4aa3ff; --heat:#ff7a33; --cool:#7dd3fc; --ok:#4ade80; --bad:#ff5d6c;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;color:var(--txt)}
+  #frame{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;background:var(--bg);overflow:hidden}
+  #bg{position:absolute;inset:0}
+  .abs{position:absolute}
+  #stage{left:110px;top:150px;width:900px;height:800px}
+  .cap{left:1090px;width:730px;top:260px;opacity:0}
+  .kick{font-size:28px;letter-spacing:.22em;text-transform:uppercase;font-weight:600}
+  .ttl{font-size:88px;font-weight:700;line-height:1.02;margin-top:18px;letter-spacing:-.02em}
+  .bod{font-size:36px;line-height:1.35;color:#c9d2f0;margin-top:26px;font-weight:400}
+  #brand{left:70px;top:48px;font-size:34px;font-weight:700;letter-spacing:.02em;opacity:0}
+  #brand span{color:var(--uv)}
+  #chips{left:110px;top:985px;display:flex;gap:16px;opacity:0}
+  .chip{padding:12px 26px;border-radius:40px;border:2px solid var(--line);font-size:26px;color:var(--dim);background:#0d1222;font-weight:600}
+  .full{inset:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;padding-left:130px;opacity:0}
+  .photo{border-radius:36px;overflow:hidden;opacity:0;background:#fff;box-shadow:0 0 120px rgba(166,107,255,.35),0 40px 90px rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.12)}
+  .photo img{width:100%;height:100%;object-fit:cover;display:block;transform-origin:50% 50%}
+  #hero{left:1130px;top:100px;width:620px;height:820px}
+  #inside{left:110px;top:120px;width:703px;height:820px}
+  .tagp{position:absolute;left:24px;bottom:24px;padding:10px 22px;border-radius:30px;background:rgba(7,10,20,.78);color:#fff;font-size:26px;font-weight:600;backdrop-filter:blur(6px)}
+  .cta{margin-top:70px;padding:22px 46px;border-radius:60px;background:linear-gradient(90deg,#7c4dff,#4aa3ff);font-size:42px;font-weight:700;box-shadow:0 10px 50px rgba(124,77,255,.5)}
+  .big{font-size:140px;font-weight:800;letter-spacing:-.03em;line-height:1}
+  .sub{font-size:48px;color:#c9d2f0;margin-top:34px}
+  .list li{list-style:none;font-size:36px;margin-top:20px;display:flex;gap:18px;align-items:center;color:#dfe5fb}
+  .list b{display:inline-block;flex:none;width:44px;height:44px;border-radius:50%;background:#143d27;color:var(--ok);text-align:center;line-height:44px;font-size:28px}
+  #bezel{left:90px;top:170px;width:960px;height:600px;border-radius:30px;border:2px solid #2f3a60;background:#0b0f1a;overflow:hidden;opacity:0;box-shadow:0 0 90px rgba(166,107,255,.25),0 30px 80px rgba(0,0,0,.6)}
+  #bezel img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform-origin:50% 50%}
+  #bezel-tag{left:90px;top:792px;font-size:26px;color:var(--dim);opacity:0;letter-spacing:.04em}
+</style>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/CopyShader.js"></script>
+<script src="vendor/LuminosityHighPassShader.js"></script>
+<script src="vendor/EffectComposer.js"></script>
+<script src="vendor/RenderPass.js"></script>
+<script src="vendor/ShaderPass.js"></script>
+<script src="vendor/MaskPass.js"></script>
+<script src="vendor/UnrealBloomPass.js"></script>
+<script src="machine3d.js"></script>
+</head>
+<body>
+<div id="frame">
+  <canvas id="bg" width="1920" height="1080"></canvas>
+  <canvas id="gl" class="abs" width="1920" height="1080" style="left:0;top:0;width:1920px;height:1080px;opacity:0"></canvas>
+
+  <div id="brand" class="abs">s<span>Cure</span> Box</div>
+
+  <!-- intro -->
+  <div id="intro" class="abs full">
+    <div class="kick" style="color:var(--uv)">Meet the sCure Box</div>
+    <div class="big" style="margin-top:26px">From print<br>to perfect.</div>
+    <div class="sub" style="font-size:44px;margin-top:40px">Post-processing, automated.</div>
+  </div>
+
+  <!-- real UI screenshots -->
+  <div id="bezel" class="abs">
+    <img id="im0" src="shots/ui-builder.png"><img id="im1" src="shots/ui-builder2.png"><img id="im2" src="shots/ui-builder3.png">
+    <img id="im3" src="shots/ui-home.png"><img id="im4" src="shots/ui-cure.png"><img id="im5" src="shots/ui-boot.png">
+  </div>
+  <div id="bezel-tag" class="abs">Real screens from the sCure Box touch display</div>
+
+  <!-- captions -->
+  <div id="c1" class="abs cap"><div class="kick" style="color:var(--uv)">Inside</div><div class="ttl">One chamber.<br>One program.</div><div class="bod">UV LED panels on the walls and the door, a heater, fans and a nitrogen line — heat, dry, cure, bleach and cool, all automated.</div></div>
+  <div id="u1" class="abs cap"><div class="kick" style="color:var(--blue)">Programs</div><div class="ttl">Build it in seconds</div><div class="bod">Pick a process, set temperature and time, add as many steps as you need. The total run time is calculated for you. CSV import too.</div></div>
+  <div id="u2" class="abs cap"><div class="kick" style="color:var(--blue)">Ready</div><div class="ttl">Pick. Tap.<br>Start.</div><div class="bod">A library of programs with estimated run times — one tap on Start Cure.</div></div>
+  <div id="u3" class="abs cap"><div class="kick" style="color:var(--ok)">Live</div><div class="ttl">Watch every step</div><div class="bod">Progress, target temperature and time left for each step. Pause or abort at any time.</div></div>
+  <div id="u4" class="abs cap"><div class="kick" style="color:var(--ok)">Self-check</div><div class="ttl">14 checks, every start</div><div class="bod">Sensors, heater, fans, UV LEDs, door lock, N₂ pressure and damper — verified before you begin.</div></div>
+  <div id="c2" class="abs cap"><div class="kick" style="color:var(--heat)">Step 1</div><div class="ttl">Heat &amp; dry</div><div class="bod">Warm up to 80 °C. Fresh airflow carries the moisture out.</div></div>
+  <div id="c3" class="abs cap"><div class="kick" style="color:var(--cool)">Step 2</div><div class="ttl">Nitrogen purge</div><div class="bod">A nitrogen valve displaces the air before the light comes on.</div></div>
+  <div id="c4" class="abs cap"><div class="kick" style="color:var(--uv)">Step 3</div><div class="ttl">Cure at 405 nm</div><div class="bod">Four UV LED panels, each with its own fan, while the heater holds the temperature.</div></div>
+  <div id="c5" class="abs cap"><div class="kick" style="color:var(--blue)">Step 4</div><div class="ttl">Bleach at 450 nm</div><div class="bod">Blue light from the door panel. Same chamber, same program.</div></div>
+  <div id="c6" class="abs cap"><div class="kick" style="color:var(--cool)">Step 5</div><div class="ttl">Cool down</div><div class="bod">The vent opens and fans bring the chamber back down — fast, medium or slow.</div></div>
+  <div id="c7" class="abs cap"><div class="kick" style="color:var(--ok)">Built to be safe</div><div class="ttl">Door open?<br>Nothing runs.</div>
+    <ul class="list" style="padding:0;margin-top:30px"><li><b>✓</b>Sensors and fans checked first</li><li><b>✓</b>Automatic stop on any fault</li><li><b>✓</b>Clear on-screen error</li></ul></div>
+
+  <div id="lockpill" class="abs" style="left:110px;top:900px;opacity:0;padding:16px 34px;border-radius:50px;background:#2a0f16;border:3px solid #ff5d6c;font-size:32px;font-weight:700;color:#ffb3bb">Door open — light and heat locked out</div>
+  <div id="xtag" class="abs" style="left:1090px;top:900px;opacity:0;font-size:24px;letter-spacing:.06em;color:#98a3c7">X-RAY VIEW · animated model</div>
+  <div id="chips" class="abs"></div>
+
+  <!-- outro -->
+  <div id="outro" class="abs full">
+    <div class="big">s<span style="color:var(--uv)">Cure</span> Box</div>
+    <div class="sub">Cure. Bleach. Done.</div>
+    <div class="cta">Come see it live</div>
+    <div class="kick" style="margin-top:34px;color:var(--dim);font-size:30px">Ask us for a demo</div>
+    <div style="margin-top:22px;font-size:40px;font-weight:600;color:#dfe5fb;letter-spacing:.01em">support.stratasys.com</div>
+  </div>
+</div>
+
+<script>
+const DUR = 60;
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+// piecewise-linear with smoothing
+function pw(t,k){
+  if(t<=k[0][0])return k[0][1];
+  for(let i=1;i<k.length;i++){
+    if(t<=k[i][0]){const [t0,v0]=k[i-1],[t1,v1]=k[i];return lerp(v0,v1,smooth((t-t0)/(t1-t0)))}
+  }
+  return k[k.length-1][1];
+}
+const $=id=>document.getElementById(id);
+
+// ---- machine state, in "machine time" u (12..46 = the program, 46..52 = door scene)
+const S={
+  heat:[[0,0],[12,0],[15,1],[40,1],[41,.3],[45,.05]],
+  temp:[[12,24],[19,60],[40,60],[45,32]],
+  damper:[[0,0],[16.5,0],[17.5,1],[19,1],[19.5,0],[40,0],[40.6,1],[45,1],[45.6,0]],
+  airW:[[17,0],[17.6,1],[19,1],[19.5,0]],
+  airC:[[40.5,0],[41,1],[45,1],[45.6,0]],
+  n2:[[19,0],[19.6,1],[23.5,1],[24,0]],
+  uv405:[[24,0],[24.8,1],[34,1],[34.5,0]],
+  uv450:[[34.5,0],[35.3,1],[39.5,1],[40,0]],
+  cure:[[24,0],[34,1]],
+  door:[[0,0],[45.8,0],[46.6,1],[49,1],[49.8,0]],
+  fan:[[0,0],[12,0],[12.8,1],[45,1],[46,0]],
+};
+// ---- real-time scene map (seconds):
+// 0-4 intro | 4-9 meet | 9-18 program builder | 18-22.5 program list | 22.5-26.5 live run | 26.5-30 self-test
+// 30-48 machine program (u 12..46) | 48-53.5 door interlock (u 46..51.5) | 53.5-60 outro
+const U=T=>T<30?0:T<48?12+(T-30)*34/18:T<53.5?46+(T-48):52;
+const R=o=>o<=46?30+(o-12)*18/34:48+(o-46);
+const caps=[['c1',4.6,8.8],['u1',9.4,17.8],['u2',18.4,22.1],['u3',22.9,26.1],['u4',26.9,29.6],
+  ['c2',...[12.4,18.6].map(R)],['c3',...[19.4,23.6].map(R)],['c4',...[24.4,33.6].map(R)],
+  ['c5',...[34.8,39.4].map(R)],['c6',...[40.4,45].map(R)],['c7',...[46.4,51.4].map(R)]];
+const chips=[['Heat / Dry',12,19],['N₂ purge',19,24],['Cure 405',24,34.5],['Bleach 450',34.5,40],['Cool',40,45.6]].map(([n,a,b])=>[n,R(a),R(b)]);
+const shots=[[9,12.4],[12,15.4],[15,18.4],[18,22.5],[22.5,26.9],[26.5,30]]; // im0..im5 windows (real s)
+const BEZ=[[8.6,0],[9.4,1],[29.4,1],[30.2,0]];
+
+// chips
+chips.forEach((c,i)=>{const e=document.createElement('div');e.className='chip';e.id='chip'+i;e.textContent=c[0];$('chips').appendChild(e)});
+M3D.init($('gl'));
+
+// fan angle (integrated for continuity)
+function fanAngle(u){let a=0;const dt=1/30;for(let x=0;x<u;x+=dt)a+=pw(x,S.fan)*dt*900;return a}
+
+// background (visible behind the UI scenes)
+const bg=$('bg').getContext('2d');
+function drawBg(t,uv,blue,heat){
+  bg.clearRect(0,0,1920,1080);
+  const g=bg.createLinearGradient(0,0,0,1080);g.addColorStop(0,'#0a0f1f');g.addColorStop(1,'#05070e');
+  bg.fillStyle=g;bg.fillRect(0,0,1920,1080);
+  const blobs=[[420+Math.sin(t*.4)*120,320+Math.cos(t*.3)*80,700,'166,107,255',.16+uv*.2],
+               [1500+Math.cos(t*.35)*140,760+Math.sin(t*.5)*90,760,'74,163,255',.10+blue*.25],
+               [960,1000,800,'255,122,51',.02+heat*.10]];
+  for(const [x,y,r,c,a] of blobs){const rg=bg.createRadialGradient(x,y,0,x,y,r);
+    rg.addColorStop(0,`rgba(${c},${a})`);rg.addColorStop(1,`rgba(${c},0)`);bg.fillStyle=rg;bg.fillRect(0,0,1920,1080)}
+}
+
+const GLO=[[0,1],[8.8,1],[9.5,0],[29.6,0],[30.3,1],[60,1]];
+const DOORIN=[[4.6,0],[6.9,1],[8.0,1],[9.3,0]];
+const XRAY=[[29.6,0],[30.6,1],[47.6,1],[48.4,0]];
+const TEASE=[[6.8,0],[7.6,.9],[8.3,.9],[9.0,0]];
+
+function renderAt(T){
+  T=((T%DUR)+DUR)%DUR; const t=U(T);
+  const heat=pw(t,S.heat),n2=pw(t,S.n2),dmp=pw(t,S.damper),aW=pw(t,S.airW),aC=pw(t,S.airC),cure=pw(t,S.cure);
+  const tease=pw(T,TEASE);
+  const uv=Math.max(pw(t,S.uv405),tease),bl=pw(t,S.uv450);
+  const doorSafe=pw(t,S.door), door=Math.max(pw(T,DOORIN),doorSafe), xray=pw(T,XRAY);
+  drawBg(T,uv,bl,heat);
+
+  // mode / screen state
+  let mode='Ready',mcol='#4ade80',led='#39d0ff',step=-1,prog=0;
+  if(t>=12&&t<19){mode='Heating / Drying';mcol='#ff9a4d';led='#ff7a33';step=0;prog=(t-12)/7}
+  else if(t>=19&&t<24){mode='Nitrogen purge';mcol='#7dd3fc';led='#7dd3fc';step=1;prog=(t-19)/5}
+  else if(t>=24&&t<34.5){mode='Cure 405 nm';mcol='#a66bff';led='#a66bff';step=2;prog=(t-24)/10.5}
+  else if(t>=34.5&&t<40){mode='Bleaching 450 nm';mcol='#4aa3ff';led='#4aa3ff';step=2;prog=.8+(t-34.5)/27}
+  else if(t>=40&&t<45.6){mode='Cooling';mcol='#7dd3fc';led='#39d0ff';step=3;prog=(t-40)/5.6}
+  if(T>=48&&door>.5){mode='Door open — stopped';mcol='#ff5d6c';led='#ff5d6c'}
+  const temp=pw(t,S.temp);
+
+  // 3D layer
+  const glo=pw(T,GLO);$('gl').style.opacity=glo;
+  if(glo>.01) M3D.render({T,uv,bl,heat,n2,door,xray,dmp,aW,aC,cure,fan:fanAngle(t),mode,modeCol:mcol,temp,ledCol:led,step,prog});
+
+  // intro / outro text
+  const intro=clamp(T/.8)*clamp((3.8-T)/.8);
+  $('intro').style.opacity=intro;$('intro').style.transform=`translateX(${(1-smooth(T/1))*-40}px)`;
+  $('brand').style.opacity=clamp((T-4.4)/.6)*clamp((53.6-T)/.6);
+  const out=clamp((T-53.8)/.9);
+  $('outro').style.opacity=out;$('outro').style.transform=`translateX(${(1-smooth((T-53.8)/1.2))*-40}px)`;
+  // UI screenshots
+  const bz=pw(T,BEZ);$('bezel').style.opacity=bz;$('bezel-tag').style.opacity=bz*.8;
+  $('bezel').style.transform=`translateY(${(1-bz)*28}px)`;
+  shots.forEach(([a,b],i)=>{const e=$('im'+i);const o=clamp((T-a)/.45)*clamp((b-T)/.45);
+    e.style.opacity=o;e.style.transform=`scale(${1+.035*clamp((T-a)/(b-a))})`});
+  // captions
+  for(const [id,a,b] of caps){const e=$(id);const o=clamp((T-a)/.6)*clamp((b-T)/.6);
+    e.style.opacity=o;e.style.transform=`translateX(${(1-clamp((T-a)/.6))*40}px)`}
+  // chips, tags
+  const chipsOp=clamp((T-R(11.4))/.6)*clamp((R(46.2)-T)/.6);$('chips').style.opacity=chipsOp;
+  chips.forEach((c,i)=>{const on=T>=c[1]&&T<c[2];const e=$('chip'+i);
+    e.style.color=on?'#fff':'';e.style.borderColor=on?'#a66bff':'';e.style.background=on?'#2a1d52':''});
+  $('xtag').style.opacity=clamp((T-30.8)/.6)*clamp((47.6-T)/.6)*.9;
+  $('lockpill').style.opacity=T>=48?clamp((door-.2)/.4)*clamp((53.2-T)/.4):0;
+}
+window.renderAt=renderAt;window.DUR=DUR;
+
+// scale to window
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);const f=$('frame');
+  f.style.transform=`scale(${s})`;f.style.left=(innerWidth-1920*s)/2+'px';f.style.top=(innerHeight-1080*s)/2+'px'}
+addEventListener('resize',fit);fit();
+
+// playback (loops). ?t=12.5 renders a single still; ?capture disables autoplay
+const q=new URLSearchParams(location.search);
+if(q.has('t')){renderAt(parseFloat(q.get('t')))}
+else if(q.has('capture')){renderAt(0)}
+else{
+  const t0=performance.now();
+  (function loop(){renderAt((performance.now()-t0)/1000);requestAnimationFrame(loop)})();
+  document.addEventListener('click',()=>{document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen()});
+}
+</script>
+</body>
+</html>

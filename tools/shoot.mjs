@@ -3,7 +3,7 @@ import { mkdirSync } from 'fs'
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const BASE = 'http://localhost:5173'
-const OUT = 'docs/screenshots'
+const OUT = process.env.OUT || 'docs/screenshots'
 mkdirSync(OUT, { recursive: true })
 
 const ORG = '11111111-2222-3333-4444-555555555555'

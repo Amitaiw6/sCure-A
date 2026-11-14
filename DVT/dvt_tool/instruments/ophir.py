@@ -82,7 +82,7 @@ class SimulatedMeter:
     door opening, the order of magnitude of a 4-panel 405 nm chamber), with a
     first-order lag `tau_s` (LED + photodiode head response), 0.5 % noise and
     a small dark offset. When the door opens the machine cuts UV, so the
-    reading collapses — exactly what SAF-012 measures.
+    reading collapses — exactly what DVT-SAF-008 measures.
     """
 
     def __init__(self, full_scale: float = 45.0, tau_s: float = 0.03, unit: str = "mW/cm2", dark: float = 0.02):

@@ -18,15 +18,15 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(WEB, 'dvt-auto.js'), 'utf8'), sandbox);
 const A = sandbox.window.DVT_AUTO;
 A.attach({ base: () => 'http://sim:3001', lang: () => 'en', machine: () => 'sim' });
-const ctx = new A._Ctx('DVT-SAF-013', { test_id: 'DVT-SAF-013', data_fields: [] }, { id: 'r', variant: {} }, { values: {} });
+const ctx = new A._Ctx('DVT-SAF-009', { test_id: 'DVT-SAF-009', data_fields: [] }, { id: 'r', variant: {} }, { values: {} });
 (async () => {
   const open = await A.P.tcCheck(ctx, state);
   ch1 = 24.1;
   const seated = await A.P.tcCheck(ctx, state);
   ch1 = 180.0;                                   // the same reading is fine once something is actually running
   const heating = await A.P.tcCheck(ctx, { ...state, isHeating: true });
-  // a test whose heat comes from outside the machine (SAF-013): hot-and-steady is a real body, floating is an open input
-  const ext = new A._Ctx('DVT-SAF-013', { test_id: 'DVT-SAF-013', external_heat: true, data_fields: [] }, { id: 'r', variant: {} }, { values: {} });
+  // a test whose heat comes from outside the machine (DVT-SAF-009): hot-and-steady is a real body, floating is an open input
+  const ext = new A._Ctx('DVT-SAF-009', { test_id: 'DVT-SAF-009', external_heat: true, data_fields: [] }, { id: 'r', variant: {} }, { values: {} });
   ch1 = 182.0;
   const externalHot = await A.P.tcCheck(ext, state);
   let n = 0; ch1 = () => [105, 141, 180, 122][n++ % 4];

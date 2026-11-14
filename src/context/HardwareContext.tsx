@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { setNfcEnabled as apiSetNfcEnabled } from '@/services/hardware-api'
 
 export interface HardwareFaults {
   heater: string | null
@@ -23,12 +24,21 @@ export interface HardwareState {
   nitrogenDuration: number      // seconds of N2 flow after drying
   n2LinePressure: number        // N2 input pressure in bar
   systemName: string            // Display name (shown in TopBar)
-  nfcEnabled: boolean           // NFC reader enabled
+  nfcEnabled: boolean           // NFC reader enabled (server-persisted; ON only with a reader detected)
+  /** USB NFC reader presence as seen by the server (null until the first /api/state) */
+  nfcReader: { detected: boolean; port: string | null; model: string | null; serial: string | null } | null
   networkConnected: boolean     // Ethernet/network available
   apiConnected: boolean         // Python API reachable
   faults: HardwareFaults | null // live faults reported by the IO board
   /** Temperature-sensor supervision from the IO board: per NTC ok / seconds open / critical */
   sensors: Record<string, { sensor: string; ok: boolean; openSec: number | null; critical: boolean }> | null
+  /** Fan wear supervision: per fan commanded duty, measured / expected RPM, deficit and status */
+  fanHealth: Record<string, { duty: number; rpm: number | null; expected: number | null; deficitPct: number | null; status: string; since: number | null }> | null
+  /** Registry codes the machine keeps active right now (one per component since 1.0.106: 9010-9014 sensors, 902x fan stop, 903x fan not spinning, ...; 9001-9005 / 9050 / 9051 on older machines) and their details */
+  hwAlerts: number[]
+  alertDetails: Record<string, string>
+  /** Fans the operator chose to continue without ("continue anyway") */
+  fanOverride: string[]
   ledTemps: Record<string, number | null> | null  // per-LED-module thermistors
   counters: {
     led405: number              // hours of 405nm LED usage
@@ -50,7 +60,8 @@ interface HardwareContextType {
   setNitrogenMode: (on: boolean) => void
   setNitrogenActive: (on: boolean) => void
   setNitrogenDuration: (seconds: number) => void
-  setNfcEnabled: (on: boolean) => void
+  /** Asks the server; resolves ok:false (code 9052) when no reader is connected */
+  setNfcEnabled: (on: boolean) => Promise<{ ok: boolean; message: string; code?: number }>
   setSystemName: (name: string) => void
 }
 
@@ -69,11 +80,18 @@ const defaultState: HardwareState = {
   nitrogenDuration: 120,
   n2LinePressure: 6.0,          // simulated, from sensor in production
   systemName: localStorage.getItem('scure-system-name') || 'sCure',
-  nfcEnabled: true,
+  // Off until the server reports the persisted setting - it can only be ON
+  // when an NFC reader was detected at the time it was switched on.
+  nfcEnabled: false,
+  nfcReader: null,
   networkConnected: navigator.onLine,
   apiConnected: false,
   faults: null,
   sensors: null,
+  fanHealth: null,
+  hwAlerts: [],
+  alertDetails: {},
+  fanOverride: [],
   ledTemps: null,
   // Real accumulated ON-hours, counted and persisted by the server
   // (ComponentCounters in app.py); zeros until the first /api/state arrives.
@@ -134,8 +152,8 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
 
     // Surface hardware problems on the Alerts screen via the central registry
     // codes (AlertsContext listens for this event).
-    const raiseAlert = (code: number) =>
-      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code } }))
+    const raiseAlert = (code: number, detail?: string) =>
+      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code, detail } }))
 
     const checkStatus = async () => {
       // API health check
@@ -154,11 +172,12 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
           alertRef.current.heaterFault = hf
           alertRef.current.coolingFault = cf
           // Registry codes the hardware service itself keeps active (e.g.
-          // 9001 / 9050 temperature sensor disconnected): raise each once
+          // 9010-9014 temperature sensor disconnected): raise each once
           // while it is active; it may fire again after it clears.
           const hwAlerts: number[] = Array.isArray(data.alerts) ? data.alerts : []
+          const details: Record<string, string> = data.alertDetails ?? {}
           for (const code of hwAlerts) {
-            if (!alertRef.current.hwAlerts.has(code)) { alertRef.current.hwAlerts.add(code); raiseAlert(code) }
+            if (!alertRef.current.hwAlerts.has(code)) { alertRef.current.hwAlerts.add(code); raiseAlert(code, details[String(code)]) }
           }
           for (const code of Array.from(alertRef.current.hwAlerts)) {
             if (!hwAlerts.includes(code)) alertRef.current.hwAlerts.delete(code)
@@ -194,6 +213,12 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
             faults: data.faults ?? prev.faults,
             ledTemps: data.ledTemps ?? prev.ledTemps,
             sensors: data.sensors ?? prev.sensors,
+            fanHealth: data.fanHealth ?? prev.fanHealth,
+            hwAlerts,
+            alertDetails: details,
+            fanOverride: Array.isArray(data.fanOverride) ? data.fanOverride : prev.fanOverride,
+            nfcEnabled: typeof data.nfcEnabled === 'boolean' ? data.nfcEnabled : prev.nfcEnabled,
+            nfcReader: data.nfcReader ?? prev.nfcReader,
             counters: data.counters ?? prev.counters,
           }})
         } else {
@@ -227,8 +252,16 @@ export function HardwareProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const setNfcEnabled = useCallback((on: boolean) => {
-    setState(prev => ({ ...prev, nfcEnabled: on }))
+  // The server owns the NFC setting: it refuses ON while no reader is on USB
+  // (Err 9052), which is surfaced on the Alerts screen like any other fault.
+  const setNfcEnabled = useCallback(async (on: boolean) => {
+    const res = await apiSetNfcEnabled(on)
+    if (res.ok) {
+      setState(prev => ({ ...prev, nfcEnabled: on }))
+    } else {
+      window.dispatchEvent(new CustomEvent('scure-alert', { detail: { code: res.code ?? 9052, detail: res.message } }))
+    }
+    return res
   }, [])
 
   const setSystemName = useCallback((name: string) => {

@@ -9,6 +9,12 @@ Stages for a run (SRS-DVT-083/084/085/086/088):
 State is written to the store on every Next (values, current_step), so a
 restart resumes at the same stage. Steps can be redlined in place. Fields
 that map to a live DUT metric get a tr("⇩ from DUT") button.
+
+A step that records an alarm (`alarm_raised`, `error_code`, `alarm_text`,
+`time_to_alarm`) is watched by the console itself: the DUT poller hands the
+machine's active alerts to an `alarms.AlarmWatch`, the code / text / seconds
+are filled in from what it saw, and Next stays locked until the machine
+really raised something (SRS-DVT-198). See `dvt_tool/alarms.py`.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from . import theme as T
 from .widgets import Card, Pill, Stepper, FadeStack, PulseDot, label
 from .dut import FIELD_MAP
 from ..instruments.uvoff import TOOL_TRIGGERS
+from .. import alarms
 from .. import figures
 from .i18n import tr, trf
 
@@ -73,6 +80,8 @@ class RunWizard(QWidget):
         self.fields = self.cat.field_map(self.run["test_id"])
         self.values = self.store.values(run_id)
         self.field_widgets: dict[str, QWidget] = {}
+        self.alarm_watches: dict[int, alarms.AlarmWatch] = {}      # step index -> what the console saw
+        self.alarm_cards: dict[int, dict] = {}                     # step index -> that card's widgets
         self.step_started = time.monotonic()
         self._build()
         self.go(self._resume_index(), animate=False)
@@ -214,8 +223,10 @@ class RunWizard(QWidget):
                 l.addWidget(c)
             else:
                 l.addWidget(label(tr("No data to record for this step — perform it, then press Next."), "muted"))
+            if alarms.watches(s):
+                self._alarm_card(l, i, s)
             if s.get("tool") in TOOL_TRIGGERS:
-                # instrumented step (DVT-SAF-012 door / DVT-SAF-007 thermistor): the console drives the machine and reads the Ophir meter
+                # instrumented step (DVT-SAF-008 door / DVT-SAF-004 thermistor): the console drives the machine and reads the Ophir meter
                 b = QPushButton(tr("Measure with the Ophir meter…")); b.setProperty("kind", "big"); b.clicked.connect(lambda _, tool=s["tool"]: self._uvoff_tool(tool)); l.addWidget(b, 0, Qt.AlignLeft)
             if s.get("tool") == "uv_linearity":
                 # DVT-OPT-001/002: the sweep runs INLINE on this step (no dialog) — progress here, abort here, and when
@@ -224,7 +235,7 @@ class RunWizard(QWidget):
                 panel = UvSweepPanel(self.app, self.run, int(t.get("uv_wavelength_nm") or 405)); self.tool_panels[i] = panel
                 panel.applied.connect(lambda vals, files, step=i: self._uvsweep_finished(vals, files, step)); l.addWidget(panel)
             if s.get("tool") == "led_fan_sweep":
-                # automatic step (DVT-THM-005): the console drives the fans and the LEDs, waits for settling, hands back the answer and the graph
+                # automatic step (DVT-THM-004): the console drives the fans and the LEDs, waits for settling, hands back the answer and the graph
                 b = QPushButton(tr("Run the fan-duty sweep automatically…")); b.setProperty("kind", "big"); b.clicked.connect(self._fansweep_tool); l.addWidget(b, 0, Qt.AlignLeft)
             self._redline_box(l, i)
         elif key == "review":
@@ -251,6 +262,148 @@ class RunWizard(QWidget):
         if rls:
             for x in rls:
                 l.addWidget(label(trf("Redlined by {who}: {as_run} — {reason}", who=x["by_whom"], as_run=x["as_run"], reason=x["reason"]), "banner-warn", wrap=True))
+
+    # ------------------------------------------------------------------ alarms
+    def _alarm_card(self, l, i: int, s: dict):
+        """"Alarms from the machine" — the console's own witness that the alarm popped up.
+
+        Everything on this card comes from the machine's active-alarm list (`/api/state`),
+        polled by the DUT monitor: the code, the machine's own text, and the seconds from the
+        moment the step opened. Next stays locked until something is seen (or the operator
+        records that nothing did, which is a FAIL, not missing data)."""
+        expect = [str(c) for c in (s.get("expect_alert") or [])]
+        c = Card(tr("Alarms from the machine"))
+        c.body.addWidget(label(tr("The console watches the machine's own alarm list — the code, its text and the time are recorded from what it sees, not typed."), "muted", wrap=True))
+        if expect:
+            c.body.addWidget(label(trf("This step expects: {codes}", codes=", ".join(expect)), "mono"))
+        row = QHBoxLayout()
+        pill = Pill(tr("watching…"), T.MUTED); row.addWidget(pill)
+        detail = label("", "muted", wrap=True); row.addWidget(detail, 1); c.body.addLayout(row)
+        live = label("", "mono", wrap=True); c.body.addWidget(live)
+        seen = label("", "mono", wrap=True); c.body.addWidget(seen)
+        btns = QHBoxLayout()
+        b_none = QPushButton(tr("No alarm appeared — record as a failure")); b_none.setProperty("kind", "ghost")
+        b_none.setToolTip(tr("Records alarm_raised = false: the machine stayed silent. The run ends FAIL, not BLOCKED."))
+        b_none.clicked.connect(lambda _, n=i: self._alarm_none(n)); btns.addWidget(b_none)
+        b_hand = QPushButton(tr("No link to the machine — record by hand")); b_hand.setProperty("kind", "ghost")
+        b_hand.setToolTip(tr("For the tests that take the machine off the air on purpose (firmware hang, software stack failure): read the alarm off the machine's screen and type it. Logged as recorded by hand."))
+        b_hand.clicked.connect(lambda _, n=i: self._alarm_by_hand(n)); btns.addWidget(b_hand)
+        btns.addStretch(); c.body.addLayout(btns)
+        l.addWidget(c)
+        self.alarm_cards[i] = {"pill": pill, "detail": detail, "live": live, "seen": seen, "none": b_none, "hand": b_hand, "expect": s.get("expect_alert") or []}
+
+    def _alarm_watch(self, i: int) -> alarms.AlarmWatch | None:
+        """The watch for step `i`, opened the first time that step is shown."""
+        if i in self.alarm_watches:
+            return self.alarm_watches[i]
+        s = (self.test.get("procedure_steps") or [])[i]
+        if not alarms.watches(s):
+            return None
+        st = self.app.dut_state
+        w = alarms.AlarmWatch(fields=s.get("capture") or [], expect=s.get("expect_alert") or [],
+                              active_now=st.alerts if st.online else ())      # already active = evidence, but not timed
+        self.alarm_watches[i] = w
+        if w.seen:
+            self.store.log("Alarm already active when the step opened", self.app.operator, self.run["run_id"],
+                           {"step": i, "codes": [x.alert.raw for x in w.seen]})
+        return w
+
+    def _alarm_tick(self):
+        """One poll of the machine's alarm list for the step on screen."""
+        k = self.key()
+        if not k.startswith("step:"):
+            return
+        i = int(k.split(":")[1])
+        w = self.alarm_watches.get(i)
+        if w is None:
+            return
+        st = self.app.dut_state
+        new = w.observe(st.alerts, time.monotonic() - self.step_started) if st.online else []
+        if new:
+            for x in new:
+                self.store.log("Alarm seen on the machine", self.app.operator, self.run["run_id"],
+                               {"step": i, "code": x.alert.raw, "text": x.alert.text, "at_sec": x.at,
+                                "expected": [str(c) for c in (self.alarm_cards.get(i, {}).get("expect") or [])]})
+            self._alarm_apply(i, w)
+            codes = ", ".join(x.alert.raw for x in new)
+            self.app.toast(trf("Alarm from the machine: {codes} — recorded", codes=codes),
+                           T.OK if w.state() == alarms.MATCH else T.WARN)
+        self._alarm_refresh(i, w)
+
+    def _alarm_apply(self, i: int, w: alarms.AlarmWatch):
+        """Write what the console saw into this step's fields and into the run."""
+        vals = w.captured()
+        for name, v in vals.items():
+            widget = self.field_widgets.get(name)
+            if widget is None or name in self.run["variant"]:
+                continue
+            if isinstance(widget, QComboBox):
+                widget.setCurrentIndex(1 if v else 2)
+            else:
+                widget.setText(str(v)); widget.setProperty("state", "fromdut")
+                widget.style().unpolish(widget); widget.style().polish(widget)
+        if vals:
+            self.store.set_values(self.run["run_id"], vals, self.app.operator); self.values.update(vals)
+            self.app.kick_sync()
+
+    def _alarm_refresh(self, i: int, w: alarms.AlarmWatch):
+        card = self.alarm_cards.get(i)
+        if not card:
+            return
+        st = self.app.dut_state
+        state = w.state(st.online)
+        txt, col = {
+            alarms.MATCH: (tr("alarm captured"), T.OK),
+            alarms.PRE: (tr("already active"), T.WARN),
+            alarms.WRONG: (tr("unexpected code"), T.BAD),
+            alarms.NONE: (tr("no alarm — recorded as a failure"), T.BAD),
+            alarms.MANUAL: (tr("recorded by hand"), T.WARN),
+            alarms.OFFLINE: (tr("no machine"), T.MUTED),
+        }.get(state, (tr("watching…"), T.MUTED))
+        card["pill"].set(txt, col)
+        m = w.match
+        if state == alarms.MATCH:
+            card["detail"].setText(trf("{code} raised {sec} s after the step opened.", code=m.alert.raw, sec=f"{m.at:.0f}"))
+        elif state == alarms.PRE:
+            card["detail"].setText(trf("{code} was already active when the step opened — recorded, but the time to the alarm was not measured.", code=m.alert.raw))
+        elif state == alarms.WRONG:
+            card["detail"].setText(trf("The machine raised {got}, not the expected {want} — recorded as it happened; judge it on the review page.",
+                                       got=", ".join(x.alert.raw for x in w.wrong), want=", ".join(str(c) for c in w.expect)))
+        elif state == alarms.OFFLINE:
+            card["detail"].setText(tr("No link to the machine — the console cannot witness the alarm. Connect it in the header, or record by hand."))
+        elif state == alarms.WAITING:
+            card["detail"].setText(tr("The machine has raised nothing yet. This step unlocks when it does."))
+        else:
+            card["detail"].setText("")
+        card["live"].setText(trf("active now: {list}", list="  ·  ".join(a.label() for a in st.alerts) if st.alerts else tr("none")))
+        card["seen"].setText(trf("seen on this step: {list}", list="  ·  ".join(
+            (f"{x.alert.raw} @ {x.at:.0f} s" if x.at is not None else trf("{code} (already active)", code=x.alert.raw)) for x in w.seen) or tr("nothing")))
+        card["none"].setVisible(not w.witnessed and not w.by_hand)
+        card["hand"].setVisible(not w.witnessed and not st.online and not w.no_alarm)
+        if self.key() == f"step:{i}":
+            self.btn_next.setEnabled(w.open)
+
+    def _alarm_none(self, i: int):
+        w = self.alarm_watches.get(i)
+        if w is None or QMessageBox.question(
+                self, tr("No alarm"),
+                tr("Record that the machine raised no alarm on this step?\n\nalarm_raised = false is written, so this run ends FAIL — a silent machine is a result, not missing data."),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        w.no_alarm = True
+        self.store.log("No alarm on the machine", self.app.operator, self.run["run_id"], {"step": i})
+        self._alarm_apply(i, w); self._alarm_refresh(i, w)
+
+    def _alarm_by_hand(self, i: int):
+        w = self.alarm_watches.get(i)
+        if w is None or QMessageBox.question(
+                self, tr("Record by hand"),
+                tr("The console has no link to the machine, so it cannot witness the alarm.\n\nRecord this step's alarm by hand from the machine's screen? The run keeps a note that it was not witnessed by the console."),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        w.by_hand = True
+        self.store.log("Alarm recorded by hand (no link to the machine)", self.app.operator, self.run["run_id"], {"step": i})
+        self._alarm_refresh(i, w)
 
     def _field_widget(self, f, name):
         fixed = self.run["variant"].get(name); v = self.values.get(name)
@@ -279,10 +432,13 @@ class RunWizard(QWidget):
         self.btn_back.setEnabled(i > 0); self.btn_back.setText(tr("← Back to console") if k == "done" else tr("← Back"))
         self.btn_redline.setVisible(is_step); self.btn_attach.setVisible(is_step or k == "review")
         self.btn_next.setVisible(k not in ("review", "done")); self.btn_leave.setVisible(k != "done")
+        self.btn_next.setEnabled(True)
         if is_step:
             self.store.set_step(self.run["run_id"], int(k.split(":")[1])); self.step_started = time.monotonic()
             panel = self.tool_panels.get(int(k.split(":")[1]))
             if panel is not None: panel.on_shown()          # one live meter check when the step becomes visible
+            w = self._alarm_watch(int(k.split(":")[1]))     # the step's alarm watch opens with it
+            if w is not None: self._alarm_refresh(int(k.split(":")[1]), w)
         if k == "pre":
             self.dut_hint.setText(self._dut_hint())
         if k == "review":
@@ -309,6 +465,14 @@ class RunWizard(QWidget):
             if not all(cb.isChecked() for cb in self.pre_boxes): self.lbl_err.setText(tr("Tick every precondition first.")); return
             self.store.confirm_preconditions(self.run["run_id"], self.app.operator)
         elif k.startswith("step:"):
+            w = self.alarm_watches.get(int(k.split(":")[1]))
+            if w is not None and not w.open:
+                # the console must witness the alarm before the step is passed; if the machine
+                # stayed silent that is recorded as such (alarm_raised = false), not skipped
+                self.lbl_err.setText(tr("The machine has raised no alarm yet — wait for it, or record that none appeared.")
+                                     if self.app.dut_state.online else
+                                     tr("No link to the machine — connect it in the header, or record this step by hand."))
+                return
             try:
                 vals = self._collect(step=int(k.split(":")[1]))
             except ValueError as e:
@@ -392,7 +556,7 @@ class RunWizard(QWidget):
 
     def _uvoff_tool(self, tool: str = "uv_off_timing"):
         from .uvoff_dialog import UvOffDialog
-        try: defaults = self._collect()          # e.g. sensor_position already recorded on step 1 of SAF-007
+        try: defaults = self._collect()          # e.g. sensor_position already recorded on step 1 of DVT-SAF-004
         except Exception: defaults = {}  # noqa: BLE001
         dlg = UvOffDialog(self.app, self.run, self, trigger=TOOL_TRIGGERS.get(tool, "door"), defaults=defaults)
         dlg.applied.connect(self._uvoff_applied)
@@ -415,8 +579,10 @@ class RunWizard(QWidget):
         st = self.app.dut_state
         if not st.online: return tr("Machine: not connected. Connect it in the header to capture values and drive it from DUT Control.")
         m = st.metrics
+        door = st.flags.get("doorOpen")
         return trf("Machine {url}: {mode} · chamber {chamber} °C · LED max {led} °C · door {door} — use DUT Control if the preconditions need a different state.",
-                   url=st.url, mode=tr(st.mode), chamber=m.get("chamberTemp"), led=m.get("ledTempMax"), door=tr("OPEN" if st.flags.get("doorOpen") else "closed"))
+                   url=st.url, mode=tr(st.mode), chamber=m.get("chamberTemp"), led=m.get("ledTempMax"),
+                   door=tr("not reported") if door is None else tr("OPEN" if door else "closed"))
 
     def _fill_review(self):
         while self.review_grid.count():
@@ -537,6 +703,7 @@ class RunWizard(QWidget):
 
     def _tick(self):
         el = int(time.monotonic() - self.step_started); self.lbl_timer.setText(f"{el // 60:02d}:{el % 60:02d}")
+        self._alarm_tick()               # the machine's alarm list, every second (DUT poll: 2 s)
         st = self.app.dut_state
         self.p_dut.set(f"DUT: {st.mode}" + (f" · {st.metrics.get('chamberTemp')} °C" if st.online and st.metrics.get("chamberTemp") is not None else ""),
                        T.OK if st.online and st.mode == "IDLE" else T.WARN if st.online else T.MUTED)

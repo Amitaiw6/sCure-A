@@ -1,4 +1,4 @@
-// The guided SAF-012 sequence goes on to the next step by itself only when the step that just finished passed
+// The guided DVT-SAF-008 sequence goes on to the next step by itself only when the step that just finished passed
 // its own part of the catalog criteria. This runs the page's decision (nextStepAfter, lifted out of dvt-tool.html)
 // against the real catalog and the real evaluator, so the page can hold no threshold of its own.
 const fs = require('fs'), vm = require('vm'), path = require('path');
@@ -13,7 +13,7 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(WEB, 'dvt-catalog.js'), 'utf8'), sandbox);    // SCURE_DVT: the catalog
 vm.runInContext(fs.readFileSync(path.join(WEB, 'dvt-criteria.js'), 'utf8'), sandbox);   // DVT_CRITERIA: the evaluator
 vm.runInContext('const CAT = window.SCURE_DVT; const CRIT = window.DVT_CRITERIA;' + guided + src + '\nglobalThis.nextStepAfter = nextStepAfter;', sandbox);
-const test = sandbox.window.SCURE_DVT.tests['DVT-SAF-012'];
+const test = sandbox.window.SCURE_DVT.tests['DVT-SAF-008'];
 const rec = { values: {} };
 const out = {
   step1_pass: sandbox.nextStepAfter(test, rec, 'door_open_cure', { cure_start_inhibited: true, door_open_detected: true }),
@@ -23,8 +23,7 @@ const out = {
   step3_pass: sandbox.nextStepAfter(test, rec, 'door_lock_check', { lock_engaged: true }),
   step4_pass: sandbox.nextStepAfter(test, rec, 'door_magnet_defeat', { defeat_by_magnet_possible: false }),
   step4_fail: sandbox.nextStepAfter(test, rec, 'door_magnet_defeat', { defeat_by_magnet_possible: true }),
-  step5_pass: sandbox.nextStepAfter(test, rec, 'door_status_check', { door_status_read_only_confirmed: true }),
-  step6_last: sandbox.nextStepAfter(test, rec, 'door_alarm_check', { alarm_raised: true, error_code: '6016' }),
+  step4_last: sandbox.nextStepAfter(test, rec, 'door_magnet_defeat', { defeat_by_magnet_possible: false }),
   criteria: test.pass_criteria,
 };
 process.stdout.write(JSON.stringify(out, null, 1));

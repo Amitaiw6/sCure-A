@@ -58,7 +58,34 @@ function createRunner(cfg, deps = {}) {
   let results = {};
   try { results = JSON.parse(fs.readFileSync(resultsFile, 'utf8')); } catch (e) { results = {}; }
   const saveResults = () => { try { fs.writeFileSync(resultsFile, JSON.stringify(results)); } catch (e) { log('results file not written:', e.message); } };
+  // tests renumbered in the catalog (test_renames): runs recorded under an old id move to the new id, once per rename set
+  (function applyRenames() {
+    const sets = Array.isArray(CAT.test_renames) ? CAT.test_renames : (CAT.test_renames ? [CAT.test_renames] : []);
+    const markFile = resultsFile + '.renames.json';
+    let done = {};
+    try { done = JSON.parse(fs.readFileSync(markFile, 'utf8')); } catch (e) { done = {}; }
+    for (const rn of sets) {
+    const map = rn.map || {};
+    if (!rn.id || !Object.keys(map).length || done[rn.id]) continue;
+    let moved = 0;
+    for (const old of Object.keys(map).sort()) {
+      for (const key of Object.keys(results).filter((k) => k.startsWith(old + '|'))) {
+        const to = map[old] + key.slice(old.length);
+        const rec = results[key];
+        if (rec && typeof rec === 'object') { if (rec.test === old) rec.test = map[old]; if (rec.testId === old) rec.testId = map[old]; if (rec.runId === key) rec.runId = to; if (rec.id === key) rec.id = to; }
+        delete results[key];
+        results[to] = rec;
+        moved++;
+      }
+    }
+    saveResults();
+    done[rn.id] = { at: new Date().toISOString(), moved };
+    try { fs.writeFileSync(markFile, JSON.stringify(done)); } catch (e) { log('rename mark not written:', e.message); }
+    if (moved) log(`tests renumbered (${rn.id}): ${moved} recorded run(s) moved to the new ids`);
+    }
+  })();
   let current = null;                                    // { tid, run }
+  const isManualTest = (tid) => ((CAT.tests[tid] || {}).group === 'ELE');   // electrical safety: done by hand on the engineer's bench, he only records his approval
   const isBenchTest = (t) => ((t && t.procedure_steps) || []).some((s) => s.tool === 'bench');   // run by the DVT bench process (port 3002)
   const benchUrl = String(cfg.benchApi || String(cfg.machineApi || 'http://127.0.0.1:3001').replace(/:(\d+)\/?$/, ':3002')).replace(/\/+$/, '');
 
@@ -99,14 +126,24 @@ function createRunner(cfg, deps = {}) {
 
   /** One call to the portal. Apps Script sometimes answers with an HTML error page (a busy or timed-out execution):
    *  that is retried with a growing pause; only a JSON refusal ({ok:false}) is final. */
+  /** The deadline of one portal call: a long poll (dvt_events) is held open by the portal up to its wait, plus slack. */
+  function portalTimeoutMs(body) {
+    const base = (Number(cfg.portalTimeoutSec) || 25) * 1000;
+    return body && body.kind === 'dvt_events' ? base + (Number(body.wait) || 0) * 1000 : base;
+  }
   async function portal(body, tries = 4) {
     for (let i = 1; ; i++) {
       let text = '', status = 0;
       try {
+        // every call has a deadline: without one a hung Apps Script execution held the run's report loop for minutes,
+        // and the "I did it" presses waiting on the site never reached the machine (user, 2026-11-12, DVT-SAF-008 step 4)
+        const t0 = Date.now();
         const r = await fetchImpl(cfg.portalUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ ...body, machineKey: cfg.key }) });
+          body: JSON.stringify({ ...body, machineKey: cfg.key }), signal: AbortSignal.timeout(portalTimeoutMs(body)) });
         status = r.status;
         text = typeof r.text === 'function' ? await r.text() : JSON.stringify(await r.json());
+        const ms = Date.now() - t0;
+        if (ms > 8000 && body.kind !== 'dvt_events') log(`[slow] portal ${body.kind} took ${(ms / 1000).toFixed(1)} s`);
         const out = JSON.parse(text);
         if (!out || out.ok === false) throw Object.assign(new Error((out && out.message) || `portal HTTP ${status}`), { final: true });
         return out;
@@ -124,18 +161,30 @@ function createRunner(cfg, deps = {}) {
     const r = await fetchImpl(api + p, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     return r.json();
   }
-  const update = (id, extra) => portal({ kind: 'dvt_update', machine: cfg.machine, id, ...extra });
+  // every progress report carries the machine's live state (heater, UV, chamber, door): the site's status chips otherwise
+  // come from the machine's cloud sync, minutes old - a test heating showed "heater off" (user, 2026-10-28)
+  let liveAt = 0, liveCache = null;
+  async function live() {
+    if (Date.now() - liveAt < 2000) return liveCache;
+    liveAt = Date.now();
+    const s = await machine('GET', '/api/state').catch(() => null);
+    liveCache = s ? { isHeating: !!s.isHeating, heaterPwm: typeof s.heaterPwm === 'number' ? s.heaterPwm : null, uvOn: !!s.uvOn,
+                      isCooling: !!s.isCooling, chamberTemp: typeof s.chamberTemp === 'number' ? s.chamberTemp : null,
+                      doorClosed: typeof s.doorClosed === 'boolean' ? s.doorClosed : undefined } : null;
+    return liveCache;
+  }
+  const update = async (id, extra, tries) => portal({ kind: 'dvt_update', machine: cfg.machine, id, live: await live(), ...extra }, tries);
 
   /** The catalog as the portal lays it out (same shape the DVT tool publishes). */
   function catalogBody() {
     const tests = {};
     for (const [tid, t] of Object.entries(CAT.tests)) {
       const reps = Number(t.repetitions) || 1;
-      tests[tid] = { title: t.title, safety: !!t.safety_critical, auto: !!A.has(tid) || isBenchTest(t), minutes: t.duration_est_min || null, units: t.units || [],
+      tests[tid] = { title: t.title, group: t.group || '', afterAll: !!t.after_all, safety: !!t.safety_critical, auto: !isManualTest(tid) && (!!A.has(tid) || isBenchTest(t)), minutes: t.duration_est_min || null, units: t.units || [],
                      d: A.detailOf ? A.detailOf(t) : undefined,
                      runs: (t.variants || [{}]).flatMap((v) => Array.from({ length: reps }, (_, r) => `${E.variantLabel(v)}|${r + 1}`)) };
     }
-    return { kind: 'dvt_catalog', catalog: { version: CAT.catalog_version,
+    return { kind: 'dvt_catalog', catalog: { version: CAT.catalog_version, renames: CAT.test_renames || undefined,
       phases: CAT.phases.map((ph) => ({ id: ph.id, name: ph.name, gate: ph.gate || '', tests: ph.tests })), tests } };
   }
 
@@ -206,9 +255,16 @@ function createRunner(cfg, deps = {}) {
                               type: st.prompt.type || null, values: st.prompt.values || null } : null;
       if (p && (!lastPrompt || lastPrompt.text !== p.text)) { promptSince = Date.now(); log(`[ask] ${req.testId}: ${p.text}`); }
       lastPrompt = p;
+      // act = an instruction the person must carry out now (c.act in dvt-auto.js), with the
+      // seconds left and the stage it belongs to: the site shows it as THE step, not as a
+      // grey progress line (user, 2026-10-29 - DVT-SAF-008 timed out waiting for the door)
+      const act = st.act && st.act.text ? { text: st.act.text, sec: st.act.sec === undefined ? null : st.act.sec,
+                                            stage: st.act.stage || null } : null;
       let u;
-      try { u = await update(req.id, { status: 'running', line: st.line || 'running', prompt: p }); } catch (e) { log('portal not reached:', e.message); continue; }
+      // one try: the loop itself reports again a second later - retries with pauses kept the presses away for minutes
+      try { u = await update(req.id, { status: 'running', line: st.line || 'running', prompt: p, act }, 1); } catch (e) { log('portal not reached:', e.message); continue; }
       if (u.cancel && !cancelled) { cancelled = true; log(`[stop] ${req.testId}: cancelled from the site`); A.stop(tid); }
+      if (u.acted && A.ackAct) { log(`[did it] ${req.testId}: ${(st.act && st.act.text) || ''}`); A.ackAct(tid); }
       if (u.hasAnswer && st.prompt) answer(tid, st.prompt.kind, u.answer);
       else if (p && Date.now() - promptSince > (Number(cfg.promptTimeoutMin) || 60) * 60000) { log(`[ask] ${req.testId}: no answer in time - skipped`); A.click('as-skip', tid); }
     }
@@ -236,11 +292,13 @@ function createRunner(cfg, deps = {}) {
    * for a run (the DVT tool shows the same rows: machine, bench service, thermocouple, heater thermistor, idle).
    * Returns { <testId>: { ready, rows: { machine, svc, tc08, chamber, idle } } } - every row { ok: true|false|'warn'|null, text }.
    */
-  async function readiness() {
+  async function readiness(idle = false) {
     const ids = Object.keys(CAT.tests).filter((tid) => isBenchTest(CAT.tests[tid]));
-    if (!ids.length) return null;
     const get = (p) => machine('GET', p).catch(() => null);
-    const [st, pico] = await Promise.all([get('/api/state'), get('/api/dev/picolog/status')]);
+    // the Ophir only while idle: a test holding the meter would keep this look waiting for it
+    const [st, pico, meter] = await Promise.all([get('/api/state'), get('/api/dev/picolog/status'), idle && instrumentsDue() ? get('/api/dvt/meter') : Promise.resolve(lastMeter)]);
+    if (meter !== lastMeter) { lastMeter = meter; lastMeterAt = Date.now(); }
+    const instruments = instrumentsOf(pico, meter);
     const bs = await benchCall('GET', '/bench/status').catch(() => null);
     const running = !!(st && (st.uvOn || st.isHeating || st.isCooling || st.nitrogenActive || (st.recipe && st.recipe.state && !['idle', 'completed', 'stopped', 'aborted'].includes(st.recipe.state))));
     const temp = pico && pico.connected && pico.ch1Available && typeof pico.temperature === 'number' ? pico.temperature : null;
@@ -262,7 +320,31 @@ function createRunner(cfg, deps = {}) {
       };
       out[tid] = { ready: !!st && svc && tc && chamber === true && !running && !(bs && bs.run && bs.run.running), rows };
     }
+    out._instruments = instruments;                          // the machine card on the site: each instrument, or "not connected"
     return out;
+  }
+
+  // the Ophir is asked at most every 30 s (each look opens the meter on USB)
+  let lastMeter = null, lastMeterAt = 0;
+  const instrumentsDue = () => Date.now() - lastMeterAt > 30000;
+
+  /**
+   * The test instruments on this machine's USB, for the site (user, 2026-10-28: a missing instrument must say so, not show
+   * "null"). { tc08: {ok, text}, tc08ch1: {ok, text}, tc08ch2: {ok, text}, ophir: {ok, text} } - ok false = not connected.
+   */
+  function instrumentsOf(pico, meter) {
+    const valid = (v) => typeof v === 'number' && isFinite(v) && v >= TC_MIN_C && v <= TC_MAX_C;
+    const tcOn = !!(pico && pico.connected);
+    const ch1 = tcOn && pico.ch1Available && valid(pico.temperature) ? pico.temperature : null;
+    const ch2 = tcOn && pico.ch2Available && valid(pico.ch2) ? pico.ch2 : null;
+    return {
+      tc08: { ok: tcOn, text: tcOn ? `TC-08 ${pico.deviceInfo ? pico.deviceInfo.replace(/^PicoLog TC-08\s*/, '') : 'connected'}`
+                                   : (pico && /driver/i.test(pico.error || '') ? 'TC-08: driver missing on the machine' : 'TC-08 not connected - plug it into the machine\'s USB') },
+      tc08ch1: { ok: ch1 !== null, text: ch1 !== null ? `body (CH1) ${ch1.toFixed(1)} °C` : tcOn ? 'body thermocouple (CH1) not connected' : 'body thermocouple (CH1): no TC-08' },
+      tc08ch2: { ok: ch2 !== null ? true : null, text: ch2 !== null ? `reference (CH2) ${ch2.toFixed(1)} °C` : 'reference thermocouple (CH2) not connected' },
+      ophir: meter && meter.present ? { ok: true, text: 'Ophir StarBright connected' }
+           : { ok: false, text: meter ? 'Ophir not connected - plug the meter into the machine and switch it on' : 'Ophir: not checked yet' },
+    };
   }
 
   /** A bench test's runs, one after the other: the bench does everything, the person at the machine only plugs / unplugs. */
@@ -287,8 +369,11 @@ function createRunner(cfg, deps = {}) {
           if (i % 2 === 0 || woke === 'wake') {               // the portal every ~2 s, or at once when it commanded
             const last = st.last || [];
             lastLine = `${st.phase} · ${A.mmss ? A.mmss(st.elapsed) : Math.round(st.elapsed) + ' s'}${typeof last[1] === 'number' ? ' · body ' + last[1].toFixed(1) + ' °C' : ''}${typeof last[7] === 'number' ? ' · chamber ' + last[7].toFixed(1) + ' °C' : ''}${st.prompt ? ' - ' + st.prompt : ''}`;
+            // the bench waits on the hardware itself and takes no press (no ack route on :3002),
+            // so its prompt is published as the step to do, without a button
+            const benchAct = st.prompt ? { text: String(st.prompt), sec: null, stage: null, ack: false } : null;
             let u = {};
-            try { u = await update(req.id, { status: 'running', line: lastLine }); } catch (e) { log('portal not reached:', e.message); }
+            try { u = await update(req.id, { status: 'running', line: lastLine, act: benchAct }); } catch (e) { log('portal not reached:', e.message); }
             if (u.cancel && !cancelled) { cancelled = true; log(`[stop] ${tid}: cancelled from the site`); await benchCall('POST', '/bench/run/abort?by=site').catch(() => {}); }
           }
         }
@@ -334,9 +419,15 @@ function createRunner(cfg, deps = {}) {
     if (!test) return update(req.id, { status: 'failed', line: `${tid} is not in catalog ${CAT.catalog_version}` });
     // this CureBox IS one unit: a request for another (a stale page) must not record results under a unit that is not here
     if (cfg.unit && req.unit !== cfg.unit) return update(req.id, { status: 'failed', line: `${cfg.machine} is unit ${cfg.unit} - the request was for ${req.unit}; nothing was started` });
-    if (!A.has(tid) && !isBenchTest(test)) return update(req.id, { status: 'failed', line: 'no automatic script for this test - run it from the DVT tool' });
-    const runs = owedRuns(tid, req.unit).filter((r) => !DONE_VERDICTS.includes((results[r.id] || {}).verdict));
-    if (!runs.length) return update(req.id, { status: 'done', line: `every run of ${tid} on ${req.unit} is already recorded` });
+    if (isManualTest(tid) || (!A.has(tid) && !isBenchTest(test))) return update(req.id, { status: 'failed', line: 'no automatic script for this test - run it from the DVT tool' });
+    const owed = owedRuns(tid, req.unit);
+    let runs = owed.filter((r) => !DONE_VERDICTS.includes((results[r.id] || {}).verdict));
+    // Run from the site with every run already recorded = a re-test: run them again (the new result replaces the old one
+    // here; the portal keeps each published run). Before, the request ended at once as "already recorded" and nothing
+    // reached the machine (user, 2026-11-12: DVT-SAF-008 on CureBox-3 after a FAIL)
+    let retest = false;
+    if (!runs.length && owed.length) { runs = owed; retest = true; log(`[request ${req.id}] every run of ${tid} is recorded - running it again`); }
+    if (!runs.length) return update(req.id, { status: 'done', line: `${tid} owes no run on ${req.unit}` });
     const s = await machine('GET', '/api/state');
     if (s && (s.isRunning || s.isHeating || s.uvOn || s.isCooling)) return update(req.id, { status: 'failed', line: 'the machine is busy with a process - nothing was started' });
     // an instrument that is not plugged in: say so now, not after someone pressed Start at the machine
@@ -354,10 +445,17 @@ function createRunner(cfg, deps = {}) {
     const written = [];
     for (const run of runs) {
       current = { tid, run };
+      // a re-test starts from an empty record: with the old values and verdict kept, the engine saw a finished run and
+      // ended at once with the old FAIL, no step done (user, 2026-11-12, CureBox-3)
+      if (retest && results[run.id]) delete results[run.id];
       results[run.id] = results[run.id] || { values: {} };
       const going = A.start(tid);
       const cancelled = await pumpRun(req, tid, going);
       await going.catch(() => {});
+      // autoRecord: false leaves the verdict to the operator's Record press in the DVT tool - the runner has no such
+      // press, so a script that finished on its own (status OK, not stopped from the site) is recorded here; without
+      // it the run reached the portal with no verdict and the request said "done" for a failed test (user, 2026-11-09)
+      if (!cancelled && (A._state(tid) || {}).status === 'OK' && !(results[run.id] || {}).verdict) recordVerdict(tid);
       written.push(run.id);
       try { await publishRun(run.id); } catch (e) { log('upload failed (kept in results.json):', e.message); }
       if (cancelled) return update(req.id, { status: 'cancelled', line: 'stopped from the site - the machine turned everything off', runIds: written });
@@ -410,10 +508,10 @@ function createRunner(cfg, deps = {}) {
   async function tick() {
     let ready = null;
     if (Date.now() - lastReadyAt > 8000) {                  // the checks are read and sent every ~8 s, not with every fast poll
-      try { ready = await readiness(); lastReadyAt = Date.now(); } catch (e) { log('readiness not read:', e.message); }
+      try { ready = await readiness(true); lastReadyAt = Date.now(); } catch (e) { log('readiness not read:', e.message); }
     }
     const t0 = Date.now();
-    const next = await portal({ kind: 'dvt_next', machine: cfg.machine, readiness: ready, wait: cfg.holdSec === undefined ? 20 : Number(cfg.holdSec) });
+    const next = await portal({ kind: 'dvt_next', machine: cfg.machine, readiness: ready, live: ready ? await live() : undefined, wait: cfg.holdSec === undefined ? 20 : Number(cfg.holdSec) });
     lastPollMs = Date.now() - t0;
     if (next.watch) lastWatch = Date.now();
     if (!next.request) return false;
@@ -437,7 +535,7 @@ function createRunner(cfg, deps = {}) {
     }
   }
 
-  return { tick, handle, hello, loop, catalogBody, owedRuns, readiness, nextDelaySec, results: () => results };
+  return { tick, handle, hello, loop, catalogBody, owedRuns, readiness, instrumentsOf, nextDelaySec, results: () => results };
 }
 
 module.exports = { createRunner, loadEngine };

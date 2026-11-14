@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
         self.lbl_block = label("", "banner-bad", wrap=True); self.lbl_block.hide(); self.next_card.body.addWidget(self.lbl_block)
         fix = QHBoxLayout(); self.fix_buttons = {}
         for key, text, slot in (("CONFIG", tr("Freeze configuration now"), self.freeze_config), ("TRR", tr("Sign phase readiness now"), self.sign_phase),
-                                ("CAL", tr("Record calibrations…"), lambda: self.show_page("instruments")), ("EARTH", tr("Go to ELE-001 (earth first)"), lambda: self.open_test("DVT-ELE-001"))):
+                                ("CAL", tr("Record calibrations…"), lambda: self.show_page("instruments")), ("EARTH", tr("Go to DVT-ELE-001 (earth first)"), lambda: self.open_test("DVT-ELE-001"))):
             b = QPushButton(text); b.setProperty("kind", "ghost"); b.clicked.connect(slot); b.hide(); fix.addWidget(b); self.fix_buttons[key] = b
         fix.addStretch(); self.next_card.body.addLayout(fix)
         row = QHBoxLayout()

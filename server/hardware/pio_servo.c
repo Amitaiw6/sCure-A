@@ -91,6 +91,7 @@ static uint g_offset = 0;
 static uint g_gpio = 8;
 static bool g_inverted = false;
 static uint32_t g_period_us = 20000;
+static int g_want_sm = 3;             /* --sm N; -1 = any free */
 static uint32_t g_pulse_us = 0;       /* 0 = released */
 static volatile sig_atomic_t g_quit = 0;
 
@@ -152,7 +153,15 @@ static int setup(uint pio_idx)
         g_pio = NULL;
         return -1;
     }
-    g_sm = pio_claim_unused_sm(g_pio, false);
+    /* Prefer a specific (high-numbered) state machine: other libraries on
+     * the same PIO block (the Blinka NeoPixel extension for the status
+     * strip) assume the low SMs are theirs. Fall back to any free one. */
+    if (g_want_sm >= 0 && g_want_sm < 4 && !pio_sm_is_claimed(g_pio, (uint)g_want_sm)) {
+        pio_sm_claim(g_pio, (uint)g_want_sm);
+        g_sm = g_want_sm;
+    } else {
+        g_sm = pio_claim_unused_sm(g_pio, false);
+    }
     if (g_sm < 0) {
         fprintf(stderr, "no free PIO state machine\n");
         return -1;
@@ -197,7 +206,7 @@ static void teardown(void)
 static void usage(void)
 {
     fprintf(stderr,
-            "usage: pio_servo <gpio> [--inverted] [--period-us N] [--pio IDX]\n"
+            "usage: pio_servo <gpio> [--inverted] [--period-us N] [--pio IDX] [--sm N|-1]\n"
             "       pio_servo <gpio> [--inverted] --test <pulse_us> <hold_ms>\n");
 }
 
@@ -214,6 +223,8 @@ int main(int argc, char **argv)
             g_period_us = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--pio") && i + 1 < argc)
             pio_idx = (uint)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(argv[i], "--sm") && i + 1 < argc)
+            g_want_sm = (int)strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--test") && i + 2 < argc) {
             test_pulse = strtol(argv[++i], NULL, 0);
             test_hold = strtol(argv[++i], NULL, 0);
