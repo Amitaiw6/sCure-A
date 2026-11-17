@@ -40,7 +40,7 @@
         <mxCell id="s_run" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" value="&lt;b&gt;Run record created&lt;/b&gt; (status running): material, steps,&lt;br&gt;phases, first target, serial number" vertex="1">
           <mxGeometry x="1250" y="296" width="420" height="68" as="geometry" />
         </mxCell>
-        <mxCell id="f_pre" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=6;" value="&lt;b&gt;Begin step i — step pre-flight&lt;/b&gt;&lt;br&gt;• critical fan latched (9020–9025) · frozen-reading latch (9006)&lt;br&gt;• required NTCs read: chamber / Left / Right (9010–9012)&lt;br&gt;• Drying, Cooling: chamber-fan spin test (9034)&lt;br&gt;• UV: LED-fan spin test of the panels to light (9030–9033)" vertex="1">
+        <mxCell id="f_pre" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=6;" value="&lt;b&gt;Begin step i — step pre-flight&lt;/b&gt;&lt;br&gt;• critical fan latched (9020–9025) · frozen-reading latch (9006)&lt;br&gt;• required NTCs read: chamber / Left / Right / Back / Door (9010–9014)&lt;br&gt;• Drying, Cooling: chamber-fan spin test (9034)&lt;br&gt;• UV: LED-fan spin test of the panels to light, every start (9030–9033)" vertex="1">
           <mxGeometry x="700" y="410" width="490" height="92" as="geometry" />
         </mxCell>
         <mxCell id="d_pre" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;" value="Pre-flight passed?" vertex="1">
