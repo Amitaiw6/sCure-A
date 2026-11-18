@@ -1687,10 +1687,18 @@ DIST_DIR = os.path.normpath(os.path.join(
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_ui(path):
+    # Only the content-hashed bundles (dist/assets/*) may be cached; the
+    # entry points (index.html, /config/*.json) must always revalidate —
+    # otherwise the kiosk/WebView keeps showing the PREVIOUS build after a
+    # software update until its browser cache happens to expire.
+    def _no_cache(resp):
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
     if path and os.path.exists(os.path.join(DIST_DIR, path)):
-        return send_from_directory(DIST_DIR, path)
+        resp = send_from_directory(DIST_DIR, path)
+        return resp if path.startswith('assets/') else _no_cache(resp)
     if os.path.exists(os.path.join(DIST_DIR, 'index.html')):
-        return send_from_directory(DIST_DIR, 'index.html')
+        return _no_cache(send_from_directory(DIST_DIR, 'index.html'))
     return jsonify({'ok': False,
                     'message': 'UI not built — run `npm run build` in the repo root'}), 404
 
