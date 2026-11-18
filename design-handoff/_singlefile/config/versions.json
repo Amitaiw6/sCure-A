@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.9.159",
+      "date": "2026-11-18",
+      "notes": [
+        "DVT catalog 0.86: DVT-OPT-003 (UV uniformity, UV Uniformity Jig scan) is uploaded at two LED intensities - 100 % and 60 % (user, 2026-11-18). Two cases (intensity=100, intensity=60), each its own run: the sCure Cloud DVT tab shows one labelled Upload scan file / View uniformity / Replace per intensity, the form names the intensity and sends the case, and portalDvtUpload checks the case is one the catalog owes (runId DVT-OPT-003|<unit>|intensity=<n>|1, values.intensity). A scan uploaded before the split (no case) counts as the 100 % one. Runs owed 354 -> 359. Portal build 0.9.159. Tests: test_upload_cases.cjs (12), test_code.cjs two-intensity block, test_upload.cjs (single-run test still works)."
+      ]
+    },
+    {
       "version": "0.9.158",
       "date": "2026-11-18",
       "notes": [

@@ -737,7 +737,7 @@ var DVT_RUNNER_ONLINE_SEC = 60;       // the runner polls every 10 s
 var DVT_HOLD_MAX_SEC = 20;            // a long poll is held at most this long (an Apps Script execution may run minutes; the limit is 30 at once)
 var DVT_WATCH_SEC = 45;               // the DVT tab was read within this: the runner polls fast
 var DVT_READY_FRESH_SEC = 45;         // a readiness report older than this is not shown (the runner sends one with every poll)
-var PORTAL_BUILD = '0.9.155';         // the page compares it with its own: a tab left open across a deploy is told to reload
+var PORTAL_BUILD = '0.9.159';         // the page compares it with its own: a tab left open across a deploy is told to reload
 var DVT_REQUESTS_KEEP = 300;          // finished requests kept, newest first
 var DVT_ACTIVE = ['queued', 'running', 'waiting', 'cancel_requested'];
 var DVT_FINAL = ['done', 'failed', 'cancelled', 'blocked'];   // blocked = could not begin (an instrument missing): nothing was measured
@@ -1091,7 +1091,7 @@ function portalDvtApprove(token, unit, testId, runIds, who, approve) {
  * The file lands in the DVT Drive folder with the run, like the runner's sample files. Uploading again replaces it.
  */
 var DVT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
-function portalDvtUpload(token, unit, testId, date, fileName, contentBase64, typedWho, readingsCsv, machine) {
+function portalDvtUpload(token, unit, testId, date, fileName, contentBase64, typedWho, readingsCsv, machine, variant) {
   var gate = need_(token, 'service', 'Uploading a DVT workbook');
   if (!gate.me) return gate.stop;
   var catT = ((dvtCatalog_(book_()) || {}).tests || {})[String(testId || '')] || {};
@@ -1109,7 +1109,15 @@ function portalDvtUpload(token, unit, testId, date, fileName, contentBase64, typ
   var csv = String(readingsCsv || '');
   var nReadings = csv ? csv.split(/\r?\n/).filter(function (l) { return /\d/.test(l); }).length - 1 : 0;
   if (nReadings < 1) return { ok: false, message: 'no readings found in the workbook\'s Readings sheet - is it the jig\'s final workbook?' };
-  var runId = String(testId) + '|' + unit + '||1';
+  // a test split into cases (DVT-OPT-003: intensity=100 and intensity=60, user 2026-11-18) is uploaded per case; the case
+  // must be one the catalog owes. A test without cases keeps its single run (variant '').
+  variant = String(variant || '');
+  var cases = (catT.runs || []).map(function (k) { return String(k).split('|')[0]; });
+  var split = cases.some(function (c) { return c !== ''; });
+  if (split && cases.indexOf(variant) < 0) return { ok: false, message: 'choose which scan this is (' + cases.join(' / ') + ')' };
+  if (!split) variant = '';
+  var runId = String(testId) + '|' + unit + '|' + variant + '|1';
+  var level = /(?:^|,)intensity=(\d+)/.exec(variant);
   // a Google account names itself; the shared password does not - then the person types a name (as for Approve)
   var who = (gate.me.via === 'google' ? (gate.me.name ? gate.me.name + ' <' + gate.me.email + '>' : gate.me.email) : String(typedWho || ''))
     .replace(/\s+/g, ' ').trim().substring(0, 60);
@@ -1149,10 +1157,10 @@ function portalDvtUpload(token, unit, testId, date, fileName, contentBase64, typ
     var t = now_();
     var rows = made.map(function (m) { return [unit, runId, m.kind, m.name, m.file.getId(), m.size, t]; });
     fsh.getRange(fsh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-    var r = writeDvtRun_(ss.getSheetByName('dvt_runs'), { runId: runId, unit: unit, testId: String(testId), variant: '', rep: 1, verdict: 'PASS', operator: who,
+    var r = writeDvtRun_(ss.getSheetByName('dvt_runs'), { runId: runId, unit: unit, testId: String(testId), variant: variant, rep: 1, verdict: 'PASS', operator: who,
                           startedAt: date + 'T12:00:00Z', machine: String(machine || '').substring(0, 60),   // the CureBox the unit is on: the DVT tab lists runs per CureBox
-                          values: { test_date: date, workbook_file: name, workbook_uploaded: true, readings_count: nReadings },
-                          note: 'Scan file uploaded on the site by ' + who + ' - scan of ' + date });
+                          values: { test_date: date, workbook_file: name, workbook_uploaded: true, readings_count: nReadings, intensity: level ? Number(level[1]) : undefined },
+                          note: 'Scan file uploaded on the site by ' + who + ' - scan of ' + date + (level ? ' at ' + level[1] + ' % intensity' : '') });
     if (!r.ok) return r;
   } finally {
     lock.releaseLock();

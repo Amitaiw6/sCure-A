@@ -112,7 +112,7 @@
       return ap === null ? reply(401, { ok: false }) : reply(ap.ok ? 200 : 400, ap);
     }
     if (path === '/api/dvt/upload') {
-      var up = await call('portalDvtUpload', tok(), body.unit, body.testId, body.date, body.fileName, body.content, body.who || '', body.csv || '', body.machine || '');
+      var up = await call('portalDvtUpload', tok(), body.unit, body.testId, body.date, body.fileName, body.content, body.who || '', body.csv || '', body.machine || '', body.variant || '');
       return up === null ? reply(401, { ok: false }) : reply(up.ok ? 200 : 400, up);
     }
     // DVT runs requested from the site (confirmed at the CureBox before anything runs)
@@ -622,7 +622,7 @@ let SEARCH = '';
 let VIEW = 'overview';
 let ERRORS = null;            // alerts from the portal's log: {machine, code, raised, cleared, message}
 // DVT: every run DVT/web/dvt-tool.html recorded, with its values and its raw measurement files.
-const PORTAL_BUILD = '0.9.155';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
+const PORTAL_BUILD = '0.9.159';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
 let DVT_DETAIL = null;        // {testId: {purpose, steps, equipment, preconditions, criteria, bench, note ...}} - fetched once per catalog
 let DVT_DETAIL_AT = -1;       // the catalog.updated the detail belongs to
 let DVT_DETAIL_BUSY = false;
@@ -1196,33 +1196,62 @@ function dvtRunPanel(u, runnable) {
 // ---- upload tests (catalog record: upload - DVT-OPT-003, the UV Uniformity Jig's workbook, user 2026-11-15): the jig runs on
 //      its own; the person uploads its final workbook with the date of the scan, and the upload records the run as PASS.
 //      The workbook's Readings sheet is read here, in the browser, so the site can draw the jig's heatmap of it.
-let DVT_UPLOAD_OPEN = '';     // the test whose upload form is open
+let DVT_UPLOAD_OPEN = '';     // the owed run (test|unit|case|rep) whose upload form is open
 let DVT_UPLOAD_MSG = '';
-const XLSX_LIB = ['https:', '', 'cdnjs.cloudflare.com', 'ajax', 'libs', 'xlsx', '0.18.5', 'xlsx.full.min.js'].join('/');
-
-function dvtUploadCtl(x, byId) {
-  const r = byId[x.owed[0]];
-  if (!r || String(r.verdict).toUpperCase() !== 'PASS')
-    return `<button class="run-btn primary" data-dvt-upload="${x.tid}" title="Upload the scan file the UV Uniformity Jig saved (CSV, or its Excel workbook)">⬆ Upload scan file</button>`;
-  const map = (r.files || []).some(f => f.kind === 'uv_readings')
-    ? `<a class="run-btn" data-dvt-uvmap="${escH(r.runId)}" href="${window.scureUvMapHref ? window.scureUvMapHref(DVT.fileUrl, r.runId) : '#'}" target="_blank" rel="noopener">View uniformity</a>` : '';
-  return `<span class="mut" style="font-size:.78rem">scan of ${escH((r.values || {}).test_date || '')} · uploaded by ${escH(r.operator || '')}</span>${map}
-    <button class="run-btn" data-dvt-upload="${x.tid}" title="Upload a newer scan file in place of this one">Replace</button>`;
+/** The runs of one unit by run id. An upload test that is split into cases (DVT-OPT-003: 100 % and 60 % intensity, user
+ *  2026-11-18) still finds a scan uploaded before the split - recorded without a case - as its first case (100 %). */
+function dvtRunIndex(runs, u, cat) {
+  const byId = {};
+  runs.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+  Object.entries((cat && cat.tests) || {}).forEach(([tid, t]) => {
+    if (!t.upload || !(t.runs || []).length || /^\|/.test(t.runs[0])) return;
+    const old = byId[`${tid}|${u}||1`], first = `${tid}|${u}|${t.runs[0]}`;
+    if (old && !byId[first]) byId[first] = old;
+  });
+  return byId;
 }
 
-function dvtUploadForm(x, u) {
+const XLSX_LIB = ['https:', '', 'cdnjs.cloudflare.com', 'ajax', 'libs', 'xlsx', '0.18.5', 'xlsx.full.min.js'].join('/');
+
+/** The case of an owed run in words: "intensity=60" -> "60 % intensity"; '' when the test has one run. */
+function dvtCaseName(id) {
+  const k = String(id).split('|')[2] || '';
+  if (!k) return '';
+  return k.split(',').map(kv => {
+    const [n, v] = kv.split('=');
+    return n === 'intensity' ? `${v} % intensity` : `${n} ${v}`;
+  }).join(', ');
+}
+
+/** One upload control per owed run: a test split into cases (DVT-OPT-003: 100 % and 60 % intensity) has one each. */
+function dvtUploadCtl(x, byId) {
+  return x.owed.map(id => {
+    const r = byId[id], name = dvtCaseName(id);
+    const label = name ? `<span class="mut" style="font-size:.78rem;font-weight:600">${escH(name)}:</span>` : '';
+    if (!r || String(r.verdict).toUpperCase() !== 'PASS')
+      return `<span class="dvt-up-case" style="display:inline-flex;gap:.4rem;align-items:center">${label}<button class="run-btn primary" data-dvt-upload="${escH(id)}" title="Upload the scan file the UV Uniformity Jig saved${name ? ' at ' + escH(name) : ''} (CSV, or its Excel workbook)">⬆ Upload scan file</button></span>`;
+    const map = (r.files || []).some(f => f.kind === 'uv_readings')
+      ? `<a class="run-btn" data-dvt-uvmap="${escH(r.runId)}" href="${window.scureUvMapHref ? window.scureUvMapHref(DVT.fileUrl, r.runId) : '#'}" target="_blank" rel="noopener">View uniformity</a>` : '';
+    return `<span class="dvt-up-case" style="display:inline-flex;flex-wrap:wrap;gap:.4rem;align-items:center">${label}<span class="mut" style="font-size:.78rem">scan of ${escH((r.values || {}).test_date || '')} · uploaded by ${escH(r.operator || '')}</span>${map}
+      <button class="run-btn" data-dvt-upload="${escH(id)}" title="Upload a newer scan file in place of this one">Replace</button></span>`;
+  }).join('');
+}
+
+function dvtUploadForm(x, u, runId) {
   const d = new Date(), today = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const needName = !(ME && ME.via === 'google');
   let saved = '';
   try { saved = localStorage.getItem('scure_approver') || ''; } catch { saved = ''; }
   // the CureBox the run belongs to: the one on screen, else the one whose runner holds this unit
   const box = SELECTED !== 'all' && SELECTED !== DVT_NONE ? SELECTED : (((DVT && DVT.runners) || []).find(r => r.unit === u) || {}).machine || '';
-  return `<div class="dvt-upload" data-dvt-upload-form="${x.tid}" data-unit="${escH(u)}" data-machine="${escH(box)}" style="display:flex;flex-wrap:wrap;gap:.8rem;align-items:flex-end;padding:.6rem 1rem .8rem;border-top:1px solid var(--line)">
+  const caseKey = String(runId).split('|')[2] || '', name = dvtCaseName(runId);
+  return `<div class="dvt-upload" data-dvt-upload-form="${x.tid}" data-unit="${escH(u)}" data-variant="${escH(caseKey)}" data-machine="${escH(box)}" style="display:flex;flex-wrap:wrap;gap:.8rem;align-items:flex-end;padding:.6rem 1rem .8rem;border-top:1px solid var(--line)">
       <label class="mut" style="font-size:.8rem">Date of the scan<br><input type="date" id="up-date" value="${today}" style="font-size:16px"></label>
+      ${name ? `<span style="flex-basis:100%;font-weight:600">Scan at ${escH(name)}</span>` : ''}
       <label class="mut" style="font-size:.8rem">Scan file from the jig (.csv or .xlsx)<br><input type="file" id="up-file" accept=".csv,.xlsx,.xlsm,.xls" style="font-size:16px"></label>
       ${needName ? `<label class="mut" style="font-size:.8rem">Your name<br><input type="text" id="up-who" value="${escH(saved)}" style="font-size:16px;width:10rem"></label>` : ''}
       <button class="primary" id="up-go">Upload</button><button id="up-cancel">Cancel</button>
-      <span class="${DVT_UPLOAD_MSG ? 'err-t' : 'mut'}" id="up-msg" style="flex-basis:100%;font-size:.85rem">${escH(DVT_UPLOAD_MSG || 'Uploading records ' + x.tid + ' on ' + u + ' as passed.')}</span></div>`;
+      <span class="${DVT_UPLOAD_MSG ? 'err-t' : 'mut'}" id="up-msg" style="flex-basis:100%;font-size:.85rem">${escH(DVT_UPLOAD_MSG || 'Uploading records ' + x.tid + (name ? ' (' + name + ')' : '') + ' on ' + u + ' as passed.')}</span></div>`;
 }
 
 /** The jig's scan as its readings CSV: x_idx,y_idx,z_idx,direction,reading (only rows with a reading). The jig saves its scan
@@ -1271,7 +1300,7 @@ const toBase64 = buf => {
 
 async function dvtUploadGo(form) {
   const say = t => { DVT_UPLOAD_MSG = t; const m = document.getElementById('up-msg'); if (m) { m.textContent = t; m.className = 'err-t'; } };
-  const tid = form.dataset.dvtUploadForm, unit = form.dataset.unit, machine = form.dataset.machine || '';
+  const tid = form.dataset.dvtUploadForm, unit = form.dataset.unit, machine = form.dataset.machine || '', variant = form.dataset.variant || '';
   const date = document.getElementById('up-date').value;
   const file = (document.getElementById('up-file').files || [])[0];
   const whoEl = document.getElementById('up-who');
@@ -1289,7 +1318,7 @@ async function dvtUploadGo(form) {
   catch (e) { go.disabled = false; return say(String((e && e.message) || e)); }
   busy(`Uploading ${csv.split('\n').length - 1} readings and the scan file…`);
   let r = null;
-  try { r = await api('/api/dvt/upload', { method: 'POST', body: JSON.stringify({ unit, testId: tid, date, fileName: file.name, content: toBase64(buf), csv, who, machine }) }); }
+  try { r = await api('/api/dvt/upload', { method: 'POST', body: JSON.stringify({ unit, testId: tid, variant, date, fileName: file.name, content: toBase64(buf), csv, who, machine }) }); }
   catch (e) { r = { ok: false, message: String((e && e.message) || e) }; }
   if (!r || r.ok === false) { go.disabled = false; return say((r && r.message) || 'the upload failed'); }
   DVT_UPLOAD_OPEN = ''; DVT_UPLOAD_MSG = '';
@@ -1313,8 +1342,7 @@ function dvtCatalogCard(all, picker, where) {
   const units = own.length ? own : anyBox ? catUnits : catUnits.slice(0, 1);
   if (!units.includes(DVT_UNIT)) DVT_UNIT = units[0];
   const u = DVT_UNIT;
-  const byId = {};
-  all.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+  const byId = dvtRunIndex(all, u, cat);
   const q = SEARCH.trim().toLowerCase();
   const owedIds = new Set();
   const phases = cat.phases.map(p => {
@@ -1379,7 +1407,7 @@ function dvtCatalogCard(all, picker, where) {
             : ''}${x.t.manual ? (x.verdict === 'PASS'
               ? `<span class="mut" style="font-size:.78rem">approved by ${escH(((byId[x.owed[0]] || {}).operator) || '')}</span><button class="run-btn" data-dvt-approve="${x.tid}" data-v="0" title="Take the approval back">Withdraw</button>`
               : `<button class="run-btn primary" data-dvt-approve="${x.tid}" data-v="1" title="The engineer did this test by hand: record it as passed">✓ Approve</button>`) : ''}${x.t.upload ? dvtUploadCtl(x, byId) : ''}</div>
-        ${x.t.upload && DVT_UPLOAD_OPEN === x.tid ? dvtUploadForm(x, u) : ''}
+        ${x.t.upload && x.owed.includes(DVT_UPLOAD_OPEN) ? dvtUploadForm(x, u, DVT_UPLOAD_OPEN) : ''}
         ${to ? `<div class="dvt-runs">${dvtDetailHtml(x.tid, x, runnerNow, verdictOf)}<table class="cards"><tr><th>Variant</th><th>Rep</th><th>Verdict</th><th>Operator</th><th>Recorded</th></tr>${x.owed.map(runRow).join('')}</table></div>` : ''}`;
     }).join('');
     return `<div class="dvt-phase">${head}${rows || `<p class="mut" style="padding:.6rem 1rem">${q ? 'Nothing matches the search' : 'No tests on this unit'}</p>`}</div>`;
@@ -1479,8 +1507,7 @@ const ovToday = () => new Date().toISOString().slice(0, 10);
 
 /** Everything the Overview shows about one unit: its tests in catalog order, the run counters, status, remaining time. */
 function dvtUnitModel(u, cat, runs, reg, requests) {
-  const byId = {};
-  runs.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+  const byId = dvtRunIndex(runs, u, cat);
   const activeTests = new Set((requests || []).filter(q => q.unit === u && DVT_ACTIVE_ST.includes(q.status)).map(q => q.testId));
   const tests = [];
   (cat.phases || []).forEach(p => (p.tests || []).forEach(tid => {
@@ -1979,8 +2006,7 @@ function raceModel() {
   const start = race.start || 0;
   const rows = taking.map(u => {
     const m = dvtUnitModel(u, cat, runs, regOf[u] || { unit: u }, DVT.requests);
-    const byId = {};
-    runs.filter(r => r.unit === u).forEach(r => { byId[r.runId] = r; });
+    const byId = dvtRunIndex(runs, u, cat);
     const reqs = (DVT.requests || []).filter(q => q.unit === u);
     let total = 0, finished = 0, doneMin = 0;
     const tests = m.tests.map(t => {

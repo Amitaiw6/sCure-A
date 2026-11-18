@@ -53,7 +53,8 @@ def test_catalog_loads_and_run_set_matches_srs(cat):
     # + 1 since 2026-11-15: DVT-ENV-001 on UUT-03 (it had no unit); SAF-018 / SAF-019 / THM-006 moved UUT-05 -> UUT-03 (user)
     # + 5 since 2026-11-15: DVT-OPT-003 (UV uniformity jig workbook) on every unit
     # - 25 since 2026-11-15: DVT-THM-001 10 rows (was 12), DVT-THM-003 (3 x 5) merged into it
-    assert len(runs) == 354                          # 0.83: THM-003 into THM-001; 0.79: + DVT-OPT-003
+    # + 5 since 2026-11-18: DVT-OPT-003 uploaded at two intensities, 100 % and 60 % (user)
+    assert len(runs) == 359                          # 0.86: OPT-003 at 100 / 60 %; 0.83: THM-003 into THM-001
     assert len(cat.runs("DVT-THM-007")) == 5
     assert len(cat.runs("DVT-SAF-006")) == 5
     assert len(cat.runs("DVT-SAF-005")) == 5
@@ -124,7 +125,9 @@ def test_criteria_pass_fail_blocked(cat):
     assert len(cat.tests["DVT-SAF-016"]["procedure_steps"]) == 8
     # DVT-OPT-003 (0.79, user 2026-11-15): the UV uniformity jig runs on its own - the DVT keeps its workbook; the upload is the PASS
     o3 = cat.tests["DVT-OPT-003"]
-    assert o3["record"] == "upload" and o3["applicability"]["rule"] == "ALL" and len(cat.runs("DVT-OPT-003")) == 5
+    assert o3["record"] == "upload" and o3["applicability"]["rule"] == "ALL" and len(cat.runs("DVT-OPT-003")) == 10
+    # 0.86 (user, 2026-11-18): one upload at 100 % LED intensity and one at 60 %
+    assert cat.variants("DVT-OPT-003") == [{"intensity": 100}, {"intensity": 60}]
     assert criteria.evaluate(o3["pass_criteria"], {"workbook_uploaded": True, "test_date": "2026-11-15"}, th) == ("PASS", "")
     assert criteria.evaluate(o3["pass_criteria"], {"test_date": "2026-11-15"}, th)[0] != "PASS"            # no workbook, no pass
     # 0.78 (user, 2026-11-15): the machine's own panel check is part of the verdict - its code for the unplugged panel, nothing else

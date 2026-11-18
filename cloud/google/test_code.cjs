@@ -768,4 +768,29 @@ assert.deepStrictEqual([lv.live.isHeating, lv.live.heaterPwm, lv.live.chamberTem
   assert.deepStrictEqual(files().map(x => x[3]).sort(), ['scan2-readings.csv', 'scan2.csv']);
   assert.strictEqual(live(), before + 2);
 }
+// ---- the UV scan at two intensities (catalog 0.86, user 2026-11-18): one upload per case, each its own run
+{
+  post({ machineKey: 'dk', kind: 'dvt_catalog', catalog: { version: '99.1', phases: [{ id: 3, name: 'Performance', tests: ['DVT-OPT-003'] }],
+    tests: { 'DVT-OPT-003': { title: 'UV uniformity', upload: true, units: ['UUT-04'], runs: ['intensity=100|1', 'intensity=60|1'] } } } });
+  const up = ctx.portalLogin('pw').token;
+  const csv = 'x_idx,y_idx,z_idx,direction,reading\n1,1,1,UP,81.5\n1,1,1,FRONT,106.5';
+  const b64 = Buffer.from('utc,x_idx,y_idx,z_idx,direction,reading\n').toString('base64');
+  let r = ctx.portalDvtUpload(up, 'UUT-04', 'DVT-OPT-003', '2026-11-18', 'scan100.csv', b64, 'Amit', csv, 'CureBox-4', 'intensity=100');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true, runId: 'DVT-OPT-003|UUT-04|intensity=100|1' });
+  r = ctx.portalDvtUpload(up, 'UUT-04', 'DVT-OPT-003', '2026-11-18', 'scan60.csv', b64, 'Amit', csv, 'CureBox-4', 'intensity=60');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true, runId: 'DVT-OPT-003|UUT-04|intensity=60|1' });
+  const rows = book.getSheetByName('dvt_runs').rows.filter(x => x[1] === 'DVT-OPT-003' && x[0] === 'UUT-04');
+  assert.deepStrictEqual(rows.map(x => x[2]).sort(), ['intensity=100', 'intensity=60']);          // two runs, each with its case
+  const r60 = rows.find(x => x[2] === 'intensity=60');
+  assert.ok(r60[5] === 'PASS' && /60 % intensity/.test(r60[9]) && /"intensity":60/.test(r60.slice(11).join('')), JSON.stringify(r60));
+  // the second scan did not replace the first: each case keeps its own files
+  const fl = book.getSheetByName('dvt_files').rows.slice(1);
+  assert.deepStrictEqual(fl.filter(x => x[1] === 'DVT-OPT-003|UUT-04|intensity=100|1').map(x => x[3]).sort(), ['scan100-readings.csv', 'scan100.csv']);
+  assert.deepStrictEqual(fl.filter(x => x[1] === 'DVT-OPT-003|UUT-04|intensity=60|1').map(x => x[3]).sort(), ['scan60-readings.csv', 'scan60.csv']);
+  // no case, or a case the catalog does not owe: refused, nothing written
+  r = ctx.portalDvtUpload(up, 'UUT-04', 'DVT-OPT-003', '2026-11-18', 'scan.csv', b64, 'Amit', csv, 'CureBox-4', '');
+  assert.ok(r.ok === false && /intensity=100 \/ intensity=60/.test(r.message), JSON.stringify(r));
+  r = ctx.portalDvtUpload(up, 'UUT-04', 'DVT-OPT-003', '2026-11-18', 'scan.csv', b64, 'Amit', csv, 'CureBox-4', 'intensity=30');
+  assert.ok(r.ok === false, JSON.stringify(r));
+}
 console.log('Code.gs: all checks passed');

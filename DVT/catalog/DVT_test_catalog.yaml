@@ -8,7 +8,7 @@
 # the wizard order and the report from it. Do not edit pass_criteria of a
 # baselined test without bumping catalog_version.
 
-catalog_version: "0.85"   # quoted so YAML keeps it a string (0.10 would read as the float 0.1)
+catalog_version: "0.86"   # quoted so YAML keeps it a string (0.10 would read as the float 0.1)
 
 # Test renumbering (user, 2026-10-25). Runs recorded under an old id are moved to the new id ONCE per set,
 # keyed by `id`, in the order listed - in the DVT tool's store, in the runner's results file and in sCure
@@ -3610,8 +3610,17 @@ tests:
   record: upload
   purpose: >
     Record, for every unit, the UV irradiance uniformity over the chamber volume as
-    measured by the UV Uniformity Jig: the final scan workbook the jig produces is
-    kept with the unit's DVT record, together with the date of the scan.
+    measured by the UV Uniformity Jig, at two LED intensities - 100 % and 60 %: the
+    final scan file the jig produces for each is kept with the unit's DVT record,
+    together with the date of the scan.
+  # Catalog 0.86 (user, 2026-11-18): "a second upload option for the uv uniformity file. one is 100 percent intensity and
+  # one is 60" - two cases, each its own upload and its own run. A scan uploaded before the split counts as the 100 % case.
+  sweep:
+    parameters: [intensity]
+    matrix:
+      - {intensity: 100}
+      - {intensity: 60}
+    unit: {intensity: "%"}
   applicability:
     rule: ALL
   sample_rationale: >
@@ -3624,10 +3633,11 @@ tests:
     - The jig set up and run on the unit as its own instructions say (web console, STARTUP.md)
     - The scan complete and saved by the jig (its CSV)
   procedure_steps:
-    - step: Run the UV uniformity scan on the jig - the DVT does not run it - and note the date of the scan
+    - step: Run the UV uniformity scan on the jig at this case's LED intensity (100 % or 60 %) - the DVT does not run
+        it - and note the date of the scan
       capture: [test_date]
-    - step: On sCure Cloud, open this test on the unit's DVT page, press Upload scan file, fill in the date and choose the
-        scan file the jig saved (its CSV, or its Excel workbook); the upload records the run
+    - step: On sCure Cloud, open this test on the unit's DVT page, press Upload scan file next to the matching intensity,
+        fill in the date and choose the scan file the jig saved (its CSV, or its Excel workbook); the upload records the run
       capture: [workbook_file, workbook_uploaded]
   data_fields:
     - {name: test_date, type: string, note: "the date of the scan (YYYY-MM-DD)"}

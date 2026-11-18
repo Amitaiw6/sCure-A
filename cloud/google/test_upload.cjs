@@ -71,11 +71,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await sleep(300);
 
   check(!(await page.$('[data-dvt-run-test="DVT-OPT-003"]')) && !(await page.$('[data-dvt-approve="DVT-OPT-003"]')), 'an upload test has no Run and no Approve button');
-  const up = await page.$eval('[data-dvt-upload="DVT-OPT-003"]', b => ({ t: b.textContent.trim(), h: Math.round(b.getBoundingClientRect().height) }));
+  const up = await page.$eval('[data-dvt-upload="DVT-OPT-003|U1||1"]', b => ({ t: b.textContent.trim(), h: Math.round(b.getBoundingClientRect().height) }));
   check(/Upload scan file/.test(up.t) && up.h >= 44, 'it has a thumb-sized "Upload scan file" button: ' + JSON.stringify(up));
   check(!(await page.$('[data-dvt-uvmap]')), 'no "View uniformity" before anything is uploaded');
 
-  await page.tap('[data-dvt-upload="DVT-OPT-003"]');
+  await page.tap('[data-dvt-upload="DVT-OPT-003|U1||1"]');
   await page.waitForSelector('[data-dvt-upload-form]', { timeout: 3000 });
   const form = await page.evaluate(() => ({
     date: document.getElementById('up-date').value, accept: document.getElementById('up-file').accept, who: !!document.getElementById('up-who'),
@@ -115,10 +115,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check(/scan of 2026-11-14/.test(done) && /uploaded by Amit/.test(done) && !!(await page.$('[data-dvt-test="DVT-OPT-003"] .dvt-ic.on')), 'the test is recorded as passed, with the date of the scan and who uploaded: ' + done.replace(/\s+/g, ' ').slice(0, 120));
   const view = await page.$eval('[data-dvt-uvmap]', a => ({ href: a.getAttribute('href'), target: a.target, t: a.textContent.trim(), h: Math.round(a.getBoundingClientRect().height) }));
   check(view.t === 'View uniformity' && view.target === '_blank' && /\?uvmap=DVT-OPT-003%7CU1%7C%7C1&t=/.test(view.href) && view.h >= 44, '"View uniformity" opens the heatmap of this run in a new tab: ' + JSON.stringify(view));
-  check(/Replace/.test(await page.$eval('[data-dvt-upload="DVT-OPT-003"]', b => b.textContent)), 'a recorded upload can be replaced');
+  check(/Replace/.test(await page.$eval('[data-dvt-upload="DVT-OPT-003|U1||1"]', b => b.textContent)), 'a recorded upload can be replaced');
 
   // Replace with the jig's CSV (how it saves a scan): read without the Excel reader, the same five columns
-  await page.tap('[data-dvt-upload="DVT-OPT-003"]');
+  await page.tap('[data-dvt-upload="DVT-OPT-003|U1||1"]');
   await page.waitForSelector('[data-dvt-upload-form]', { timeout: 3000 });
   const csvPath = path.join(require('os').tmpdir(), 'Scan Results 15_11.csv');
   require('fs').writeFileSync(csvPath, '\uFEFFutc,row,id,phase,x_idx,y_idx,z_idx,x_mm,y_mm,z_mm,direction,servo_deg,reading\n'
