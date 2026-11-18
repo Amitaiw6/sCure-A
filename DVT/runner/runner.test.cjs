@@ -15,6 +15,8 @@ function world(opts = {}) {
   const tests = {
     'DVT-THM-001': { title: 'Protective earth bonding continuity', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok',
       equipment: opts.needsMeter ? [{ name: 'Ophir StarBright power meter' }] : [] },
+    'DVT-THM-005': { title: 'Drying', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok' },
+    'DVT-THM-006': { title: 'Guided heater test', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok' },
     'DVT-OPT-001': { title: 'UV linearity', units: ['UUT-01'], variants: [{}], repetitions: 1, data_fields: [], pass_criteria: 'ok' },
     'DVT-SAF-002': { title: 'Heater temperature sensor disconnected', units: ['UUT-01'], variants: [{}], repetitions: 1,
       data_fields: [{ name: 'heater_off_time' }, { name: 'raw_log_attached' }], pass_criteria: 'heater_off_time <= 80',
@@ -26,7 +28,8 @@ function world(opts = {}) {
   let H = null, state = {}, resolveRun = null, endRun = null;
   const A = {
     version: 'test', SCRIPTS: { 'DVT-THM-001': {} },
-    has: (tid) => tid === 'DVT-THM-001',
+    has: (tid) => tid === 'DVT-THM-001' || !!(opts.kinds && opts.kinds[tid]),
+    script: (tid) => (opts.kinds && opts.kinds[tid] ? { kind: opts.kinds[tid] } : null),
     detailOf: (t) => ({ purpose: 'why ' + t.title, steps: (t.procedure_steps || []).map((x) => x.step), criteria: t.pass_criteria, bench: (t.procedure_steps || []).some((x) => x.tool === 'bench') }),
     mmss: (n) => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`,
     attach: (h) => { H = h; },
@@ -53,6 +56,7 @@ function world(opts = {}) {
     if (url === 'https://portal/exec') {
       portalCalls.push(body);
       if (body.kind === 'dvt_events') { eventCalls.push(body); return reply({ ok: true, ver: opts.commandAt !== undefined && eventCalls.length > opts.commandAt ? 2 : 1 }); }
+      if (body.kind === 'dvt_next' && opts.queue) return reply({ ok: true, request: opts.queue.length ? opts.queue.shift() : null });
       if (body.kind === 'dvt_next') return reply({ ok: true, watch: !!opts.watch, request: opts.noRequest ? null : { id: 7, unit: opts.unit || 'UUT-01', testId: opts.testId || 'DVT-THM-001' } });
       if (body.kind === 'dvt_update' && opts.hangOnce && body.status === 'running') {
         opts.hangOnce = false;                                // one Apps Script execution that never answers
@@ -86,6 +90,7 @@ function world(opts = {}) {
     if (p === '/api/dvt/meter') return reply(opts.noMeter ? { present: false, message: 'no Ophir StarBright on USB - plug the meter into the machine and switch it on' } : { present: true, reading_mw_cm2: 0.01 });
     if (p === '/api/dev/picolog/status') return reply(opts.noTc08 ? { connected: false } : { connected: true, ch1Available: true, temperature: 30.5, ambient: 22 });
     if (p === '/api/state' && opts.bench) return reply({ isRunning: false, uvOn: false, isHeating: false, isCooling: false, chamberTemp: 22.8, sensors: { chamber: { ok: !opts.chamberOpen } } });
+    if (p === '/api/state' && opts.settle && started >= 1 && opts.settle-- > 0) return reply({ isCooling: true });   // the first test still settling
     if (p === '/api/state') return reply(opts.busy ? { isRunning: true } : { isRunning: false, uvOn: false, isHeating: false });
     if (p === '/api/dvt/remote-confirm' && o.method === 'POST') return reply({ ok: true, id: body.id, state: 'pending', _title: body.title });
     if (p.startsWith('/api/dvt/remote-confirm/') && o.method === 'GET') return reply({ ok: true, state: confirmStates.length > 1 ? confirmStates.shift() : confirmStates[0] });
@@ -95,7 +100,7 @@ function world(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvt-runner-'));
   if (opts.recorded) fs.writeFileSync(path.join(dir, 'results.json'), JSON.stringify(opts.recorded));
   const runner = createRunner({ portalUrl: 'https://portal/exec', key: 'dk', machine: 'CureBox-1', unit: 'UUT-01',
-    machineApi: 'http://127.0.0.1:3001', resultsFile: path.join(dir, 'results.json'), confirmTimeoutSec: 600, portalTimeoutSec: opts.portalTimeoutSec },
+    machineApi: 'http://127.0.0.1:3001', resultsFile: path.join(dir, 'results.json'), confirmTimeoutSec: 600, portalTimeoutSec: opts.portalTimeoutSec, batch: !!opts.batch },
     { fetch: fetchImpl, engine, log: () => {}, sleep: () => new Promise((r) => setImmediate(r)) });
   return { runner, portalCalls, machineCalls, eventCalls, get started() { return started; }, get stopped() { return stopped; }, get benchAborted() { return benchAborted; }, clicks, acked,
            finalUpdate: () => portalCalls.filter((c) => c.kind === 'dvt_update').pop() };
@@ -364,6 +369,56 @@ function world(opts = {}) {
   assert.strictEqual(i.tc08ch2.text, 'reference (CH2) 36.9 °C');
   i = ins({ connected: true, ch1Available: true, temperature: 24.04 }, { ok: true, present: true });
   assert.deepStrictEqual([i.tc08ch1.text, i.ophir.ok], ['body (CH1) 24.0 °C', true]);
+
+  // 23. batch (user, 2026-11-18): one Start covers the FULLY automatic tests queued after it; a test that needs a person
+  //     asks for its own Start; an empty queue closes the batch
+  {
+    const kinds = { 'DVT-THM-001': 'auto', 'DVT-THM-005': 'auto', 'DVT-THM-006': 'guided' };
+    const q = [{ id: 1, unit: 'UUT-01', testId: 'DVT-THM-001' }, { id: 2, unit: 'UUT-01', testId: 'DVT-THM-005' },
+               { id: 3, unit: 'UUT-01', testId: 'DVT-THM-006' }];
+    const wb = world({ batch: true, kinds, queue: q });
+    const asks = () => wb.machineCalls.filter((c) => c === 'POST /api/dvt/remote-confirm').length;
+    await wb.runner.tick();
+    assert.strictEqual(asks(), 1, 'the first test asks for Start');
+    assert.strictEqual(wb.runner.batchOpen(), true, 'the Start opened the batch');
+    await wb.runner.tick();
+    assert.strictEqual(asks(), 1, 'the next fully automatic test runs without a new Start');
+    assert.strictEqual(wb.started, 2, 'both ran');
+    await wb.runner.tick();
+    assert.strictEqual(asks(), 2, 'a guided test asks for its own Start');
+    assert.strictEqual(await wb.runner.tick(), false, 'queue empty');
+    assert.strictEqual(wb.runner.batchOpen(), false, 'an empty queue closes the batch');
+    const dialog = wb.portalCalls.length >= 0 && wb.machineCalls.length > 0;
+    assert.ok(dialog);
+  }
+  {
+    // without "batch" in the config every test asks, as before
+    const wn = world({ kinds: { 'DVT-THM-001': 'auto', 'DVT-THM-005': 'auto' },
+                       queue: [{ id: 1, unit: 'UUT-01', testId: 'DVT-THM-001' }, { id: 2, unit: 'UUT-01', testId: 'DVT-THM-005' }] });
+    await wn.runner.tick(); await wn.runner.tick();
+    assert.strictEqual(wn.machineCalls.filter((c) => c === 'POST /api/dvt/remote-confirm').length, 2);
+    assert.strictEqual(wn.runner.batchOpen(), false);
+  }
+  {
+    // a request that does not end "done" closes the batch: the next automatic test asks again
+    const wf = world({ batch: true, kinds: { 'DVT-THM-001': 'auto', 'DVT-THM-005': 'auto' },
+                       queue: [{ id: 1, unit: 'UUT-01', testId: 'DVT-THM-001' }, { id: 2, unit: 'UUT-02', testId: 'DVT-THM-005' },
+                               { id: 3, unit: 'UUT-01', testId: 'DVT-THM-005' }] });
+    await wf.runner.tick();
+    await wf.runner.tick();                                   // the wrong unit: failed, nothing started
+    assert.strictEqual(wf.runner.batchOpen(), false, 'the failed request closed the batch');
+    await wf.runner.tick();
+    assert.strictEqual(wf.machineCalls.filter((c) => c === 'POST /api/dvt/remote-confirm').length, 2, 'asked again after the failure');
+  }
+  {
+    // in a batch the next test waits for the machine to finish settling instead of failing as "busy"
+    const ww = world({ batch: true, kinds: { 'DVT-THM-001': 'auto', 'DVT-THM-005': 'auto' }, settle: 6,
+                       queue: [{ id: 1, unit: 'UUT-01', testId: 'DVT-THM-001' }, { id: 2, unit: 'UUT-01', testId: 'DVT-THM-005' }] });
+    await ww.runner.tick();
+    await ww.runner.tick();
+    assert.strictEqual(ww.started, 2, 'the second test started once the machine was idle');
+    assert.ok(ww.portalCalls.some((c) => c.kind === 'dvt_update' && /waiting for the machine to finish/.test(c.line || '')), 'the site was told it waits');
+  }
 
   console.log('dvt-runner: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

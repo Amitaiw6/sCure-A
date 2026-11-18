@@ -85,6 +85,10 @@ function createRunner(cfg, deps = {}) {
     }
   })();
   let current = null;                                    // { tid, run }
+  // batch (cfg.batch, user 2026-11-18): one Start at the machine covers this request and every FULLY automatic test
+  // (dvt-auto.js kind 'auto') picked up after it, until the queue is empty or a test does not end 'done'. A test that
+  // needs a person (guided / instrumented / bench) always asks for its own Start. Off unless the config says so.
+  let batchOpen = false;
   // electrical safety (done by hand, the engineer approves it) and the upload tests (catalog record: upload - the UV uniformity
   // jig's workbook, DVT-OPT-003, user 2026-11-15) are never run by the runner
   const isManualTest = (tid) => ((CAT.tests[tid] || {}).group === 'ELE' || (CAT.tests[tid] || {}).record === 'upload');   // electrical safety: done by hand on the engineer's bench, he only records his approval
@@ -235,11 +239,12 @@ function createRunner(cfg, deps = {}) {
   }
 
   /** Ask the person at the machine; true only on Start. A cancel from the site withdraws the dialog. */
-  async function confirmAtMachine(req, test) {
+  async function confirmAtMachine(req, test, batch) {
     const cid = `cloud-${req.id}`;
     const timeoutSec = Number(cfg.confirmTimeoutSec) || 600;
     const asked = await machine('POST', '/api/dvt/remote-confirm', { id: cid, timeoutSec,
-      title: `${req.testId} - ${test.title}`, detail: `Unit ${req.unit} · requested from sCure Cloud for ${cfg.machine}` });
+      title: `${req.testId} - ${test.title}`, detail: `Unit ${req.unit} · requested from sCure Cloud for ${cfg.machine}`
+        + (batch ? ' · Start also runs the fully automatic tests queued after it, one after the other, with no further Start' : '') });
     if (!asked || asked.ok === false) throw new Error(`the machine did not take the confirmation: ${asked && asked.message}`);
     await update(req.id, { status: 'waiting', line: `waiting for Start on the ${cfg.machine} screen (${Math.round(timeoutSec / 60)} min)` });
     for (let i = 0; ; i++) {
@@ -426,13 +431,37 @@ function createRunner(cfg, deps = {}) {
     try { return await handleRequest(req); } finally { stopListening(); }
   }
 
+  /** A test that runs with no person at all: an engine script of kind 'auto' (not a bench test). */
+  function isFullyAuto(tid) {
+    const sc = A.script ? A.script(tid) : null;
+    return !!sc && sc.kind === 'auto' && !isBenchTest(CAT.tests[tid]);
+  }
+
+  /** The end of a request: anything but 'done' closes the batch, so the next request asks for Start again. */
+  function finish(id, body) {
+    if (body.status !== 'done' && batchOpen) { batchOpen = false; log(`[batch] closed - request ${id} ended ${body.status}`); }
+    return update(id, body);
+  }
+
+  /** In a batch the previous test may still be settling (cooling, fans): wait for idle up to cfg.batchIdleWaitMin (15). */
+  async function waitIdle(req) {
+    const end = Date.now() + (Number(cfg.batchIdleWaitMin) || 15) * 60000;
+    for (;;) {
+      const s = await machine('GET', '/api/state');
+      if (!(s && (s.isRunning || s.isHeating || s.uvOn || s.isCooling))) return s;
+      if (Date.now() > end) return s;
+      await update(req.id, { status: 'waiting', line: 'batch: waiting for the machine to finish the previous test' }).catch(() => {});
+      await sleep(10000);
+    }
+  }
+
   async function handleRequest(req) {
     const tid = req.testId, test = CAT.tests[tid];
     log(`[request ${req.id}] ${tid} on ${req.unit}`);
-    if (!test) return update(req.id, { status: 'failed', line: `${tid} is not in catalog ${CAT.catalog_version}` });
+    if (!test) return finish(req.id, { status: 'failed', line: `${tid} is not in catalog ${CAT.catalog_version}` });
     // this CureBox IS one unit: a request for another (a stale page) must not record results under a unit that is not here
-    if (cfg.unit && req.unit !== cfg.unit) return update(req.id, { status: 'failed', line: `${cfg.machine} is unit ${cfg.unit} - the request was for ${req.unit}; nothing was started` });
-    if (isManualTest(tid) || (!A.has(tid) && !isBenchTest(test))) return update(req.id, { status: 'failed', line: 'no automatic script for this test - run it from the DVT tool' });
+    if (cfg.unit && req.unit !== cfg.unit) return finish(req.id, { status: 'failed', line: `${cfg.machine} is unit ${cfg.unit} - the request was for ${req.unit}; nothing was started` });
+    if (isManualTest(tid) || (!A.has(tid) && !isBenchTest(test))) return finish(req.id, { status: 'failed', line: 'no automatic script for this test - run it from the DVT tool' });
     const owed = owedRuns(tid, req.unit);
     let runs = owed.filter((r) => !DONE_VERDICTS.includes((results[r.id] || {}).verdict));
     // Run from the site with every run already recorded = a re-test: run them again (the new result replaces the old one
@@ -440,20 +469,24 @@ function createRunner(cfg, deps = {}) {
     // reached the machine (user, 2026-11-12: DVT-SAF-008 on CureBox-3 after a FAIL)
     let retest = false;
     if (!runs.length && owed.length) { runs = owed; retest = true; log(`[request ${req.id}] every run of ${tid} is recorded - running it again`); }
-    if (!runs.length) return update(req.id, { status: 'done', line: `${tid} owes no run on ${req.unit}` });
-    const s = await machine('GET', '/api/state');
-    if (s && (s.isRunning || s.isHeating || s.uvOn || s.isCooling)) return update(req.id, { status: 'failed', line: 'the machine is busy with a process - nothing was started' });
+    if (!runs.length) return finish(req.id, { status: 'done', line: `${tid} owes no run on ${req.unit}` });
+    const s = batchOpen && isFullyAuto(tid) ? await waitIdle(req) : await machine('GET', '/api/state');
+    if (s && (s.isRunning || s.isHeating || s.uvOn || s.isCooling)) return finish(req.id, { status: 'failed', line: 'the machine is busy with a process - nothing was started' });
     // an instrument that is not plugged in: say so now, not after someone pressed Start at the machine
     const missing = await missingInstrument(tid, test).catch(() => null);
-    if (missing) { log(`[request ${req.id}] ${missing}`); return update(req.id, { status: 'blocked', line: missing }); }
+    if (missing) { log(`[request ${req.id}] ${missing}`); return finish(req.id, { status: 'blocked', line: missing }); }
     if (isBenchTest(test) && !A.has(tid)) {
       const rd = await readiness().catch(() => null);
       const red = rd && rd[tid] && !rd[tid].ready ? Object.values(rd[tid].rows).find((r) => r && r.ok === false) : null;
-      if (red) { const why = blockedReason(red.text) || red.text; log(`[request ${req.id}] ${why}`); return update(req.id, { status: 'blocked', line: why }); }
+      if (red) { const why = blockedReason(red.text) || red.text; log(`[request ${req.id}] ${why}`); return finish(req.id, { status: 'blocked', line: why }); }
     }
-    const ok = await confirmAtMachine(req, test);
-    if (!ok.start) { log(`[request ${req.id}] ${ok.line}`); return update(req.id, { status: ok.status, line: ok.line }); }
-    log(`[request ${req.id}] START pressed at the machine - running ${runs.length} run(s)`);
+    const auto = isFullyAuto(tid);
+    const inBatch = batchOpen && auto;
+    const ok = inBatch ? { start: true } : await confirmAtMachine(req, test, !!cfg.batch && auto);
+    if (!ok.start) { log(`[request ${req.id}] ${ok.line}`); return finish(req.id, { status: ok.status, line: ok.line }); }
+    if (cfg.batch && auto && !batchOpen) { batchOpen = true; log('[batch] opened - fully automatic tests queued after this one start without asking'); }
+    log(inBatch ? `[request ${req.id}] covered by the batch Start - running ${runs.length} run(s)`
+                : `[request ${req.id}] START pressed at the machine - running ${runs.length} run(s)`);
     if (isBenchTest(test) && !A.has(tid)) return runBench(req, tid, test, runs);
     const written = [];
     for (const run of runs) {
@@ -471,16 +504,16 @@ function createRunner(cfg, deps = {}) {
       if (!cancelled && (A._state(tid) || {}).status === 'OK' && !(results[run.id] || {}).verdict) recordVerdict(tid);
       written.push(run.id);
       try { await publishRun(run.id); } catch (e) { log('upload failed (kept in results.json):', e.message); }
-      if (cancelled) return update(req.id, { status: 'cancelled', line: 'stopped from the site - the machine turned everything off', runIds: written });
+      if (cancelled) return finish(req.id, { status: 'cancelled', line: 'stopped from the site - the machine turned everything off', runIds: written });
     }
     const vs = written.map((id) => (results[id] || {}).verdict).filter(Boolean);
     const verdict = vs.includes('FAIL') ? 'FAIL' : vs.includes('BLOCKED') ? 'BLOCKED' : vs.length === written.length && vs.every((v) => v === 'PASS') ? 'PASS' : '';
     const st = A._state(tid) || {};
     if (st.status && st.status !== 'OK') {                    // the script stopped (an instrument missing, a failed step): that is not "done"
       const why = blockedReason(st.error);
-      return update(req.id, { status: why ? 'blocked' : 'failed', line: why || st.line || `stopped: ${st.error}`, runIds: written });
+      return finish(req.id, { status: why ? 'blocked' : 'failed', line: why || st.line || `stopped: ${st.error}`, runIds: written });
     }
-    return update(req.id, { status: 'done', verdict, runIds: written, line: st.line || (verdict || 'finished') });
+    return finish(req.id, { status: 'done', verdict, runIds: written, line: st.line || (verdict || 'finished') });
   }
 
   async function hello() {
@@ -527,9 +560,12 @@ function createRunner(cfg, deps = {}) {
     const next = await portal({ kind: 'dvt_next', machine: cfg.machine, readiness: ready, live: ready ? await live() : undefined, wait: cfg.holdSec === undefined ? 20 : Number(cfg.holdSec) });
     lastPollMs = Date.now() - t0;
     if (next.watch) lastWatch = Date.now();
-    if (!next.request) return false;
+    if (!next.request) {
+      if (batchOpen) { batchOpen = false; log('[batch] queue empty - closed; the next request asks for Start again'); }
+      return false;
+    }
     try { await handle(next.request); }
-    catch (e) { log(`[request ${next.request.id}] error:`, e.message); await update(next.request.id, { status: 'failed', line: `runner error: ${e.message}` }).catch(() => {}); }
+    catch (e) { batchOpen = false; log(`[request ${next.request.id}] error:`, e.message); await update(next.request.id, { status: 'failed', line: `runner error: ${e.message}` }).catch(() => {}); }
     return true;
   }
 
@@ -548,7 +584,7 @@ function createRunner(cfg, deps = {}) {
     }
   }
 
-  return { tick, handle, hello, loop, catalogBody, owedRuns, readiness, instrumentsOf, nextDelaySec, results: () => results };
+  return { batchOpen: () => batchOpen, tick, handle, hello, loop, catalogBody, owedRuns, readiness, instrumentsOf, nextDelaySec, results: () => results };
 }
 
 module.exports = { createRunner, loadEngine };

@@ -19,7 +19,7 @@ window.DVT_AUTO = (function () {
 
   // Shown next to the catalog line in the page. A browser serving a cached dvt-auto.js is the
   // commonest reason a fix appears not to have landed, and this is how you see it at a glance.
-  const VERSION = '0.9.159';
+  const VERSION = '0.9.160';
 
   const SCRIPTS = {};                 // test_id -> { kind, minutes, needs, intro, run(c) }
   const STATE = {};                   // test_id -> live runner state

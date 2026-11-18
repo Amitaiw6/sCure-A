@@ -2,6 +2,13 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.9.160",
+      "date": "2026-11-18",
+      "notes": [
+        "DVT runner batch mode (user 2026-11-18, runner only - no cloud or firmware change): with \"batch\": true in dvt-runner.json one Start at the machine covers the request and every FULLY automatic test (dvt-auto.js kind 'auto') the runner picks up after it, one after the other, until the queue is empty or a test does not end 'done'. Guided, instrumented and bench tests still ask for their own Start. Between tests it waits up to 15 min (batchIdleWaitMin) for the machine to finish settling instead of failing as busy. The Start dialog says what it covers. Tests in DVT/runner/runner.test.cjs."
+      ]
+    },
+    {
       "version": "0.9.159",
       "date": "2026-11-18",
       "notes": [

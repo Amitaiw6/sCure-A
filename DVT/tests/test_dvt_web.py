@@ -328,7 +328,7 @@ def test_a_test_requested_from_the_site_runs_only_after_start_at_the_machine():
     src = (DVT / "runner" / "dvt-runner.cjs").read_text(encoding="utf-8")
     # the order that matters: the confirmation is asked before the engine is ever started
     handle = src[src.index("async function handle(req)"):src.index("async function hello()")]
-    assert handle.index("confirmAtMachine(req, test)") < handle.index("A.start(tid)")
+    assert handle.index("confirmAtMachine(req, test") < handle.index("A.start(tid)")   # batch (0.9.160) adds an argument; the Start still comes first
     assert "if (!ok.start)" in handle
 
 
