@@ -2,6 +2,198 @@
   "_comment": "sCure version registry - newest first. On every release: bump the VERSION file at the repo root AND add an entry here (version, date, notes). The Settings > Versions modal shows this list.",
   "history": [
     {
+      "version": "0.9.158",
+      "date": "2026-11-18",
+      "notes": [
+        "DVT catalog 0.85: DVT-THM-007 Chamber Heating Uniformity holds 80 C until the grid spread is 5 C or less - at most 30 minutes - instead of a fixed 5 minute hold (user, 2026-11-18). Every second each of the 16 thermocouples is averaged over the last 60 s; the hold ends as soon as max - min of those means meets the limit. Never reached in 30 min = FAIL: new fields uniformity_reached and time_to_uniform, pass criteria reached_setpoint AND uniformity_reached AND uniformity_pp <= 5, uniformity values over the last 60 s of the hold. Estimate 65 min. Tests: THM-007 pass path (uniform after 1 min) and fail path (SCURE_GRID_SPREAD=3, 7.2 C for 30 min). Runner 0.9.158."
+      ]
+    },
+    {
+      "version": "0.9.157",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.84: DVT-THM-004 (LED settled temperature vs LED-fan duty) runs without the PicoLog (user, 2026-11-15) - the four panels on the built-in thermistors only; no TC-08, no bonded thermocouples, no DVT-THM-002 dependency. Runner 0.9.157 no longer reads the TC-08 in this test."
+      ]
+    },
+    {
+      "version": "0.9.156",
+      "date": "2026-11-15",
+      "notes": [
+        "sCure Cloud 0.9.155: the DVT-OPT-003 scan upload no longer times out (user, 2026-11-15) - the Drive files are made before the script lock and the sheet rows written in ONE short locked step that waits up to 110 s (the upload took the lock three or four times with a 20 s limit each, while every machine report and both DVT runners share it - their calls waited ~21 s). A lock still busy after that refuses in plain words and keeps nothing. QA: test_code.cjs runs the real upload (record, replace, busy)."
+      ]
+    },
+    {
+      "version": "0.9.155",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.83: DVT-THM-003 merged into DVT-THM-001 (user, 2026-11-15) - THM-001 runs at 100 / 110 / 120 V (110 V x 30-80 C, 100 and 120 V x 30 + 80 C, 10 rows) and its 80 C rows end with the commanded cool-down to 30 C: 100 V fast, 110 V medium, 120 V slow. The cooling numbers (band rates, tracking error, fan saturation, undershoot, reported vs measured rate) are THM-001 fields judged only on the cool-down rows; the grid spread at the fastest cooling is now computed from the 16 thermocouples (was typed by hand). THM-001's ambient is the TC-08 cold junctions (CH2 is a grid thermocouple). 354 runs.",
+        "sCure Cloud 0.9.154: Compare draws every column of a file at once (All N columns) - a grid file (THM-007 / THM-001) opens on all 16 thermocouples, one hue per level and a shade per position, a line style per unit (user, 2026-11-15). 0.9.153: DVT-OPT-003 takes the jig's CSV."
+      ]
+    },
+    {
+      "version": "0.9.154",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT-OPT-003 takes the jig's CSV (user, 2026-11-15: 'the files are saved as csv'): Upload scan file accepts .csv as well as the Excel workbook; a CSV is read straight from the file (x_idx, y_idx, z_idx, direction, reading - the jig's scan schema), no Excel reader needed. sCure Cloud 0.9.153, catalog 0.82 (the step text names Upload scan file)."
+      ]
+    },
+    {
+      "version": "0.9.153",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.81: the web build (build_dvt_web.py) keeps the record field - it kept a fixed list of fields and dropped record: upload, so the published catalog had no upload mark on DVT-OPT-003 and the site showed no Upload workbook button (user, 2026-11-15). QA: test_the_built_catalog_keeps_the_upload_mark."
+      ]
+    },
+    {
+      "version": "0.9.152",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.80 / runner 0.9.152: the chamber grid takes TC-08 114 as levels Z3-Z4 and the other TC-08 on the machine, whatever its serial, as Z1-Z2 (was 0031 only; CureBox-3 has AO027/073 in its place - user, 2026-11-15). DVT-THM-007 records the ambient from the TC-08 cold junctions (mean of both loggers; CH2 is a grid thermocouple in this test) at the start and through the run: ambient_temp, ambient_temp_end, ambient_drift and an ambient_cj trace."
+      ]
+    },
+    {
+      "version": "0.9.151",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT runner 0.9.151: DVT-THM-007 (Chamber Heating Uniformity) and DVT-THM-001 (chamber thermal characterisation) are refused unless all 16 grid thermocouples read - both TC-08s (0031 = Z1-Z2, 114 = Z3-Z4) on the machine and every channel valid (user, 2026-11-15: CureBox-3 started THM-007 with one TC-08, AO027/073, two channels). The runner refuses before Start is asked at the machine, naming what is missing; the script refuses again before anything heats (was: carry on and ask the uniformity by hand). QA: DVT/web/grid_gate.test.cjs."
+      ]
+    },
+    {
+      "version": "0.9.150",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.79: DVT-OPT-003 UV uniformity - the UV Uniformity Jig runs on its own; the DVT records it by an upload of the jig's final workbook with the date of the scan, and the upload is the PASS (user, 2026-11-15). Every unit; Performance phase; catalog field record: upload.",
+        "sCure Cloud 0.9.152: on an upload test the DVT tab shows Upload workbook (date, file, name with the shared password) instead of Run / Approve; the workbook's Readings sheet is read in the browser and kept as the readings CSV beside the workbook; View uniformity opens the jig's heatmap page (UvMap.html, from its analysis/uv_map.html) with the unit's 405 nm scan - one scan only, no 450 nm panel. Binary files (the workbook) now download intact (they were served as text). Compare opens a test on its newest variant (0.9.151).",
+        "DVT runner 0.9.150: upload tests are never run by a machine and carry the upload mark to the site. QA: cloud/google/test_upload.cjs, test_uvmap.cjs."
+      ]
+    },
+    {
+      "version": "0.9.149",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT runner: a test needs the StarBright only when its script's code calls the meter API (/api/dvt/meter) or its equipment lists it - comments no longer count. DVT-SAF-004's comment 'no StarBright in this test' blocked it until a StarBright was plugged in (user, 2026-11-15); DVT-SAF-011 likewise. SAF-008 / SAF-012 / SAF-014 still need it."
+      ]
+    },
+    {
+      "version": "0.9.148",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT runner 0.9.148: DVT-SAF-016 clears the machine's LED panel check for real between steps - off, 3 s, on (its supervision runs once a second; off and on 0 ms apart never reset it, so a panel lit in the step before kept its baseline: CureBox-4 door 405 nm raised 9005 instead of 9045 and the door 450 nm step raised nothing)."
+      ]
+    },
+    {
+      "version": "0.9.147",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.78 / runner 0.9.147: DVT-SAF-016 switches the machine's LED panel check on (all four panels, 40 s) and resets it before and after every step; each step logs the LED alarms the machine raised and must see the unplugged panel's code (9040 left, 9041 right, 9044 back, 9045 door) and no other LED alarm - part of the pass criteria (user, 2026-11-15)."
+      ]
+    },
+    {
+      "version": "0.9.146",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.77 / runner 0.9.146: DVT-SAF-016 - the unplugged panel is still judged at 20 s (405 nm) / 30 s (450 nm); every connected panel gets up to 60 s to reach the rise (1.0 / 0.8 C) and the LEDs go off as soon as they all have (user, 2026-11-15). The runner lights the LEDs itself and records the time lit (light_s) and a per-panel trace."
+      ]
+    },
+    {
+      "version": "0.9.145",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.76: DVT-SAF-016 checks the door panel at 450 nm too (user, 2026-11-15). The start-up LED test only reports the door at 450 nm (INFO), so the runner judges it by the same rule - the unplugged door must rise less than 0.8 C in 30 s. A resumed run skips the steps that already have a result. Runner 0.9.145."
+      ]
+    },
+    {
+      "version": "0.9.144",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.75: DVT-SAF-016 runs the machine's own start-up LED test with each panel unplugged (405 nm 20 s +1.0 C, 450 nm 30 s +0.8 C, cooled to 30 C; sCureBox 1.0.208) - it must fail on that panel only. Was: wait up to 150 s for the 9004 alarm, where a 405 nm alarm still latched hid the 450 nm one (user, 2026-11-15: 'exactly the same test as the machine start-up', 'the waiting time makes no sense'). Seven steps - the door is not judged at 450 nm by the start-up test."
+      ]
+    },
+    {
+      "version": "0.9.143",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.74: DVT-SAF-016 checks every LED panel at 405 nm AND at 450 nm (user, 2026-11-15 - it checked only 405): eight steps (left/right/back/door x 405/450), each cooled to 30 C first with every connector plugged in; pass = all eight alarms name their panel. Runner 0.9.143."
+      ]
+    },
+    {
+      "version": "0.9.142",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.73: the destructive tests DVT-SAF-018, SAF-019, THM-006 and the transport test DVT-ENV-001 run on machine 3 (UUT-03) only (user, 2026-11-15) - they were on UUT-05 (ENV-001 had no unit)."
+      ]
+    },
+    {
+      "version": "0.9.141",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.72: DVT-SAF-020, SAF-007, SAF-014, GAS-002, GAS-005 and GAS-006 apply to every unit (user, 2026-11-15 - 'and all the other tests'); the destructive / transport tests (SAF-018, SAF-019, THM-006, ENV-001) stay on one unit until the user decides."
+      ]
+    },
+    {
+      "version": "0.9.140",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.71: the electrical safety tests DVT-ELE-001..005 apply to every unit (user, 2026-11-15) - they were done once, on UUT-01 only. 32 runs more (329)."
+      ]
+    },
+    {
+      "version": "0.9.139",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.70: DVT-SAF-010 (firmware hang - the output watchdog switches heater and UV off) removed from the campaign (user, 2026-11-15); DVT-SAF-014 no longer depends on it. 5 runs fewer (297)."
+      ]
+    },
+    {
+      "version": "0.9.138",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT-SAF-016 runner: the LED panel check is judged after 40 s under the DVT override (sCureBox 1.0.203, a trial - user 2026-11-15); the step shows the four panel temperatures live and records them as a trace per panel step, to see how the unplugged panel and its lit neighbours move."
+      ]
+    },
+    {
+      "version": "0.9.137",
+      "date": "2026-11-15",
+      "notes": [
+        "DVT catalog 0.69: DVT-SAF-016 cools all four LED panels to 30 C or below before every panel step (LED fans at 100 %, LEDs off) and records the start temperatures (user, 2026-11-15). On CureBox-3 the right panel, still at 34 C from the step before, fell 4.7 C and the connected left one 0.7 C - both read as dark."
+      ]
+    },
+    {
+      "version": "0.9.136",
+      "date": "2026-11-14",
+      "notes": [
+        "DVT catalog 0.68: DVT-SAF-005 limits widened by the user's decision to pass the 2026-11-14 runs without repeating them - LEDs off within 30 s of a LED fan pulled mid-job (was 10), LED panels at most 52 C (was 50). CureBox-3: 9.5 s / 50.2 C; CureBox-4: 27.06 s (left fan) / 46.1 C."
+      ]
+    },
+    {
+      "version": "0.9.135",
+      "date": "2026-11-14",
+      "notes": [
+        "DVT catalog 0.67: DVT-SAF-005 allows up to 10 s from a LED fan pulled mid-job to the LEDs off (was 2 s) - the firmware confirms a stopped fan over a few seconds; CureBox-4 measured 8.3 s (user, 2026-11-14: 'this should not fail it')."
+      ]
+    },
+    {
+      "version": "0.9.134",
+      "date": "2026-11-14",
+      "notes": [
+        "DVT catalog 0.66: DVT-SAF-004 (LED thermistor disconnected) runs without a StarBright (user, 2026-11-14 - 'no need for this check'): the meter is gone from its equipment and preconditions, the LED-off timing step and led_off_time <= 2 s are dropped, so a run is no longer blocked on 'Connect the StarBright sensor to the machine's USB'. The four thermistors in turn: disconnect, the cure must be refused, the alarm must name the sensor, reconnect."
+      ]
+    },
+    {
+      "version": "0.9.133",
+      "date": "2026-11-14",
+      "notes": [
+        "DVT catalog 0.65: DVT-SAF-002 no longer judges alarm_text_instructs_reconnect (still recorded). The Err 9010 text is Customer Support's - restart / check Settings / contact support, no reconnect step - and the user accepts it: 'CS decided this is what they want written - it passes' (2026-11-14)."
+      ]
+    },
+    {
+      "version": "0.9.132",
+      "date": "2026-11-14",
+      "notes": [
+        "DVT catalog 0.64: DVT-SAF-016 is one simple run per unit (user, 2026-11-14) - unplug the LEFT LED panel connector, the runner lights the LEDs and checks that the matching error names that panel, plug it back and acknowledge; then RIGHT, BACK and DOOR the same. The driver-supply variant and the mid-job / job-inhibit / recovery / self-test steps are dropped (20 runs -> 5). Expected finding: back and door have no regular thermistor, so no error is raised for them today."
+      ]
+    },
+    {
       "version": "0.9.111",
       "date": "2026-10-29",
       "notes": [

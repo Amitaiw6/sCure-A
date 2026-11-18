@@ -8,7 +8,7 @@
 # the wizard order and the report from it. Do not edit pass_criteria of a
 # baselined test without bumping catalog_version.
 
-catalog_version: "0.63"   # quoted so YAML keeps it a string (0.10 would read as the float 0.1)
+catalog_version: "0.85"   # quoted so YAML keeps it a string (0.10 would read as the float 0.1)
 
 # Test renumbering (user, 2026-10-25). Runs recorded under an old id are moved to the new id ONCE per set,
 # keyed by `id`, in the order listed - in the DVT tool's store, in the runner's results file and in sCure
@@ -191,18 +191,19 @@ heater_thresholds:
 units:
   - {id: UUT-01, role: reference, notes: "DVT-SAF-020 review, DVT-SAF-014 software stack"}
   - {id: UUT-02, role: standard}
-  - {id: UUT-03, role: standard}
+  - {id: UUT-03, role: destructive, notes: "DVT-THM-006 / DVT-SAF-018 / DVT-SAF-019 and the transport test DVT-ENV-001 (user, 2026-11-15)"}
   - {id: UUT-04, role: standard}
-  - {id: UUT-05, role: destructive, notes: "DVT-THM-006 / DVT-SAF-018 / DVT-SAF-019 — last"}
+  - {id: UUT-05, role: standard}
 
 # Phase order and gates (SRS-DVT-SW Rev B §4.1). Tests are assigned to a
 # phase by prefix/explicit list; a phase opens for a unit only when the
 # previous one is closed for that unit.
+# DVT-SAF-010 (firmware hang - the output watchdog switches heater and UV off) removed from the campaign (user, 2026-11-15).
 phases:
   - {id: 0, name: Incoming and configuration, tests: [], gate: "Configuration frozen and signed; equipment calibrations valid"}
   - {id: 1, name: Electrical safety, tests: [DVT-ELE-001, DVT-ELE-002, DVT-ELE-003, DVT-ELE-004, DVT-ELE-005], gate: "All ELE tests PASS"}
-  - {id: 2, name: Protective functions, tests: [DVT-SAF-008, DVT-SAF-009, DVT-SAF-010, DVT-SAF-002, DVT-SAF-001, DVT-SAF-004, DVT-SAF-005, DVT-SAF-006, DVT-SAF-011, DVT-SAF-012, DVT-SAF-013, DVT-SAF-007, DVT-SAF-017, DVT-SAF-014, DVT-SAF-015, DVT-SAF-016, DVT-GAS-001, DVT-GAS-002, DVT-GAS-003, DVT-GAS-004, DVT-GAS-005, DVT-GAS-006], gate: "All protective functions PASS or approved disposition"}
-  - {id: 3, name: Performance, tests: [DVT-THM-001, DVT-THM-007, DVT-THM-002, DVT-THM-003, DVT-THM-004, DVT-THM-005, DVT-GAS-007, DVT-NFC-001, DVT-OPT-001, DVT-OPT-002], gate: "Data complete"}
+  - {id: 2, name: Protective functions, tests: [DVT-SAF-008, DVT-SAF-009, DVT-SAF-002, DVT-SAF-001, DVT-SAF-004, DVT-SAF-005, DVT-SAF-006, DVT-SAF-011, DVT-SAF-012, DVT-SAF-013, DVT-SAF-007, DVT-SAF-017, DVT-SAF-014, DVT-SAF-015, DVT-SAF-016, DVT-GAS-001, DVT-GAS-002, DVT-GAS-003, DVT-GAS-004, DVT-GAS-005, DVT-GAS-006], gate: "All protective functions PASS or approved disposition"}
+  - {id: 3, name: Performance, tests: [DVT-THM-001, DVT-THM-007, DVT-THM-002, DVT-THM-004, DVT-THM-005, DVT-GAS-007, DVT-NFC-001, DVT-OPT-001, DVT-OPT-002, DVT-OPT-003], gate: "Data complete"}
   - {id: 4, name: Transport, tests: [DVT-ENV-001], gate: "Post-shipment functional test PASS"}
   - {id: 5, name: Destructive, tests: [DVT-THM-006, DVT-SAF-018, DVT-SAF-019], gate: null}
   # the fault-alarm review runs last, once every other test on the unit has a result (user, 2026-10-25)
@@ -227,7 +228,7 @@ tests:
     damage or accessible-part hazard results.
   applicability:
     rule: SINGLE
-    unit: UUT-05
+    unit: UUT-03            # machine 3 (user, 2026-11-15)
   sample_rationale: >
     Destructive fault-injection test that stresses the heater branch wiring and
     consumes protective devices. It verifies a design property of the AC
@@ -304,7 +305,7 @@ tests:
     filtered inlet or the distribution terminals, or hazard to the operator.
   applicability:
     rule: SINGLE
-    unit: UUT-05
+    unit: UUT-03            # machine 3 (user, 2026-11-15)
   sample_rationale: >
     Destructive test of a design feature common to all units. EN 62368-1
     abnormal-operating-condition testing is performed on a single sample.
@@ -517,7 +518,10 @@ tests:
     - {name: raw_log_attached, type: bool}
   pass_criteria: >
     heater_body_drop_observed == true AND heater_off_time <= 80 AND alarm_raised == true
-    AND alarm_text_instructs_reconnect == true AND heat_start_inhibited == true
+    AND heat_start_inhibited == true
+  # Catalog 0.65 (user, 2026-11-14): alarm_text_instructs_reconnect is recorded but no longer judged - the Err 9010
+  # text is the one Customer Support wrote (restart / check Settings / contact support, no "reconnect" step) and the
+  # user accepts it: "CS decided this is what they want written - it passes".
   # heater_off_time is the rise-to-fall turn of the heater-BODY thermocouple, counted from the disconnect.
   # On this machine the drive is cut at once (the trace shows the heating command falling in the same
   # sample as the sensor going open) and the body still climbs ~25 C for about a minute on the element's
@@ -547,14 +551,8 @@ tests:
   applicability:
     rule: ALL
   sample_rationale: null
-  equipment:
-    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300-UV)
-      calibration_id: null     # CONFIRM
-    - name: Sensor fixture holding the head at the door opening, facing the LEDs
   preconditions:
     - Unit ready for CURE mode, no alarm active
-    - Ophir StarBright on the machine's USB with the UV head positioned at the
-      door opening, facing the LEDs, door closed
     - The four LED thermistor connectors reachable with the door closed and the
       LEDs on (extension leads if needed), so one can be pulled mid-cure
   procedure_steps:
@@ -566,12 +564,6 @@ tests:
     - step: With that sensor out, the runner tries to start a cure - it must be
         refused
       capture: [cure_start_inhibited]
-    - step: Instrumented — the runner asks you to reconnect, drives the LEDs to
-        maximum, waits for a stable StarBright reading, asks you to pull the
-        same connector, and times the irradiance falling below 10 % of the
-        plateau. led_off_time is the slowest of the four
-      capture: [led_off_time]
-      tool: led_off_timing
     - step: The machine's alarm for each disconnection is read and must name
         that sensor - four sensors, four matching alarms. The runner waits for
         each alarm to clear (acknowledge it on the screen if asked) before the
@@ -584,7 +576,6 @@ tests:
   data_fields:
     - {name: positions_tested, type: string, note: "the sensors walked in this run, in order - right, left, back, door"}
     - {name: cure_start_inhibited, type: bool, note: "true only if the cure was refused with EACH of the four sensors out"}
-    - {name: led_off_time, unit: s, type: float, note: "the slowest of the four - disconnection to irradiance below 10 % of plateau on the StarBright"}
     - {name: alarm_raised, type: bool, note: "an alarm for EACH of the four disconnections"}
     - {name: alarm_identifies_sensor, type: bool, note: "each alarm named the sensor that was actually disconnected"}
     - {name: error_right, type: string, note: "the error the machine raised with the RIGHT thermistor out - code and text"}
@@ -592,8 +583,10 @@ tests:
     - {name: error_back, type: string, note: "the error the machine raised with the BACK thermistor out - code and text"}
     - {name: error_door, type: string, note: "the error the machine raised with the DOOR thermistor out - code and text"}
   pass_criteria: >
-    cure_start_inhibited == true AND led_off_time <= 2
+    cure_start_inhibited == true
     AND alarm_raised == true AND alarm_identifies_sensor == true
+  # Catalog 0.66 (user, 2026-11-14): no StarBright in this test - the LED-off timing on the meter (led_off_time <= 2 s)
+  # is dropped; a run no longer waits for "Connect the StarBright sensor to the machine's USB".
   repetitions: 1    # one run walks all four positions (user, 2026-10-01) - was 4, one run per position
   duration_est_min: 60
   dependencies: []
@@ -649,8 +642,14 @@ tests:
     - {name: max_led_temp, unit: C, type: float, note: "the hottest any LED panel got during the run"}
   pass_criteria: >
     job_start_inhibited == true AND alarm_raised == true
-    AND alarm_identifies_correct_fan == true AND led_off_time_midjob <= 2
-    AND max_led_temp <= 50
+    AND alarm_identifies_correct_fan == true AND led_off_time_midjob <= 30
+    AND max_led_temp <= 52
+  # Catalog 0.68 (user, 2026-11-14): led_off_time_midjob <= 30 s and max_led_temp <= 52 C - the user's decision to pass
+  # the 2026-11-14 runs without repeating them (CureBox-3: 50.2 C; CureBox-4: 27.06 s on the left fan, likely "Done"
+  # pressed before the connector was pulled - the other fans took 4.5-9.5 s). The temperature limit is what protects
+  # the panel while a dead fan's LEDs are still lit.
+  # Catalog 0.67 (user, 2026-11-14): led_off_time_midjob <= 10 s (was 2). The firmware confirms a stopped LED fan over a
+  # few seconds so tach noise cannot stop a cure; CureBox-4 measured 8.3 s - "this should not fail it".
   repetitions: 1    # one guided run walks all four fans (user, 2026-10-01) - was 8 (4 positions x 2 failure modes)
   duration_est_min: 60
   dependencies: [DVT-SAF-004]
@@ -711,8 +710,7 @@ tests:
     and an operator instruction for recovery, consistently across the UI and
     the log.
   applicability:
-    rule: SINGLE
-    unit: UUT-01
+    rule: ALL      # every unit (user, 2026-11-15 - "and all the other tests"; was one unit)
   sample_rationale: >
     Alarm text and error codes are software properties identical across units.
     A single review against the centralised error registry is sufficient.
@@ -754,8 +752,7 @@ tests:
     alarm that names the cause; the run keeps the temperature graph. The
     operator enters the measured input voltage and the selector position.
   applicability:
-    rule: SINGLE
-    unit: UUT-01
+    rule: ALL      # every unit (user, 2026-11-15 - "and all the other tests"; was one unit)
   sample_rationale: >
     The detection is a software rule, identical on every unit; one unit is
     enough (user, 2026-10-25).
@@ -968,36 +965,30 @@ tests:
     steady-state error, limit cycle, and spatial uniformity across the chamber.
     Splitting these into separate tests would mean running the same 2.5 hour
     heat-up several times to extract different numbers from identical data.
+    The 80 C runs end with the commanded cool-down to 30 C - fast at 100 V,
+    medium at 110 V, slow at 120 V - which used to be DVT-THM-003.
   applicability:
     rule: ALL
   sample_rationale: null
+  # Catalog 0.83 (user, 2026-11-15): every run on the 110 V side - 100 / 110 / 120 V - and DVT-THM-003 merged in: after
+  # the 80 C heat-up the runner commands the cool-down to 30 C at this voltage's speed - 100 V fast, 110 V medium,
+  # 120 V slow - so a separate THM-003 run (with its own heat-up) is no longer needed. The other rows come back to
+  # ambient passively, as before. Was: 230 V x 30-80 C, 110 / 240 / 100 V x 30 + 80 C, THM-003 on three of them.
   sweep:
     parameters: [setpoint, mains_voltage]
     matrix:
-      # Full setpoint sweep at nominal mains — this is the control-quality and
-      # uniformity curve across the operating range.
-      - {setpoint: 30, mains_voltage: 230}
-      - {setpoint: 40, mains_voltage: 230}
-      - {setpoint: 50, mains_voltage: 230}
-      - {setpoint: 60, mains_voltage: 230}
-      - {setpoint: 70, mains_voltage: 230}
-      - {setpoint: 80, mains_voltage: 230}
-      # Range extremes at the line extremes. Heater power scales with the
-      # square of mains voltage, so the effective loop gain changes and tuning
-      # stable at 230 V may not be at 110 V. The 80 V/80 C corners are also the
-      # REQ-48 heat-up measurements.
+      # the full setpoint sweep at 110 V - the control-quality and uniformity curve across the operating range
       - {setpoint: 30, mains_voltage: 110}
-      - {setpoint: 80, mains_voltage: 110}
-      - {setpoint: 30, mains_voltage: 240}
-      - {setpoint: 80, mains_voltage: 240}
-      # Low line on the 110 V selector position (added 2026-09-06): 100 V is
-      # -9 % of nominal, the worst case a 110/115 V customer sees. Heater power
-      # is (100/110)^2 = 83 % of the 110 V figure, so the 80 C row here is the
-      # longest heat-up in the whole campaign and the hardest REQ-48 point; the
-      # 30 C row shows whether the controller still holds the low setpoint at
-      # the lowest loop gain.
+      - {setpoint: 40, mains_voltage: 110}
+      - {setpoint: 50, mains_voltage: 110}
+      - {setpoint: 60, mains_voltage: 110}
+      - {setpoint: 70, mains_voltage: 110}
+      - {setpoint: 80, mains_voltage: 110}      # then the MEDIUM cool-down
+      # the range extremes at low and high line on the same selector position
       - {setpoint: 30, mains_voltage: 100}
-      - {setpoint: 80, mains_voltage: 100}
+      - {setpoint: 80, mains_voltage: 100}      # then the FAST cool-down
+      - {setpoint: 30, mains_voltage: 120}
+      - {setpoint: 80, mains_voltage: 120}      # then the SLOW cool-down
     unit: {setpoint: C, mains_voltage: V}
   # The reduced matrix is deliberate. A full 6 x 3 cross is 18 runs per unit,
   # 90 across the campaign, for information that is largely redundant: at
@@ -1018,7 +1009,7 @@ tests:
       calibration_id: null
     - name: Reference thermocouple adjacent to the control sensor
       calibration_id: null
-    - name: Programmable AC source or variac, 100 / 110 / 230 / 240 V
+    - name: Programmable AC source or variac, 100 / 110 / 120 V
       calibration_id: null
     - name: Ambient temperature and humidity logger
       calibration_id: null
@@ -1050,12 +1041,12 @@ tests:
       uniformity values itself (sCureBox-CS 1.0.163 or later)"
     - Unit returned to ambient and thermally settled before each run — a run
       started from a warm chamber is not comparable and must be rejected
-    - Voltage selector matched to the applied mains voltage, verified and
-      recorded
-    - Ambient controlled at 25 +/- 1 C, logged continuously. Tightened from
-      the original 20-25 C band because DVT-THM-003 is co-executed on the
-      descent of the 80 C rows and cooling rate is driven by the difference to
-      ambient
+    - Voltage selector at 110 V (every row runs on the 110 V side - 100 / 110 /
+      120 V), verified and recorded
+    - Ambient controlled at 25 +/- 1 C, logged continuously (the TC-08 cold
+      junctions). Tightened from the original 20-25 C band because the 80 C
+      rows end with the commanded cool-down and cooling rate is driven by the
+      difference to ambient
   procedure_steps:
     - step: Record the applied mains voltage at the inlet, the selector
         position, the ambient and the starting chamber temperature
@@ -1081,20 +1072,42 @@ tests:
     - step: Record the same overshoot figure computed from the raw control
         sensor before compensation, for comparison
       capture: [overshoot_uncompensated]
-    - step: Do not stop logging at the end of the soak. The chamber has to
-        return to ambient before the next row can start, so continue logging
-        through the descent. On the 80 C rows this descent IS the DVT-THM-003
-        run and is executed under its procedure. On the other rows it is
-        recorded as supplementary data, giving a cooling-rate-versus-delta-T
-        curve at no additional bench time
-      capture: [descent_logged, descent_linked_run_id]
+    - step: After the soak, the 80 C rows command the cool-down to 30 C at this voltage's speed - 100 V fast, 110 V
+        medium, 120 V slow (was DVT-THM-003) - and log it with the grid at 1 Hz - the achieved rate in each 10 C band
+        and its tracking error, the 80 to 40 C time, where the intake fan saturates, the undershoot below 30 C, the
+        grid spread at the fastest cooling and the rate the machine reports against the measured one. The other
+        rows log their passive descent to ambient
+      capture: [descent_logged, cooldown_tested, cooling_mode, commanded_rate, cooling_start_temp, ambient_stability,
+                damper_opened, heater_fan_100pct, time_80_to_40, rate_80_70, rate_70_60, rate_60_50, rate_50_40,
+                max_tracking_error, pwm_saturation_temp, pwm_saturated, min_temp_reached, cooling_undershoot,
+                uniformity_pp_during_cooling, max_gradient_position, reported_rate, reported_vs_measured_error]
     - step: Attach the raw log
       capture: [raw_log_attached]
   data_fields:
     - {name: setpoint, unit: C, type: float}
     - {name: mains_voltage, unit: V, type: float}
     - {name: descent_logged, type: bool}
-    - {name: descent_linked_run_id, type: string}
+    - {name: cooldown_tested, type: bool, note: "true on the 80 C rows, which end with the commanded cool-down (was DVT-THM-003)"}
+    - {name: cooling_mode, type: enum, values: [fast, medium, slow], note: "100 V fast, 110 V medium, 120 V slow"}
+    - {name: commanded_rate, unit: C/min, type: float}
+    - {name: cooling_start_temp, unit: C, type: float}
+    - {name: ambient_stability, unit: C, type: float, note: "peak-to-peak of the cold-junction ambient over the run"}
+    - {name: damper_opened, type: bool}
+    - {name: heater_fan_100pct, type: bool}
+    - {name: time_80_to_40, unit: min, type: float}
+    - {name: rate_80_70, unit: C/min, type: float}
+    - {name: rate_70_60, unit: C/min, type: float}
+    - {name: rate_60_50, unit: C/min, type: float}
+    - {name: rate_50_40, unit: C/min, type: float}
+    - {name: max_tracking_error, unit: '%', type: float}
+    - {name: pwm_saturation_temp, unit: C, type: float}
+    - {name: pwm_saturated, type: bool}
+    - {name: min_temp_reached, unit: C, type: float}
+    - {name: cooling_undershoot, unit: C, type: float, note: "below the 30 C cool-down target"}
+    - {name: uniformity_pp_during_cooling, unit: C, type: float, note: "peak-to-peak across the 16 grid channels at the fastest cooling"}
+    - {name: max_gradient_position, type: string, note: "the grid position farthest from the grid mean at the fastest cooling"}
+    - {name: reported_rate, unit: C/min, type: float}
+    - {name: reported_vs_measured_error, unit: '%', type: float}
     - {name: selector_position, type: string}
     - {name: ambient_temp, unit: C, type: float}
     - {name: start_temp, unit: C, type: float}
@@ -1116,6 +1129,8 @@ tests:
   pass_criteria: >
     uniformity_pp <= 5 AND overshoot <= 3 AND abs(steady_state_error) <= 1
     AND limit_cycle_amplitude <= 1 AND settling_time <= 45
+    AND (cooldown_tested == false OR (max_tracking_error <= 15 AND cooling_undershoot <= 2
+    AND uniformity_pp_during_cooling <= 10 AND reported_vs_measured_error <= 10))
   # A verdict is produced per matrix row and rolled up per SRS-DVT-096. The
   # test passes only if every row passes, but a failure is attributed to the
   # specific setpoint and voltage rather than to the test as a whole — which is
@@ -1140,7 +1155,7 @@ tests:
   # - REQ-48 is 20 min to 80 C. EVT measured 32.6 min at 110 V and 27.0 min at
   #   233 V with the 500 W heater, so the 80 C rows are expected to fail as the
   #   requirement currently stands. Resolve the requirement before running them.
-  repetitions: 1      # per matrix row (10 rows)
+  repetitions: 1      # per matrix row (10 rows: 110 V x 6 setpoints, 100 / 120 V x 30 + 80 C)
   duration_est_min: 150
   dependencies: []
 
@@ -1156,11 +1171,13 @@ tests:
   method: Test
   purpose: >
     A short, fully automatic check of how evenly the chamber heats: a step from
-    ambient to 80 C, held for 5 minutes, with the 16-point thermocouple grid read
-    by the machine itself. The runner logs the time the chamber takes to reach
-    80 C and computes the spatial uniformity over the hold. It uses the same
-    grid as DVT-THM-001 but a single row at 220 V and a 5 minute hold instead of
-    the full setpoint / mains sweep, so it fits into a bench session.
+    ambient to 80 C, then a hold of up to 30 minutes, with the 16-point
+    thermocouple grid read by the machine itself. The runner logs the time the
+    chamber takes to reach 80 C. The hold ends as soon as the grid spread (each
+    thermocouple averaged over the last 60 s) is 5 C or less; if it is not
+    reached in 30 minutes, the test fails (user, 2026-11-18). It uses the same
+    grid as DVT-THM-001 but a single row at 220 V instead of the full setpoint /
+    mains sweep, so it fits into a bench session.
   applicability:
     rule: ALL
   sample_rationale: null
@@ -1188,44 +1205,50 @@ tests:
       plugged into the machine's USB"
   procedure_steps:
     - step: Record the mains voltage, the ambient and the starting chamber temperature
-      capture: [mains_voltage, ambient_temp, start_temp]
+      capture: [mains_voltage, ambient_temp, start_temp, ambient_temp_end, ambient_drift]
     - step: Command a step from ambient to 80 C, no ramp, and start the timer.
         Log the control sensor and all 16 grid channels every second
       capture: [setpoint]
     - step: Record the time for the control sensor to first reach 80 C
         (at most 60 minutes)
       capture: [reached_setpoint, heat_up_time]
-    - step: Hold 80 C for 5 minutes, then stop heating
-      capture: [hold_time]
-    - step: Over the hold, take each thermocouple's mean and compute the
-        spread (max - min of the 16 means), their standard deviation, the
-        grid mean and the hottest and coldest positions
+    - step: Hold 80 C. Every second, take each thermocouple's mean over the
+        last 60 s and the spread (max - min of the 16 means). Stop the hold as
+        soon as the spread is 5 C or less, at most after 30 minutes, then stop heating
+      capture: [hold_time, uniformity_reached, time_to_uniform]
+    - step: Over the last 60 s of the hold, take each thermocouple's mean and
+        compute the spread (max - min of the 16 means), their standard
+        deviation, the grid mean and the hottest and coldest positions
       capture: [uniformity_pp, uniformity_sd, grid_mean, hottest_position, coldest_position]
     - step: Attach the raw log
       capture: [raw_log_attached]
   data_fields:
     - {name: setpoint, unit: C, type: float}
     - {name: mains_voltage, unit: V, type: float}
-    - {name: ambient_temp, unit: C, type: float}
+    - {name: ambient_temp, unit: C, type: float, note: "the TC-08 cold junctions at the start (mean of both grid loggers) - CH2 is a grid thermocouple here (2026-11-15)"}
+    - {name: ambient_temp_end, unit: C, type: float, note: "the cold junctions at the end of the hold"}
+    - {name: ambient_drift, unit: C, type: float, note: "max - min of the cold-junction ambient over the run"}
     - {name: start_temp, unit: C, type: float}
     - {name: reached_setpoint, type: bool, note: the control sensor reached 80 C within 60 minutes}
     - {name: heat_up_time, unit: min, type: float, note: from the step to the control sensor first reaching 80 C}
-    - {name: hold_time, unit: min, type: float, note: the hold the uniformity was computed over}
-    - {name: uniformity_pp, unit: C, type: float, note: max - min of the 16 thermocouple means over the hold}
+    - {name: hold_time, unit: min, type: float, note: "time held at 80 C - until the spread met the limit, at most 30 min"}
+    - {name: uniformity_reached, type: bool, note: "the grid spread (60 s means) was 5 C or less within 30 minutes of hold"}
+    - {name: time_to_uniform, unit: min, type: float, note: "from reaching 80 C to the spread first meeting the limit; empty when never"}
+    - {name: uniformity_pp, unit: C, type: float, note: max - min of the 16 thermocouple means over the last 60 s of the hold}
     - {name: uniformity_sd, unit: C, type: float, note: sample standard deviation of the 16 means}
-    - {name: grid_mean, unit: C, type: float, note: mean of the 16 thermocouple means over the hold}
+    - {name: grid_mean, unit: C, type: float, note: mean of the 16 thermocouple means over the last 60 s of the hold}
     - {name: hottest_position, type: string, note: "grid position Z<level>-<pos>"}
     - {name: coldest_position, type: string, note: "grid position Z<level>-<pos>"}
     - {name: raw_log_attached, type: bool}
   pass_criteria: >
-    reached_setpoint == true AND uniformity_pp <= 5
+    reached_setpoint == true AND uniformity_reached == true AND uniformity_pp <= 5
   # CONFIRM: the uniformity limit is the one proposed for DVT-THM-001 (EVT: 3 C
   # peak-to-peak at 70 C with 15 thermocouples). The heat-up time is recorded
   # but not judged: REQ-48 asks 20 min to 80 C and EVT measured 27.0 min at
   # 233 V, so a limit on it would fail every unit as the requirement stands.
   # Add "AND heat_up_time <= N" once the requirement is settled.
   repetitions: 1
-  duration_est_min: 45
+  duration_est_min: 65    # heat-up ~30 min + hold up to 30 min (was 45 with a fixed 5 min hold)
   dependencies: []
 
 # =============================================================
@@ -1385,7 +1408,7 @@ tests:
     acceptance test on arrival.
   applicability:
     rule: SINGLE
-    unit: null              # CONFIRM: which unit is shipped
+    unit: UUT-03            # machine 3 (user, 2026-11-15)
   sample_rationale: >
     Transport survivability is a property of the packaging design and the unit
     structure, both identical across units. A single shipped unit is the
@@ -1466,8 +1489,7 @@ tests:
     earth terminal with a resistance low enough to carry fault current until
     the protective device operates.
   applicability:
-    rule: SINGLE
-    unit: UUT-01   # electrical safety is done once, by hand, on the engineer's bench
+    rule: ALL      # every unit (user, 2026-11-15 - was done once, on UUT-01 only)
   sample_rationale: >
     Electrical safety is checked once, by hand, by the engineer on his safety-test
     bench, on one unit; the result is recorded as his approval.
@@ -1517,8 +1539,7 @@ tests:
     test, and repeat it after transport and after the endurance soak to detect
     degradation.
   applicability:
-    rule: SINGLE
-    unit: UUT-01   # electrical safety is done once, by hand, on the engineer's bench
+    rule: ALL      # every unit (user, 2026-11-15 - was done once, on UUT-01 only)
   sample_rationale: >
     Electrical safety is checked once, by hand, by the engineer on his safety-test
     bench, on one unit; the result is recorded as his approval.
@@ -1557,8 +1578,7 @@ tests:
     Verify that the insulation between the mains circuit and accessible parts
     withstands the required test voltage without breakdown.
   applicability:
-    rule: SINGLE
-    unit: UUT-01   # electrical safety is done once, by hand, on the engineer's bench
+    rule: ALL      # every unit (user, 2026-11-15 - was done once, on UUT-01 only)
   sample_rationale: >
     Electrical safety is checked once, by hand, by the engineer on his safety-test
     bench, on one unit; the result is recorded as his approval.
@@ -1627,8 +1647,7 @@ tests:
     parts remains within limits, in normal condition and with the protective
     earth conductor open.
   applicability:
-    rule: SINGLE
-    unit: UUT-01   # electrical safety is done once, by hand, on the engineer's bench
+    rule: ALL      # every unit (user, 2026-11-15 - was done once, on UUT-01 only)
   sample_rationale: >
     Electrical safety is checked once, by hand, by the engineer on his safety-test
     bench, on one unit; the result is recorded as his approval.
@@ -1680,8 +1699,7 @@ tests:
     — and verify that inrush current does not open the 15 A time-lag inlet fuse
     or trip a typical installation circuit breaker.
   applicability:
-    rule: SINGLE
-    unit: UUT-01   # electrical safety is done once, by hand, on the engineer's bench
+    rule: ALL      # every unit (user, 2026-11-15 - was done once, on UUT-01 only)
   sample_rationale: >
     Electrical safety is checked once, by hand, by the engineer on his safety-test
     bench, on one unit; the result is recorded as his approval.
@@ -1961,78 +1979,6 @@ tests:
   # a cutout that does not close again within the recording is not a failure either.
   # Trimmed 2026-09-27 at the user's request to the three numbers the graph
   # gives plus the graph; the removed fields live in the run's stored trace.
-- test_id: DVT-SAF-010
-  group: SAF
-  title: Firmware hang — the output watchdog switches heater and UV off
-  subsystem: Safety
-  requirement_ids: []
-  method: Test
-  purpose: >
-    Verify the second line of defence: when the firmware hangs, the separate
-    output watchdog process (scurebox --watchdog) sees the heartbeat stop and
-    switches the heater SSR and the UV LEDs off by itself. The runner makes the
-    firmware hang on purpose (DVT hang command: heartbeat, control loops and
-    every output write frozen - nothing is switched off by the firmware) while
-    the heater drives at full output and the UV is at maximum, and proves the
-    cut physically: the StarBright irradiance falling and the heater-body
-    thermocouple (PicoLog TC-08) turning from rising to falling. After the
-    hang nothing may resume by itself and an alarm must ask for a restart.
-  applicability:
-    rule: ALL
-  sample_rationale: null
-  equipment:
-    - name: PicoLog TC-08 thermocouple logger
-      calibration_id: null
-    - name: Type-K thermocouple bonded to the heater body (the same bond as
-        DVT-SAF-009), logged at 2 Hz
-      calibration_id: null
-    - name: Ophir StarBright power meter with UV photodiode head (e.g. PD300-UV)
-      calibration_id: null
-    - name: Sensor fixture holding the head at the door opening, facing the LEDs
-  preconditions:
-    - Unit idle, no alarm active; output watchdog service running (it is
-      installed with the firmware)
-    - Heater-body thermocouple on TC-08 CH1 and the StarBright on the machine's
-      USB with the head at the door opening, facing the LEDs; door closed
-  procedure_steps:
-    - step: The runner heats at full output until the heater body is clearly
-        rising, then switches the UV on at 405 nm, 100 %, and waits for a
-        stable StarBright reading
-      capture: [uv_plateau]
-    - step: The runner makes the firmware hang (heartbeat and every output write
-        frozen). From that moment it times the StarBright reading falling below
-        10 % of the plateau (uv_off_time) and the heater body turning from
-        rising to falling (heater_off_time)
-      capture: [watchdog_timeout_s, uv_drop_observed, uv_off_time, heater_body_drop_observed, heater_off_time]
-    - step: When the hang ends the runner watches 2 minutes - heating and UV
-        must not come back by themselves - and reads the alarm, which must ask
-        for a restart (acknowledgement)
-      capture: [auto_restart_prevented, logged, error_code, alarm_text]
-  data_fields:
-    - {name: uv_plateau, unit: mW/cm2, type: float}
-    - {name: watchdog_timeout_s, unit: s, type: float, note: the watchdog timeout the firmware reports (20 s)}
-    - {name: uv_drop_observed, type: bool}
-    - {name: uv_off_time, unit: s, type: float, note: hang start to the StarBright below 10 % of the plateau}
-    - {name: heater_body_drop_observed, type: bool}
-    - {name: heater_off_time, unit: s, type: float, note: hang start to the heater-body rise-to-fall turn (includes the body's thermal lag)}
-    - {name: auto_restart_prevented, type: bool}
-    - {name: logged, type: bool}
-    - {name: error_code, type: string}
-    - {name: alarm_text, type: string}
-  pass_criteria: >
-    uv_drop_observed == true AND uv_off_time <= 25
-    AND heater_body_drop_observed == true AND heater_off_time <= 200
-    AND auto_restart_prevented == true AND logged == true
-  # Rewritten (user, 2026-10-25): the software stack is frozen on purpose and the SECOND mechanism - the
-  # separate output watchdog process - must cut. Its timeout is 20 s, so UV must be off within 25 s
-  # (20 s + poll + margin) and the heater-body turn within 200 s (user, 2026-10-25 - was 100 s; the body's thermal lag
-  # after the cut). The firmware is hung for 240 s so the turn can be seen inside the hang.
-  # This watchdog runs on the same CM5: an OS freeze, a dead CM5 or a lost I2C bus are NOT covered by it
-  # (DVT-SAF-011 covers the cable; a hardware watchdog on the IO board would be needed for the rest).
-  repetitions: 1   # one run (user, 2026-10-23) - was 3
-  duration_est_min: 30
-  dependencies: []
-
 - test_id: DVT-SAF-011
   group: SAF
   title: Controller link lost during heating (CM5 40-pin cable) and restored
@@ -2205,8 +2151,7 @@ tests:
     and the UV must go off. Every result is read from the outputs: the
     StarBright for the UV and the heater-body thermocouple (TC-08) for the heat.
   applicability:
-    rule: SINGLE
-    unit: UUT-01
+    rule: ALL      # every unit (user, 2026-11-15 - "and all the other tests"; was one unit)
   sample_rationale: >
     The software stack is identical across all units, so this is a design
     property rather than a unit-to-unit variable. Per-unit coverage of the
@@ -2260,7 +2205,7 @@ tests:
   # and raised an alarm; i2c_loss = uv_off_time <= 25 and heater_off_time <= 200.
   repetitions: 1      # per case (3 cases)
   duration_est_min: 45
-  dependencies: [DVT-SAF-010]
+  dependencies: []   # DVT-SAF-010 (firmware hang / output watchdog) removed from the campaign (user, 2026-11-15)
 
 # =============================================================
 # LED THERMAL — steady-state limit and degraded cooling detection
@@ -2529,16 +2474,14 @@ tests:
 
 - test_id: DVT-SAF-016
   group: SAF
-  title: LED panel electrically disconnected — detection at switch-on and panel identification
+  title: LED panel connector unplugged at 405 and 450 nm — the matching error for each panel (left, right, back, door)
   subsystem: Safety
   requirement_ids: []          # CONFIRM: link to the LED-output monitoring / cure-quality requirement
   method: Test
   purpose: >
-    Verify that when one LED panel is electrically disconnected and the LEDs
-    are switched on, the system detects that the panel is not emitting, raises
-    an alarm stating that an LED panel is not working, names the CORRECT panel,
-    instructs the operator to check the LED, and does not run the job with a
-    dark panel. A cure that runs with one of four panels dark under-cures the
+    Verify, for each of the four LED panels in turn (left, right, back, door),
+    that when its connector is unplugged and the LEDs are switched on - at 405 nm
+    and again at 450 nm - the machine's own start-up LED test fails and names the CORRECT panel. A cure that runs with one of four panels dark under-cures the
     part on that side without any visible sign to the operator.
   applicability:
     rule: ALL
@@ -2547,51 +2490,45 @@ tests:
     so a bad crimp or a half-seated connector is a unit-to-unit variable. The
     detection logic itself is a design property, but the injection is cheap
     and the failure mode is a real field fault, so every unit runs it.
-  # Two electrically different faults produce the same symptom — a dark panel —
-  # and a detection method may catch one and miss the other:
-  #
-  #   led_string_open       -> the driver output is opened (panel connector
-  #                            unplugged). The driver sees no load, goes to its
-  #                            open-load / OVP state and draws little input
-  #                            current. Input-side current sense may still
-  #                            read a plausible idle current.
-  #   driver_supply_removed -> the driver's supply is opened. The driver is
-  #                            dead; the panel and its thermistor read normal
-  #                            at ambient, so a thermistor-based check sees
-  #                            nothing wrong.
+  # Catalog 0.64 (user, 2026-11-14): "the test is very simple - unplug the left connector, check that the matching
+  # error came; then right the same, then back the same, then door the same". One run per unit goes through the
+  # four panels in turn; only the panel CONNECTOR is unplugged (the driver-supply variant and the mid-job / job-
+  # inhibit / recovery / self-test steps are dropped). Pass = every panel raises an alarm that names that panel.
   #
   # Detection (user, 2026-10-25): the machine's 'panel must warm while lit' check - a lit panel's thermistor
-  # must rise >= 1 C within 90 s of light, else Err 9004 (at switch-on) / 9005 (mid-process), naming the
-  # panel - for the left and right panels only: the back and door panels have no regular thermistor (their
-  # ORIGIN thermistors serve another purpose and are not read - user, 2026-10-25), so a dark back or door
-  # panel is not detectable today - a design finding, not run. Off in normal operation
-  # (decision 2026-09-16); the runner switches it on for this test (POST /api/dvt/led-checks, sCureBox
-  # 1.0.111+) and off again at the end. It catches both disconnect points: an open string or a dead driver
-  # leaves the panel cold either way.
-  sweep:
-    matrix:
-      - {panel: right, disconnect_point: led_string_open}
-      - {panel: left,  disconnect_point: led_string_open}
-      - {panel: right, disconnect_point: driver_supply_removed}
-      - {panel: left,  disconnect_point: driver_supply_removed}
+  # must rise >= 1 C within 90 s of light, else Err 9004, naming the panel. Off in normal operation (decision
+  # 2026-09-16); the runner switches it on for this test (POST /api/dvt/led-checks, sCureBox 1.0.111+) and off
+  # again at the end. EXPECTED FINDING: the back and door panels have no regular thermistor (their ORIGIN
+  # thermistors are reserved and not read - user, 2026-10-25), so today a dark back or door panel raises nothing
+  # and those two terms FAIL - recorded as a design finding, not hidden by dropping the panels.
+  # Catalog 0.78 (user, 2026-11-15): "turn the machine's panel check on, clear the alerts during the test, log the alerts
+  # and make it part of the pass criteria" - the runner switches the machine's LED panel check on for the test
+  # (POST /api/dvt/led-checks, all four panels, judged after 40 s of light) and resets it before and after every step.
+  # Each step logs the LED alarms the machine raised (9004 / 9005 / 9040-9045, with the second they came) and must see
+  # the unplugged panel's own code - left 9040, right 9041, back 9044, door 9045 - and no LED alarm for another panel.
+  # Catalog 0.77 (user, 2026-11-15): "each panel lights for 1 minute or until the temperature change is reached when
+  # plugged in; keep the disconnected time the same" - the runner lights the LEDs itself: the unplugged panel is judged
+  # at 20 s (405 nm) / 30 s (450 nm) and must rise less than 1.0 / 0.8 C; every connected panel must reach that rise
+  # within 60 s, and the LEDs go off as soon as they all have. CureBox-4 failed 0.76 on connected panels that started
+  # near 30 C and rose 0.2 - 0.7 C in the start-up test's 20 / 30 s.
+  # Catalog 0.76 (user, 2026-11-15): the door panel at 450 nm is checked too. The start-up test only reports the door
+  # at 450 nm (INFO), so the DVT judges it by the same rule - an unplugged door panel must rise less than 0.8 C in 30 s.
+  # Catalog 0.75 (user, 2026-11-15): "it must be exactly the same test as the machine's start-up" and "the waiting time
+  # makes no sense" - every step runs the boot LED test itself (POST /api/diagnostics/led-test, sCureBox 1.0.208):
+  # all panels cooled to 30 C, the LEDs at 100 % for 20 s at 405 nm (each panel must rise >= 1.0 C) or 30 s at 450 nm
+  # (>= 0.8 C). Pass = the test fails, the unplugged panel is the one that failed and every other judged panel passed.
+  # The door panel is not judged at 450 nm by the boot test, so it has no 450 nm step. The 9004 alarm route (up to
+  # 150 s, and a 405 nm alarm still latched hid the 450 nm one - left panel on CureBox, 2026-11-15) is no longer used.
+  # Catalog 0.74 (user, 2026-11-15): "the test checks only 405 and it must check 450 nm too" - every panel is run
+  # twice, once lit at 405 nm and once at 450 nm; each run starts from all panels at 30 C or below with every
+  # connector plugged in, so the alarm of the 405 run cannot hide the 450 one. Pass = all eight runs raise an alarm
+  # that names that panel.
   safety_plan:
     - 405 / 450 nm emission is only ever observed through the closed door
       or a UV-rated viewing window; UV-blocking eyewear for everyone at the bench
-    - The disconnection is made with the unit de-energised and the LED SSRs
-      confirmed off, then the unit is re-energised; no live work on the
-      driver output
-    - Break-out lead routed so the door interlock is not defeated (DVT-SAF-008 /
-      DVT-SAF-013 must remain valid during this test)
+    - A connector is only unplugged or plugged in while the LEDs are off (the
+      runner switches them off and says so before each step)
   equipment:
-    - name: Inline break-out lead for the panel connector (driver output) with
-        a switch or remote contactor, one per panel connector type
-    - name: Inline break-out for the driver supply, one per driver
-    - name: DMM / current clamp on the driver output to confirm the string
-        is really open (0 A) or the driver really dead
-      calibration_id: null
-    - name: UV irradiance meter or UV-sensitive card at the chamber centre,
-        to confirm the panel is dark and the other three are emitting
-      calibration_id: null
     - name: Stopwatch or logged timestamps from the machine log
   preconditions:
     - All four panels verified functional immediately before the test — LED
@@ -2599,67 +2536,119 @@ tests:
     - Unit at ambient, chamber empty, door closed, no active alarms
     - Firmware protection thresholds at production values
   procedure_steps:
-    - step: Record the panel and the disconnect point; photograph the opened
-        connector / break-out position
-      capture: [panel, disconnect_point]
-    - step: Open the connection with the unit de-energised, re-energise, and
-        confirm with the DMM / current clamp that the panel string is open or
-        the driver is unpowered
-      capture: [panel_confirmed_dark]
-    - step: The runner switches the LED panel check on and lights the LEDs (405 nm,
-        100 %) for up to 150 s; the check judges after 90 s of light - start the timer
-        at the switch-on command
-      capture: [alarm_raised, time_to_alarm, alarm_text, error_code]
-    - step: Confirm the alarm states that an LED panel is not working, names
-        the CORRECT panel, and its action text tells the operator to check
-        the LED / panel
-      capture: [alarm_identifies_correct_panel, alarm_action_says_check_led]
-    - step: Confirm the job did not start or run with the dark panel
-      capture: [job_start_inhibited]
-    - step: Confirm the other three panels are emitting and raise no alarm
-      capture: [false_alarm_on_other_panels]
-    - step: Restore the connection, acknowledge, start a cure, and open the
-        same connection again while the LEDs are on; record the time to the
-        alarm and whether the job is stopped
-      capture: [midjob_alarm_raised, midjob_time_to_alarm, midjob_job_stopped]
-    - step: Restore the connection and verify the alarm clears only after
-        operator acknowledgement
-      capture: [recovery_requires_ack]
-    - step: Run the LED self-test and confirm the panel emits again — no
-        collateral damage to the driver from the open-load condition
-      capture: [post_test_panel_functional]
+    - step: LEFT panel, 405 nm - the runner cools all four panels to 30 C or below (LED fans at 100 %, LEDs off); then,
+        with the LEDs off, unplug the left panel connector; the runner lights the LEDs at 405 nm (100 %) - the
+        unplugged left panel must rise less than 1.0 C in 20 s, every connected panel at least 1.0 C within 60 s, and the
+        machine's panel check must raise 9040 (left) and no LED alarm for another panel; the runner clears it after the step;
+        plug the connector back in
+      capture: [left_405_start_temps, left_405_alarm_raised, left_405_names_panel, left_405_others_ok, left_405_panel_rise, left_405_light_s, left_405_machine_alarm, left_405_machine_alarm_only, left_405_machine_alerts, left_405_test_message]
+    - step: LEFT panel, 450 nm - the same, the start-up LED test at 450 nm (30 s, at least 0.8 C), cooled to 30 C or below first
+      capture: [left_450_start_temps, left_450_alarm_raised, left_450_names_panel, left_450_others_ok, left_450_panel_rise, left_450_light_s, left_450_machine_alarm, left_450_machine_alarm_only, left_450_machine_alerts, left_450_test_message]
+    - step: RIGHT panel, 405 nm - the same, the start-up LED test at 405 nm (20 s, at least 1.0 C), cooled to 30 C or below first
+      capture: [right_405_start_temps, right_405_alarm_raised, right_405_names_panel, right_405_others_ok, right_405_panel_rise, right_405_light_s, right_405_machine_alarm, right_405_machine_alarm_only, right_405_machine_alerts, right_405_test_message]
+    - step: RIGHT panel, 450 nm - the same, the start-up LED test at 450 nm (30 s, at least 0.8 C), cooled to 30 C or below first
+      capture: [right_450_start_temps, right_450_alarm_raised, right_450_names_panel, right_450_others_ok, right_450_panel_rise, right_450_light_s, right_450_machine_alarm, right_450_machine_alarm_only, right_450_machine_alerts, right_450_test_message]
+    - step: BACK panel, 405 nm - the same, the start-up LED test at 405 nm (20 s, at least 1.0 C), cooled to 30 C or below first
+      capture: [back_405_start_temps, back_405_alarm_raised, back_405_names_panel, back_405_others_ok, back_405_panel_rise, back_405_light_s, back_405_machine_alarm, back_405_machine_alarm_only, back_405_machine_alerts, back_405_test_message]
+    - step: BACK panel, 450 nm - the same, the start-up LED test at 450 nm (30 s, at least 0.8 C), cooled to 30 C or below first
+      capture: [back_450_start_temps, back_450_alarm_raised, back_450_names_panel, back_450_others_ok, back_450_panel_rise, back_450_light_s, back_450_machine_alarm, back_450_machine_alarm_only, back_450_machine_alerts, back_450_test_message]
+    - step: DOOR panel, 405 nm - the same, the start-up LED test at 405 nm (20 s, at least 1.0 C), cooled to 30 C or below first
+      capture: [door_405_start_temps, door_405_alarm_raised, door_405_names_panel, door_405_others_ok, door_405_panel_rise, door_405_light_s, door_405_machine_alarm, door_405_machine_alarm_only, door_405_machine_alerts, door_405_test_message]
+    - step: DOOR panel, 450 nm - the same, the start-up LED test at 450 nm (30 s, at least 0.8 C), cooled to 30 C or below
+        first; the start-up test only reports the door at 450 nm, so the runner judges it - the unplugged door must rise less than 0.8 C
+      capture: [door_450_start_temps, door_450_alarm_raised, door_450_names_panel, door_450_others_ok, door_450_panel_rise, door_450_light_s, door_450_machine_alarm, door_450_machine_alarm_only, door_450_machine_alerts, door_450_test_message]
   data_fields:
-    - {name: panel, type: enum, values: [right, left, back, door]}
-    - {name: disconnect_point, type: enum, values: [led_string_open, driver_supply_removed]}
-    - {name: panel_confirmed_dark, type: bool}
-    - {name: alarm_raised, type: bool}
-    - {name: time_to_alarm, unit: s, type: float}
-    - {name: alarm_text, type: string}
-    - {name: error_code, type: string}
-    - {name: alarm_identifies_correct_panel, type: bool}
-    - {name: alarm_action_says_check_led, type: bool}
-    - {name: job_start_inhibited, type: bool}
-    - {name: false_alarm_on_other_panels, type: bool}
-    - {name: midjob_alarm_raised, type: bool}
-    - {name: midjob_time_to_alarm, unit: s, type: float}
-    - {name: midjob_job_stopped, type: bool}
-    - {name: recovery_requires_ack, type: bool}
-    - {name: post_test_panel_functional, type: bool}
+    - {name: left_405_start_temps, type: string, note: "the four panel temperatures when the left 405 nm step started (all at or below 30 C)"}
+    - {name: left_405_alarm_raised, type: bool, note: "the unplugged left panel rose less than 1.0 C in 20 s; was: the start-up LED test failed"}
+    - {name: left_405_names_panel, type: bool, note: "the left panel is the one that failed"}
+    - {name: left_405_others_ok, type: bool, note: "every other judged panel reached +1.0 C within 60 s"}
+    - {name: left_405_panel_rise, unit: C, type: float, note: "how much the unplugged left panel rose during the test"}
+    - {name: left_405_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: left_405_machine_alarm, type: bool, note: "the machine raised 9040 (the left panel not heating)"}
+    - {name: left_405_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: left_405_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: left_405_test_message, type: string}
+    - {name: left_450_start_temps, type: string, note: "the four panel temperatures when the left 450 nm step started (all at or below 30 C)"}
+    - {name: left_450_alarm_raised, type: bool, note: "the unplugged left panel rose less than 0.8 C in 30 s; was: the start-up LED test failed"}
+    - {name: left_450_names_panel, type: bool, note: "the left panel is the one that failed"}
+    - {name: left_450_others_ok, type: bool, note: "every other judged panel reached +0.8 C within 60 s"}
+    - {name: left_450_panel_rise, unit: C, type: float, note: "how much the unplugged left panel rose during the test"}
+    - {name: left_450_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: left_450_machine_alarm, type: bool, note: "the machine raised 9040 (the left panel not heating)"}
+    - {name: left_450_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: left_450_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: left_450_test_message, type: string}
+    - {name: right_405_start_temps, type: string, note: "the four panel temperatures when the right 405 nm step started (all at or below 30 C)"}
+    - {name: right_405_alarm_raised, type: bool, note: "the unplugged right panel rose less than 1.0 C in 20 s; was: the start-up LED test failed"}
+    - {name: right_405_names_panel, type: bool, note: "the right panel is the one that failed"}
+    - {name: right_405_others_ok, type: bool, note: "every other judged panel reached +1.0 C within 60 s"}
+    - {name: right_405_panel_rise, unit: C, type: float, note: "how much the unplugged right panel rose during the test"}
+    - {name: right_405_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: right_405_machine_alarm, type: bool, note: "the machine raised 9041 (the right panel not heating)"}
+    - {name: right_405_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: right_405_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: right_405_test_message, type: string}
+    - {name: right_450_start_temps, type: string, note: "the four panel temperatures when the right 450 nm step started (all at or below 30 C)"}
+    - {name: right_450_alarm_raised, type: bool, note: "the unplugged right panel rose less than 0.8 C in 30 s; was: the start-up LED test failed"}
+    - {name: right_450_names_panel, type: bool, note: "the right panel is the one that failed"}
+    - {name: right_450_others_ok, type: bool, note: "every other judged panel reached +0.8 C within 60 s"}
+    - {name: right_450_panel_rise, unit: C, type: float, note: "how much the unplugged right panel rose during the test"}
+    - {name: right_450_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: right_450_machine_alarm, type: bool, note: "the machine raised 9041 (the right panel not heating)"}
+    - {name: right_450_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: right_450_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: right_450_test_message, type: string}
+    - {name: back_405_start_temps, type: string, note: "the four panel temperatures when the back 405 nm step started (all at or below 30 C)"}
+    - {name: back_405_alarm_raised, type: bool, note: "the unplugged back panel rose less than 1.0 C in 20 s; was: the start-up LED test failed"}
+    - {name: back_405_names_panel, type: bool, note: "the back panel is the one that failed"}
+    - {name: back_405_others_ok, type: bool, note: "every other judged panel reached +1.0 C within 60 s"}
+    - {name: back_405_panel_rise, unit: C, type: float, note: "how much the unplugged back panel rose during the test"}
+    - {name: back_405_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: back_405_machine_alarm, type: bool, note: "the machine raised 9044 (the back panel not heating)"}
+    - {name: back_405_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: back_405_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: back_405_test_message, type: string}
+    - {name: back_450_start_temps, type: string, note: "the four panel temperatures when the back 450 nm step started (all at or below 30 C)"}
+    - {name: back_450_alarm_raised, type: bool, note: "the unplugged back panel rose less than 0.8 C in 30 s; was: the start-up LED test failed"}
+    - {name: back_450_names_panel, type: bool, note: "the back panel is the one that failed"}
+    - {name: back_450_others_ok, type: bool, note: "every other judged panel reached +0.8 C within 60 s"}
+    - {name: back_450_panel_rise, unit: C, type: float, note: "how much the unplugged back panel rose during the test"}
+    - {name: back_450_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: back_450_machine_alarm, type: bool, note: "the machine raised 9044 (the back panel not heating)"}
+    - {name: back_450_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: back_450_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: back_450_test_message, type: string}
+    - {name: door_405_start_temps, type: string, note: "the four panel temperatures when the door 405 nm step started (all at or below 30 C)"}
+    - {name: door_405_alarm_raised, type: bool, note: "the unplugged door panel rose less than 1.0 C in 20 s; was: the start-up LED test failed"}
+    - {name: door_405_names_panel, type: bool, note: "the door panel is the one that failed"}
+    - {name: door_405_others_ok, type: bool, note: "every other judged panel reached +1.0 C within 60 s"}
+    - {name: door_405_panel_rise, unit: C, type: float, note: "how much the unplugged door panel rose during the test"}
+    - {name: door_405_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: door_405_machine_alarm, type: bool, note: "the machine raised 9045 (the door panel not heating)"}
+    - {name: door_405_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: door_405_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: door_405_test_message, type: string}
+    - {name: door_450_start_temps, type: string, note: "the four panel temperatures when the door 450 nm step started (all at or below 30 C)"}
+    - {name: door_450_alarm_raised, type: bool, note: "the unplugged door panel rose less than 0.8 C in 30 s; was: the door panel did not heat (the start-up test reports the door at 450 nm only, the runner judges it)"}
+    - {name: door_450_names_panel, type: bool, note: "the door panel is the one that did not heat"}
+    - {name: door_450_others_ok, type: bool, note: "every other judged panel reached +0.8 C within 60 s"}
+    - {name: door_450_panel_rise, unit: C, type: float, note: "how much the unplugged door panel rose during the test"}
+    - {name: door_450_light_s, unit: s, type: float, note: "how long the LEDs were lit (the connected panels' rise, at most 60 s)"}
+    - {name: door_450_machine_alarm, type: bool, note: "the machine raised 9045 (the door panel not heating)"}
+    - {name: door_450_machine_alarm_only, type: bool, note: "no LED alarm for any other panel"}
+    - {name: door_450_machine_alerts, type: string, note: "the LED alarms the machine raised during the step, with the second each came"}
+    - {name: door_450_test_message, type: string}
   pass_criteria: >
-    panel_confirmed_dark == true AND alarm_raised == true
-    AND alarm_identifies_correct_panel == true AND alarm_action_says_check_led == true
-    AND time_to_alarm <= 100
-    AND job_start_inhibited == true AND false_alarm_on_other_panels == false
-    AND midjob_alarm_raised == true AND midjob_job_stopped == true
-    AND recovery_requires_ack == true AND post_test_panel_functional == true
-  # `panel_confirmed_dark` is in the criterion on purpose: an alarm with the
-  # panel still lit means the injection failed, not that detection works.
-  # time_to_alarm <= 100 s: the check judges after 90 s of light (user, 2026-10-25), plus the polling margin.
-  # CONFIRM: job_start_inhibited — kept consistent with DVT-SAF-004 / DVT-SAF-005,
-  # where an LED fault inhibits the job. If product decides a dark panel is a
-  # warning rather than an inhibit, drop that term and record the decision.
-  repetitions: 1      # per matrix row (left / right x 2 disconnect points = 4 rows; back / door not detectable)
-  duration_est_min: 80
+    left_405_alarm_raised == true AND left_405_names_panel == true AND left_405_others_ok == true AND left_405_machine_alarm == true AND left_405_machine_alarm_only == true
+    AND left_450_alarm_raised == true AND left_450_names_panel == true AND left_450_others_ok == true AND left_450_machine_alarm == true AND left_450_machine_alarm_only == true
+    AND right_405_alarm_raised == true AND right_405_names_panel == true AND right_405_others_ok == true AND right_405_machine_alarm == true AND right_405_machine_alarm_only == true
+    AND right_450_alarm_raised == true AND right_450_names_panel == true AND right_450_others_ok == true AND right_450_machine_alarm == true AND right_450_machine_alarm_only == true
+    AND back_405_alarm_raised == true AND back_405_names_panel == true AND back_405_others_ok == true AND back_405_machine_alarm == true AND back_405_machine_alarm_only == true
+    AND back_450_alarm_raised == true AND back_450_names_panel == true AND back_450_others_ok == true AND back_450_machine_alarm == true AND back_450_machine_alarm_only == true
+    AND door_405_alarm_raised == true AND door_405_names_panel == true AND door_405_others_ok == true AND door_405_machine_alarm == true AND door_405_machine_alarm_only == true
+    AND door_450_alarm_raised == true AND door_450_names_panel == true AND door_450_others_ok == true AND door_450_machine_alarm == true AND door_450_machine_alarm_only == true
+  repetitions: 1      # one run per unit: the four panels at 405 nm and at 450 nm
+  duration_est_min: 45
   dependencies: [DVT-SAF-004]
 
 
@@ -2758,8 +2747,7 @@ tests:
     a cure under nitrogen. The operator must be told the nitrogen line is the
     problem, and a cure must not silently run in air as if it were inert.
   applicability:
-    rule: SINGLE
-    unit: UUT-01
+    rule: ALL      # every unit (user, 2026-11-15 - "and all the other tests"; was one unit)
   sample_rationale: >
     The response is software behaviour, identical on every unit — one unit,
     the software-stack reference.
@@ -2952,8 +2940,7 @@ tests:
     permits. If it does not, the manual needs a minimum room volume or a
     ventilation requirement, and the design a ducted exhaust.
   applicability:
-    rule: SINGLE
-    unit: UUT-01
+    rule: ALL      # every unit (user, 2026-11-15 - "and all the other tests"; was one unit)
   sample_rationale: >
     A design property of the purge volume and the room, not of the unit.
   # CONFIRM: the minimum room volume / ventilation the manual will state
@@ -3020,8 +3007,7 @@ tests:
     cure as if the chamber were inert. Then verify that with the path open
     the same purge runs with no alarm, and record the normal pressure drop.
   applicability:
-    rule: SINGLE
-    unit: UUT-01
+    rule: ALL      # every unit (user, 2026-11-15 - "and all the other tests"; was one unit)
   sample_rationale: >
     The detection is software behaviour, identical on every unit; the normal
     pressure drop recorded here sets the detection threshold.
@@ -3181,19 +3167,15 @@ tests:
   # continuous cure. Stop the sweep early if any panel reaches the working
   # limit — the row is recorded as "not settled, limit reached" and the lower
   # duties are not attempted on that unit.
+  # Catalog 0.84 (user, 2026-11-15): "this test can be done without the PicoLog" - the four panels are read on the
+  # machine's own built-in thermistors (TEMP_LEFT / TEMP_RIGHT / TEMP_BACK / TEMP_DOOR); no TC-08, no bonded
+  # thermocouples, and no DVT-THM-002 bonds needed first.
   equipment:
-    - name: PicoLog TC-08 thermocouple logger
-      calibration_id: null
-    - name: Type-K thermocouples bonded to the four LED panels next to the
-        built-in thermistors (the DVT-THM-002 bonds)
-      calibration_id: null
     - name: Ambient temperature and humidity logger
       calibration_id: null
     - name: Anemometer at the panel inlets (optional — airflow versus duty)
       calibration_id: null
   preconditions:
-    - DVT-THM-002 complete on this unit (bonds in place, healthy baseline
-      at 100 % known)
     - Chamber at 80 C and thermally settled (the worst case for the LEDs);
       door closed; ambient 25 +/- 1 C, logged
     - Fan duty commanded through the machine API (POST /api/fans/led_cooling)
@@ -3214,7 +3196,7 @@ tests:
     - step: Tach reading at this duty (from telemetry) and, if an anemometer
         is fitted, the airflow at the panel inlet
       capture: [tach_rpm, airflow]
-    - step: Log all four panel thermocouples and the built-in thermistors at
+    - step: Log the four built-in panel thermistors at
         1 Hz until every panel has settled — rise below 0.1 C/min over
         5 minutes — or until any panel reaches the 75 C working limit,
         whichever first
@@ -3228,7 +3210,7 @@ tests:
     - step: Record whether the firmware raised an alarm or reduced the LEDs
         during the row
       capture: [alarm_raised, error_code]
-    - step: Attach the TC-08 log of the row
+    - step: Attach the log of the row (the panel thermistors at 1 Hz)
       capture: [raw_log_attached]
   data_fields:
     - {name: fan_duty, unit: "%", type: int}
@@ -3258,12 +3240,12 @@ tests:
   # condition). The lowest duty whose row PASSES on ALL FIVE units, minus a
   # margin (CONFIRM — proposed 5 C, i.e. the row must settle at or below
   # 70 C), is the candidate production fan setting; DVT-SAF-015's degraded-cooling
-  # thresholds are then set from the same curves. thermistor_hottest_panel
-  # against the bonded thermocouple also gives the sensor offset the firmware
-  # protection must allow for.
+  # thresholds are then set from the same curves. Since 0.84 the panels are read
+  # on the built-in thermistors only, so thermistor_hottest_panel equals
+  # max_settled_temp (no bonded thermocouple to compare it with).
   repetitions: 1      # per matrix row (4 duties)
   duration_est_min: 45
-  dependencies: [DVT-THM-002]
+  dependencies: []   # was DVT-THM-002 (its thermocouple bonds) - no thermocouples since 0.84
 
 # =============================================================
 # THERMAL — cool-down
@@ -3338,154 +3320,6 @@ tests:
   duration_est_min: 90
   dependencies: []
 
-- test_id: DVT-THM-003
-  group: THM
-  title: Chamber cool-down — fast, normal and slow rates
-  subsystem: Thermal
-  requirement_ids: []
-  method: Test
-  purpose: >
-    Verify the closed-loop cooling control at all three rate settings: that the
-    commanded cooling rate is actually achieved and held over its specified
-    band, that the end temperature is reached without undershoot, and that the
-    chamber does not develop excessive gradients while cooling.
-  applicability:
-    rule: ALL
-  sample_rationale: null
-  sweep:
-    parameters: [cooling_mode]
-    matrix:
-      - {cooling_mode: fast}
-      - {cooling_mode: normal}
-      - {cooling_mode: slow}
-  co_executed_with:
-    test_id: DVT-THM-001
-    rows:
-      - {cooling_mode: fast,   parent_row: {setpoint: 80, mains_voltage: 230}}
-      - {cooling_mode: normal, parent_row: {setpoint: 80, mains_voltage: 110}}
-      - {cooling_mode: slow,   parent_row: {setpoint: 80, mains_voltage: 240}}
-  # This test does not need its own heat-up. DVT-THM-001 already brings the
-  # chamber to 80 C and steady state on three matrix rows, and the chamber has
-  # to come back down before the next row can start. That descent is currently
-  # dead time with the full 16-channel grid, the reference thermocouple and the
-  # ambient logger already installed and running. Commanding a cooling mode on
-  # the way down turns it into this test at close to zero additional bench
-  # time — roughly 30 hours saved across the campaign.
-  #
-  # Two consequences of the pairing, both acceptable but worth stating:
-  #
-  # 1. Each cooling mode ends up paired with a different mains voltage. That is
-  #    tolerable because cooling is fan-driven from the 12 V rail with the
-  #    heater off, so mains voltage is not a meaningful covariate here. If a
-  #    cooling anomaly does appear, repeat that mode at 230 V as a standalone
-  #    confirmation run before drawing any conclusion.
-  # 2. A rejected parent row takes its cooling run with it. If the heat-up row
-  #    is rejected for ambient drift or a warm start, the descent data is
-  #    rejected too — the run is one thermal history, not two.
-  #
-  # EVT measured 80 -> 40 C in 10 / 14 / 18 minutes at fixed intake fan PWM of
-  # 100 / 60 / 30 percent. The DVT design is different: the user sets a target
-  # cooling RATE and the fan PWM is regulated in closed loop to hold it. The
-  # acceptance criterion therefore has to be expressed as a rate with a
-  # tolerance, not as an elapsed time copied from the EVT runs. Elapsed time is
-  # still recorded, as the comparable figure against EVT.
-  equipment:
-    - name: PicoLog TC-08 x2, same 16-channel grid as DVT-THM-001
-      calibration_id: null
-    - name: Reference thermocouple adjacent to the control sensor
-      calibration_id: null
-    - name: Ambient temperature logger, positioned away from the exhaust
-      calibration_id: null
-    - name: Anemometer at the intake, optional, for fan authority correlation
-      calibration_id: null
-  preconditions:
-    - Ambient controlled at 25 +/- 1 C for the whole run, logged continuously.
-      A run in which ambient leaves the band is rejected, not recorded
-    - Chamber empty, door closed
-    - Chamber at 80 C and thermally settled — satisfied by the parent
-      DVT-THM-001 row, which ends in exactly this state
-    - Damper and all fans in their normal configuration
-  procedure_steps:
-    - step: Record ambient, its stability over the preceding 30 minutes, and the
-        starting chamber temperature
-      capture: [ambient_temp, ambient_stability, start_temp]
-    - step: Command the cooling mode under test and record the commanded rate
-      capture: [cooling_mode, commanded_rate]
-    - step: Confirm the damper opens and the heater fan goes to 100% PWM on
-        entry to cooling
-      capture: [damper_opened, heater_fan_100pct]
-    - step: Log all 16 grid channels, the control sensor and the intake fan PWM
-        at 1 Hz until the chamber reaches 30 C
-    - step: Extract the elapsed time from 80 C to 40 C, for comparison with the
-        EVT figures
-      capture: [time_80_to_40]
-    - step: Extract the achieved rate over each 10 C band and the tracking error
-        against the commanded rate in each band
-      capture: [rate_80_70, rate_70_60, rate_60_50, rate_50_40, max_tracking_error]
-    - step: Record the chamber temperature at which the intake fan PWM first
-        saturates at 100%, if it does
-      capture: [pwm_saturation_temp, pwm_saturated]
-    - step: Record the lowest temperature reached and any undershoot below the
-        target end temperature
-      capture: [min_temp_reached, undershoot]
-    - step: At the point of maximum cooling rate, extract the spatial spread
-        across the 16 channels
-      capture: [uniformity_pp_during_cooling, max_gradient_position]
-    - step: Compare the rate reported by the machine against the rate measured
-        by the reference instrumentation
-      capture: [reported_rate, reported_vs_measured_error]
-    - step: Attach the raw log
-      capture: [raw_log_attached]
-  data_fields:
-    - {name: cooling_mode, type: enum, values: [fast, normal, slow]}
-    - {name: commanded_rate, unit: C/min, type: float}
-    - {name: ambient_temp, unit: C, type: float}
-    - {name: ambient_stability, unit: C, type: float, note: peak-to-peak over the run}
-    - {name: start_temp, unit: C, type: float}
-    - {name: damper_opened, type: bool}
-    - {name: heater_fan_100pct, type: bool}
-    - {name: time_80_to_40, unit: min, type: float}
-    - {name: rate_80_70, unit: C/min, type: float}
-    - {name: rate_70_60, unit: C/min, type: float}
-    - {name: rate_60_50, unit: C/min, type: float}
-    - {name: rate_50_40, unit: C/min, type: float}
-    - {name: max_tracking_error, unit: '%', type: float}
-    - {name: pwm_saturation_temp, unit: C, type: float}
-    - {name: pwm_saturated, type: bool}
-    - {name: min_temp_reached, unit: C, type: float}
-    - {name: undershoot, unit: C, type: float}
-    - {name: uniformity_pp_during_cooling, unit: C, type: float}
-    - {name: max_gradient_position, type: string}
-    - {name: reported_rate, unit: C/min, type: float}
-    - {name: reported_vs_measured_error, unit: '%', type: float}
-    - {name: raw_log_attached, type: bool}
-  pass_criteria: >
-    max_tracking_error <= 15 AND undershoot <= 2
-    AND uniformity_pp_during_cooling <= 10
-    AND reported_vs_measured_error <= 10
-  # CONFIRM every limit, and in particular the band over which the rate
-  # tolerance applies. A constant-rate closed loop cannot hold its rate all the
-  # way down: cooling is driven by the difference to ambient, so as the chamber
-  # approaches 25 C the available cooling collapses and the fan saturates at
-  # 100% with nowhere left to go. The rate spec is therefore only meaningful
-  # over a stated band — 80 to 40 C is the natural choice, matching the EVT
-  # reference — and pwm_saturation_temp is the measurement that tells you where
-  # the loop actually ran out of authority. Below that point the machine is no
-  # longer controlling anything and the honest specification is a time, not a
-  # rate.
-  #
-  # The uniformity term exists because rapid cooling produces gradients in the
-  # opposite direction to heating: the walls and the glass cool faster than the
-  # air. That is a thermal stress case for the cover glass, which is also the
-  # item DVT-ENV-001 checks for breakage. If fast cooling shows large gradients,
-  # the two findings are related.
-  #
-  # CONFIRM: all runs are on an empty chamber, as EVT was. A loaded chamber has
-  # more thermal mass and will cool more slowly. If the specification is meant
-  # to hold with a part in the chamber, a loaded run has to be added.
-  repetitions: 1      # per sweep row (3 rows)
-  duration_est_min: 30   # incremental only — the heat-up is charged to DVT-THM-001
-  dependencies: [DVT-THM-001]
 
 - test_id: DVT-THM-006
   group: THM
@@ -3505,7 +3339,7 @@ tests:
     is, how hot the body gets meanwhile, and what the software reports.
   applicability:
     rule: SINGLE
-    unit: UUT-05
+    unit: UUT-03            # machine 3 (user, 2026-11-15)
   sample_rationale: >
     Consumes the heater branch fuse and drives the heater far above its rating
     — a destructive fault injection like DVT-SAF-018, run on the unit
@@ -3760,4 +3594,46 @@ tests:
   # (15 s per step) and starts cold.
   repetitions: 1
   duration_est_min: 15
+  dependencies: []
+
+- test_id: DVT-OPT-003
+  group: OPT
+  title: UV uniformity — UV Uniformity Jig workbook
+  subsystem: Optics
+  requirement_ids: []          # CONFIRM: link to the UV-uniformity requirement
+  method: Test
+  # Catalog 0.79 (user, 2026-11-15): "a UV uniformity check in the DVT - it is its own jig, so the DVT is just an upload of
+  # the final Excel it produces, with a place to fill in the date". The jig (docs/uv-uniformity-jig-*.zip: two stepper
+  # axes, a 270 deg servo aiming the sensor, the Ophir StarBright) maps the irradiance over the chamber volume and writes
+  # the scan workbook; the DVT never drives it. Uploading the final workbook with the test date records the run as PASS
+  # (user's decision, 2026-11-15) - nothing in the workbook is judged by the DVT.
+  record: upload
+  purpose: >
+    Record, for every unit, the UV irradiance uniformity over the chamber volume as
+    measured by the UV Uniformity Jig: the final scan workbook the jig produces is
+    kept with the unit's DVT record, together with the date of the scan.
+  applicability:
+    rule: ALL
+  sample_rationale: >
+    LED panel placement, driver output and reflector fit are assembly variables, so
+    every unit is mapped.
+  equipment:
+    - name: UV Uniformity Jig (EiBotBoard Y / Z axes, 270 deg sensor servo, its own console)
+    - name: Ophir StarBright with the PD300RM-8W head, as used by the jig
+  preconditions:
+    - The jig set up and run on the unit as its own instructions say (web console, STARTUP.md)
+    - The scan complete and saved by the jig (its CSV)
+  procedure_steps:
+    - step: Run the UV uniformity scan on the jig - the DVT does not run it - and note the date of the scan
+      capture: [test_date]
+    - step: On sCure Cloud, open this test on the unit's DVT page, press Upload scan file, fill in the date and choose the
+        scan file the jig saved (its CSV, or its Excel workbook); the upload records the run
+      capture: [workbook_file, workbook_uploaded]
+  data_fields:
+    - {name: test_date, type: string, note: "the date of the scan (YYYY-MM-DD)"}
+    - {name: workbook_file, type: string, note: "the uploaded scan file's name (the jig's CSV or its workbook)"}
+    - {name: workbook_uploaded, type: bool, note: "the scan file is on sCure Cloud with the run"}
+  pass_criteria: "workbook_uploaded == true"
+  repetitions: 1
+  duration_est_min: 180
   dependencies: []

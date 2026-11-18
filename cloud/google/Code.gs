@@ -355,7 +355,15 @@ function saveDvtRun_(d) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var sh = book_().getSheetByName('dvt_runs');
+    return writeDvtRun_(book_().getSheetByName('dvt_runs'), d);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Write one DVT run row (insert or replace by run id). The caller holds the script lock. */
+function writeDvtRun_(sh, d) {
+  {
     var same = dvtRuns_(sh).filter(function (r) { return r.runId === String(d.runId); })[0];
     var text = JSON.stringify(d.values || {});
     var chunks = [];
@@ -369,8 +377,6 @@ function saveDvtRun_(d) {
     while (values.length < width) values.push('');
     sh.getRange(row, 1, 1, values.length).setValues([values]);
     return { ok: true };
-  } finally {
-    lock.releaseLock();
   }
 }
 
@@ -731,7 +737,7 @@ var DVT_RUNNER_ONLINE_SEC = 60;       // the runner polls every 10 s
 var DVT_HOLD_MAX_SEC = 20;            // a long poll is held at most this long (an Apps Script execution may run minutes; the limit is 30 at once)
 var DVT_WATCH_SEC = 45;               // the DVT tab was read within this: the runner polls fast
 var DVT_READY_FRESH_SEC = 45;         // a readiness report older than this is not shown (the runner sends one with every poll)
-var PORTAL_BUILD = '0.9.149';         // the page compares it with its own: a tab left open across a deploy is told to reload
+var PORTAL_BUILD = '0.9.155';         // the page compares it with its own: a tab left open across a deploy is told to reload
 var DVT_REQUESTS_KEEP = 300;          // finished requests kept, newest first
 var DVT_ACTIVE = ['queued', 'running', 'waiting', 'cancel_requested'];
 var DVT_FINAL = ['done', 'failed', 'cancelled', 'blocked'];   // blocked = could not begin (an instrument missing): nothing was measured
@@ -1079,6 +1085,83 @@ function portalDvtApprove(token, unit, testId, runIds, who, approve) {
   return { ok: true, approved: done };
 }
 
+/**
+ * An upload test (catalog record: upload - DVT-OPT-003, the UV Uniformity Jig's workbook, user 2026-11-15): the jig runs on
+ * its own; the person uploads the final workbook with the date of the scan, and the upload records the run as PASS.
+ * The file lands in the DVT Drive folder with the run, like the runner's sample files. Uploading again replaces it.
+ */
+var DVT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+function portalDvtUpload(token, unit, testId, date, fileName, contentBase64, typedWho, readingsCsv, machine) {
+  var gate = need_(token, 'service', 'Uploading a DVT workbook');
+  if (!gate.me) return gate.stop;
+  var catT = ((dvtCatalog_(book_()) || {}).tests || {})[String(testId || '')] || {};
+  if (!catT.upload) return { ok: false, message: String(testId) + ' is not a test that is recorded by an upload' };
+  unit = String(unit || '');
+  if (!unit || (catT.units && catT.units.length && catT.units.indexOf(unit) < 0)) return { ok: false, message: String(testId) + ' is not owed by unit ' + unit };
+  date = String(date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, message: 'fill in the date of the scan' };
+  var name = String(fileName || '').replace(/[\\/:*?"<>|]+/g, '_').substring(0, 120);
+  if (!/\.(csv|xlsx|xlsm|xls)$/i.test(name)) return { ok: false, message: 'choose the scan file the jig saved (.csv, or its .xlsx workbook)' };
+  var b64 = String(contentBase64 || '');
+  if (!b64) return { ok: false, message: 'the file is empty' };
+  if (b64.length * 3 / 4 > DVT_UPLOAD_MAX_BYTES) return { ok: false, message: 'the file is larger than 20 MB' };
+  // the jig workbook's Readings sheet, read in the browser: x_idx,y_idx,z_idx,direction,reading - what the heatmap draws
+  var csv = String(readingsCsv || '');
+  var nReadings = csv ? csv.split(/\r?\n/).filter(function (l) { return /\d/.test(l); }).length - 1 : 0;
+  if (nReadings < 1) return { ok: false, message: 'no readings found in the workbook\'s Readings sheet - is it the jig\'s final workbook?' };
+  var runId = String(testId) + '|' + unit + '||1';
+  // a Google account names itself; the shared password does not - then the person types a name (as for Approve)
+  var who = (gate.me.via === 'google' ? (gate.me.name ? gate.me.name + ' <' + gate.me.email + '>' : gate.me.email) : String(typedWho || ''))
+    .replace(/\s+/g, ' ').trim().substring(0, 60);
+  if (!who) return { ok: false, message: 'write who uploads' };
+  var mime = /\.csv$/i.test(name) ? 'text/csv'
+           : /\.xls$/i.test(name) ? 'application/vnd.ms-excel'
+           : /\.xlsm$/i.test(name) ? 'application/vnd.ms-excel.sheet.macroEnabled.12'
+           : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  var csvName = name.replace(/\.[^.]+$/, '') + '-readings.csv';
+  // 2026-11-15 ("the csv upload keeps timing out"): the Drive files are made BEFORE the lock, and the sheet rows are written
+  // in one short locked step that may wait up to 110 s - the lock is shared with every machine's report and both DVT runners,
+  // whose calls waited ~21 s for it, and the upload used to take it three or four times with a 20 s limit each.
+  var folder = dvtFolder_();
+  var made = [];
+  try {
+    var wbBlob = Utilities.newBlob(Utilities.base64Decode(b64), mime, name);
+    made.push({ kind: 'workbook', name: name, file: folder.createFile(wbBlob), size: wbBlob.getBytes().length });
+    var csvBlob = Utilities.newBlob(csv, 'text/csv', csvName);
+    made.push({ kind: 'uv_readings', name: csvName, file: folder.createFile(csvBlob), size: csvBlob.getBytes().length });
+  } catch (e) {
+    made.forEach(function (m) { try { m.file.setTrashed(true); } catch (x) { /* gone */ } });
+    return { ok: false, message: 'the file could not be stored in Drive: ' + e.message };
+  }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(110000)) {
+    made.forEach(function (m) { try { m.file.setTrashed(true); } catch (x) { /* gone */ } });
+    return { ok: false, message: 'the site is busy right now - nothing was saved; try the upload again in a minute' };
+  }
+  var trash = [];
+  try {
+    var ss = book_();
+    var fsh = ss.getSheetByName('dvt_files');
+    // this run's earlier workbook / readings rows go (one workbook and its readings per run); bottom-up, rows shift
+    dvtFiles_(fsh).filter(function (f) { return f.runId === runId && (f.kind === 'workbook' || f.kind === 'uv_readings'); })
+      .sort(function (x, y) { return y.row - x.row; })
+      .forEach(function (o) { trash.push(o.fileId); fsh.deleteRow(o.row); });
+    var t = now_();
+    var rows = made.map(function (m) { return [unit, runId, m.kind, m.name, m.file.getId(), m.size, t]; });
+    fsh.getRange(fsh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    var r = writeDvtRun_(ss.getSheetByName('dvt_runs'), { runId: runId, unit: unit, testId: String(testId), variant: '', rep: 1, verdict: 'PASS', operator: who,
+                          startedAt: date + 'T12:00:00Z', machine: String(machine || '').substring(0, 60),   // the CureBox the unit is on: the DVT tab lists runs per CureBox
+                          values: { test_date: date, workbook_file: name, workbook_uploaded: true, readings_count: nReadings },
+                          note: 'Scan file uploaded on the site by ' + who + ' - scan of ' + date });
+    if (!r.ok) return r;
+  } finally {
+    lock.releaseLock();
+  }
+  trash.forEach(function (id) { try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { /* already gone */ } });
+  bumpVer_();                                              // every open DVT tab looks again
+  return { ok: true, runId: runId };
+}
+
 /** Answer the step the runner waits on: true = Done / Yes, false = No, null = Skip, or the value typed. */
 /** "I did it" on the run card: the person confirms the step the runner is waiting on. */
 function portalDvtActed(token, id) {
@@ -1130,13 +1213,49 @@ function serveDvtFile_(p) {
   if (/^image\//.test(mime))         // ContentService only serves text: a graph is shown as an inline picture instead
     return HtmlService.createHtmlOutput('<img alt="" style="max-width:100%" src="data:' + mime + ';base64,' +
       Utilities.base64Encode(blob.getBytes()) + '">').setTitle(row.fileName).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  if (!/^text\//.test(mime) && !/\.(csv|txt|json)$/i.test(row.fileName)) {
+    // ContentService only serves text - a workbook served as text came out corrupted: hand the bytes to the browser instead
+    var href = 'data:' + (mime || 'application/octet-stream') + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    var nm = String(row.fileName).replace(/[&<>"]/g, '');
+    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif"><a id="dl" download="' + nm + '" href="' + href + '">Download ' + nm + '</a></p>' +
+      '<script>document.getElementById("dl").click();</script>').setTitle(nm).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
   return ContentService.createTextOutput(blob.getDataAsString()).setMimeType(ContentService.MimeType.TEXT).downloadAsFile(row.fileName);
+}
+
+/**
+ * View uniformity (DVT-OPT-003, user 2026-11-15): the UV Uniformity Jig's own heatmap page (UvMap.html = the jig's
+ * analysis/uv_map.html) with the unit's uploaded 405 nm scan baked into its 405 nm panel. ?uvmap=<run id>&t=<session>.
+ */
+function serveUvMap_(p) {
+  var msg = function (t) { return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">' + t + '</p>'); };
+  if (!authed_(p.t)) return msg('Sign in to sCure Cloud again, then open the heatmap from the site.');
+  var runId = String(p.uvmap);
+  var ss = book_();
+  var file = dvtFiles_(ss.getSheetByName('dvt_files')).filter(function (f) { return f.runId === runId && f.kind === 'uv_readings'; })
+    .sort(function (a, b) { return b.uploaded - a.uploaded; })[0];
+  if (!file) return msg('No uniformity readings were uploaded for this run yet.');
+  var run = dvtRuns_(ss.getSheetByName('dvt_runs')).filter(function (r) { return r.runId === runId; })[0] || {};
+  var lines = DriveApp.getFileById(file.fileId).getBlob().getDataAsString().split(/\r?\n/).filter(function (l) { return l.trim(); });
+  var head = (lines.shift() || '').split(',').map(function (h) { return h.trim(); });
+  var ix = function (n) { return head.indexOf(n); };
+  var readings = lines.map(function (l) {
+    var c = l.split(',');
+    return [Number(c[ix('x_idx')]), Number(c[ix('y_idx')]), Number(c[ix('z_idx')]), String(c[ix('direction')] || '').trim(), Number(c[ix('reading')])];
+  }).filter(function (r) { return r.every(function (v, i) { return i === 3 ? !!v : isFinite(v); }); });
+  var unit = runId.split('|')[1] || '';
+  var date = String(run.startedAt || '').substring(0, 10);
+  var baked = JSON.stringify({ unit: unit, date: date, name: file.fileName.replace(/-readings\.csv$/, ''), readings: readings }).replace(/</g, '\\u003c');
+  var html = HtmlService.createHtmlOutputFromFile('UvMap').getContent().replace('__UV_BAKED__', baked);
+  return HtmlService.createHtmlOutput(html).setTitle('UV uniformity - ' + unit).addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 // ---------------------------------------------------------------------------------------------- portal page
 function doGet(e) {
   if (e && e.parameter && e.parameter.report) return serveReport_(e.parameter);
   if (e && e.parameter && e.parameter.dvtfile) return serveDvtFile_(e.parameter);
+  if (e && e.parameter && e.parameter.uvmap) return serveUvMap_(e.parameter);
   if (e && e.parameter && e.parameter.state && (e.parameter.code || e.parameter.error)) return googleCallback_(e.parameter);
   return HtmlService.createHtmlOutputFromFile('Page')
     .setTitle('sCure Cloud')

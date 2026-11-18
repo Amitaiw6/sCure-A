@@ -7,11 +7,12 @@ const puppeteer = require(path.join(__dirname, '..', '..', 'node_modules', 'pupp
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 const CATALOG = {
-  version: '0.24', updated: 5, phases: [{ id: 1, name: 'Thermal', gate: '', tests: ['T-A', 'T-B', 'T-C'] }],
+  version: '0.24', updated: 5, phases: [{ id: 1, name: 'Thermal', gate: '', tests: ['T-A', 'T-B', 'T-C', 'T-G'] }],
   tests: {
     'T-A': { title: 'Heat up with a very long title that would make the selector wider than a phone screen', safety: false, auto: true, minutes: 60, units: ['U1', 'U2', 'U3', 'U4'], runs: ['|1'] },
     'T-C': { title: 'Layers', safety: false, auto: true, minutes: 45, units: ['U1'], runs: ['L1|1', 'L2|1', 'L3|1'] },
     'T-B': { title: 'Door', safety: true, auto: false, minutes: 30, units: ['U1'], runs: ['|1'] },
+    'T-G': { title: 'Chamber Heating Uniformity', safety: false, auto: true, minutes: 45, units: ['U1', 'U2'], runs: ['|1'] },
   },
 };
 const run = (unit, tid, rep, when, verdict, values, files) => ({ unit, testId: tid, variant: '', rep, runId: `${tid}|${unit}||${rep}`, verdict, operator: 'x',
@@ -22,8 +23,15 @@ const RUNS = [
   run('U2', 'T-A', 1, '2026-10-21T11:00:00Z', 'PASS', { peak: 82, ok: true, comment: 'second', stamp_timestamp: 'z' }, [{ name: 'b.csv', kind: 'sweep', size: 10, id: 'f2' }]),
   run('U3', 'T-A', 1, '2026-10-21T12:00:00Z', 'FAIL', { peak: 110, ok: false, comment: 'second', stamp_timestamp: 'w' }),
   run('U1', 'T-B', 1, '2026-10-21T13:00:00Z', 'PASS', { door_open: true }),
+  // a THM-007 style run on two units: its grid file holds the 16 thermocouples Z1-1 .. Z4-4 (2026-11-15)
+  run('U1', 'T-G', 1, '2026-10-22T10:00:00Z', 'PASS', { uniformity_pp: 2.1 }, [{ name: 'grid.csv', kind: 'grid', size: 10, id: 'g1' }]),
+  run('U2', 'T-G', 1, '2026-10-22T11:00:00Z', 'PASS', { uniformity_pp: 2.6 }, [{ name: 'grid.csv', kind: 'grid', size: 10, id: 'g2' }]),
+  // T-B also has an older run under a variant of an earlier catalog shape: the test must open on its newest run (2026-11-15)
+  Object.assign(run('U1', 'T-B', 1, '2026-10-19T13:00:00Z', 'FAIL', { door_open: false }), { variant: 'panel=right', runId: 'T-B|U1|panel=right|1' }),
 ];
-const FILES = { f1: { name: 'a.csv', text: 't_s,chamber_c,phase\n0,20,warm\n10,40,warm\n20,60,hold\n' }, f2: { name: 'b.csv', text: 't_s,chamber_c,phase\n0,21,warm\n10,45,warm\n20,70,hold\n' } };
+const GRIDH = 't_s,' + [1, 2, 3, 4].flatMap(z => [1, 2, 3, 4].map(q => `Z${z}-${q}_c`)).join(',');
+const gridCsv = (base) => GRIDH + '\n' + [0, 10, 20].map(t => [t, ...Array.from({ length: 16 }, (_, i) => base + t / 10 + i * 0.1)].join(',')).join('\n') + '\n';
+const FILES = { g1: { name: 'grid.csv', text: gridCsv(30) }, g2: { name: 'grid.csv', text: gridCsv(31) }, f1: { name: 'a.csv', text: 't_s,chamber_c,phase\n0,20,warm\n10,40,warm\n20,60,hold\n' }, f2: { name: 'b.csv', text: 't_s,chamber_c,phase\n0,21,warm\n10,45,warm\n20,70,hold\n' } };
 const STUB = `
 window.__files = 0;
 window.google = { script: { run: {} } };
@@ -111,12 +119,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await page.$eval('#cmp-mode', s => { s.value = 'matrix'; s.dispatchEvent(new Event('change')); });
   await sleep(200);
   const m = await page.evaluate(() => [...document.querySelectorAll('.cmp-mrow')].map(r => ({ test: r.dataset.test, flag: r.dataset.flag, cells: [...r.children].slice(1).map(td => td.textContent.trim()) })));
-  check(m.length === 3, 'the matrix has a row per test of the catalog');
+  check(m.length === 4, 'the matrix has a row per test of the catalog');
   check(m[0].test === 'T-A' && m[0].cells.join(',') === 'PASS,PASS,FAIL,not run' && m[0].flag === '1', 'T-A: PASS on U1 and U2, FAIL on U3, not run on U4 - flagged as differing: ' + m[0].cells.join(','));
   check(m[1].test === 'T-B' && m[1].cells.join(',') === 'PASS,n/a,n/a,n/a' && m[1].flag === '0', 'T-B is only owed by U1: n/a elsewhere, nothing to differ');
   await page.click('.cmp-mrow[data-test="T-B"]');
   await sleep(200);
   check(await page.$eval('#cmp-test', s => s.value) === 'T-B' && !!(await page.$('.cmp-row')), 'a click on a test opens its comparison');
+  check(await page.$eval('#cmp-variant', s => s.value) === '', 'the test opens on the variant of its most recent run, not on an older catalog shape');
   await page.$eval('#cmp-test', s => { s.value = 'T-A'; s.dispatchEvent(new Event('change')); });
   await sleep(200);
   // across the runs of one unit
@@ -152,6 +161,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check(markLines === '30,40,50,60', 'a temperature curve is drawn with dashed lines at 30 / 40 / 50 / 60 C: ' + markLines);
   check(cols.join(',') === 'chamber_c', 'only numeric columns can be plotted (the phase text is left out): ' + cols.join(','));
   check(await page.evaluate(() => window.__files) === 2, 'the files were fetched once, not on every redraw');
+
+  // THM-007 style: a grid file opens on all 16 thermocouples at once, one line each per unit (user, 2026-11-15)
+  await page.$eval('#cmp-test', s => { s.value = 'T-G'; s.dispatchEvent(new Event('change')); });
+  await page.waitForFunction(() => document.querySelectorAll('svg[aria-label="Curve comparison"] polyline').length >= 32, { timeout: 8000 });
+  const g = await page.evaluate(() => ({
+    col: document.getElementById('cmp-col').value, first: document.querySelector('#cmp-col option').textContent,
+    n: document.querySelectorAll('svg[aria-label="Curve comparison"] polyline').length,
+    colors: new Set([...document.querySelectorAll('svg[aria-label="Curve comparison"] polyline')].map(l => l.getAttribute('stroke'))).size,
+    dashed: document.querySelectorAll('svg[aria-label="Curve comparison"] polyline[stroke-dasharray]').length,
+    titles: [...document.querySelectorAll('svg[aria-label="Curve comparison"] polyline title')].map(t => t.textContent) }));
+  check(g.col === '__all' && /All 16 columns/.test(g.first), 'a grid file opens on "All 16 columns": ' + g.first);
+  check(g.n === 32 && g.colors === 16, `all 16 thermocouples are drawn for both units (${g.n} lines, ${g.colors} colours - one per position)`);
+  check(g.dashed === 16 && g.titles.includes('U1 Z1-1') && g.titles.includes('U2 Z4-4'), 'the second unit is dashed, each line is named unit + position');
+  await page.$eval('#cmp-col', s => { s.value = 'Z2-3_c'; s.dispatchEvent(new Event('change')); });
+  await page.waitForFunction(() => document.querySelectorAll('svg[aria-label="Curve comparison"] polyline').length === 2, { timeout: 5000 });
+  check(true, 'one thermocouple can still be picked on its own (two lines, one per unit)');
   // a phone: a long test title in the selector must not widen the page
   await page.setViewport({ width: 390, height: 800 });
   await sleep(200);

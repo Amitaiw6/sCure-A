@@ -212,12 +212,11 @@ F["DVT-SAF-002"] = fig(
      4: dict(ntc_heater="ok", ui="focus", heater="on"), 5: dict(tc08="focus")})
 
 F["DVT-SAF-004"] = fig(
-    "LED thermistor open circuit — cure start inhibited, LED drive cut mid-cure within 2 s (Ophir trace), alarm names the sensor",
-    {**UV_ON, "th_right": "fault", "ophir_head": "instr", "ophir": "instr"},
+    "LED thermistor open circuit, one sensor at a time - cure start inhibited, the alarm names the sensor (no StarBright since catalog 0.66)",
+    {**UV_ON, "th_right": "fault"},
     {0: dict(th_right="fault", led_left=None, led_right=None, led_back=None, led_door=None, ssr_led=None, drivers=None, wire_led=None, inlet=None),
      1: dict(ui="focus", th_right="fault", led_left="off", led_right="off", led_back="off", led_door="off", ssr_led="off", drivers="off", wire_led="off"),
-     2: dict(th_right="fault", ophir="focus", ophir_head="focus", led_right="off", ssr_led="off", drivers="off", wire_led="off"),
-     3: dict(ui="focus", th_right="fault")})
+     2: dict(ui="focus", th_right="fault")})
 
 F["DVT-SAF-005"] = fig(
     "One LED cooling fan disabled — job start inhibited, mid-job stop, and the error names the right fan",
@@ -319,13 +318,6 @@ F["DVT-SAF-009"] = fig(
      2: dict(controller="off", ssr_heater="off", wire_heater="on", heater="on", ui="focus"),
      3: dict(cutout="fault", heater="off", wire_heater="off", ssr_heater="off", tc08="focus", tc_heater="focus")})
 
-F["DVT-SAF-010"] = fig(
-    "Firmware hung on purpose — the separate output watchdog must cut: UV off on the StarBright, heater off on the TC-08 trace; nothing restarts by itself",
-    {**HEAT_ON, **TC, "heartbeat": "fault", "controller": "fault", "ssr_heater": "focus", "ssr_led": "focus", "ophir_head": "instr", "ophir": "instr"},
-    {0: m(UV_ON, tc_heater="focus", tc08="focus", ophir="focus", ophir_head="focus"),
-     1: dict(controller="fault", heartbeat="fault", ssr_heater="focus", ssr_led="focus", ophir="focus", tc_heater="focus"),
-     2: dict(controller="focus", heater="off", ssr_heater="off", wire_heater="off", log="instr")})
-
 F["DVT-SAF-011"] = fig(
     "Mains cut for 20 ms … 60 s during a job — nothing resumes by itself on restoration, the door is releasable, the job is marked aborted, the configuration survives",
     {**HEAT_ON, **UV_ON, **TC, "inlet": "fault", "ac_source": "instr", "door_lock": "focus"},
@@ -367,18 +359,12 @@ F["DVT-SAF-015"] = fig(
      8: dict(led_left="focus", led_back="focus", led_door="focus", th_left="focus", th_back="focus", th_door="focus"), 9: dict(fan_led_right="ok", ui="focus")})
 
 F["DVT-SAF-016"] = fig(
-    "One LED panel electrically disconnected (at the driver or at the panel) — detected at switch-on, the alarm names the panel, the job does not run dark, the other three keep working",
-    {**UV_ON, "led_right": "fault", "wire_led": "focus", "drivers": "focus", "dmm": "instr"},
-    {0: dict(led_right="fault", wire_led="focus", drivers="focus"), 1: dict(led_right="fault", dmm="focus", inlet="on", led_left="off", led_back="off", led_door="off", ssr_led="off"),
-     2: dict(led_right="fault", ui="focus"), 3: dict(ui="focus", led_right="fault"), 4: dict(ui="focus", led_right="fault", led_left="off", led_back="off", led_door="off", ssr_led="off", drivers="off"),
-     5: dict(led_right="fault", led_left="on", led_back="on", led_door="on"), 6: dict(led_right="fault", ui="focus"), 7: dict(led_right="ok", ui="focus"), 8: dict(led_right="ok", drivers="ok")})
-
-F["DVT-THM-003"] = fig(
-    "Cool-down from 80 C at the fast / normal / slow commanded rate — damper open, heater fan at 100 %, intake fan modulating; achieved rate per band, undershoot, spread",
-    {"heater": "off", "ssr_heater": "off", "wire_heater": "off", "fan_circ": "on", "fan_intake": "on", "damper": "on", "grid": "instr", "chamber_sensor": "instr", "tc08": "instr"},
-    {0: dict(chamber_sensor="focus", ref_tc="instr"), 1: dict(ui="focus"), 2: dict(damper="focus", fan_circ="focus"), 3: dict(grid="focus", fan_intake="focus", tc08="focus"),
-     4: dict(chamber_sensor="focus"), 5: dict(chamber_sensor="focus", fan_intake="focus"), 6: dict(fan_intake="focus"), 7: dict(chamber_sensor="focus"), 8: dict(grid="focus"),
-     9: dict(ui="focus", chamber_sensor="focus"), 10: dict(tc08="focus")})
+    "One LED panel connector unplugged at a time - left, right, back, door - the start-up LED test at 405 nm, then at 450 nm; it must fail on THAT panel only",
+    {**UV_ON, "wire_led": "focus", "ui": "focus"},
+    {0: dict(led_left="fault", ui="focus"), 1: dict(led_left="fault", ui="focus"),
+     2: dict(led_right="fault", ui="focus"), 3: dict(led_right="fault", ui="focus"),
+     4: dict(led_back="fault", ui="focus"), 5: dict(led_back="fault", ui="focus"),
+     6: dict(led_door="fault", ui="focus"), 7: dict(led_door="fault", ui="focus")})
 
 F["DVT-THM-005"] = fig(
     "Drying from a cold start to 50 C — heater and heater fan on, damper closed until the chamber is close to the set point, then the damper opens and the intake fan blows fresh air; time to 30 / 40 / 50 / 60 C and the highest temperature off the chamber sensor",
@@ -415,6 +401,11 @@ for _nm, _tid in ((405, "DVT-OPT-001"), (450, "DVT-OPT-002")):
         f"StarBright on the machine's own USB, head at the chamber centre — the machine steps the LEDs 30 → 100 % at {_nm} nm, 10 s per step; irradiance against the command",
         m(UV_ON, ophir_head_c="instr", ophir_usb="instr", controller="focus", door="focus"),
         {0: dict(ophir_head_c="focus", ophir_usb="focus", ssr_led="focus", drivers="focus", controller="focus", log="instr")})
+
+F["DVT-OPT-003"] = fig(
+    "UV uniformity - the UV Uniformity Jig maps the irradiance over the chamber volume on its own; the DVT keeps the final workbook it produces, with the date",
+    m(UV_ON, ophir_head_c="instr", door="focus"),
+    {0: dict(ophir_head_c="focus"), 1: dict(ui="focus", log="instr")})
 
 
 # ---------------------------------------------------------------- SVG primitives
@@ -480,10 +471,10 @@ F["DVT-NFC-001"] = fig(
 
 F["DVT-THM-004"] = fig(
     "LED back-face temperature settled at LED-cooling fan duty 100 / 90 / 80 / 70 %, LEDs at maximum in an 80 C chamber — margin to the 75 C working limit per panel, the lowest duty the design can afford",
-    {**HEAT_ON, **UV_ON, "fan_led_left": "focus", "fan_led_right": "focus", "fan_led_back": "focus", "fan_led_door": "focus", "th_left": "instr", "th_right": "instr", "th_back": "instr", "th_door": "instr", "tc08": "instr"},
+    {**HEAT_ON, **UV_ON, "fan_led_left": "focus", "fan_led_right": "focus", "fan_led_back": "focus", "fan_led_door": "focus", "th_left": "instr", "th_right": "instr", "th_back": "instr", "th_door": "instr"},
     {0: dict(chamber_sensor="focus", ui="focus"), 1: dict(fan_led_left="focus", fan_led_right="focus", fan_led_back="focus", fan_led_door="focus", ui="focus"),
-     2: dict(tc08="focus", th_left="focus", th_right="focus", th_back="focus", th_door="focus"), 3: dict(led_left="focus", led_right="focus", led_back="focus", led_door="focus"),
-     4: dict(th_right="focus", tc08="focus"), 5: dict(ui="focus", ssr_led="focus"), 6: dict(tc08="focus", log="instr")})
+     2: dict(th_left="focus", th_right="focus", th_back="focus", th_door="focus"), 3: dict(led_left="focus", led_right="focus", led_back="focus", led_door="focus"),
+     4: dict(th_right="focus"), 5: dict(ui="focus", ssr_led="focus"), 6: dict(log="instr")})
 
 
 def _clip(s: str, n: int) -> str:

@@ -31,7 +31,7 @@ def world(tmp_path, cat):
 
 # ---------------- catalog ----------------
 def test_catalog_loads_and_run_set_matches_srs(cat):
-    assert len(cat.tests) == 42                      # - DVT-SAF-003 removed (user, 2026-11-12); + DVT-THM-007 Chamber Heating Uniformity (2026-11-09); DVT-SAF-004 removed (2026-10-01); DVT-GAS-003 is now the leak-down, DVT-GAS-006 no-flow added, DVT-GAS-006 removed (2026-10-25)
+    assert len(cat.tests) == 41                      # - DVT-THM-003 merged into DVT-THM-001 (2026-11-15);                      # + DVT-OPT-003 UV uniformity jig workbook (2026-11-15);                     # - DVT-SAF-003 removed (user, 2026-11-12); + DVT-THM-007 Chamber Heating Uniformity (2026-11-09); DVT-SAF-004 removed (2026-10-01); DVT-GAS-003 is now the leak-down, DVT-GAS-006 no-flow added, DVT-GAS-006 removed (2026-10-25)
     runs = cat.runs()
     # SRS Rev B: 401 applicable runs; DVT-ENV-001 has unit=null (CONFIRM) so it contributes 0 until decided;
     # + DVT-SAF-017 (5) and DVT-THM-006 (1, destructive unit) since catalog v0.17 / v0.18;
@@ -47,7 +47,13 @@ def test_catalog_loads_and_run_set_matches_srs(cat):
     # - 32 since 2026-10-23: the electrical safety tests (DVT-ELE-001..005) are done by hand once, on UUT-01 (DVT-ELE-005: 4 runs, was 20)
     # + 5 since 2026-11-09: DVT-THM-007 Chamber Heating Uniformity (80 C, 220 V, once per unit)
     # - 5 since 2026-11-12: DVT-SAF-003 (fixed 10 kOhm resistor) removed (user)
-    assert len(runs) == 317
+    # - 5 since 2026-11-15: DVT-SAF-010 (firmware hang / output watchdog) removed (user)
+    # + 32 since 2026-11-15: the electrical safety tests (DVT-ELE-001..005) on every unit again (user) - ELE-001..004 4 x 4 more, ELE-005 4 x 4 more
+    # + 44 since 2026-11-15: SAF-020, SAF-007, SAF-014, GAS-002 (4 cases), GAS-005, GAS-006 on every unit (user)
+    # + 1 since 2026-11-15: DVT-ENV-001 on UUT-03 (it had no unit); SAF-018 / SAF-019 / THM-006 moved UUT-05 -> UUT-03 (user)
+    # + 5 since 2026-11-15: DVT-OPT-003 (UV uniformity jig workbook) on every unit
+    # - 25 since 2026-11-15: DVT-THM-001 10 rows (was 12), DVT-THM-003 (3 x 5) merged into it
+    assert len(runs) == 354                          # 0.83: THM-003 into THM-001; 0.79: + DVT-OPT-003
     assert len(cat.runs("DVT-THM-007")) == 5
     assert len(cat.runs("DVT-SAF-006")) == 5
     assert len(cat.runs("DVT-SAF-005")) == 5
@@ -57,18 +63,28 @@ def test_catalog_loads_and_run_set_matches_srs(cat):
     assert len(cat.runs("DVT-SAF-008")) == 5           # one run per unit
     assert len(cat.runs("DVT-SAF-002")) == 5           # one run per unit
     assert len(cat.runs("DVT-GAS-007")) == 10          # 2 chamber cases x 1 rep x 5 units
-    assert len(cat.runs("DVT-SAF-010")) == 5           # one run per unit
+    assert "DVT-SAF-010" not in cat.tests              # removed (user, 2026-11-15)
     assert len(cat.runs("DVT-SAF-013")) == 5           # one run per unit
-    assert len(cat.runs("DVT-ELE-005")) == 4           # 4 mains voltages (100/110/230/240), one unit (UUT-01)
-    assert len(cat.runs("DVT-THM-001")) == 60          # 12 matrix rows x 5 units (incl. the 100 V low-line rows)
+    assert len(cat.runs("DVT-ELE-005")) == 20          # 4 mains voltages (100/110/230/240) x 5 units (user, 2026-11-15)
+    assert len(cat.runs("DVT-ELE-001")) == 5           # every unit
+    assert len(cat.runs("DVT-THM-001")) == 50          # 10 matrix rows x 5 units (0.83: 100 / 110 / 120 V, THM-003 merged in)
     assert len(cat.runs("DVT-SAF-005")) == 5           # one guided run per unit walks all four LED fans
-    assert len(cat.runs("DVT-SAF-014")) == 3           # 3 cases (screen, storage, I2C), single unit - was 7 (2026-10-25)
-    assert len(cat.runs("DVT-SAF-016")) == 20          # left / right x 2 disconnect points x 5 units (back / door have no regular thermistor)
+    assert len(cat.runs("DVT-SAF-014")) == 15   # 3 cases x 5 units since 0.72 (user, 2026-11-15)           # 3 cases (screen, storage, I2C), single unit - was 7 (2026-10-25)
+    assert len(cat.runs("DVT-SAF-016")) == 5           # one run per unit: left, right, back, door connector in turn (0.64)
     assert len(cat.runs("DVT-SAF-018")) == 1
     r = cat.runs("DVT-THM-001")[0]
-    assert r.run_id.startswith("DVT-THM-001|UUT-01|setpoint=30,mains_voltage=230|1")
-    assert cat.parent_row_for("DVT-THM-003", {"cooling_mode": "normal"}) == {"test_id": "DVT-THM-001", "setpoint": 80, "mains_voltage": 110}
-    assert {(r.variant["setpoint"], r.variant["mains_voltage"]) for r in cat.runs("DVT-THM-001")} >= {(30, 100), (80, 100)}   # low line rows
+    assert r.run_id.startswith("DVT-THM-001|UUT-01|setpoint=30,mains_voltage=110|1")
+    # 0.83 (user, 2026-11-15): 110 V x 6 setpoints, 100 / 120 V x 30 + 80 C; DVT-THM-003 merged in (the 80 C rows cool down)
+    assert {(r.variant["setpoint"], r.variant["mains_voltage"]) for r in cat.runs("DVT-THM-001") if r.unit_id == "UUT-01"} == \
+        {(sp, 110) for sp in (30, 40, 50, 60, 70, 80)} | {(30, 100), (80, 100), (30, 120), (80, 120)}
+    assert "DVT-THM-003" not in cat.tests
+    e, th = cat.tests["DVT-THM-001"]["pass_criteria"], cat.thresholds
+    base = dict(uniformity_pp=3, overshoot=1, steady_state_error=0.5, limit_cycle_amplitude=0.5, settling_time=20)
+    assert criteria.evaluate(e, {**base, "cooldown_tested": False}, th) == ("PASS", "")                     # a row without the cool-down
+    cool = dict(cooldown_tested=True, max_tracking_error=8, cooling_undershoot=0.5, uniformity_pp_during_cooling=4, reported_vs_measured_error=3)
+    assert criteria.evaluate(e, {**base, **cool}, th) == ("PASS", "")
+    assert criteria.evaluate(e, {**base, **cool, "max_tracking_error": 30}, th)[0] == "FAIL"                 # the cooling rate not held
+    assert criteria.evaluate(e, {**base, "cooldown_tested": True}, th)[0] == "BLOCKED"                        # cooled, numbers missing
 
 
 def test_catalog_validation_catches_bad_entries(tmp_path, cat):
@@ -95,15 +111,29 @@ def test_criteria_pass_fail_blocked(cat):
                                           claim_is_correct=True, peak_temp_after_shutdown=70, post_shutdown_overshoot=3,
                                           false_alarm_on_other_sides=False, recovery_requires_ack=True), th)
     assert v == "BLOCKED" and "protective_shutdown" in d
-    # DVT-SAF-016: the alarm must name the correct panel; a lit panel means the injection failed, never a PASS
+    # DVT-SAF-016 (0.64): every panel's connector in turn; 0.74 at 405 AND 450 nm; 0.75 (user, 2026-11-15) the start-up LED
+    # test itself - it must fail on the unplugged panel only. No door step at 450 nm (the start-up test does not judge it).
     expr20 = cat.tests["DVT-SAF-016"]["pass_criteria"]
-    ok20 = dict(panel_confirmed_dark=True, alarm_raised=True, alarm_identifies_correct_panel=True, alarm_action_says_check_led=True,
-                job_start_inhibited=True, false_alarm_on_other_panels=False, midjob_alarm_raised=True, midjob_job_stopped=True,
-                recovery_requires_ack=True, post_test_panel_functional=True, time_to_alarm=92.0)
+    keys20 = [f"{p}_{nm}" for p in ("left", "right", "back", "door") for nm in (405, 450)]   # 0.76: the door at 450 nm too
+    ok20 = {f"{k}_{f}": True for k in keys20 for f in ("alarm_raised", "names_panel", "others_ok", "machine_alarm", "machine_alarm_only")}
     assert criteria.evaluate(expr20, ok20, th) == ("PASS", "")
-    assert criteria.evaluate(expr20, {**ok20, "alarm_identifies_correct_panel": False}, th)[0] == "FAIL"
-    assert criteria.evaluate(expr20, {**ok20, "time_to_alarm": 120.0}, th)[0] == "FAIL"   # 90 s of light + margin (user, 2026-10-25)
-    assert criteria.evaluate(expr20, {**ok20, "panel_confirmed_dark": False}, th)[0] == "FAIL"
+    assert criteria.evaluate(expr20, {**ok20, "back_405_alarm_raised": False}, th)[0] == "FAIL"   # a dark back panel unseen
+    assert criteria.evaluate(expr20, {**ok20, "right_450_names_panel": False}, th)[0] == "FAIL"   # another panel blamed at 450 nm
+    assert criteria.evaluate(expr20, {**ok20, "left_405_others_ok": False}, th)[0] == "FAIL"      # a connected panel failed too
+    assert criteria.evaluate(expr20, {k: v for k, v in ok20.items() if not k.startswith("left_450")}, th)[0] != "PASS"   # 450 nm not run
+    assert len(cat.tests["DVT-SAF-016"]["procedure_steps"]) == 8
+    # DVT-OPT-003 (0.79, user 2026-11-15): the UV uniformity jig runs on its own - the DVT keeps its workbook; the upload is the PASS
+    o3 = cat.tests["DVT-OPT-003"]
+    assert o3["record"] == "upload" and o3["applicability"]["rule"] == "ALL" and len(cat.runs("DVT-OPT-003")) == 5
+    assert criteria.evaluate(o3["pass_criteria"], {"workbook_uploaded": True, "test_date": "2026-11-15"}, th) == ("PASS", "")
+    assert criteria.evaluate(o3["pass_criteria"], {"test_date": "2026-11-15"}, th)[0] != "PASS"            # no workbook, no pass
+    # 0.78 (user, 2026-11-15): the machine's own panel check is part of the verdict - its code for the unplugged panel, nothing else
+    assert criteria.evaluate(expr20, {**ok20, "back_405_machine_alarm": False}, th)[0] == "FAIL"        # 9044 never came
+    assert criteria.evaluate(expr20, {**ok20, "left_450_machine_alarm_only": False}, th)[0] == "FAIL"   # another panel alarmed too
+    assert all(any(c.endswith("_machine_alerts") for c in st["capture"]) for st in cat.tests["DVT-SAF-016"]["procedure_steps"])
+    # 0.77 (user, 2026-11-15): every step records how long the LEDs were lit (connected panels: up to 60 s)
+    assert all(any(c.endswith("_light_s") for c in st["capture"]) for st in cat.tests["DVT-SAF-016"]["procedure_steps"])
+    assert criteria.evaluate(expr20, {k: v for k, v in ok20.items() if not k.startswith("door_450")}, th)[0] != "PASS"   # door 450 nm missing
     # DVT-ELE-005: per-mode power plausibility — the whole-machine figure cannot be below a single-mode figure; inrush needs >= 3 switch-ons
     expr5 = cat.tests["DVT-ELE-005"]["pass_criteria"]
     ok5 = dict(fuse_margin_ok=True, breaker_type_c_ok=True, label_agreement=True, inrush_switch_ons=3, input_power_all=640, input_power_heat=510, input_power_cure=150)
@@ -130,6 +160,9 @@ def test_criteria_pass_fail_blocked(cat):
     assert criteria.evaluate(expr4, {**ok4, "heater_off_time": 60.48}, th)[0] == "PASS"      # the unit's real run: body turn 60 s after the cut
     assert criteria.evaluate(expr4, {**ok4, "heater_off_time": 85.0}, th)[0] == "FAIL"       # 80 s from the disconnect (user, 2026-10-01)
     assert criteria.evaluate(expr4, {k: v for k, v in ok4.items() if k != "heater_off_time"}, th)[0] == "BLOCKED"
+    # 0.65: the alarm text is Customer Support's (no "reconnect" step) - recorded, not judged (user, 2026-11-14);
+    # the CureBox-3 run of 2026-11-14 with every other term met is a PASS
+    assert criteria.evaluate(expr4, {**ok4, "alarm_text_instructs_reconnect": False, "heater_off_time": 35.67}, th)[0] == "PASS"
     # (DVT-SAF-003, the frozen 10 kOhm reading, was removed from the campaign - user, 2026-11-12)
     # string / enum / OR / abs
     assert criteria.evaluate("which == 'a' AND (x == false OR y == true) AND abs(e) <= 1", dict(which="a", x=True, y=True, e=-0.5)) == ("PASS", "")
@@ -193,20 +226,17 @@ def test_finish_pass_fail_ncr_waiver_and_rollup(world):
 def test_sweep_rollup_and_reject_rescinds_children(world):
     cat, store, eng, _ = world
     rows = store.runs("DVT-THM-001", "UUT-03")
-    good = dict(uniformity_pp=3, overshoot=1, steady_state_error=0.5, limit_cycle_amplitude=0.5, settling_time=20)
+    good = dict(uniformity_pp=3, overshoot=1, steady_state_error=0.5, limit_cycle_amplitude=0.5, settling_time=20, cooldown_tested=False)
     for r in rows:
         store.start_run(r["run_id"], "a"); store.set_values(r["run_id"], good, "a"); eng.finish(r["run_id"], "a")
     assert eng.test_verdict("DVT-THM-001", "UUT-03") == "PASS"
     bad = rows[5]
     store.set_values(bad["run_id"], {**good, "overshoot": 4}, "a"); eng.finish(bad["run_id"], "a")
     assert eng.test_verdict("DVT-THM-001", "UUT-03") == "FAIL"          # one row fails -> rolled-up FAIL (SRS-DVT-096)
-    # co-executed child linked to the parent row; rejecting the parent rescinds the child (SRS-DVT-099)
-    child = [r for r in store.runs("DVT-THM-003", "UUT-03") if r["variant"] == {"cooling_mode": "fast"}][0]
-    parent = [r for r in rows if r["variant"] == {"setpoint": 80, "mains_voltage": 230}][0]
-    store.link_parent(child["run_id"], parent["run_id"])
+    # rejecting a row (DVT-THM-003, the co-executed child, was merged into THM-001 in 0.83 - user, 2026-11-15)
+    parent = [r for r in rows if r["variant"] == {"setpoint": 80, "mains_voltage": 110}][0]
     affected = store.reject_run(parent["run_id"], "ambient left the band", "a")
-    assert set(affected) == {parent["run_id"], child["run_id"]}
-    assert store.run(child["run_id"])["status"] == "REJECTED" and "parent rejected" in store.run(child["run_id"])["reject_reason"]
+    assert parent["run_id"] in affected and store.run(parent["run_id"])["status"] == "REJECTED"
     assert eng.test_verdict("DVT-THM-001", "UUT-03") == "FAIL"          # the other failing row still counts
 
 
@@ -424,17 +454,30 @@ def test_ledoff_analysis_limit_and_alarm_naming():
     assert first_alert({"faults": {"led": None, "heater": None, "cooling": False}}) == (None, None)
 
 
-def test_catalog_saf007_is_instrumented(cat):
+def test_catalog_saf005_limits_pass_the_2026_11_14_runs(cat):
+    # catalog 0.68 (user, 2026-11-14): LEDs off within 30 s of a fan pulled mid-job, LED panels at most 52 C
+    t = cat.tests["DVT-SAF-005"]
+    ok = dict(job_start_inhibited=True, alarm_raised=True, alarm_identifies_correct_fan=True, led_off_time_midjob=9.5, max_led_temp=50.2)
+    assert criteria.evaluate(t["pass_criteria"], ok, cat.thresholds) == ("PASS", "")                                  # CureBox-3
+    assert criteria.evaluate(t["pass_criteria"], {**ok, "led_off_time_midjob": 27.06, "max_led_temp": 46.1}, cat.thresholds) == ("PASS", "")   # CureBox-4
+    assert criteria.evaluate(t["pass_criteria"], {**ok, "led_off_time_midjob": 31.0}, cat.thresholds)[0] == "FAIL"
+    assert criteria.evaluate(t["pass_criteria"], {**ok, "max_led_temp": 52.5}, cat.thresholds)[0] == "FAIL"
+    assert criteria.evaluate(t["pass_criteria"], {**ok, "job_start_inhibited": False}, cat.thresholds)[0] == "FAIL"
+
+
+def test_catalog_saf004_needs_no_starbright(cat):
+    # catalog 0.66 (user, 2026-11-14): "no need for this check" - DVT-SAF-004 runs without a StarBright; the LED-off
+    # timing on the meter is gone, so a run is never blocked on "Connect the StarBright sensor to the machine's USB"
     t = cat.tests["DVT-SAF-004"]
-    step = t["procedure_steps"][2]
-    assert step.get("tool") == "led_off_timing" and step["capture"] == ["led_off_time"]
-    assert any("Ophir" in e["name"] for e in t["equipment"])
-    ok = dict(cure_start_inhibited=True, led_off_time=1.2, alarm_raised=True, alarm_identifies_sensor=True)
+    assert not any("ophir" in e["name"].lower() or "starbright" in e["name"].lower() for e in t.get("equipment") or [])
+    assert not any(s.get("tool") == "led_off_timing" for s in t["procedure_steps"])
+    assert "led_off_time" not in {f["name"] for f in t["data_fields"]} and "led_off_time" not in t["pass_criteria"]
+    ok = dict(cure_start_inhibited=True, alarm_raised=True, alarm_identifies_sensor=True)
     assert criteria.evaluate(t["pass_criteria"], ok, cat.thresholds) == ("PASS", "")
-    assert criteria.evaluate(t["pass_criteria"], {**ok, "led_off_time": 2.4}, cat.thresholds)[0] == "FAIL"
     assert criteria.evaluate(t["pass_criteria"], {**ok, "alarm_identifies_sensor": False}, cat.thresholds)[0] == "FAIL"
+    assert criteria.evaluate(t["pass_criteria"], {**ok, "cure_start_inhibited": False}, cat.thresholds)[0] == "FAIL"
     he = Catalog.load(CATALOG, "he").tests["DVT-SAF-004"]
-    assert he["procedure_steps"][2].get("tool") == "led_off_timing" and "StarBright" in he["procedure_steps"][2]["step"]
+    assert len(he["procedure_steps"]) == len(t["procedure_steps"]) and not any("StarBright" in s["step"] for s in he["procedure_steps"])
     # one run walks all four positions (user, 2026-10-01): no per-position runs, no sensor_position field
     assert t["repetitions"] == 1 and len(cat.runs("DVT-SAF-004")) == 5
     assert "positions_tested" in {f["name"] for f in t["data_fields"]} and "sensor_position" not in {f["name"] for f in t["data_fields"]}
@@ -443,7 +486,7 @@ def test_catalog_saf007_is_instrumented(cat):
 def test_catalog_thm004_selector_mismatch_heater_off_time(cat):
     """DVT-THM-006: 230 V on the 110 V selector — the heater shutdown (= branch fuse opening) is read on the heater-body thermocouple."""
     t = cat.tests["DVT-THM-006"]
-    assert t["subsystem"] == "Thermal" and t["applicability"] == {"rule": "SINGLE", "unit": "UUT-05"} and len(cat.runs("DVT-THM-006")) == 1
+    assert t["subsystem"] == "Thermal" and t["applicability"] == {"rule": "SINGLE", "unit": "UUT-03"} and len(cat.runs("DVT-THM-006")) == 1
     assert any("TC-08" in e["name"] for e in t["equipment"]) and any("heater body" in e["name"] for e in t["equipment"])
     phase5 = next(p for p in cat.phases if p["id"] == 5)
     assert phase5["tests"].index("DVT-THM-006") < phase5["tests"].index("DVT-SAF-018")   # destructive unit, last phase, same energisation as DVT-SAF-018
@@ -558,7 +601,7 @@ def test_engine_pending_run_for_a_picked_test(world):
     assert eng.pending_run("DVT-THM-004", "UUT-02")["run_id"] == runs[0]["run_id"]           # first NOT_STARTED in catalog order
     store.start_run(runs[2]["run_id"], "op")
     assert eng.pending_run("DVT-THM-004", "UUT-02")["run_id"] == runs[2]["run_id"]           # an IN_PROGRESS run wins: resume it
-    assert eng.pending_run("DVT-SAF-018", "UUT-01") is None                                  # SINGLE on UUT-05: nothing on UUT-01
+    assert eng.pending_run("DVT-SAF-018", "UUT-01") is None                                  # SINGLE on UUT-03: nothing on UUT-01
     assert eng.blockers_for(runs[0])                                                         # picked out of order: blockers listed, not hidden
 
 
@@ -627,7 +670,7 @@ def test_reset_unit_restarts_one_uut_everywhere(tmp_path, cat):
 def test_fixtures_and_consumables_never_block_on_calibration(world):
     """A run is blocked only for real devices without a record — spare fuses, fixtures, break-out leads are not instruments."""
     cat, store, eng, _ = world
-    run = store.runs("DVT-SAF-018", "UUT-05")[0]
+    run = store.runs("DVT-SAF-018", "UUT-03")[0]
     cal = [b.text for b in eng.blockers_for(run) if b.code == "CAL"]
     assert cal and not any("fuse" in x.lower() for x in cal) and any("AC source" in x or "transformer" in x for x in cal)
 
@@ -643,7 +686,7 @@ def test_catalog_saf012_is_instrumented(cat):
 def test_heater_shutdown_tests_are_proven_on_the_heater_body(cat):
     """DVT-SAF-001/004/005/013/014/015: the cut-off is read from the heater-body thermocouple, not the SSR command."""
     th = cat.thresholds
-    for tid in ("DVT-SAF-001", "DVT-SAF-002", "DVT-SAF-009", "DVT-SAF-010", "DVT-SAF-011"):   # DVT-SAF-003 removed 2026-11-12
+    for tid in ("DVT-SAF-001", "DVT-SAF-002", "DVT-SAF-009", "DVT-SAF-011"):   # DVT-SAF-003 removed 2026-11-12, DVT-SAF-010 2026-11-15
         t = cat.tests[tid]
         assert any("heater body" in e["name"] for e in t["equipment"]), tid
         assert any("TC-08" in e["name"] for e in t["equipment"]), tid
@@ -653,14 +696,6 @@ def test_heater_shutdown_tests_are_proven_on_the_heater_body(cat):
     assert criteria.evaluate(e3, {**ok3, "heater_body_drop_observed": False}, th)[0] == "FAIL"   # no turn on the trace = no proof
     assert criteria.evaluate(e3, {**ok3, "heater_off_time": 70.0}, th)[0] == "PASS"      # ~70 s for the stored heat to clear (user, 2026-10-01)
     assert criteria.evaluate(e3, {**ok3, "heater_off_time": 85.0}, th)[0] == "FAIL"      # 80 s, as DVT-SAF-002
-    e14 = cat.tests["DVT-SAF-010"]["pass_criteria"]
-    # firmware hung on purpose: the output watchdog (20 s) must cut - UV within 25 s, heater-body turn within 200 s
-    ok14 = dict(uv_drop_observed=True, uv_off_time=20.6, heater_body_drop_observed=True, heater_off_time=88.0, auto_restart_prevented=True, logged=True)
-    assert criteria.evaluate(e14, ok14, th) == ("PASS", "")
-    assert criteria.evaluate(e14, {**ok14, "uv_drop_observed": False}, th)[0] == "FAIL"
-    assert criteria.evaluate(e14, {**ok14, "uv_off_time": 30.0}, th)[0] == "FAIL"
-    assert criteria.evaluate(e14, {**ok14, "heater_off_time": 180.0}, th)[0] == "PASS"
-    assert criteria.evaluate(e14, {**ok14, "heater_off_time": 210.0}, th)[0] == "FAIL"
     e15 = cat.tests["DVT-SAF-011"]["pass_criteria"]
     # 2026-10-01: CM5 40-pin cable pulled while heating, one run; the operator's SSR answer beside the measured turn
     ok15 = dict(heater_ssr_switched_off=True, heater_off_time=40.0, auto_resume_heat=False, auto_resume_uv=False, heater_body_stays_falling=True, config_intact=True)
@@ -784,7 +819,8 @@ def test_bench_order_groups_instruments_and_respects_dependencies(cat):
     i4 = order.index("DVT-SAF-002")
     assert order[i4:i4 + 4] == ["DVT-SAF-002", "DVT-SAF-001", "DVT-SAF-011", "DVT-SAF-009"]   # DVT-SAF-003 removed 2026-11-12
     # the Ophir tests are adjacent (DVT-SAF-008 -> DVT-SAF-004), and the O2-analyser tests (DVT-GAS-002, 005, 006 since DVT-GAS-001 and DVT-GAS-003 need only the pressure) form one block
-    assert order.index("DVT-SAF-004") == order.index("DVT-SAF-008") + 1
+    # (DVT-SAF-004 left the Ophir block in catalog 0.66 - it needs no StarBright any more, user 2026-11-14)
+    assert "Ophir StarBright" not in str(cat.tests["DVT-SAF-004"].get("equipment") or [])
     o2 = [order.index(t) for t in order if "O2 analyser" in bench.instruments_of(cat.tests[t])]
     assert max(o2) - min(o2) == len(o2) - 1 and len(o2) >= 3
     groups = bench.bench_groups(cat, phase2)
@@ -900,7 +936,7 @@ def test_nitrogen_tests_and_thresholds(cat):
     assert th["led_temperature_thresholds"]["working_limit"] == 75                      # still there after the generic loader
     ids = [tid for tid in cat.tests if cat.tests[tid].get("group") == "GAS"]
     assert len(ids) == 7 and all(cat.tests[t]["subsystem"] == "Process" for t in ids)
-    assert len(cat.runs("DVT-GAS-001")) == 5 and len(cat.runs("DVT-GAS-002")) == 4 and len(cat.runs("DVT-GAS-005")) == 1
+    assert len(cat.runs("DVT-GAS-001")) == 5 and len(cat.runs("DVT-GAS-002")) == 20 and len(cat.runs("DVT-GAS-005")) == 5   # every unit since 0.72 (user, 2026-11-15)
     assert cat.phase_of("DVT-GAS-001")["id"] == 2 and cat.phase_of("DVT-GAS-007")["id"] == 3
     # DVT-GAS-001: above 3 bar the valve stays closed, refuses to open and the machine alarms (user, 2026-10-25)
     ok1 = dict(n2_refused_at_high_pressure=True, ui_refused=True, alarm_raised_high=True, n2_opened_at_normal=True,
@@ -1060,6 +1096,8 @@ def test_nfc_build_head_identification(cat):
 def test_thm005_led_temperature_vs_fan_duty(cat):
     th = cat.thresholds; t = cat.tests["DVT-THM-004"]
     assert cat.phase_of("DVT-THM-004")["id"] == 3 and len(cat.runs("DVT-THM-004")) == 20        # 4 duties x 5 units
+    # 0.84 (user, 2026-11-15): done without the PicoLog - the built-in panel thermistors, no thermocouples, no THM-002 first
+    assert not any("TC-08" in e["name"] or "thermocouple" in e["name"].lower() for e in t["equipment"]) and t["dependencies"] == []
     assert [r.variant["fan_duty"] for r in cat.runs("DVT-THM-004") if r.unit_id == "UUT-01"] == [100, 90, 80, 70]
     e = t["pass_criteria"]
     assert criteria.evaluate(e, dict(settled=True, max_settled_temp=68.0), th) == ("PASS", "")
@@ -1303,7 +1341,7 @@ def test_catalog_declares_the_codes_the_console_must_see(cat):
 
 def test_watched_steps_are_exactly_the_steps_that_record_an_alarm(cat):
     n = sum(1 for t in cat.tests.values() for s in t.get("procedure_steps") or [] if alarms.watches(s))
-    assert n >= 19                                                      # 21 steps across 20 tests on catalog 0.58; 19 on 0.62 (DVT-SAF-003 removed)
+    assert n >= 17                                                      # 21 on 0.58; 19 on 0.62 (DVT-SAF-003 removed); 18 on 0.64 (DVT-SAF-016 per panel); 17 on 0.70 (DVT-SAF-010 removed)
     assert not alarms.watches({"capture": ["chamber_temp"]}) and not alarms.watches({}) and not alarms.watches(None)
     assert alarms.watches({"capture": ["alarm_raised"]}) and alarms.watches({"capture": [], "expect_alert": [9006]})
 

@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UV Uniformity Map — 405 nm</title>
+<style>
+/* Sequential encoding: ONE hue family per ramp, monotonic lightness, light at
+   the low end through to dark at the high end. Never a rainbow: a rainbow has
+   no lightness order, so it cannot be read without the legend and it breaks
+   apart in greyscale and for colour-blind readers.
+   Every ramp below is identical in light and dark themes, so a colour always
+   means the same reading no matter where the page is opened. */
+.viz{
+  color-scheme: light;
+  --surface-0:#f7f7f5; --surface-1:#fcfcfb; --surface-2:#efeeea; --line:#e3e2dd;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#78776f;
+  --accent:#6335a6; --wire:#bdb6c6;
+  /* identity colours for the two scans — labels only, never data */
+  --wl-a:#2f57c9; --wl-b:#8b3bd9;
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])) .viz{
+    color-scheme: dark;
+    --surface-0:#131312; --surface-1:#1a1a19; --surface-2:#242422; --line:#33332f;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8f8e85;
+    --accent:#7d54c6; --wire:#4d4557;
+    --wl-a:#7d97f0; --wl-b:#c08cf5;
+  }
+}
+:root[data-theme="dark"] .viz{
+  color-scheme: dark;
+  --surface-0:#131312; --surface-1:#1a1a19; --surface-2:#242422; --line:#33332f;
+  --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8f8e85;
+  --accent:#7d54c6; --wire:#4d4557;
+  --wl-a:#7d97f0; --wl-b:#c08cf5;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--surface-0);color:var(--text-primary);
+  font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.viz{min-height:100vh;padding:20px}
+.wrap{max-width:1560px;margin:0 auto}
+h1{font-size:21px;margin:0 0 3px;font-weight:650;letter-spacing:-.01em}
+.sub{color:var(--text-secondary);font-size:14px;margin:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums}
+
+.frame{margin:12px 0 4px;padding:10px 13px;border-radius:8px;font-size:13px;
+  background:var(--surface-1);border:1px solid var(--line);color:var(--text-secondary);
+  line-height:1.55}
+.frame b{color:var(--text-primary)}
+.banner{display:block;margin:10px 0 0;padding:8px 11px;border-radius:7px;font-size:12.5px;
+  background:#fdf3d6;border:1px solid #e0b53a;color:#4a3403;line-height:1.5}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .banner{
+  background:#3a2c08;border-color:#8a6512;color:#ffdf9e}}
+:root[data-theme="dark"] .banner{background:#3a2c08;border-color:#8a6512;color:#ffdf9e}
+.banner.real{background:#dff3e8;border-color:#2f8f63;color:#0d3d27}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .banner.real{
+  background:#0f2e20;border-color:#2f8f63;color:#b7ecd0}}
+:root[data-theme="dark"] .banner.real{background:#0f2e20;border-color:#2f8f63;color:#b7ecd0}
+
+.controls{display:flex;flex-wrap:wrap;gap:15px 20px;align-items:flex-end;
+  padding:13px 15px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-1);margin:16px 0}
+.grp{display:flex;flex-direction:column;gap:6px}
+.grp>span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--text-muted);font-weight:600}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{font:inherit;font-size:13px;padding:6px 11px;border-radius:7px;
+  border:1px solid var(--line);background:transparent;color:var(--text-secondary);cursor:pointer}
+.seg button:hover{border-color:var(--accent);color:var(--text-primary)}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);
+  color:#fff;font-weight:600}
+.seg button .sw{display:inline-block;width:34px;height:9px;border-radius:2px;
+  margin-right:7px;vertical-align:0;border:1px solid rgba(128,128,128,.4)}
+.grow{flex:1 1 auto}
+input[type=number],input[type=file]{font:inherit;font-size:13px;color:var(--text-primary);
+  background:var(--surface-0);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+input[type=number]{width:78px}
+input[type=range]{width:132px;accent-color:var(--accent)}
+.rng{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-secondary)}
+
+/* ---- the two scans, side by side ---- */
+.cubes{display:grid;grid-template-columns:minmax(0,960px);justify-content:center;gap:16px;align-items:start}
+/* sCure Cloud: one scan - no file picker, no drop target, no second scan to share a scale with, no synthetic seed */
+.cube-head .up,#drop,#grp-scale,#grp-seed{display:none!important}
+@media (max-width:1100px){.cubes{grid-template-columns:1fr}}
+.cube{border:1px solid var(--line);border-radius:10px;background:var(--surface-1);
+  overflow:hidden;position:relative}
+.cube.over{outline:3px dashed var(--accent);outline-offset:-3px}
+.cube-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;
+  padding:11px 13px;border-bottom:1px solid var(--line)}
+.wl{font-size:15px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:center;gap:7px}
+.wl i{width:11px;height:11px;border-radius:50%;display:inline-block;font-style:normal}
+.src{font-size:12px;color:var(--text-secondary);min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.cube-head .up{margin-left:auto}
+.cube-head input[type=file]{max-width:210px;font-size:12px;padding:4px 7px}
+.stage{position:relative}
+.scene{display:block;width:100%;height:520px;cursor:grab;touch-action:none;
+  background:var(--surface-1)}
+.scene.drag{cursor:grabbing}
+.scene polygon{shape-rendering:geometricPrecision}
+.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:30px;font-size:14.5px;color:var(--text-secondary);
+  background:var(--surface-1);line-height:1.6}
+.empty b{color:var(--text-primary)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;padding:11px 13px;border-top:1px solid var(--line)}
+.chip{flex:1 1 92px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;
+  background:var(--surface-0)}
+.chip .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-muted);font-weight:600}
+.chip .v{font-size:17px;font-weight:650;letter-spacing:-.02em}
+.chip .n{font-size:11px;color:var(--text-secondary)}
+.scale{display:flex;align-items:center;gap:9px;padding:0 13px 12px;font-size:11.5px;
+  color:var(--text-secondary);flex-wrap:wrap}
+.scale .bar{height:11px;flex:1 1 150px;border-radius:3px;border:1px solid var(--line)}
+.hud{padding:0 13px 11px;font-size:11.5px;color:var(--text-muted)}
+
+.panels{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.panel{border:1px solid var(--line);border-radius:10px;padding:13px 15px 15px;
+  background:var(--surface-1)}
+.panel h2{font-size:13px;margin:0 0 2px;font-weight:650}
+.panel .cap{font-size:12px;color:var(--text-secondary);margin:0 0 11px}
+.layers-head{font-size:13px;font-weight:650;margin:16px 0 9px;display:flex;
+  align-items:center;gap:7px}
+.layers-head i{width:11px;height:11px;border-radius:50%;display:inline-block}
+table.grid{border-collapse:separate;border-spacing:2px}
+table.grid th{font-size:11px;color:var(--text-muted);font-weight:600;padding:3px 4px;white-space:nowrap}
+table.grid th.zh{text-align:right;padding-right:7px}
+td.cell{width:74px;height:36px;border-radius:4px;text-align:center;font-size:12.5px;
+  font-variant-numeric:tabular-nums;outline:2px solid transparent;outline-offset:1px}
+td.cell:hover{outline-color:var(--text-primary)}
+td.cell.empty{background:transparent;border:1px dashed var(--line);color:var(--text-muted)}
+
+/* ---- comparison table ---- */
+section.cmp{margin-top:22px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-1);padding:14px 16px 16px}
+section.cmp h2{font-size:15px;margin:0 0 3px;font-weight:650}
+section.cmp .cap{font-size:12.5px;color:var(--text-secondary);margin:0 0 13px;max-width:96ch}
+.cmp-scroll{overflow-x:auto}
+table.cmp{border-collapse:collapse;width:100%;font-size:13px;min-width:820px}
+table.cmp th,table.cmp td{text-align:right;padding:6px 9px;border-bottom:1px solid var(--line);
+  white-space:nowrap}
+table.cmp th:first-child,table.cmp td:first-child{text-align:left}
+table.cmp thead th{color:var(--text-muted);font-size:11px;text-transform:uppercase;
+  letter-spacing:.06em;font-weight:600;vertical-align:bottom}
+table.cmp thead tr.grouped th{border-bottom:none;padding-bottom:2px;text-align:center}
+table.cmp thead tr.grouped th.a{color:var(--wl-a)}
+table.cmp thead tr.grouped th.b{color:var(--wl-b)}
+table.cmp td.num{font-variant-numeric:tabular-nums}
+table.cmp tr.group td{background:var(--surface-2);font-size:11px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--text-muted);font-weight:600;padding:5px 9px}
+table.cmp tr:hover td:not([colspan]){background:var(--surface-2)}
+table.cmp td.worst{color:#b3261e;font-weight:650}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) table.cmp td.worst{color:#ff9c92}}
+:root[data-theme="dark"] table.cmp td.worst{color:#ff9c92}
+.bar-cell{display:flex;align-items:center;gap:7px;justify-content:flex-end}
+.bar-cell .track{width:54px;height:6px;border-radius:3px;background:var(--surface-2);
+  border:1px solid var(--line);overflow:hidden;flex:0 0 54px}
+.bar-cell .fill{display:block;height:100%}
+
+.drop{position:fixed;inset:0;z-index:80;display:flex;align-items:center;
+  justify-content:center;background:rgba(99,53,166,.12);pointer-events:none;
+  border:3px dashed var(--accent);font-size:19px;color:var(--text-primary);text-align:center}
+.tip{position:fixed;z-index:50;pointer-events:none;opacity:0;transition:opacity .07s;
+  background:var(--text-primary);color:var(--surface-1);padding:8px 11px;border-radius:7px;
+  font-size:12.5px;line-height:1.45;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:250px}
+
+details.tbl{margin-top:20px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-1);padding:11px 14px}
+details.tbl summary{cursor:pointer;font-size:12px;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--text-muted);font-weight:600}
+table.data{border-collapse:collapse;width:100%;margin-top:11px;font-size:13px}
+table.data th,table.data td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--line)}
+table.data th:first-child,table.data td:first-child{text-align:left}
+table.data th{color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.note{color:var(--text-muted);font-size:12.5px;margin-top:18px;max-width:78ch}
+.note code{background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+<div class="viz">
+<div class="wrap">
+
+  <h1>UV Uniformity Map — 405 nm</h1>
+  <p class="sub">Irradiance through the chamber volume — six sensor faces at every
+    point, one 405 nm scan from the UV Uniformity Jig.</p>
+  <div class="frame">
+    <b>Where the measured volume sits in the chamber.</b>
+    The grid is <b>centred in X and Y</b>: the middle point is the middle of the
+    chamber, and the outer points are <b>±85 mm</b> across and <b>±75 mm</b> deep.
+    In height it starts <b>80 mm above the chamber floor</b> and runs up to
+    <b>380 mm</b>, in ten 33.3 mm steps. Everything below is labelled in those
+    chamber coordinates. The chamber itself is <b>350 × 240 × 400 mm</b>, drawn as
+    the dashed box: 90 mm is unmeasured at each side in X, 45 mm in Y, 80 mm below
+    the lowest reading and 20 mm above the highest.
+    Drag the cube to turn it, scroll to zoom.
+  </div>
+
+  <div class="controls">
+    <div class="grp"><span>Sensor face</span><div class="seg" id="seg-dir"></div></div>
+    <div class="grp"><span>View</span><div class="seg" id="seg-view"></div></div>
+    <div class="grp"><span>Colour ramp</span><div class="seg" id="seg-ramp"></div></div>
+    <div class="grp" id="grp-scale"><span>Colour scale</span><div class="seg" id="seg-scale"></div></div>
+    <div class="grp"><span>Camera</span>
+      <div class="seg"><button onclick="resetView()">Reset view</button></div></div>
+    <div class="grow"></div>
+    <div class="grp" id="grp-size"><span>Voxel size</span>
+      <div class="rng"><input type="range" id="vsize" min="12" max="36" value="26"
+        oninput="cubeMM=+this.value;drawAll()"><span class="mono" id="vsize-l">26 mm</span></div>
+    </div>
+    <div class="grp" id="grp-op"><span>Opacity</span>
+      <div class="rng"><input type="range" id="vop" min="35" max="100" value="100"
+        oninput="opacity=+this.value/100;drawAll()"><span class="mono" id="vop-l">100%</span></div>
+    </div>
+    <div class="grp" id="grp-seed"><span>Synthetic seed</span>
+      <div class="seg"><input type="number" id="seed" value="7" min="1" max="9999">
+        <button onclick="reseed()">Regenerate</button></div>
+    </div>
+    <div class="grp"><span>Chamber size (mm)</span>
+      <div class="seg">
+        <input type="number" id="ch-w" value="350" placeholder="width X" style="width:88px" oninput="setChamber()">
+        <input type="number" id="ch-d" value="240" placeholder="depth Y" style="width:88px" oninput="setChamber()">
+        <input type="number" id="ch-h" value="400" placeholder="height Z" style="width:90px" oninput="setChamber()">
+      </div>
+    </div>
+  </div>
+
+  <div class="cubes" id="cubes"></div>
+  <p class="hud" id="hud" style="padding:9px 2px 0"></p>
+
+  <div class="banner" id="note2d" style="display:none">
+    <b>Per-face colouring only works in 3D</b> — a flat cell has one face to
+    colour, a cube has six. These layers show the average of six instead.
+  </div>
+  <div id="layers" style="display:none"></div>
+
+  <section class="cmp">
+    <h2>Uniformity by area</h2>
+    <p class="cap" id="cmp-cap"></p>
+    <div class="cmp-scroll" id="cmp"></div>
+    <p class="note" id="cmp-note"></p>
+  </section>
+
+  <details class="tbl"><summary>Table view — exact numbers</summary>
+    <div id="table"></div></details>
+  <p class="note" id="foot"></p>
+</div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="drop" id="drop" style="display:none">
+  <div>Drop the CSV on the <b>450 nm</b> panel or the <b>405 nm</b> panel</div></div>
+
+<script>
+/* ------------------------------------------------------------------ model */
+/* X is the layer axis moved by hand (85 mm spacing, operator 2026-08-31).
+   Y and Z are the driven axes. These are GRID coordinates -- distances from the
+   first measured point, which is where the jig's own zeros are. */
+const X_MM = [0, 85, 170], Y_MM = [0, 75, 150];
+
+/* Where that grid sits inside the chamber (operator 2026-08-31):
+     - centred on the chamber in X and Y, so the middle point is the middle
+       of the chamber and the outer points sit +/-85 mm and +/-75 mm from it
+     - the lowest measured level is 80 mm above the chamber floor
+   Chamber coordinates are what everything is LABELLED with; grid coordinates
+   only survive where they are needed to index the data. */
+const X_OFF = -85, Y_OFF = -75, Z_OFF = 80;
+const chX = i => X_MM[i-1] + X_OFF;      // -85 / 0 / +85 from chamber centre
+const chY = i => Y_MM[i-1] + Y_OFF;      // -75 / 0 / +75 from chamber centre
+const chZ = i => Z_MM[i-1] + Z_OFF;      // 80 .. 380 above the chamber floor
+const sgn = v => (v > 0 ? '+' : '') + v.toFixed(0);
+const Z_N = 10, Z_SPAN = 300;
+const Z_MM = Array.from({length: Z_N}, (_, i) => +(i * Z_SPAN / (Z_N - 1)).toFixed(2));
+const DIRS = {FRONT:[0,-1,0], UP:[0,0,1], BACK:[0,1,0],
+              LEFT:[-1,0,0], DOWN:[0,0,-1], RIGHT:[1,0,0]};
+const DIR_ORDER = ['FRONT','UP','BACK','LEFT','DOWN','RIGHT'];
+const key = (x,y,z,d) => x+'|'+y+'|'+z+'|'+d;
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+/* Four vertical lamp tubes just outside the volume, integrated as a line of
+   point sources: inverse-square per segment with a Lambertian term for the
+   sensor face. End effects near the top and bottom fall out of the geometry
+   rather than being faked in. `gain` stands in for a different lamp output at
+   a different wavelength, so the two synthetic cubes are not identical. */
+function synth(seed, gain){
+  const rnd = mulberry32(seed);
+  const lamps = [[-55,-55],[205,-55],[-55,205],[205,205]]
+        .map(p => [p[0]+(rnd()-.5)*22, p[1]+(rnd()-.5)*22]);
+  const power = lamps.map(() => 1 + (rnd()-.5)*0.30);
+  const zTop = 330, zBot = -30, SEG = 44, out = {};
+  for (let xi=0; xi<3; xi++) for (let yi=0; yi<3; yi++) for (let zi=0; zi<Z_N; zi++)
+    for (const d of DIR_ORDER){
+      const P = [X_MM[xi], Y_MM[yi], Z_MM[zi]], n = DIRS[d];
+      let E = 0;
+      lamps.forEach((L, li) => {
+        for (let s=0; s<SEG; s++){
+          const lz = zBot + (zTop-zBot)*(s+.5)/SEG;
+          const v = [L[0]-P[0], L[1]-P[1], lz-P[2]];
+          const r2 = v[0]*v[0]+v[1]*v[1]+v[2]*v[2], r = Math.sqrt(r2);
+          const cos = (v[0]*n[0]+v[1]*n[1]+v[2]*n[2]) / r;
+          /* 0.16 floor: chamber walls reflect, so a face turned away from every
+             lamp still reads something. */
+          E += power[li] * (Math.max(0,cos)*0.84 + 0.16) / r2 * ((zTop-zBot)/SEG);
+        }
+      });
+      out[key(xi+1, yi+1, zi+1, d)] = +(E * 850 * gain * (1 + (rnd()-.5)*0.035)).toFixed(2);
+    }
+  return out;
+}
+
+/* ------------------------------------------------------------------ state */
+/* Two scans, same grid, same controls. A is 450 nm, B is 405 nm. Everything
+   that could make a colour mean two different things -- the ramp, the domain,
+   the selected face, the view angle -- is shared deliberately. */
+const SETS = [
+  /* sCure Cloud: the 450 nm scan is left out - the DVT keeps one 405 nm scan per unit (S.A stays, always empty) */
+  {id:'B', wl:'405 nm', css:'--wl-b', seedOff:4, gain:0.82},
+];
+const S = {
+  A:{data:null, real:false, name:''},
+  B:{data:null, real:false, name:''},
+};
+let selDir = 'MEAN', view = '3d', rampName = 'plasma', scaleMode = 'shared';
+/* Once the scale is set by hand it stays where it was put; the automatic choice
+   below only applies while nobody has expressed a preference. */
+let scaleTouched = false, autoPer = false;
+function setScale(v){ scaleMode = v; scaleTouched = true; renderAll(); }
+let az = -0.62, el = 0.42, zoom = 1, cubeMM = 26, opacity = 1, seedVal = 7;
+
+function reseed(){
+  seedVal = Math.max(1, +document.getElementById('seed').value || 1);
+  SETS.forEach(st => {
+    S[st.id].data = synth(seedVal + st.seedOff, st.gain);
+    S[st.id].real = false; S[st.id].name = '';
+  });
+  renderAll();
+}
+function resetView(){ az = -0.62; el = 0.42; zoom = 1; drawAll(); }
+
+function facesAt(D,x,y,z){
+  return DIR_ORDER.map(d => D[key(x,y,z,d)])
+                  .filter(n => n !== undefined && n !== '' && n !== null);
+}
+function valAt(D,x,y,z){
+  if (selDir !== 'MEAN' && selDir !== 'FACES') { const v = D[key(x,y,z,selDir)];
+    return (v === undefined || v === '') ? null : +v; }
+  /* ALL SIX or nothing. Averaging whatever happens to be present silently mixes
+     3-face and 6-face means in the same view, and the two are not comparable —
+     a partly-measured point would read low simply because the bright faces had
+     not been taken yet. */
+  const v = facesAt(D,x,y,z);
+  return v.length === DIR_ORDER.length
+       ? v.reduce((a,b) => a + (+b), 0) / v.length : null;
+}
+/* Points with some faces but not all — reported so the gaps are explained. */
+function partialCount(D){
+  let n = 0;
+  for (let x=1;x<=3;x++) for (let y=1;y<=3;y++) for (let z=1;z<=Z_N;z++){
+    const c = facesAt(D,x,y,z).length;
+    if (c > 0 && c < DIR_ORDER.length) n++;
+  }
+  return n;
+}
+/* Domain spans the whole volume for the selected face, so nothing repaints when
+   you orbit, switch view, or change voxel size. */
+function allValues(D){
+  const out = [];
+  for (let x=1;x<=3;x++) for (let y=1;y<=3;y++) for (let z=1;z<=Z_N;z++){
+    if (selDir === 'FACES'){
+      DIR_ORDER.forEach(d => { const v = D[key(x,y,z,d)];
+        if (v !== undefined && v !== '' && v !== null && !isNaN(+v)) out.push(+v); });
+    } else {
+      const v = valAt(D,x,y,z); if (v != null && !isNaN(v)) out.push(v);
+    }
+  }
+  return out;
+}
+function rangeOf(ids){
+  let lo = Infinity, hi = -Infinity;
+  ids.forEach(k => { if (S[k].data) allValues(S[k].data)
+    .forEach(v => { lo = Math.min(lo,v); hi = Math.max(hi,v); }); });
+  if (!isFinite(lo)) return [0,1];
+  return lo === hi ? [lo-.5, hi+.5] : [lo,hi];
+}
+/* One scale across every face and every point, or the six sides of a single
+   cube could not be compared with each other. In `shared` mode it also spans
+   both scans, so a colour means the same reading in the left cube and the
+   right one — which is the whole point of putting them side by side. Switch to
+   `per scan` when the two wavelengths differ so much in magnitude that the
+   weaker one would otherwise be flat.
+   A synthetic cube is deliberately left out of the shared domain and keeps its
+   own: its numbers are invented, and letting them stretch the scale would
+   flatten the one set of real measurements on the page. */
+function domain(id){
+  if (scaleMode !== 'shared') return rangeOf([id]);
+  const real = SETS.filter(s => S[s.id].real).map(s => s.id);
+  if (!real.length) return rangeOf(SETS.map(s => s.id));
+  if (!S[id].real) return rangeOf([id]);
+  return rangeOf(real);
+}
+
+/* Readings from this jig have run from ~0.02 to ~140 depending on the meter and
+   the unit it was set to, so a fixed 2 decimals either buries the small numbers
+   or clutters the large ones. Decimals follow the data that is actually loaded.
+   PER SCAN, not across both: one scan in the 0.0x range beside another in the
+   tens is a real pairing here, and a single shared decimal count printed the
+   small one as a column of 0.0. */
+const FMT = {A:2, B:2};
+const decFor = hi => hi >= 100 ? 1 : hi >= 10 ? 2 : hi >= 1 ? 3 : hi >= 0.1 ? 4 : 5;
+function setFmt(){
+  SETS.forEach(st => {
+    let hi = 0; const D = S[st.id].data;
+    if (D) for (const k in D){ const v = +D[k]; if (v > hi) hi = v; }
+    FMT[st.id] = decFor(hi);
+  });
+}
+/* No id means a figure that spans both scans (a difference, say): use whichever
+   scan needs the most decimals, so the finer one survives. */
+const fmt = (v, id) => v.toFixed(id ? FMT[id] : Math.max(FMT.A, FMT.B));
+const fmtSigned = (v, id) => (v > 0 ? '+' : '') + fmt(v, id);
+/* For the two ends of a scale bar, which may span both scans: each end takes
+   the decimals its own magnitude needs, so 0.019 keeps its digits and 87.2
+   does not acquire four meaningless ones. */
+const fmtAuto = v => v.toFixed(decFor(Math.abs(v)));
+/* A ratio of 0.003 and a ratio of 3 both matter; fixed decimals lose one end. */
+const fmtRatio = r => (r >= 10 ? r.toFixed(1) : r >= 0.1 ? r.toFixed(2) : r.toPrecision(2)) + '×';
+
+/* ------------------------------------------------------------------ color */
+/* Each ramp runs LIGHT at the low end to DARK at the high end, lightness
+   strictly monotonic, so the encoding survives greyscale printing and every
+   form of colour blindness. Cividis is the one to reach for when a reader has
+   said they cannot separate red from green; Grey is for photocopies. */
+const RAMPS = {
+  plasma:  {label:'Plasma',  steps:['#f0f921','#fdb32f','#eb7852','#cb4679','#9a179b','#5b02a3','#0d0887']},
+  viridis: {label:'Viridis', steps:['#fde725','#a5db36','#4ec36b','#20a486','#2a788e','#414487','#440154']},
+  magma:   {label:'Magma',   steps:['#fcfdbf','#feca8d','#fd9668','#f1605d','#cd4071','#9e2f7f','#45107a']},
+  cividis: {label:'Cividis', steps:['#fee838','#e1cc55','#b5ba6a','#7d8e78','#4c6c76','#20506e','#00224e']},
+  violet:  {label:'Violet',  steps:['#f3effa','#ddd0f2','#c3ade7','#a385d7','#7e5cc0','#5a3a9c','#38236b']},
+  grey:    {label:'Grey',    steps:['#f2f2f0','#d8d8d4','#b8b8b3','#949490','#6d6d69','#484845','#1c1c1a']},
+};
+const ramp = () => RAMPS[rampName].steps;
+const hex2rgb = h => [1,3,5].map(i => parseInt(h.slice(i,i+2),16));
+function colorFor(t, steps){
+  t = Math.max(0, Math.min(1, t));
+  const p = t*(steps.length-1), i = Math.min(steps.length-2, Math.floor(p)), f = p-i;
+  const a = hex2rgb(steps[i]), b = hex2rgb(steps[i+1]);
+  return a.map((c,k) => Math.round(c + (b[k]-c)*f));
+}
+const rgbStr = c => 'rgb(' + c.join(',') + ')';
+function shade(c, f){ return rgbStr(c.map(v => Math.max(0, Math.min(255, Math.round(v*f))))); }
+/* Ink follows the FILL's luminance, never the page theme: a pale cell needs
+   dark text in either mode. */
+function inkFor(c){
+  const L = (0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]) / 255;
+  return L > 0.55 ? '#0b0b0b' : '#ffffff';
+}
+const cssVar = n => getComputedStyle(document.querySelector('.viz')).getPropertyValue(n).trim();
+
+/* -------------------------------------------------------------- 3d engine */
+/* Orthographic. Rotate by azimuth about Z, then elevation about the screen
+   horizontal, then drop the depth component. Depth is kept for the painter's
+   algorithm — the voxels never interpenetrate, so sorting by centroid is exact. */
+function rot(p){
+  const ca = Math.cos(az), sa = Math.sin(az);
+  const X = p[0]*ca - p[1]*sa;
+  const Y = p[0]*sa + p[1]*ca;
+  const ce = Math.cos(el), se = Math.sin(el);
+  return [X, Y*ce - p[2]*se, Y*se + p[2]*ce];   // [screenX, depth, screenUp]
+}
+const CX = 500, CY = 292;
+/* Chamber given by the operator 2026-09-22: 350 wide (X) x 240 deep (Y) x
+   400 tall (Z), lowest reading 80 mm up. Prefilled in the inputs above so the
+   dashed chamber box is drawn from the start; clear a field to hide it. */
+let CH = {w: 350, d: 240, h: 400};
+
+/* The scene is drawn in CHAMBER coordinates, translated so the middle of the
+   chamber (or of the measured volume, if no chamber size is given) sits at the
+   origin, and scaled so whichever is larger fits the frame. */
+function bounds(){
+  const mx = Math.max(85, CH.w ? CH.w/2 : 0);
+  const my = Math.max(75, CH.d ? CH.d/2 : 0);
+  const z0 = CH.h ? 0 : Z_OFF;
+  const z1 = CH.h ? Math.max(CH.h, Z_OFF + Z_SPAN) : Z_OFF + Z_SPAN;
+  return {mx, my, z0, z1, zc: (z0 + z1) / 2};
+}
+function centre(p){ const b = bounds(); return [p[0], p[1], p[2] - b.zc]; }
+function proj(p){
+  const b = bounds();
+  const span = Math.max(2*b.mx, 2*b.my, b.z1 - b.z0);
+  const s = (340 / span) * zoom;
+  const r = rot(p);
+  return [CX + r[0]*s, CY - r[2]*s, r[1]];
+}
+function setChamber(){
+  const n = id => Math.max(0, +document.getElementById(id).value || 0);
+  CH = {w: n('ch-w'), d: n('ch-d'), h: n('ch-h')};
+  drawAll();
+}
+function boxEdges(x0,x1,y0,y1,z0,z1){
+  const P=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],
+           [x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]].map(centre);
+  return [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]]
+         .map(([a,b]) => [proj(P[a]), proj(P[b])]);
+}
+
+/* A cube face's outward normal IS a sensor direction — the geometry and the
+   measurement axes are the same six. That is what "per face" colouring uses. */
+const FACE_DIR = {'0,0,1':'UP', '0,0,-1':'DOWN', '1,0,0':'RIGHT',
+                  '-1,0,0':'LEFT', '0,1,0':'BACK', '0,-1,0':'FRONT'};
+
+const FACES = [   // [normal, 4 corner offsets as +/-1 triples]
+  [[0,0,1],  [[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]],
+  [[0,0,-1], [[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]],
+  [[1,0,0],  [[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]]],
+  [[-1,0,0], [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]]],
+  [[0,1,0],  [[-1,1,-1],[-1,1,1],[1,1,1],[1,1,-1]]],
+  [[0,-1,0], [[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]]],
+];
+
+function drawAll(){
+  document.getElementById('vsize-l').textContent = cubeMM + ' mm';
+  document.getElementById('vop-l').textContent = Math.round(opacity*100) + '%';
+  SETS.forEach(st => draw3d(st.id));
+  document.getElementById('hud').innerHTML =
+    'Measured volume 170 × 150 × 300 mm, centred in X/Y, 80–380 mm above the floor'
+    + ((CH.w && CH.d && CH.h)
+       ? '  ·  dashed box = chamber ' + CH.w + ' × ' + CH.d + ' × ' + CH.h + ' mm'
+       : '  ·  enter the chamber size above to draw it around the volume')
+    + '  ·  drag the cube to orbit · scroll to zoom'
+    + (autoPer
+       ? '<br><b>These two scans do not overlap in range</b> (' + SETS[0].wl + ' '
+         + fmt(rangeOf(['A'])[0],'A') + '–' + fmt(rangeOf(['A'])[1],'A') + ', '
+         + SETS[1].wl + ' ' + fmt(rangeOf(['B'])[0],'B') + '–' + fmt(rangeOf(['B'])[1],'B')
+         + '), so each cube is on <b>its own colour scale</b> — a shared one would '
+         + 'paint the weaker scan a single flat colour. Colours mean different '
+         + 'readings in the two cubes; read the scale under each. Check whether '
+         + 'the two files are really in the same unit.'
+       : '');
+}
+
+function draw3d(id){
+  const D = S[id].data; if (!D) return;
+  const svg = document.getElementById('scene-' + id);
+  if (!svg) return;
+  const [lo, hi] = domain(id), steps = ramp();
+  const wire = cssVar('--wire'), muted = cssVar('--text-muted');
+  const h = cubeMM / 2;
+  let out = '';
+
+  /* The measured envelope, and -- if its size is known -- the chamber around
+     it, so the gap between what was measured and what exists is visible. */
+  if (CH.w && CH.d && CH.h){
+    boxEdges(-CH.w/2, CH.w/2, -CH.d/2, CH.d/2, 0, CH.h).forEach(([p,q]) => {
+      out += `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}"`
+           + ` y2="${q[1].toFixed(1)}" stroke="${muted}" stroke-width="1.4"`
+           + ` stroke-dasharray="7 5"/>`;
+    });
+  }
+  boxEdges(chX(1), chX(3), chY(1), chY(3), chZ(1), chZ(Z_N)).forEach(([p,q]) => {
+    out += `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}"`
+         + ` y2="${q[1].toFixed(1)}" stroke="${wire}" stroke-width="1"/>`;
+  });
+  /* voxels, far to near */
+  const cubes = [];
+  for (let x=1;x<=3;x++) for (let y=1;y<=3;y++) for (let z=1;z<=Z_N;z++){
+    const v = valAt(D,x,y,z); if (v == null || isNaN(v)) continue;
+    const c = centre([chX(x), chY(y), chZ(z)]);
+    cubes.push({y,x,z,v,c,depth: rot(c)[1]});
+  }
+  cubes.sort((a,b) => b.depth - a.depth);         // farthest first
+
+  const perFace = (selDir === 'FACES');
+  const wl = SETS.find(s => s.id === id).wl;
+  cubes.forEach(cb => {
+    const col = perFace ? null : colorFor((cb.v - lo)/(hi - lo), steps);
+    const tip = `X ${sgn(chX(cb.x))} · Y ${sgn(chY(cb.y))} from centre`
+              + `<br>Z ${chZ(cb.z).toFixed(0)} mm above the floor`;
+    FACES.forEach(([n, corners]) => {
+      const nr = rot(n);
+      if (nr[1] >= 0) return;                      // back-face cull
+      let fill, fv, fd;
+      if (perFace){
+        fd = FACE_DIR[n.join(',')];
+        const raw = D[key(cb.x, cb.y, cb.z, fd)];
+        if (raw === undefined || raw === '' || raw === null) return;
+        fv = +raw;
+        /* No orientation shading here: lightness is carrying the reading, so
+           adding a lighting term would corrupt the very thing being read. The
+           faces carry their own colours, and the axis gizmo carries the
+           orientation. */
+        fill = rgbStr(colorFor((fv - lo)/(hi - lo), steps));
+      } else {
+        /* subtle orientation shading so the voxels read as solids; kept narrow
+           so it cannot be mistaken for a change in magnitude */
+        fill = shade(col, 0.76 + 0.24 * (nr[2]*0.5 + 0.5));
+        fv = cb.v; fd = null;
+      }
+      const pts = corners.map(o => {
+        const s = proj([cb.c[0]+o[0]*h, cb.c[1]+o[1]*h, cb.c[2]+o[2]*h]);
+        return s[0].toFixed(1) + ',' + s[1].toFixed(1);
+      }).join(' ');
+      out += `<polygon points="${pts}" fill="${fill}"`
+           + (perFace ? ` stroke="${fill}" stroke-width="0.6"` : '')
+           + (opacity < 1 ? ` fill-opacity="${opacity}"` : '')
+           + ` data-v="${fmt(fv, id)}" data-t="${tip}" data-w="${wl}"`
+           + (fd ? ` data-d="${fd}"` : '') + `/>`;
+    });
+  });
+
+  /* Axis gizmo in SCREEN space, drawn last. World-anchored labels rotate with
+     the scene and inevitably swing into the middle of the volume at some
+     azimuths; a fixed-position gizmo cannot. */
+  const GX = 82, GY = 520, GL = 30;
+  out += `<circle cx="${GX}" cy="${GY}" r="46" fill="${cssVar('--surface-1')}"`
+       + ` fill-opacity="0.82"/>`;
+  [['X',[1,0,0]], ['Y',[0,1,0]], ['Z',[0,0,1]]].forEach(([n, v]) => {
+    const r = rot(v);
+    const ex = GX + r[0]*GL, ey = GY - r[2]*GL;
+    out += `<line x1="${GX}" y1="${GY}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}"`
+         + ` stroke="${muted}" stroke-width="1.5"/>`
+         + `<text x="${(GX + r[0]*(GL+9)).toFixed(1)}" y="${(GY - r[2]*(GL+9) + 4).toFixed(1)}"`
+         + ` fill="${muted}" font-size="11.5" text-anchor="middle"`
+         + ` font-weight="600">${n}</text>`;
+  });
+  svg.innerHTML = out;
+}
+
+/* orbit + zoom — one camera for both cubes, so the comparison is honest */
+function bindStage(id){
+  const svg = document.getElementById('scene-' + id);
+  let dragging = false, lx = 0, ly = 0, queued = false;
+  const frame = () => { queued = false; drawAll(); };
+  svg.addEventListener('pointerdown', e => {
+    dragging = true; lx = e.clientX; ly = e.clientY;
+    svg.classList.add('drag'); svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener('pointermove', e => {
+    const tip = document.getElementById('tip');
+    if (dragging){
+      az -= (e.clientX - lx) * 0.0075;
+      el = Math.max(-1.35, Math.min(1.35, el + (e.clientY - ly) * 0.0075));
+      lx = e.clientX; ly = e.clientY;
+      tip.style.opacity = 0;
+      if (!queued){ queued = true; requestAnimationFrame(frame); }
+      return;
+    }
+    const t = e.target;
+    if (t && t.dataset && t.dataset.v){
+      tip.innerHTML = `<b>${t.dataset.v} mW/cm²</b> · ${t.dataset.w}<br>${t.dataset.t}<br>` +
+        (t.dataset.d ? t.dataset.d + ' face' :
+         selDir === 'MEAN' ? 'mean of six faces' : selDir + ' face');
+      tip.style.opacity = 1;
+      const r = tip.getBoundingClientRect();
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - r.width - 10) + 'px';
+      tip.style.top = Math.max(8, e.clientY - r.height - 12) + 'px';
+    } else tip.style.opacity = 0;
+  });
+  const stop = () => { dragging = false; svg.classList.remove('drag'); };
+  svg.addEventListener('pointerup', stop);
+  svg.addEventListener('pointercancel', stop);
+  svg.addEventListener('pointerleave', () => {
+    document.getElementById('tip').style.opacity = 0; });
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom = Math.max(0.45, Math.min(2.6, zoom * (e.deltaY < 0 ? 1.1 : 1/1.1)));
+    drawAll();
+  }, {passive:false});
+
+  /* Each panel is its own drop target, so which scan a file lands in is a
+     matter of where it is dropped rather than of a mode set somewhere else. */
+  const panel = document.getElementById('cube-' + id);
+  let depth = 0;
+  panel.addEventListener('dragenter', e => { e.preventDefault(); if (++depth === 1) panel.classList.add('over'); });
+  panel.addEventListener('dragover', e => e.preventDefault());
+  panel.addEventListener('dragleave', () => { if (--depth <= 0){ depth = 0; panel.classList.remove('over'); } });
+  panel.addEventListener('drop', e => {
+    e.preventDefault(); depth = 0; panel.classList.remove('over');
+    takeFile(id, e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+}
+
+/* ------------------------------------------------------------ 2d fallback */
+function draw2d(){
+  const steps = ramp();
+  document.getElementById('layers').innerHTML = SETS.map(st => {
+    const D = S[st.id].data; if (!D) return '';
+    const [lo,hi] = domain(st.id);
+    const head = `<div class="layers-head"><i style="background:${cssVar(st.css)}"></i>`
+               + `${st.wl} — ${S[st.id].real ? esc(S[st.id].name) : 'synthetic'}</div>`;
+    const panels = [1,2,3].map(x => {
+      let h = `<div class="panel"><h2>X ${sgn(chX(x))} mm</h2>` +
+              `<p class="cap">${x===2 ? 'chamber centre' : 'from chamber centre'}`
+              + ` · highest Z at the top</p>` +
+              `<table class="grid"><tr><th></th>` +
+              [1,2,3].map(i => `<th>Y ${sgn(chY(i))}<br>${i===2?'centre':'mm'}</th>`).join('')
+              + `</tr>`;
+      for (let zi = Z_N; zi >= 1; zi--){
+        h += `<tr><th class="zh">${chZ(zi).toFixed(0)} mm<br>above floor</th>`;
+        for (let yi = 1; yi <= 3; yi++){
+          const v = valAt(D,x,yi,zi);
+          if (v == null || isNaN(v)){ h += `<td class="cell empty">—</td>`; continue; }
+          const c = colorFor((v-lo)/(hi-lo), steps);
+          h += `<td class="cell" style="background:${rgbStr(c)};color:${inkFor(c)}"`
+             + ` title="${esc(`${st.wl} — X ${sgn(chX(x))} · Y ${sgn(chY(yi))} from centre · `
+                  + `Z ${chZ(zi).toFixed(0)} mm above floor — ${fmt(v, st.id)} mW/cm²`)}">`
+             + fmt(v, st.id) + `</td>`;
+        }
+        h += `</tr>`;
+      }
+      return h + `</table></div>`;
+    }).join('');
+    return head + `<div class="panels">` + panels + `</div>`;
+  }).join('');
+}
+
+/* ------------------------------------------------- areas + the comparison */
+/* An "area" is a subset of the 90 grid points, or -- for the face rows -- one
+   sensor direction across all of them. Uniformity is min/max over whatever the
+   area contains, which is the figure the chamber is specified against; the
+   spread ±% is (max-min)/(max+min), the same number expressed the way lamp
+   datasheets tend to. */
+const AREAS = [
+  {group:'Whole volume', rows:[
+    {label:'All points', mode:'sel', f:()=>true},
+  ]},
+  {group:'By sensor face — where the lamps are', rows:
+    DIR_ORDER.map(d => ({label: d[0] + d.slice(1).toLowerCase() + ' face', mode:'dir', dir:d}))
+  },
+  {group:'By height', rows:[
+    {label:'Low · 80–147 mm',   mode:'sel', f:(x,y,z)=>z<=3},
+    {label:'Mid · 180–247 mm',  mode:'sel', f:(x,y,z)=>z>=4 && z<=7},
+    {label:'High · 280–380 mm', mode:'sel', f:(x,y,z)=>z>=8},
+  ]},
+  {group:'By X layer (across)', rows:[
+    {label:'X −85 mm (left)',   mode:'sel', f:(x)=>x===1},
+    {label:'X 0 mm (centre)',   mode:'sel', f:(x)=>x===2},
+    {label:'X +85 mm (right)',  mode:'sel', f:(x)=>x===3},
+  ]},
+  {group:'By Y layer (depth)', rows:[
+    {label:'Y −75 mm (front)',  mode:'sel', f:(x,y)=>y===1},
+    {label:'Y 0 mm (centre)',   mode:'sel', f:(x,y)=>y===2},
+    {label:'Y +75 mm (back)',   mode:'sel', f:(x,y)=>y===3},
+  ]},
+  {group:'Centre vs edge', rows:[
+    {label:'Centre column',     mode:'sel', f:(x,y)=>x===2 && y===2},
+    {label:'Outer ring',        mode:'sel', f:(x,y)=>!(x===2 && y===2)},
+  ]},
+];
+
+function areaStats(D, row){
+  const vals = [];
+  for (let x=1;x<=3;x++) for (let y=1;y<=3;y++) for (let z=1;z<=Z_N;z++){
+    if (row.mode === 'dir'){
+      const v = D[key(x,y,z,row.dir)];
+      if (v !== undefined && v !== '' && v !== null && !isNaN(+v)) vals.push(+v);
+    } else {
+      if (!row.f(x,y,z)) continue;
+      const v = valAt(D,x,y,z);
+      if (v != null && !isNaN(v)) vals.push(v);
+    }
+  }
+  if (!vals.length) return null;
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
+  return {n:vals.length, mn, mx, mean,
+          unif: mx ? mn/mx*100 : 0,
+          spread: (mx+mn) ? (mx-mn)/(mx+mn)*100 : 0};
+}
+
+function unifCell(s, worst){
+  if (!s) return '<td class="num">—</td>';
+  const c = colorFor(Math.max(0, Math.min(1, s.unif/100)), ramp());
+  return `<td class="num${worst ? ' worst' : ''}"><span class="bar-cell">`
+       + `${s.unif.toFixed(1)}%<span class="track">`
+       + `<span class="fill" style="width:${Math.max(2,Math.min(100,s.unif)).toFixed(0)}%;`
+       + `background:${rgbStr(c)}"></span></span></span></td>`;
+}
+
+function drawCmp(){
+  const B = S.B.data;
+  const faceLabel = selDir === 'MEAN' ? 'the average of all six faces'
+                  : selDir === 'FACES' ? 'the average of all six faces'
+                  : 'the ' + selDir.toLowerCase() + ' face only';
+  document.getElementById('cmp-cap').innerHTML =
+    'Uniformity is <b>min / max</b> within the area — 100% would be a perfectly even '
+    + 'area, and the figure always falls as the area grows. <b>Face rows</b> use that '
+    + 'one sensor direction across all 90 points. <b>Every other row</b> uses '
+    + esc(faceLabel) + ', following the Sensor face control above. '
+    + 'Spread is (max−min)/(max+min).';
+
+  /* the least even region is flagged among the spatial rows only (a face row is about lamp placement) */
+  let worst = null;
+  AREAS.forEach(g => g.rows.forEach(r => {
+    if (r.mode === 'dir' || r.label === 'All points') return;
+    const sb = B && areaStats(B, r);
+    if (sb && (!worst || sb.unif < worst.u)) worst = {u:sb.unif, l:r.label};
+  }));
+
+  let t = '<table class="cmp"><thead>'
+    + '<tr><th>Area</th><th>Points</th><th>Mean</th><th>Uniformity</th><th>Spread</th></tr></thead><tbody>';
+  AREAS.forEach(g => {
+    t += `<tr class="group"><td colspan="5">${g.group}</td></tr>`;
+    g.rows.forEach(r => {
+      const sb = B ? areaStats(B, r) : null;
+      const isWorst = !!(sb && worst && r.label === worst.l && r.mode !== 'dir');
+      t += `<tr><td>${r.label}</td><td class="num">${sb ? sb.n : '—'}</td>`
+         + `<td class="num">${sb ? fmt(sb.mean, 'B') : '—'}</td>`
+         + unifCell(sb, isWorst)
+         + `<td class="num">${sb ? '±'+sb.spread.toFixed(1)+'%' : '—'}</td></tr>`;
+    });
+  });
+  document.getElementById('cmp').innerHTML = t + '</tbody></table>';
+
+  document.getElementById('cmp-note').innerHTML =
+    (worst ? '<b>Least even region</b> — ' + esc(worst.l) + ' at ' + worst.u.toFixed(1) + '%.<br>' : '')
+    + 'Uniformity figures for different areas are not interchangeable: a single '
+    + 'layer will always look more uniform than the whole volume, because it '
+    + 'contains fewer points and a shorter span of the field. Compare a row '
+    + 'against its siblings in the same group, not a small area against a large one.';
+}
+
+/* ------------------------------------------------------------------ shell */
+function cubeShell(st){
+  return `<div class="cube" id="cube-${st.id}">
+    <div class="cube-head">
+      <span class="wl"><i style="background:${cssVar(st.css)}"></i>${st.wl}</span>
+      <span class="src" id="src-${st.id}"></span>
+      <span class="up"><input type="file" accept=".csv" id="csv-${st.id}"
+        onchange="loadCsv('${st.id}', event)"></span>
+    </div>
+    <div class="stage">
+      <svg class="scene" id="scene-${st.id}" viewBox="0 0 1000 600"
+           preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="empty" id="empty-${st.id}" style="display:none"></div>
+    </div>
+    <div class="chips" id="chips-${st.id}"></div>
+    <div class="scale"><span class="mono" id="sc-lo-${st.id}"></span>
+      <div class="bar" id="sc-bar-${st.id}"></div>
+      <span class="mono" id="sc-hi-${st.id}"></span><span>mW/cm²</span></div>
+    <div class="banner" id="banner-${st.id}" style="margin:0 13px 12px"></div>
+  </div>`;
+}
+
+function renderAll(){
+  setFmt();
+  /* Two real scans whose ranges do not overlap at all — 0.02–0.04 against
+     56–87, say — cannot share a colour domain usefully: the weaker one lands
+     entirely in the first pixel of the ramp and reads as one flat colour. Put
+     each on its own scale and say so, unless the scale was chosen by hand. */
+  autoPer = false;
+  if (!scaleTouched && S.A.real && S.B.real){
+    const ra = rangeOf(['A']), rb = rangeOf(['B']);
+    if (Math.min(ra[1], rb[1]) <= Math.max(ra[0], rb[0])){ autoPer = true; scaleMode = 'per'; }
+    else scaleMode = 'shared';
+  }
+  document.getElementById('seg-dir').innerHTML =
+    [['MEAN','Average of 6'], ['FACES','Per face']]
+      .concat(DIR_ORDER.map(d => [d, d[0]+d.slice(1).toLowerCase()]))
+      .map(([v,l]) => `<button aria-pressed="${selDir===v}"`
+        + ` onclick="selDir='${v}';renderAll()">${l}</button>`).join('');
+  document.getElementById('seg-view').innerHTML =
+    [['3d','3D volume'],['2d','2D layers']].map(([v,l]) =>
+      `<button aria-pressed="${view===v}" onclick="view='${v}';renderAll()">${l}</button>`).join('');
+  document.getElementById('seg-ramp').innerHTML =
+    Object.entries(RAMPS).map(([k,r]) =>
+      `<button aria-pressed="${rampName===k}" onclick="rampName='${k}';renderAll()">`
+      + `<span class="sw" style="background:linear-gradient(90deg,${r.steps.join(',')})"></span>`
+      + `${r.label}</button>`).join('');
+  document.getElementById('seg-scale').innerHTML =
+    [['shared','Shared'],['per','Per scan']].map(([v,l]) =>
+      `<button aria-pressed="${scaleMode===v}" onclick="setScale('${v}')">${l}</button>`)
+      .join('');
+
+  const is3 = view === '3d';
+  document.getElementById('cubes').style.display = is3 ? 'grid' : 'none';
+  document.getElementById('layers').style.display = is3 ? 'none' : 'block';
+  document.getElementById('grp-size').style.display = is3 ? '' : 'none';
+  document.getElementById('grp-op').style.display = is3 ? '' : 'none';
+  document.getElementById('note2d').style.display =
+    (!is3 && selDir === 'FACES') ? 'block' : 'none';
+
+  SETS.forEach(st => {
+    const D = S[st.id].data, R = S[st.id].real;
+    const vals = D ? allValues(D) : [];
+    const n = vals.length;
+    const mn = n ? Math.min(...vals) : 0, mx = n ? Math.max(...vals) : 0;
+    const mean = n ? vals.reduce((a,b)=>a+b,0)/n : 0;
+
+    document.getElementById('src-' + st.id).textContent =
+      R ? S[st.id].name : 'synthetic, seed ' + (seedVal + st.seedOff);
+    document.getElementById('src-' + st.id).title =
+      R ? S[st.id].name : 'no file loaded';
+
+    const part = D ? partialCount(D) : 0;
+    const empty = document.getElementById('empty-' + st.id);
+    if (n === 0){
+      empty.style.display = 'flex';
+      empty.innerHTML = selDir === 'FACES'
+        ? '<div><b>Nothing measured yet.</b><br>Load a scan to colour each cube '
+          + 'face by its own direction.</div>'
+        : selDir === 'MEAN'
+        ? '<div><b>No point has all six faces yet.</b>'
+          + (part ? ' ' + part + ' point' + (part>1?'s have':' has') + ' some faces but not all — '
+                  + 'the average needs all six, so nothing is shown here.' : '')
+          + '<br>Pick a single face above to see what has been measured.</div>'
+        : '<div><b>The ' + selDir.toLowerCase() + ' face has not been measured yet.</b>'
+          + '<br>Pick another face, or Average of 6.</div>';
+    } else empty.style.display = 'none';
+
+    document.getElementById('chips-' + st.id).innerHTML =
+      /* In per-face mode these span every face as well as every point, so they
+         describe the whole directional spread rather than spatial evenness. Say
+         which, or 9% reads as a catastrophic uniformity figure. */
+      chip('Uniformity', (mx ? mn/mx*100 : 0).toFixed(1)+'%',
+           selDir==='FACES' ? 'min/max, all faces' : 'min / max') +
+      chip('Mean', fmt(mean, st.id), 'mW/cm²') +
+      chip('Range', fmt(mn, st.id)+' – '+fmt(mx, st.id), 'mW/cm²') +
+      chip(selDir==='FACES' ? 'Readings' : 'Points',
+           selDir==='FACES' ? n+' / 540' : n+' / 90',
+           selDir==='FACES' ? 'every face'
+           : selDir==='MEAN'
+             ? (part ? part+' partly measured' : 'all six faces')
+             : selDir.toLowerCase()+' face');
+
+    const [lo,hi] = domain(st.id);
+    document.getElementById('sc-lo-' + st.id).textContent = fmtAuto(lo);
+    document.getElementById('sc-hi-' + st.id).textContent = fmtAuto(hi);
+    document.getElementById('sc-bar-' + st.id).style.background =
+      'linear-gradient(90deg,' + ramp().join(',') + ')';
+
+    const b = document.getElementById('banner-' + st.id);
+    b.className = 'banner' + (R ? ' real' : '');
+    b.innerHTML = R
+      ? '<b>Loaded from ' + esc(S[st.id].name) + '</b> — points with no reading are omitted.'
+        + (/interp|extrap|sheet3/i.test(S[st.id].name)
+           ? ' <b>This file name says it contains interpolated values</b>, so treat '
+             + 'it as a rendering of a measured field rather than as measurements.'
+           : '')
+      : '<b>Synthetic — not measurements.</b> A four-lamp chamber modelled by '
+        + 'inverse-square falloff with a Lambertian term per face, seed '
+        + (seedVal + st.seedOff) + '. <b>Drop the ' + st.wl + ' CSV on this panel</b> '
+        + '(or use the file picker above) to replace it.';
+  });
+
+  if (is3) drawAll(); else draw2d();
+  drawCmp();
+
+  /* exact numbers, one row per point */
+  const B = S.B.data;
+  const what = (selDir === 'MEAN' || selDir === 'FACES') ? 'Average of 6' : selDir;
+  let t = '<table class="data"><tr><th>X from centre</th><th>Y from centre</th>'
+        + `<th>Z above floor</th><th>${SETS[0].wl}</th></tr>`
+        + `<tr><td colspan="4" style="color:var(--text-muted);font-size:12px">`
+        + `Showing: ${what} · mW/cm²</td></tr>`;
+  for (let x=1;x<=3;x++) for (let y=1;y<=3;y++) for (let z=1;z<=Z_N;z++){
+    const vb = B ? valAt(B,x,y,z) : null;
+    t += `<tr><td>${sgn(chX(x))}</td><td>${sgn(chY(y))}</td>`
+       + `<td>${chZ(z).toFixed(0)}</td>`
+       + `<td>${vb==null?'—':fmt(vb, 'B')}</td></tr>`;
+  }
+  document.getElementById('table').innerHTML = t + '</table>';
+
+  document.getElementById('foot').innerHTML =
+    'The <b>average of six</b> approximates scalar irradiance — what a target at that '
+    + 'point receives from all directions. A <b>single face</b> shows directional bias, '
+    + 'which is what reveals where the lamps are: compare Left against Right, or Up '
+    + 'against Down.<br><br>'
+    + '<b>Per face</b> paints each side of a voxel with the reading taken in that '
+    + 'direction — the top face is the Up reading, the left face the Left reading, '
+    + 'and so on. One cube then carries all six numbers, and a lamp on one side of '
+    + 'the chamber shows up as a whole wall of bright faces turned towards it. '
+    + 'Orientation shading is switched off in that mode, because lightness is '
+    + 'carrying the reading.<br><br>'
+    + '<b>Comparing the two scans.</b> Both cubes share one camera, one sensor face '
+    + 'and one colour ramp. With the scale on <b>Shared</b> they also share the '
+    + 'colour domain, so a colour means the same reading in both and a dimmer '
+    + 'wavelength genuinely looks dimmer; switch to <b>Per scan</b> to stretch each '
+    + 'cube over its own range when you care about the shape of each field rather '
+    + 'than their relative level. Every ramp runs light at the low end to dark at '
+    + 'the high end, so it still reads in greyscale; <b>Cividis</b> is the '
+    + 'colour-blind-safe one.<br><br>'
+    + '<b>Coordinates.</b> X and Y are measured from the centre of the chamber, so '
+    + '0 is the middle and the outer layers are ±85 mm across and ±75 mm deep. Z is '
+    + 'height above the chamber floor: the lowest measured level is 80 mm up, not on '
+    + 'the floor itself, and the highest is 380 mm. The solid wireframe is the '
+    + 'measured envelope — give a chamber size above and it is drawn dashed around '
+    + 'it, so the unmeasured margin is visible.<br><br>'
+    + '3D is for seeing the shape of the field; it trades exact readability for that, '
+    + 'since voxels occlude one another and the face shading varies lightness. Use '
+    + '<b>2D layers</b>, the comparison table, or the table of exact numbers when you '
+    + 'need to read a value off the page.';
+}
+
+function chip(k,v,n){
+  return `<div class="chip"><div class="k">${k}</div><div class="v mono">${v}</div>`
+       + `<div class="n">${n}</div></div>`;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,
+  m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+function loadCsv(id, ev){ takeFile(id, ev.target.files[0]); }
+
+function takeFile(id, f){
+  if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try{
+      const lines = fr.result.split(/\r?\n/).filter(l => l.trim());
+      const head = lines[0].split(',').map(s => s.trim());
+      const ix = n => head.indexOf(n);
+      /* Accepts the corrected schema (x_idx + y_idx) and the older files that
+         called the driven axis "y". */
+      const yCol = ix('y_idx') >= 0 ? 'y_idx' : 'y';
+      if (['x_idx', 'z_idx', 'direction', 'reading'].some(n => ix(n) < 0)
+          || ix(yCol) < 0)
+        throw new Error('not a scan readings CSV');
+      const d = {};
+      for (let i=1;i<lines.length;i++){
+        const c = lines[i].split(','), v = parseFloat(c[ix('reading')]);
+        if (isNaN(v)) continue;
+        d[key(+c[ix('x_idx')], +c[ix(yCol)], +c[ix('z_idx')],
+              c[ix('direction')].trim().toUpperCase())] = v;
+      }
+      if (!Object.keys(d).length) throw new Error('no readings found');
+      S[id].data = d; S[id].real = true; S[id].name = f.name;
+      renderAll();
+    }catch(e){ alert('Could not read that file: ' + e.message); }
+  };
+  fr.readAsText(f);
+}
+
+/* The page-wide veil only says where to aim; it does not take the drop itself,
+   so it cannot swallow a file meant for one of the two panels. */
+(function(){
+  const veil = document.getElementById('drop');
+  let depth = 0;
+  addEventListener('dragenter', e => { e.preventDefault(); if (++depth === 1) veil.style.display='flex'; });
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('dragleave', () => { if (--depth <= 0){ depth = 0; veil.style.display='none'; } });
+  addEventListener('drop', e => { e.preventDefault(); depth = 0; veil.style.display = 'none'; });
+})();
+
+document.getElementById('cubes').innerHTML = SETS.map(cubeShell).join('');
+SETS.forEach(st => bindStage(st.id));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderAll);
+reseed();
+
+/* sCure Cloud - DVT-OPT-003 (2026-11-15): the unit's uploaded 405 nm scan, baked in by the server (Code.gs serveUvMap_).
+   It fills the page's one 405 nm panel exactly as a CSV dropped on it would (the 450 nm panel is left out on the site). */
+const UV_BAKED = __UV_BAKED__;
+if (UV_BAKED && UV_BAKED.readings && UV_BAKED.readings.length) {
+  const d = {};
+  UV_BAKED.readings.forEach(r => { d[key(r[0], r[1], r[2], String(r[3]).toUpperCase())] = r[4]; });
+  S.B.data = d; S.B.real = true; S.B.name = UV_BAKED.name;
+  document.title = 'UV uniformity - ' + UV_BAKED.unit + ' (405 nm)';
+  const h1 = document.querySelector('h1');
+  if (h1) h1.textContent = 'UV Uniformity Map - ' + UV_BAKED.unit + ', 405 nm scan' + (UV_BAKED.date ? ' of ' + UV_BAKED.date : '');
+  renderAll();
+}
+</script>
+</body>
+</html>

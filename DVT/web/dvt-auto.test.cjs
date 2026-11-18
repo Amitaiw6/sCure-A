@@ -77,7 +77,8 @@ class Machine {
     if (this.openFan) { this.uvOn = false; if (!this.alerts.includes(9002)) this.alerts = [9002]; }
     // the machine protects itself: an alert after a while under heat, and the heater goes off
     if (this.heating && this.chamber > 95) { this.heating = false; this.alerts = [9001]; }
-    if (this.uvOn && this.tick > 400) { this.uvOn = false; this.alerts = [9050]; }
+    // counted from the last uv-only start when there is one (DVT-SAF-016 lights the LEDs eight times in one run)
+    if (this.uvOn && this.tick - (this.uvSince || 0) > 400) { this.uvOn = false; this.alerts = [9050]; }
     if (this.recipe && this.tick % 120 === 0) this.recipe = null;
   }
   state() {
@@ -125,12 +126,15 @@ class Machine {
                units: ['A0031/338', 'AO114/209'].map((serial, u) => ({ serial, coldJunction: 21.7,
                  channels: Array.from({ length: 8 }, (_, i) => {
                    const level = u * 2 + Math.floor(i / 4) + 1, pos = (i % 4) + 1;
-                   const off = 0.6 * (2.5 - level) + (pos === 3 ? 0.15 : 0) + (pos % 2 === 0 ? -0.45 : 0);
+                   // SCURE_GRID_SPREAD scales the offsets: 3 = a 7.2 C spread that never meets the 5 C limit (DVT-THM-007 fail path)
+                   const off = (0.6 * (2.5 - level) + (pos === 3 ? 0.15 : 0) + (pos % 2 === 0 ? -0.45 : 0)) * Number(process.env.SCURE_GRID_SPREAD || 1);
                    return Math.round((this.chamber + off) * 100) / 100;
                  }) })) };
     if (p.startsWith('/api/dvt/meter/wavelength')) return { ok: true };
     if (p.startsWith('/api/dvt/meter'))
       return { present: true, head: 'StarBright SIM', wavelength_nm: 405, reading_mw_cm2: this.uvOn && !this.openThermistor ? 12.5 : 0.01 };   // the LEDs go dark the moment a thermistor is pulled
+    // switching the check off resets it, as in the firmware: a latched LED alarm (9004 / 9005 / 9040-9045) goes
+    if (p.startsWith('/api/dvt/led-checks') && /on=0/.test(p)) this.alerts = this.alerts.filter((a) => !(a === 9004 || a === 9005 || (a >= 9040 && a <= 9045)));
     if (p.startsWith('/api/dvt/led-checks')) return { ok: true, enabled: /on=1/.test(p), panels: ['LED_LEFT', 'LED_RIGHT', 'LED_BACK', 'LED_DOOR'] };
     if (p.startsWith('/api/dvt/hang')) {                  // DVT-SAF-010: the firmware hangs; the output watchdog cuts after 20 s
       const sec = Number((/sec=(\d+)/.exec(p) || [])[1] || 60);
@@ -177,7 +181,7 @@ class Machine {
     if (p.startsWith('/api/cure/dry')) { this.heating = true; this.drying = true; this.target = Number(/target=([\d.]+)/.exec(p)?.[1]) || 50; return { ok: true }; }
     if (p.startsWith('/api/cure/heat')) { this.heating = true; this.target = 80; return { ok: true }; }
     if (p.startsWith('/api/cure/cool')) { this.cooling = true; this.heating = false; return { ok: true }; }
-    if (p.startsWith('/api/cure/uv-only')) { if (this.openFan || this.alerts.length) return { ok: false, message: 'refused: alarm active' }; this.uvOn = true; this.uvIntensity = 100; return { ok: true }; }
+    if (p.startsWith('/api/cure/uv-only')) { if (this.openFan || this.alerts.length) return { ok: false, message: 'refused: alarm active' }; this.uvOn = true; this.uvSince = this.tick; this.uvIntensity = 100; return { ok: true }; }
     if (p.startsWith('/api/cure/nitrogen')) { this.n2 = /on=1/.test(p); return { ok: true }; }
     if (p.startsWith('/api/cure/stop') && this.doorReleases === 1 && this.closeInPolls === Infinity) this.closeInPolls = 3;   // step 1 is over: the person closes the door
     if (p.startsWith('/api/cure/stop')) { this.heating = this.cooling = this.uvOn = this.n2 = false; this.recipe = null; return { ok: true }; }

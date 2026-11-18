@@ -36,16 +36,17 @@ const drive = { files: {}, folders: {}, n: 0 };
 const driveFile = (blob) => {
   const id = 'file-' + ++drive.n;
   drive.files[id] = { id, blob, trashed: false };
-  return { getId: () => id, getBlob: () => blob };
+  return { getId: () => id, getBlob: () => blob, setTrashed: v => { drive.files[id].trashed = v; } };
 };
 const cache = {};
+const lockBusy = { on: false };   // the script lock held by others for longer than a caller will wait
 const sleepHook = { calls: 0, fn: null };
 const ctx = {
   Date, JSON, Math, Object, String, Number, Array,
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
   SpreadsheetApp: { openById: id => { if (id !== 'SHEET-1') throw new Error('no'); return book; }, create: () => book },
   CacheService: { getScriptCache: () => ({ get: k => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
-  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+  LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => !lockBusy.on, releaseLock() {} }) },
   ContentService: { MimeType: { JSON: 'json', TEXT: 'text' }, createTextOutput: t => ({ text: t, setMimeType() { return this; }, downloadAsFile(n) { this.file = n; return this; } }) },
   HtmlService: { createHtmlOutput: h => ({ html: h, setTitle() { return this; }, setXFrameOptionsMode() { return this; } }), XFrameOptionsMode: { ALLOWALL: 1 } },
   ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/X/exec' }) },
@@ -736,5 +737,35 @@ assert.deepStrictEqual([lv.live.isHeating, lv.live.heaterPwm, lv.live.chamberTem
   assert.strictEqual(ctx.portalUserSave(sessions.admin, 'boss@x.com', 'view').ok, true);   // the owner remains an admin
   delete props.OWNER_EMAIL;
   delete props.GOOGLE_CLIENT_ID; delete props.GOOGLE_CLIENT_SECRET;
+}
+// ---- an upload test (DVT-OPT-003, 2026-11-15): Drive files first, one short locked step for the rows; a busy lock saves nothing
+{
+  post({ machineKey: 'dk', kind: 'dvt_catalog', catalog: { version: '99.0', phases: [{ id: 3, name: 'Performance', tests: ['DVT-OPT-003'] }],
+    tests: { 'DVT-OPT-003': { title: 'UV uniformity', upload: true, units: ['UUT-03'], runs: ['|1'] } } } });
+  const up = ctx.portalLogin('pw').token;
+  const csv = 'x_idx,y_idx,z_idx,direction,reading\n1,1,1,UP,81.5\n1,1,1,FRONT,106.5';
+  const b64 = Buffer.from('utc,x_idx,y_idx,z_idx,direction,reading\n').toString('base64');
+  const runId = 'DVT-OPT-003|UUT-03||1';
+  const live = () => Object.values(drive.files).filter(f => !f.trashed).length;
+  const before = live();
+  let r = ctx.portalDvtUpload(up, 'UUT-03', 'DVT-OPT-003', '2026-11-15', 'Scan Results 15_11.csv', b64, 'Amit', csv, 'CureBox-3');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true, runId });
+  const files = () => book.getSheetByName('dvt_files').rows.slice(1).filter(x => x[1] === runId);
+  assert.deepStrictEqual(files().map(x => [x[2], x[3]]).sort(), [['uv_readings', 'Scan Results 15_11-readings.csv'], ['workbook', 'Scan Results 15_11.csv']]);
+  const run = book.getSheetByName('dvt_runs').rows.find(x => x[4] === runId);
+  assert.ok(run && run[5] === 'PASS' && run[10] === 'CureBox-3' && /Amit/.test(run[6]));
+  assert.strictEqual(live(), before + 2);
+  // a second upload replaces both files: still one workbook + one readings file on the run, the old ones in the bin
+  r = ctx.portalDvtUpload(up, 'UUT-03', 'DVT-OPT-003', '2026-11-16', 'scan2.csv', b64, 'Amit', csv, 'CureBox-3');
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(files().map(x => x[3]).sort(), ['scan2-readings.csv', 'scan2.csv']);
+  assert.strictEqual(live(), before + 2);
+  // the lock stays busy past the wait: refused in plain words, nothing kept (the two Drive files made first go to the bin)
+  lockBusy.on = true;
+  r = ctx.portalDvtUpload(up, 'UUT-03', 'DVT-OPT-003', '2026-11-17', 'scan3.csv', b64, 'Amit', csv, 'CureBox-3');
+  lockBusy.on = false;
+  assert.ok(r.ok === false && /busy/.test(r.message), JSON.stringify(r));
+  assert.deepStrictEqual(files().map(x => x[3]).sort(), ['scan2-readings.csv', 'scan2.csv']);
+  assert.strictEqual(live(), before + 2);
 }
 console.log('Code.gs: all checks passed');

@@ -85,7 +85,9 @@ function createRunner(cfg, deps = {}) {
     }
   })();
   let current = null;                                    // { tid, run }
-  const isManualTest = (tid) => ((CAT.tests[tid] || {}).group === 'ELE');   // electrical safety: done by hand on the engineer's bench, he only records his approval
+  // electrical safety (done by hand, the engineer approves it) and the upload tests (catalog record: upload - the UV uniformity
+  // jig's workbook, DVT-OPT-003, user 2026-11-15) are never run by the runner
+  const isManualTest = (tid) => ((CAT.tests[tid] || {}).group === 'ELE' || (CAT.tests[tid] || {}).record === 'upload');   // electrical safety: done by hand on the engineer's bench, he only records his approval
   const isBenchTest = (t) => ((t && t.procedure_steps) || []).some((s) => s.tool === 'bench');   // run by the DVT bench process (port 3002)
   const benchUrl = String(cfg.benchApi || String(cfg.machineApi || 'http://127.0.0.1:3001').replace(/:(\d+)\/?$/, ':3002')).replace(/\/+$/, '');
 
@@ -106,7 +108,17 @@ function createRunner(cfg, deps = {}) {
   async function missingInstrument(tid, test) {
     const eq = ((test && test.equipment) || []).map((e) => `${e.name || ''} ${e.label || ''}`).join(' ');
     const sc = A.SCRIPTS && A.SCRIPTS[tid];
-    const needsMeter = /starbright|ophir/i.test(eq) || (sc && sc.run && /dvt\/meter|starbright/i.test(String(sc.run)));
+    // the script needs the meter only when its CODE calls the meter API - comments stripped first: DVT-SAF-004's comment
+    // "no StarBright in this test" matched the old word search and blocked it until a StarBright was plugged in (2026-11-15)
+    const code = sc && sc.run ? String(sc.run).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1') : '';
+    // the chamber grid (DVT-THM-007): all 16 thermocouples on both TC-08s must read, or the test is refused before anyone is
+    // asked to press Start (user, 2026-11-15 - CureBox-3 started it with one TC-08, two channels)
+    if (sc && sc.needsGrid && A.gridMissing) {
+      const p = await machine('GET', '/api/dev/picolog/status').catch(() => null);
+      const miss = A.gridMissing(p);
+      if (miss) return `Not all 16 thermocouples read: ${miss} - connect both TC-08s (0031 and 114) with all 16 thermocouples to the machine, then run it again`;
+    }
+    const needsMeter = /starbright|ophir/i.test(eq) || /\/api\/dvt\/meter/.test(code);
     if (!needsMeter) return null;
     const m = await machine('GET', '/api/dvt/meter').catch(() => null);
     if (m && m.present) return null;
@@ -181,6 +193,7 @@ function createRunner(cfg, deps = {}) {
     for (const [tid, t] of Object.entries(CAT.tests)) {
       const reps = Number(t.repetitions) || 1;
       tests[tid] = { title: t.title, group: t.group || '', afterAll: !!t.after_all, safety: !!t.safety_critical, auto: !isManualTest(tid) && (!!A.has(tid) || isBenchTest(t)), minutes: t.duration_est_min || null, units: t.units || [],
+                     upload: t.record === 'upload' || undefined,     // the site shows Upload workbook (date + file) instead of Run
                      d: A.detailOf ? A.detailOf(t) : undefined,
                      runs: (t.variants || [{}]).flatMap((v) => Array.from({ length: reps }, (_, r) => `${E.variantLabel(v)}|${r + 1}`)) };
     }

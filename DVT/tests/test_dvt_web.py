@@ -99,7 +99,8 @@ AUTO_HARNESS = WEB / "dvt-auto.test.cjs"
 # Automated by their own cards in dvt-tool.html rather than by dvt-auto.js: the two UV linearity
 # rows by the page itself, DVT-SAF-002 by the machine-side DVT bench (catalog tool: bench).
 # (DVT-SAF-008 has both: its six cards in the page, and since 0.9.101 one script that runs them in a row from sCure Cloud.)
-NOT_IN_AUTO = {"DVT-OPT-001", "DVT-OPT-002", "DVT-SAF-002"}   # DVT-SAF-009 runs automatically too since 2026-10-25 (same recording as its tc08_record card)
+NOT_IN_AUTO = {"DVT-OPT-001", "DVT-OPT-002", "DVT-SAF-002",   # DVT-SAF-009 runs automatically too since 2026-10-25 (same recording as its tc08_record card)
+               "DVT-OPT-003"}   # catalog record: upload - the UV Uniformity Jig runs on its own, the site takes its workbook (2026-11-15)
 
 
 @pytest.fixture(scope="module")
@@ -139,7 +140,7 @@ def test_measured_traces_are_stored_per_step(auto_results):
     # A test that logs the machine continuously keeps each trace as its own rec.autos entry, so no
     # step overwrites another's samples and each gets its own CSV (dvt-tool.html setAuto / syncNow).
     # The event-driven tests (a valve opening, a tag appearing) have no continuous trace to keep.
-    logging_tests = ["DVT-SAF-001", "DVT-THM-001", "DVT-THM-003",   # DVT-SAF-003 removed 2026-11-12
+    logging_tests = ["DVT-SAF-001", "DVT-THM-001",   # DVT-SAF-003 removed 2026-11-12, DVT-THM-003 merged into THM-001 2026-11-15
                      "DVT-THM-004", "DVT-SAF-015"]
     thin = {t: auto_results[t].get("traces") for t in logging_tests if not auto_results[t].get("traces")}
     assert not thin, thin
@@ -156,7 +157,7 @@ def test_ambient_comes_from_the_instrument_not_the_operator(auto_results):
     assert len(asked) <= 1, f"{len(asked)} scripts still ask the operator for ambient_temp"
     assert "P.ambient(c, s0)" in src
     # and the simulated TC-08 ambient (21.7 C) is what those runs recorded
-    assert auto_results["DVT-THM-003"]["status"] == "OK"
+    assert auto_results["DVT-THM-001"]["status"] == "OK"
 
 
 def test_saf013_values_are_read_out_of_the_tc08_recording():
@@ -418,7 +419,7 @@ def test_saf007_walks_all_four_thermistors_in_one_run():
     assert v["cure_start_inhibited"] is True and v["alarm_raised"] is True and v["alarm_identifies_sensor"] is True
     for pos in ("right", "left", "back", "door"):
         assert v["error_" + pos].startswith("9004 - ") and pos in v["error_" + pos]      # each side its own code and text
-    assert isinstance(v["led_off_time"], (int, float))
+    assert "led_off_time" not in v                       # no StarBright timing since catalog 0.66 (user, 2026-11-14)
     for pos in ("right", "left", "back", "door"):
         rec = x["tracesSeen"]["sensor_" + pos]
         assert rec["seen_missing"] is True and rec["others_ok"] is True and pos in rec["text"]
@@ -464,9 +465,10 @@ def test_ambient_and_reference_come_from_the_ch2_thermocouple():
                        capture_output=True, text=True, encoding="utf-8", timeout=300, env=env)
     got = {x["test"]: x for x in json.loads(r.stdout)}
     # CH2 follows the simulated chamber (21.0 .. 22.0 C, cooling while idle); the cold junction is pinned at 21.7 C
-    for tid, field in (("DVT-THM-001", "ambient_temp"),):   # DVT-SAF-003 (reference_temp_start) removed 2026-11-12
-        v = got[tid]["valuesSeen"][field]
-        assert v != 21.7 and 21.0 <= v <= 22.0, (tid, v)
+    # 2026-11-15: the chamber-grid tests take the ambient from the TC-08 COLD JUNCTION instead - CH2 is a grid thermocouple
+    # inside the chamber there (user: "the ambient temp measured through the junction temp")
+    v = got["DVT-THM-001"]["valuesSeen"]["ambient_temp"]
+    assert v == 21.7, ("DVT-THM-001", v)
 
 
 def test_a_finished_run_says_passed_or_failed_in_plain_words(auto_results):
@@ -651,10 +653,29 @@ def test_thm007_chamber_heating_uniformity_runs_by_itself_at_220v():
     assert x["status"] == "OK", x["error"]
     assert x["prompts"] == 0 and not x["left_on"]
     assert v["setpoint"] == 80 and v["mains_voltage"] == 220 and v["reached_setpoint"] is True
-    assert isinstance(v["heat_up_time"], (int, float)) and v["hold_time"] == pytest.approx(5, abs=0.05)
+    # user 2026-11-18: the hold ends as soon as the grid spread (60 s means) is 5 C or less - at most 30 min. The
+    # simulated grid spreads 2.4 C, so it is uniform after the first full 60 s window
+    assert isinstance(v["heat_up_time"], (int, float)) and v["hold_time"] == pytest.approx(1, abs=0.05)
+    assert v["uniformity_reached"] is True and v["time_to_uniform"] == pytest.approx(1, abs=0.05)
     assert v["uniformity_pp"] == pytest.approx(2.4, abs=0.02) and v["uniformity_sd"] == pytest.approx(0.75, abs=0.02)
     assert v["hottest_position"] == "Z1-3" and v["coldest_position"] == "Z4-2"
     assert "PASSED" in x["line"]
+    assert "uniformity_reached == true" in CAT.tests["DVT-THM-007"]["pass_criteria"]
+
+
+def test_thm007_fails_when_the_grid_never_gets_uniform_in_30_minutes():
+    # user 2026-11-18: "if it is never reached mark it as fail" - a 7.2 C spread holds the full 30 min and fails
+    env = dict(os.environ, SCURE_DUMP="1", SCURE_GRID_SPREAD="3")
+    r = subprocess.run([shutil.which("node"), str(WEB / "dvt-auto.test.cjs"), "DVT-THM-007"], capture_output=True, text=True,
+                       encoding="utf-8", timeout=300, env=env)
+    x = json.loads(r.stdout)[0]
+    v = x["valuesSeen"]
+    assert x["status"] == "OK", x["error"]
+    assert not x["left_on"]
+    assert v["reached_setpoint"] is True and v["hold_time"] == pytest.approx(30, abs=0.05)
+    assert v["uniformity_reached"] is False and v.get("time_to_uniform") is None
+    assert v["uniformity_pp"] == pytest.approx(7.2, abs=0.05)
+    assert "FAILED" in x["line"]
 
 
 def test_saf012_says_the_press_is_missing_when_the_machine_saw_the_door():
@@ -707,3 +728,29 @@ def test_saf011_watches_the_heater_body_long_enough_after_the_cable_is_pulled():
     # user, 2026-11-12: on the unit the heater body takes at least 5 min to turn down after the CM5 cable is pulled
     js = (WEB / "dvt-auto.js").read_text(encoding="utf-8")
     assert "await c.watch({ sec: 600, hz: 1, tc: true, into: rows, live: 'cable_out'," in js
+
+
+def test_chamber_grid_tests_need_all_16_thermocouples():
+    """DVT-THM-001 / DVT-THM-007 (user, 2026-11-15): refused unless both grid TC-08s read all 16 thermocouples - CureBox-3
+    started THM-007 with one TC-08 (AO027/073) and two channels."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    r = subprocess.run([node, str(WEB / "grid_gate.test.cjs")], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert r.returncode == 0, r.stderr[-2000:]
+    out = json.loads(r.stdout)
+    assert out["needsGrid"] == {"DVT-THM-001": True, "DVT-THM-007": True}
+    assert "114" in out["one_logger"] and "AO027/073" in out["one_logger"]          # 114 missing; the one there is named
+    assert "Z1-Z2" in out["only_114"] and "more than two" in out["three"]            # the other logger: any serial, exactly one
+    assert abs(out["ambient"] - 20.53) < 1e-9                                        # ambient = the cold junctions' mean
+    assert out["one_open"] == "no reading from Z3-4"
+    assert out["all_16"] == ""
+    assert out["nothing"]
+
+
+def test_the_built_catalog_keeps_the_upload_mark():
+    """DVT-OPT-003 is recorded by an upload on the site: the built catalog (what the runner publishes) must carry record: upload -
+    the build kept only a fixed list of fields and dropped it, so the site showed no Upload workbook button (2026-11-15)."""
+    text = (WEB / "dvt-catalog.js").read_text(encoding="utf-8")
+    data = json.loads(text[text.index("{"):text.rindex("}") + 1])
+    assert data["tests"]["DVT-OPT-003"]["record"] == "upload"

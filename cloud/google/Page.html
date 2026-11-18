@@ -24,6 +24,11 @@
     if (!fileUrl) return '#';
     return fileUrl + '?dvtfile=' + encodeURIComponent(id) + '&t=' + encodeURIComponent(tok());
   };
+  // the heatmap of an upload run (DVT-OPT-003): GET <web app>?uvmap=<run id>&t=<session> (Code.gs serveUvMap_)
+  window.scureUvMapHref = function (fileUrl, runId) {
+    if (!fileUrl) return '#';
+    return fileUrl + '?uvmap=' + encodeURIComponent(runId) + '&t=' + encodeURIComponent(tok());
+  };
   function reply(status, obj) {
     /* signed in, but the role does not allow it (Code.gs need_) */
     if (obj && obj.denied) status = 403;
@@ -105,6 +110,10 @@
     if (path === '/api/dvt/approve') {
       var ap = await call('portalDvtApprove', tok(), body.unit, body.testId, body.runIds || [], body.who || '', body.approve !== false);
       return ap === null ? reply(401, { ok: false }) : reply(ap.ok ? 200 : 400, ap);
+    }
+    if (path === '/api/dvt/upload') {
+      var up = await call('portalDvtUpload', tok(), body.unit, body.testId, body.date, body.fileName, body.content, body.who || '', body.csv || '', body.machine || '');
+      return up === null ? reply(401, { ok: false }) : reply(up.ok ? 200 : 400, up);
     }
     // DVT runs requested from the site (confirmed at the CureBox before anything runs)
     if (path === '/api/dvt/request' || path === '/api/dvt/cancel' || path === '/api/dvt/answer' || path === '/api/dvt/acted') {
@@ -415,6 +424,7 @@ let editing = false;   // an editor is open: auto-refresh must not wipe it
 // periodic refresh skips re-rendering so it never eats typed input.
 function userBusy() {
   if (editing) return true;
+  if (DVT_UPLOAD_OPEN && document.querySelector('[data-dvt-upload-form]')) return true;
   const a = document.activeElement;
   if (a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) return true;
   // half-filled send-print form counts as busy too
@@ -612,7 +622,7 @@ let SEARCH = '';
 let VIEW = 'overview';
 let ERRORS = null;            // alerts from the portal's log: {machine, code, raised, cleared, message}
 // DVT: every run DVT/web/dvt-tool.html recorded, with its values and its raw measurement files.
-const PORTAL_BUILD = '0.9.149';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
+const PORTAL_BUILD = '0.9.155';   // must equal Code.gs PORTAL_BUILD - a mismatch means this tab predates a deploy
 let DVT_DETAIL = null;        // {testId: {purpose, steps, equipment, preconditions, criteria, bench, note ...}} - fetched once per catalog
 let DVT_DETAIL_AT = -1;       // the catalog.updated the detail belongs to
 let DVT_DETAIL_BUSY = false;
@@ -660,8 +670,9 @@ function errorsCard() {
 
 async function loadDvt() {
   try { DVT = await api('/api/dvt'); } catch { return; }
-  if (DVT && DVT.catalog && DVT.catalog.tests) Object.entries(DVT.catalog.tests).forEach(([tid, t]) => {   // electrical safety: done by hand, once, on UUT-01; the engineer approves it
-    if (t.group === 'ELE') { t.auto = false; t.manual = true; if ((t.units || []).includes('UUT-01')) t.units = ['UUT-01']; }
+  if (DVT && DVT.catalog && DVT.catalog.tests) Object.entries(DVT.catalog.tests).forEach(([tid, t]) => {   // electrical safety: done by hand, the engineer approves it - on the units the catalog lists (every unit since catalog 0.71, user 2026-11-15; was forced to UUT-01)
+    if (t.group === 'ELE') { t.auto = false; t.manual = true; }
+    if (t.upload) { t.auto = false; t.manual = false; }
   });
   if (DVT && DVT.catalog && Array.isArray(DVT.catalog.phases))   // tests listed in ascending order inside each phase (user, 2026-10-25)
     DVT.catalog.phases.forEach(p => { if (Array.isArray(p.tests)) p.tests = p.tests.slice().sort((a, b) => a.localeCompare(b, 'en', { numeric: true })); });
@@ -1182,6 +1193,110 @@ function dvtRunPanel(u, runnable) {
     </div>`;
 }
 
+// ---- upload tests (catalog record: upload - DVT-OPT-003, the UV Uniformity Jig's workbook, user 2026-11-15): the jig runs on
+//      its own; the person uploads its final workbook with the date of the scan, and the upload records the run as PASS.
+//      The workbook's Readings sheet is read here, in the browser, so the site can draw the jig's heatmap of it.
+let DVT_UPLOAD_OPEN = '';     // the test whose upload form is open
+let DVT_UPLOAD_MSG = '';
+const XLSX_LIB = ['https:', '', 'cdnjs.cloudflare.com', 'ajax', 'libs', 'xlsx', '0.18.5', 'xlsx.full.min.js'].join('/');
+
+function dvtUploadCtl(x, byId) {
+  const r = byId[x.owed[0]];
+  if (!r || String(r.verdict).toUpperCase() !== 'PASS')
+    return `<button class="run-btn primary" data-dvt-upload="${x.tid}" title="Upload the scan file the UV Uniformity Jig saved (CSV, or its Excel workbook)">⬆ Upload scan file</button>`;
+  const map = (r.files || []).some(f => f.kind === 'uv_readings')
+    ? `<a class="run-btn" data-dvt-uvmap="${escH(r.runId)}" href="${window.scureUvMapHref ? window.scureUvMapHref(DVT.fileUrl, r.runId) : '#'}" target="_blank" rel="noopener">View uniformity</a>` : '';
+  return `<span class="mut" style="font-size:.78rem">scan of ${escH((r.values || {}).test_date || '')} · uploaded by ${escH(r.operator || '')}</span>${map}
+    <button class="run-btn" data-dvt-upload="${x.tid}" title="Upload a newer scan file in place of this one">Replace</button>`;
+}
+
+function dvtUploadForm(x, u) {
+  const d = new Date(), today = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const needName = !(ME && ME.via === 'google');
+  let saved = '';
+  try { saved = localStorage.getItem('scure_approver') || ''; } catch { saved = ''; }
+  // the CureBox the run belongs to: the one on screen, else the one whose runner holds this unit
+  const box = SELECTED !== 'all' && SELECTED !== DVT_NONE ? SELECTED : (((DVT && DVT.runners) || []).find(r => r.unit === u) || {}).machine || '';
+  return `<div class="dvt-upload" data-dvt-upload-form="${x.tid}" data-unit="${escH(u)}" data-machine="${escH(box)}" style="display:flex;flex-wrap:wrap;gap:.8rem;align-items:flex-end;padding:.6rem 1rem .8rem;border-top:1px solid var(--line)">
+      <label class="mut" style="font-size:.8rem">Date of the scan<br><input type="date" id="up-date" value="${today}" style="font-size:16px"></label>
+      <label class="mut" style="font-size:.8rem">Scan file from the jig (.csv or .xlsx)<br><input type="file" id="up-file" accept=".csv,.xlsx,.xlsm,.xls" style="font-size:16px"></label>
+      ${needName ? `<label class="mut" style="font-size:.8rem">Your name<br><input type="text" id="up-who" value="${escH(saved)}" style="font-size:16px;width:10rem"></label>` : ''}
+      <button class="primary" id="up-go">Upload</button><button id="up-cancel">Cancel</button>
+      <span class="${DVT_UPLOAD_MSG ? 'err-t' : 'mut'}" id="up-msg" style="flex-basis:100%;font-size:.85rem">${escH(DVT_UPLOAD_MSG || 'Uploading records ' + x.tid + ' on ' + u + ' as passed.')}</span></div>`;
+}
+
+/** The jig's scan as its readings CSV: x_idx,y_idx,z_idx,direction,reading (only rows with a reading). The jig saves its scan
+ *  as a CSV (utc,row,id,phase,x_idx,y_idx,z_idx,...,direction,...,reading - user, 2026-11-15); its Excel workbook (Readings
+ *  sheet: X idx, Y idx, Z idx, Direction, Reading) is read too. */
+async function uvReadingsCsv(buf, name) {
+  let rows;
+  if (/\.csv$/i.test(name || '')) {
+    const p = cmpParseCsv(new TextDecoder().decode(buf).replace(/^﻿/, ''));
+    rows = [p.header].concat(p.rows);
+  } else rows = await uvWorkbookRows(buf);
+  const head = (rows[0] || []).map(h => String(h == null ? '' : h).trim().toLowerCase());
+  const col = (...names) => head.findIndex(h => names.includes(h));
+  const cx = col('x idx', 'x_idx'), cy = col('y idx', 'y_idx', 'y'), cz = col('z idx', 'z_idx'), cd = col('direction'), cr = col('reading');
+  if ([cx, cy, cz, cd, cr].some(i => i < 0)) throw new Error('this file has no x_idx, y_idx, z_idx, direction and reading columns - choose the scan file the jig saved');
+  const out = ['x_idx,y_idx,z_idx,direction,reading'];
+  rows.slice(1).forEach(r => {
+    const raw = r[cr];
+    const v = Number(raw);
+    if (raw === '' || raw == null || !isFinite(v)) return;
+    out.push([r[cx], r[cy], r[cz], String(r[cd] == null ? '' : r[cd]).trim().toUpperCase(), v].join(','));
+  });
+  if (out.length < 2) throw new Error('the file has no readings yet - upload the finished scan');
+  return out.join('\n');
+}
+
+/** The rows of the jig workbook's Readings sheet (SheetJS, loaded from the CDN the first time it is needed). */
+async function uvWorkbookRows(buf) {
+  if (!window.XLSX) await new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = XLSX_LIB; sc.onload = ok;
+    sc.onerror = () => bad(new Error('the Excel reader could not be loaded - check the internet connection'));
+    document.head.appendChild(sc);
+  });
+  const wb = window.XLSX.read(new Uint8Array(buf), { type: 'array' });
+  const ws = wb.Sheets.Readings || wb.Sheets[wb.SheetNames[0]];
+  return window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+}
+
+const toBase64 = buf => {
+  const b = new Uint8Array(buf);
+  let t = '';
+  for (let i = 0; i < b.length; i += 0x8000) t += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return btoa(t);
+};
+
+async function dvtUploadGo(form) {
+  const say = t => { DVT_UPLOAD_MSG = t; const m = document.getElementById('up-msg'); if (m) { m.textContent = t; m.className = 'err-t'; } };
+  const tid = form.dataset.dvtUploadForm, unit = form.dataset.unit, machine = form.dataset.machine || '';
+  const date = document.getElementById('up-date').value;
+  const file = (document.getElementById('up-file').files || [])[0];
+  const whoEl = document.getElementById('up-who');
+  const who = whoEl ? whoEl.value.trim() : '';
+  if (!date) return say('Fill in the date of the scan.');
+  if (!file) return say('Choose the scan file the jig saved.');
+  if (whoEl && !who) return say('Write who uploads.');
+  if (whoEl) { try { localStorage.setItem('scure_approver', who); } catch { /* a private window: not remembered */ } }
+  const go = document.getElementById('up-go');
+  go.disabled = true;
+  const busy = t => { const m = document.getElementById('up-msg'); if (m) { m.textContent = t; m.className = 'mut'; } };
+  busy('Reading the scan file…');
+  let buf, csv;
+  try { buf = await file.arrayBuffer(); csv = await uvReadingsCsv(buf, file.name); }
+  catch (e) { go.disabled = false; return say(String((e && e.message) || e)); }
+  busy(`Uploading ${csv.split('\n').length - 1} readings and the scan file…`);
+  let r = null;
+  try { r = await api('/api/dvt/upload', { method: 'POST', body: JSON.stringify({ unit, testId: tid, date, fileName: file.name, content: toBase64(buf), csv, who, machine }) }); }
+  catch (e) { r = { ok: false, message: String((e && e.message) || e) }; }
+  if (!r || r.ok === false) { go.disabled = false; return say((r && r.message) || 'the upload failed'); }
+  DVT_UPLOAD_OPEN = ''; DVT_UPLOAD_MSG = '';
+  await loadDvt();
+  render();
+}
+
 function dvtCatalogCard(all, picker, where) {
   const cat = DVT.catalog;
   const stale = DVT.build && DVT.build !== PORTAL_BUILD
@@ -1263,7 +1378,8 @@ function dvtCatalogCard(all, picker, where) {
             : x.t.auto ? `<button class="run-btn" data-dvt-run-test="${x.tid}" title="Queue this test on ${escH(SELECTED)} - one click runs ${x.owed.length > 1 ? 'all ' + x.owed.length + (new Set((x.t.runs || []).map(k => String(k).split('|')[0])).size > 1 ? ' cases' : ' runs') + ' one after another' : 'it'}; it starts when someone there presses Start">▶ Run</button>`
             : ''}${x.t.manual ? (x.verdict === 'PASS'
               ? `<span class="mut" style="font-size:.78rem">approved by ${escH(((byId[x.owed[0]] || {}).operator) || '')}</span><button class="run-btn" data-dvt-approve="${x.tid}" data-v="0" title="Take the approval back">Withdraw</button>`
-              : `<button class="run-btn primary" data-dvt-approve="${x.tid}" data-v="1" title="The engineer did this test by hand: record it as passed">✓ Approve</button>`) : ''}</div>
+              : `<button class="run-btn primary" data-dvt-approve="${x.tid}" data-v="1" title="The engineer did this test by hand: record it as passed">✓ Approve</button>`) : ''}${x.t.upload ? dvtUploadCtl(x, byId) : ''}</div>
+        ${x.t.upload && DVT_UPLOAD_OPEN === x.tid ? dvtUploadForm(x, u) : ''}
         ${to ? `<div class="dvt-runs">${dvtDetailHtml(x.tid, x, runnerNow, verdictOf)}<table class="cards"><tr><th>Variant</th><th>Rep</th><th>Verdict</th><th>Operator</th><th>Recorded</th></tr>${x.owed.map(runRow).join('')}</table></div>` : ''}`;
     }).join('');
     return `<div class="dvt-phase">${head}${rows || `<p class="mut" style="padding:.6rem 1rem">${q ? 'Nothing matches the search' : 'No tests on this unit'}</p>`}</div>`;
@@ -1543,6 +1659,14 @@ function overviewWire() {
 // a reference column and flagged when it is off by more than the tolerance; a yes/no check is flagged when the columns disagree.
 const CMP = { mode: 'units', test: '', variant: null, unit: '', basis: 'latest', ref: '', tol: 10, kind: '', col: '', texts: {}, loading: false, err: '' };
 const CMP_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#4b5563'];
+const CMP_ALL = '__all';      // the Column choice that draws every column of the file at once (user, 2026-11-15: all 16 grid thermocouples)
+/** A grid thermocouple column (Z<level>-<pos>_c): one hue per level, top to bottom, four shades for the four positions. */
+const cmpGridColor = col => {
+  const m = /^Z(\d)-(\d)_c$/.exec(col);
+  if (!m) return null;
+  const hue = [217, 142, 32, 272][(Number(m[1]) - 1) % 4], light = [30, 42, 54, 66][(Number(m[2]) - 1) % 4];
+  return `hsl(${hue} 70% ${light}%)`;
+};
 const cmpIsStamp = k => /(^|_)(timestamp|time_stamp)$|^timestamp/i.test(k);
 const cmpNum = v => typeof v === 'number' && isFinite(v);
 const cmpFmt = v => cmpNum(v) ? (Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 100 ? v.toFixed(1) : String(Math.round(v * 1000) / 1000)) : v === true ? 'yes' : v === false ? 'no' : v == null ? '—' : String(v);
@@ -1669,8 +1793,8 @@ function cmpChart(series, xName, yName) {
   const marks = /chamber|temp/i.test(yName) ? [30, 40, 50, 60].filter(v => v > y0 && v < y1).map(v =>
     `<line data-mark="${v}" x1="${L}" y1="${sy(v).toFixed(1)}" x2="${W - R}" y2="${sy(v).toFixed(1)}" stroke="currentColor" stroke-opacity="0.35" stroke-dasharray="5 4"/>` +
     `<text x="${W - R - 2}" y="${(sy(v) - 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">${v} °C</text>`).join('') : '';
-  const lines = series.map((s, i) => `<polyline fill="none" stroke="${CMP_COLORS[i % CMP_COLORS.length]}" stroke-width="1.6" points="${s.pts.map(p => sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join(' ')}"><title>${escH(s.label)}</title></polyline>`).join('');
-  const legend = series.map((s, i) => `<span style="font-size:.8rem"><span style="display:inline-block;width:.9rem;height:3px;background:${CMP_COLORS[i % CMP_COLORS.length]};vertical-align:middle"></span> ${escH(s.label)}</span>`).join(' &nbsp; ');
+  const lines = series.map((s, i) => `<polyline fill="none" stroke="${s.color || CMP_COLORS[i % CMP_COLORS.length]}" stroke-width="1.6"${s.dash ? ` stroke-dasharray="${['', '7 4', '2 3', '10 3 2 3'][s.dash % 4]}"` : ''} points="${s.pts.map(p => sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join(' ')}"><title>${escH(s.label)}</title></polyline>`).join('');
+  const legend = series.map((s, i) => `<span style="font-size:.8rem;white-space:nowrap"><span style="display:inline-block;width:.9rem;height:3px;background:${s.color || CMP_COLORS[i % CMP_COLORS.length]};vertical-align:middle"></span> ${escH(s.label)}</span>`).join(' &nbsp; ');
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--text)" role="img" aria-label="Curve comparison">${g}${marks}${lines}
     <text x="${(L + W - R) / 2}" y="${H - 4}" font-size="11" text-anchor="middle" fill="currentColor">${escH(xName)}</text>
     <text x="12" y="${H / 2}" font-size="11" text-anchor="middle" fill="currentColor" transform="rotate(-90 12 ${H / 2})">${escH(yName)}</text></svg>
@@ -1714,7 +1838,9 @@ function compareCard() {
   if (!testIds.includes(CMP.test)) { CMP.test = testIds[0]; CMP.variant = null; }
   const ofTest = runs.filter(r => r.testId === CMP.test);
   const variants = [...new Set(ofTest.map(r => r.variant))];
-  if (CMP.variant === null || !variants.includes(CMP.variant)) CMP.variant = variants[0];
+  // a test opens on the variant of its most recent run (user, 2026-11-15: SAF-016 opened on yesterday's per-panel variant
+  // from an earlier catalog shape, today's run - no variant - was one click away)
+  if (CMP.variant === null || !variants.includes(CMP.variant)) CMP.variant = ofTest.slice().sort((a, b) => dvtWhen(b) - dvtWhen(a))[0].variant;
   const units = [...new Set(ofTest.map(r => r.unit))].sort();
   if (!units.includes(CMP.unit)) CMP.unit = units[0];
   const cols = cmpColumns(runs);
@@ -1764,11 +1890,26 @@ function compareCard() {
     const loaded = list.filter(f => CMP.texts[f.id] && CMP.texts[f.id].header.length);
     const header = loaded.length ? CMP.texts[loaded[0].id].header : [];
     const numCols = header.filter((h, i) => i > 0 && loaded.some(f => CMP.texts[f.id].rows.some(r => cmpNum(r[i]))));
-    if (!numCols.includes(CMP.col)) CMP.col = numCols[0] || '';
+    // a grid file (the 16 thermocouples Z1-1 .. Z4-4) opens on all of them together; any file can show every column
+    const isGrid = numCols.filter(c => cmpGridColor(c)).length >= 16;
+    if (CMP.col === CMP_ALL && numCols.length < 2) CMP.col = '';
+    if (CMP.col !== CMP_ALL && !numCols.includes(CMP.col)) CMP.col = isGrid ? CMP_ALL : (numCols[0] || '');
     let chart = '';
     if (CMP.err) chart = `<p class="pill off">${escH(CMP.err)}</p>`;
     else if (CMP.loading) chart = '<p class="mut">Loading the files…</p>';
     else if (list.some(f => !(f.id in CMP.texts))) chart = `<p class="mut">${list.filter(f => !(f.id in CMP.texts)).length} file(s) not loaded yet.</p>`;
+    else if (CMP.col === CMP_ALL) {
+      const series = loaded.flatMap((f, fi) => {
+        const d = CMP.texts[f.id], step = Math.max(1, Math.floor(d.rows.length / 800));
+        return numCols.map((col, ci) => {
+          const yj = d.header.indexOf(col);
+          return { label: (loaded.length > 1 ? f.label + ' ' : '') + col.replace(/_c$/, ''), color: cmpGridColor(col) || CMP_COLORS[ci % CMP_COLORS.length], dash: fi,
+                   pts: yj < 0 ? [] : d.rows.filter((r, i) => i % step === 0 && cmpNum(r[0]) && cmpNum(r[yj])).map(r => [r[0], r[yj]]) };
+        });
+      }).filter(x => x.pts.length);
+      chart = series.length ? cmpChart(series, header[0], isGrid ? 'grid thermocouples (C)' : 'all columns') : '<p class="mut">No numeric samples in these columns.</p>';
+      if (series.length && loaded.length > 1) chart += `<p class="mut" style="margin:.3rem 0 0;font-size:.85rem">Line style per file: ${loaded.map((f, fi) => escH(f.label) + ' ' + ['solid', 'dashed', 'dotted', 'dash-dot'][fi % 4]).join(', ')}.</p>`;
+    }
     else if (CMP.col) {
       const xi = 0, yi = header.indexOf(CMP.col);
       const series = loaded.map(f => {
@@ -1780,7 +1921,7 @@ function compareCard() {
     curves = `<div class="card"><h2>Curves <span class="mut" style="font-weight:400;text-transform:none">${list.length} file(s) of the compared ${CMP.mode === 'runs' ? 'runs' : 'units'}, laid on one chart</span></h2>
       <div class="row" style="gap:1rem;align-items:flex-end;margin-bottom:.6rem;flex-wrap:wrap">
         ${sel('cmp-kind', kinds.map(k => [k, k.replace(/_/g, ' ') + ' (' + files[k].length + ')']), CMP.kind, 'Measurement')}
-        ${numCols.length ? sel('cmp-col', numCols.map(c => [c, c]), CMP.col, 'Column') : ''}
+        ${numCols.length ? sel('cmp-col', (numCols.length > 1 ? [[CMP_ALL, `All ${numCols.length} columns`]] : []).concat(numCols.map(c => [c, c])), CMP.col, 'Column') : ''}
         <button id="cmp-load" ${CMP.loading ? 'disabled' : ''}>${loaded.length === list.length ? 'Reload' : 'Load the curves'}</button></div>${chart}</div>`;
   }
   return `<div class="card"><h2>Compare results <span class="mut" style="font-weight:400;text-transform:none">${escH(title(CMP.test))}</span></h2>${controls}${table}</div>${curves}`;
@@ -2060,6 +2201,19 @@ function render() {
     const tid = b.dataset.dvtRunCard;
     dvtGuide(tid, dvtTitleOf(tid));
   });
+  [...document.querySelectorAll('[data-dvt-upload]')].forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    DVT_UPLOAD_OPEN = DVT_UPLOAD_OPEN === b.dataset.dvtUpload ? '' : b.dataset.dvtUpload;
+    DVT_UPLOAD_MSG = '';
+    render();
+  });
+  [...document.querySelectorAll('[data-dvt-uvmap]')].forEach(a => a.onclick = ev => ev.stopPropagation());
+  const upForm = document.querySelector('[data-dvt-upload-form]');
+  if (upForm) {
+    upForm.onclick = ev => ev.stopPropagation();
+    document.getElementById('up-cancel').onclick = () => { DVT_UPLOAD_OPEN = ''; DVT_UPLOAD_MSG = ''; render(); };
+    document.getElementById('up-go').onclick = () => dvtUploadGo(upForm);
+  }
   [...document.querySelectorAll('[data-dvt-approve]')].forEach(b => b.onclick = async ev => {
     ev.stopPropagation();
     const tid = b.dataset.dvtApprove, yes = b.dataset.v === '1';

@@ -25,7 +25,7 @@ OUT = HERE / "dvt-catalog.js"
 TEST_KEYS = ("test_id", "group", "after_all", "title", "subsystem", "method", "purpose", "applicability", "sample_rationale",
              "safety_critical", "safety_plan", "equipment", "preconditions", "procedure_steps", "data_fields",
              "pass_criteria", "repetitions", "duration_est_min", "dependencies", "sweep", "case_matrix", "uv_wavelength_nm",
-             "external_heat")
+             "external_heat", "record")   # record: upload - DVT-OPT-003, the site shows Upload workbook (2026-11-15)
 
 
 def build() -> str:
