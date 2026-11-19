@@ -26,7 +26,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | 2.2 (חלק ראשון) | 2026-11-13 | sCure CS 1.0.184, רק לנושא ה-storage stick | אמצעי הגיבוי הוא USB storage stick. קוד חדש 4004. | [טבלת גרסאות](sCure_SRS.html#revisions) |
 | 2.2 (חלק שני) | 2026-11-17 | sCure CS 1.0.229 | Organization HUB, שפות ממשק, כיול damper, שינויים בבדיקת LED, שינויי רמת חומרה של חיישנים, עשרה Open Issues חדשים. | [טבלת גרסאות](sCure_SRS.html#revisions) |
 | 2.2 (עריכה) | 2026-11-17 | sCure CS 1.0.229 | [OI-64](sCure_SRS.html#oi-64) נפתח מחדש. [OI-84](sCure_SRS.html#oi-84) חדש: trip אמיתי של ה-watchdog אינו נותן Err 9017. | [טבלת גרסאות](sCure_SRS.html#revisions) |
-| 2.3 (טיוטה) | 2026-11-18 | sCure CS 1.0.234 | דיסקונקי חסר נותן את האזהרה Err 4005, שלא חוסמת שום דבר. סעיף חדש §11.8: שפות ו-locale. [OI-85](sCure_SRS.html#oi-85) חדש. | [טבלת גרסאות](sCure_SRS.html#revisions) |
+| 2.3 (טיוטה) | 2026-11-18 | sCure CS 1.0.234 | דיסקונקי חסר נותן את האזהרה Err 4005, שלא חוסמת שום דבר. סעיף חדש §11.8: שפות ו-locale. OI-85 חדש. | [טבלת גרסאות](sCure_SRS.html#revisions) |
 
 הערות:
 
@@ -41,26 +41,26 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 | תחום ב-SRS | הדרישות בגרסה 1.0 | SRS |
 |---|---|---|
-| תהליך | ארבעה מנגנונים: Drying, Heating, Curing ו-Cooling. הסדר והפרמטרים שלהם לא הוגדרו ([OI-1](sCure_SRS.html#oi-1)). | [§1](sCure_SRS.html#intro) |
+| תהליך | ארבעה מנגנונים: Drying, Heating, Curing ו-Cooling. הסדר והפרמטרים שלהם לא הוגדרו (OI-1). | [§1](sCure_SRS.html#intro) |
 | גישה מרחוק | נתוני התהליך עלו לענן. GrabCAD הציג אותם למשתמש. | [§1.3](sCure_SRS.html#s-1-3) |
 | Setup | היחידה קראה את המספר הסידורי (SN) מ-Storage. אחר כך היא קראה מגיבוי ב-SD. אם לא היה SN, היחידה קיבלה SN מ-Cloud Service. | [§3.3.4](sCure_SRS.html#s-3-3-4) |
 | Setup | היחידה ניסתה את בקשת הענן עד חמש פעמים. אחר כך היא רשמה את עצמה בענן. | [§3.3.4](sCure_SRS.html#s-3-3-4) |
 | Setup | ה-SN נשמר ב-`/etc/scure/config.json`. הגיבוי נשמר ב-`/mnt/ssd2/scure/config_backup.json` על כרטיס ה-SD. | [§3.5](sCure_SRS.html#s-3-5) |
-| Setup Name | שם ברירת המחדל היה "S-Cure" ([OI-7](sCure_SRS.html#oi-7)). הכלל היחיד היה "לא ריק" ([OI-8](sCure_SRS.html#oi-8)). השם נשמר גם בגיבוי ה-SD. | [§4](sCure_SRS.html#name) |
+| Setup Name | שם ברירת המחדל היה "S-Cure" (OI-7). הכלל היחיד היה "לא ריק" ([OI-8](sCure_SRS.html#oi-8)). השם נשמר גם בגיבוי ה-SD. | [§4](sCure_SRS.html#name) |
 | Connect Organization | המשתמש טען קובץ CSV מכונן USB. ה-UUID הראשון בקובץ הפך ל-organization ID. מצב הפרק היה "לא סופי". | [§5](sCure_SRS.html#org) |
 | Home | כפתור Start Cure קבוע התחיל את ה-cure. כפתור Edit הציג Duplicate, Edit ו-Delete בכל שורה. | [§6.7](sCure_SRS.html#s-6-7) |
-| Home | שער ההתחלה היחיד היה בדיקת תוכנית של חנקן בלבד. בדיקת הדלת ובדיקה לפני cure היו פתוחות ([OI-13](sCure_SRS.html#oi-13)). | [§6.7.2](sCure_SRS.html#sec-step-rules) |
-| Home | הבונה נתן לכל צעד טמפרטורה וזמן. [OI-17](sCure_SRS.html#oi-17) אמר שזמן הצעד הוסר. שני הטקסטים לא התאימו. | [§6.7.2](sCure_SRS.html#sec-step-rules) |
+| Home | שער ההתחלה היחיד היה בדיקת תוכנית של חנקן בלבד. בדיקת הדלת ובדיקה לפני cure היו פתוחות (OI-13). | [§6.7.2](sCure_SRS.html#sec-step-rules) |
+| Home | הבונה נתן לכל צעד טמפרטורה וזמן. OI-17 אמר שזמן הצעד הוסר. שני הטקסטים לא התאימו. | [§6.7.2](sCure_SRS.html#sec-step-rules) |
 | Home | זמן התוכנית היה סכום זמני הצעדים. | [§6.7.3](sCure_SRS.html#sec-estimate) |
 | Cure Process | המסך שלט בהרצה. tick של שנייה אחת קידם את העלייה ואת הטיימרים. | [§7.3](sCure_SRS.html#s-7-3) |
-| Cure Process | המסך בדק תקיעה של הטמפרטורה (7004). האפשרויות Timer Start ו-UV Start לא הופעלו ([OI-16](sCure_SRS.html#oi-16)). | [§7.3.6](sCure_SRS.html#s-7-3-6) |
+| Cure Process | המסך בדק תקיעה של הטמפרטורה (7004). האפשרויות Timer Start ו-UV Start לא הופעלו (OI-16). | [§7.3.6](sCure_SRS.html#s-7-3-6) |
 | Cure History | המסך היה לקריאה בלבד. היה בו כפתור Download report. המפעיל לא יכול היה למחוק הרצה. | [§8](sCure_SRS.html#history) |
 | שגיאות | מאגר אחד, `public/config/errors.json`, עם 37 קודים בטווחים 3xxx עד 9xxx. הספרה הראשונה היא הפרק ב-SRS. | [§9](sCure_SRS.html#errors) |
-| שגיאות | היו שתי רמות חומרה (severity): critical ו-warning. הכלל שקובע איזו תקלה עוצרת הרצה היה פתוח ([OI-19](sCure_SRS.html#oi-19)). | [§9.5.1](sCure_SRS.html#s-9-5-1) |
+| שגיאות | היו שתי רמות חומרה (severity): critical ו-warning. הכלל שקובע איזו תקלה עוצרת הרצה היה פתוח (OI-19). | [§9.5.1](sCure_SRS.html#s-9-5-1) |
 | נתונים | כל הנתונים היו במסד PostgreSQL. בלי המסד, ה-API החזיר HTTP 503. | [§10](sCure_SRS.html#data) |
-| Settings | ה-damper, מחווני המאווררים ו-BOFA שינו רק את המסך ([OI-25](sCure_SRS.html#oi-25)). בדיקות המאוורר וה-LED היו מדומות ([OI-26](sCure_SRS.html#oi-26)). | [§11.3](sCure_SRS.html#s-11-3) |
-| Settings | ל-Nitrogen Mode היה מינימום של 6 bar. המסך הציג ערך קבוע "2.0 bar" ([OI-27](sCure_SRS.html#oi-27)). השעון הידני לא שינה את שעון המערכת ([OI-28](sCure_SRS.html#oi-28)). | [§11.3](sCure_SRS.html#s-11-3) |
-| Open Issues | 23 פריטים פתוחים: [OI-1](sCure_SRS.html#oi-1), [OI-6](sCure_SRS.html#oi-6) עד [OI-13](sCure_SRS.html#oi-13), [OI-15](sCure_SRS.html#oi-15) עד [OI-28](sCure_SRS.html#oi-28). | [§12](sCure_SRS.html#open) |
+| Settings | ה-damper, מחווני המאווררים ו-BOFA שינו רק את המסך (OI-25). בדיקות המאוורר וה-LED היו מדומות (OI-26). | [§11.3](sCure_SRS.html#s-11-3) |
+| Settings | ל-Nitrogen Mode היה מינימום של 6 bar. המסך הציג ערך קבוע "2.0 bar" (OI-27). השעון הידני לא שינה את שעון המערכת (OI-28). | [§11.3](sCure_SRS.html#s-11-3) |
+| Open Issues | 23 פריטים פתוחים: OI-1, OI-6 עד OI-13, [OI-15](sCure_SRS.html#oi-15) עד OI-28. | [§12](sCure_SRS.html#open) |
 
 לא מתועד: OI-2 עד OI-5 ו-OI-14 אינם בגרסה 1.0. ההיסטוריה אינה מראה מתי ולמה הם נסגרו.
 
@@ -83,7 +83,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 | נושא | לפני (1.0) | עכשיו (2.0) | SRS |
 |---|---|---|---|
-| סוגי תהליך | ארבעה מנגנונים, לא מוגדרים ([OI-1](sCure_SRS.html#oi-1)). | שישה סוגי תהליך: Drying, Heating, Cure, Bleaching, Nitrogen, Cooling. לכל אחד יש תנאי סיום. [OI-1](sCure_SRS.html#oi-1) נסגר. | [§1.2](sCure_SRS.html#s-1-2) |
+| סוגי תהליך | ארבעה מנגנונים, לא מוגדרים (OI-1). | שישה סוגי תהליך: Drying, Heating, Cure, Bleaching, Nitrogen, Cooling. לכל אחד יש תנאי סיום. OI-1 נסגר. | [§1.2](sCure_SRS.html#s-1-2) |
 | גישה מרחוק | GrabCAD הציג את התהליך. | sCure Cloud הוא הערוץ המרוחק היחיד. השאלה על GrabCAD היא [OI-29](sCure_SRS.html#oi-29). | [§1.3](sCure_SRS.html#s-1-3) |
 
 ### 4.2 Setup
@@ -95,20 +95,20 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | מקור ה-SN | Cloud Service, עם שחזור מ-SD. | המפעיל סורק את ברקוד ה-SN בסורק USB. ל-SN יש 3 עד 40 תווים. | [§3.3.4](sCure_SRS.html#s-3-3-4) |
 | הקלדה ידנית של SN | לא הוגדרה. | עשר נגיעות וסיסמת המכשיר מאפשרות לאיש שירות להקליד את ה-SN. | [§3.3.4](sCure_SRS.html#s-3-3-4) |
 | צעדי ענן | בדיקת אינטרנט, בקשת SN מהענן, רישום בענן. | הקושחה אינה מבצעת את הצעדים האלה. הקודים 3001, 3002 ו-3003 אינם בשימוש ([OI-30](sCure_SRS.html#oi-30)). | [§3.3.4](sCure_SRS.html#s-3-3-4) |
-| שמירת התצורה | `/etc/scure/config.json` וגיבוי ב-SD. | `ui-settings.json` ב-`/var/lib/scurebox`, וקובץ היצרן `system.json`. אין גיבוי ב-SD. [OI-6](sCure_SRS.html#oi-6) נסגר כלא רלוונטי. | [§3.5](sCure_SRS.html#s-3-5) |
+| שמירת התצורה | `/etc/scure/config.json` וגיבוי ב-SD. | `ui-settings.json` ב-`/var/lib/scurebox`, וקובץ היצרן `system.json`. אין גיבוי ב-SD. OI-6 נסגר כלא רלוונטי. | [§3.5](sCure_SRS.html#s-3-5) |
 | תקלת שמירה | היחידה מציגה שגיאה ועוצרת. | היחידה רק כותבת את התקלה ל-log ([OI-31](sCure_SRS.html#oi-31)). | [§3.5](sCure_SRS.html#s-3-5) |
-| Setup Name | ברירת מחדל "S-Cure" ([OI-7](sCure_SRS.html#oi-7)). | ברירת מחדל "sCure". [OI-7](sCure_SRS.html#oi-7) נסגר. | [§4.3.1](sCure_SRS.html#s-4-3-1) |
+| Setup Name | ברירת מחדל "S-Cure" (OI-7). | ברירת מחדל "sCure". OI-7 נסגר. | [§4.3.1](sCure_SRS.html#s-4-3-1) |
 | Connect Organization | קובץ CSV בלבד. | קובץ CSV או Sign in with Origin ([OI-34](sCure_SRS.html#oi-34)). | [§5.3.1](sCure_SRS.html#s-5-3-1) |
 
 ### 4.3 Home
 
 | נושא | לפני (1.0) | עכשיו (2.0) | SRS |
 |---|---|---|---|
-| שערי התחלה | רק בדיקת תוכנית של חנקן בלבד ([OI-13](sCure_SRS.html#oi-13)). | התראה critical פעילה, דלת פתוחה ובדיקת חנקן בלבד עוצרות את ההתחלה. אחר כך pre-check בודק את כל המאווררים. [OI-13](sCure_SRS.html#oi-13) נסגר. | [§6.8](sCure_SRS.html#s-6-8) |
+| שערי התחלה | רק בדיקת תוכנית של חנקן בלבד (OI-13). | התראה critical פעילה, דלת פתוחה ובדיקת חנקן בלבד עוצרות את ההתחלה. אחר כך pre-check בודק את כל המאווררים. OI-13 נסגר. | [§6.8](sCure_SRS.html#s-6-8) |
 | pre-check של מאווררים | לא הוגדר. | מאוורר שנכשל נותן "Fan failure". המפעיל בוחר Cancel או Continue anyway. | [§6.8](sCure_SRS.html#s-6-8) |
 | בדיקות התחלה במכונה | לא הוגדרו. | המכונה דוחה התחלה שאינה עומדת בכללי התוכנית. דחייה נותנת 6015 או קוד משלה. | [§9.5.1](sCure_SRS.html#s-9-5-1) |
-| זמן צעד | הבונה הציג זמן צעד, אבל [OI-17](sCure_SRS.html#oi-17) אמר שהזמן הוסר. שני הטקסטים לא התאימו. | לצעדים יש זמן החזקה: 1 עד 120 min, ב-Bleaching 1 עד 720 min. [OI-17](sCure_SRS.html#oi-17) נסגר כלא רלוונטי. | [§6.7.2](sCure_SRS.html#sec-step-rules) |
-| Presets | לא פורטו. | שישה presets. חלקם אינם עומדים בכללי התוכנית ([OI-35](sCure_SRS.html#oi-35)). | [§6.5](sCure_SRS.html#s-6-5) |
+| זמן צעד | הבונה הציג זמן צעד, אבל OI-17 אמר שהזמן הוסר. שני הטקסטים לא התאימו. | לצעדים יש זמן החזקה: 1 עד 120 min, ב-Bleaching 1 עד 720 min. OI-17 נסגר כלא רלוונטי. | [§6.7.2](sCure_SRS.html#sec-step-rules) |
+| Presets | לא פורטו. | שישה presets. חלקם אינם עומדים בכללי התוכנית (OI-35). | [§6.5](sCure_SRS.html#s-6-5) |
 | בחירה | התוכנית הראשונה נבחרה בטעינה. | שום תוכנית אינה נבחרת בטעינה. | [§6.5](sCure_SRS.html#s-6-5) |
 | היסטוריית הדפסות | נכתבה ל-PostgreSQL. | הדפסות מגיעות מ-sCure Cloud או מה-API. cure שהסתיים אינו מוסיף הדפסה ([OI-12](sCure_SRS.html#oi-12)). | [§6.4](sCure_SRS.html#s-6-4) |
 
@@ -119,7 +119,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | שליטה בהרצה | המסך שלט בהרצה. | הקושחה שולטת בהרצה. המסך וה-HTTP API משתמשים באותה הרצה. | [§7.3.1](sCure_SRS.html#s-7-3-1) |
 | מצבי הרצה | לא הוגדרו. | idle, preflight, running, paused, completed, aborted, error. | [§7.3.1](sCure_SRS.html#s-7-3-1) |
 | פעולות המפעיל | Abort בלבד. | Pause, Continue ו-Abort במסך. Skip רק דרך ה-API. | [§7.3.5](sCure_SRS.html#s-7-3-5) |
-| Timer Start ו-UV Start | לא הופעלו ([OI-16](sCure_SRS.html#oi-16)). | מופעלים בזמן ההרצה. [OI-16](sCure_SRS.html#oi-16) נסגר. | [§7.3.3](sCure_SRS.html#s-7-3-3) |
+| Timer Start ו-UV Start | לא הופעלו (OI-16). | מופעלים בזמן ההרצה. OI-16 נסגר. | [§7.3.3](sCure_SRS.html#s-7-3-3) |
 | בדיקות במסך | בדיקת תקיעה (7004). | גם דלת פתוחה, ערך טמפרטורה קפוא (9006), חיישן התא (9010), כשל מאוורר ובדיקות פאנל LED. הבדיקות האלה קיימות רק במסך ([OI-47](sCure_SRS.html#oi-47)). | [§7.3.6](sCure_SRS.html#s-7-3-6) |
 | דלת פתוחה | הדלת נעולה בזמן ההרצה. | ה-watchdog של הדלת עוצר את ההרצה אחרי 10 s (6016). המסך כותב "Paused", אבל ההרצה ממשיכה ([OI-42](sCure_SRS.html#oi-42)). | [§9.14.6](sCure_SRS.html#s-9-14-6) |
 | רשומת ההרצה | התחלה, טלמטריה, סיום. | טלמטריה כל 2 s, זמני שלבים, התראות בזמן ההרצה, בעיות חיישנים ומאווררים. היחידה שומרת 25 הרצות. | [§7.3.8](sCure_SRS.html#s-7-3-8) |
@@ -142,17 +142,17 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | מבנה הקודים | קודים קבוצתיים, למשל 9001 לכל החיישנים. | קוד אחד לכל רכיב. 9001 עד 9005, 9050 ו-9051 הם עכשיו כותרות משפחה בלבד. | [§9.3](sCure_SRS.html#s-9-3) |
 | קודים חדשים | לא רלוונטי. | 6016 (watchdog של הדלת), 9002 עד 9007, 9010 עד 9014, 9020 עד 9025, 9030 עד 9034, 9040 עד 9045, 9051, 9052, 9060 עד 9065. | [§9.11.6](sCure_SRS.html#s-9-11-6) |
 | שינוי רמת חומרה | 9082 היה critical. | 9082 הוא warning. | [§9.5](sCure_SRS.html#s-9-5) |
-| כלל עצירה | פתוח ([OI-19](sCure_SRS.html#oi-19)). | §9.5.1 מגדיר שני שערים: שער Start Cure, ובדיקת המכונה לפני כל צעד. [OI-19](sCure_SRS.html#oi-19) נסגר. | [§9.5.1](sCure_SRS.html#s-9-5-1) |
-| קודי שגיאה ב-API | טקסט חופשי ([OI-18](sCure_SRS.html#oi-18)). | דחייה מחזירה את קוד המאגר שלה או 6015. [OI-18](sCure_SRS.html#oi-18) נסגר. קודים שאינם בשימוש הם עכשיו [OI-59](sCure_SRS.html#oi-59). | [§9.4](sCure_SRS.html#s-9-4) |
-| ניקוי התראות | רק על ידי המפעיל ([OI-20](sCure_SRS.html#oi-20)). | המכונה מנקה את רוב הקודים. המסך שומר אותם עד שהמפעיל סוגר אותם ([OI-61](sCure_SRS.html#oi-61)). | [§9.6](sCure_SRS.html#s-9-6) |
-| התראות הדגמה | נטענו ([OI-21](sCure_SRS.html#oi-21)). | אין התראות הדגמה. [OI-21](sCure_SRS.html#oi-21) נסגר. | [§9.7](sCure_SRS.html#s-9-7) |
+| כלל עצירה | פתוח (OI-19). | §9.5.1 מגדיר שני שערים: שער Start Cure, ובדיקת המכונה לפני כל צעד. OI-19 נסגר. | [§9.5.1](sCure_SRS.html#s-9-5-1) |
+| קודי שגיאה ב-API | טקסט חופשי (OI-18). | דחייה מחזירה את קוד המאגר שלה או 6015. OI-18 נסגר. קודים שאינם בשימוש הם עכשיו [OI-59](sCure_SRS.html#oi-59). | [§9.4](sCure_SRS.html#s-9-4) |
+| ניקוי התראות | רק על ידי המפעיל (OI-20). | המכונה מנקה את רוב הקודים. המסך שומר אותם עד שהמפעיל סוגר אותם ([OI-61](sCure_SRS.html#oi-61)). | [§9.6](sCure_SRS.html#s-9-6) |
+| התראות הדגמה | נטענו (OI-21). | אין התראות הדגמה. OI-21 נסגר. | [§9.7](sCure_SRS.html#s-9-7) |
 
 ### 4.7 נתונים
 
 | נושא | לפני (1.0) | עכשיו (2.0) | SRS |
 |---|---|---|---|
 | אחסון | PostgreSQL בלבד. HTTP 503 בלעדיו. | קבצי JSON בתיקיית הנתונים הם ברירת המחדל. PostgreSQL הוא אופציונלי ([OI-65](sCure_SRS.html#oi-65)). | [§10.1](sCure_SRS.html#s-10-1) |
-| טבלאות | טבלאות מנורמלות ([OI-23](sCure_SRS.html#oi-23), [OI-24](sCure_SRS.html#oi-24)). | הטבלאות חלות רק על ה-backend האופציונלי של PostgreSQL. [OI-23](sCure_SRS.html#oi-23) ו-OI-24 הוחלפו. | [§10.7](sCure_SRS.html#s-10-7) |
+| טבלאות | טבלאות מנורמלות (OI-23, OI-24). | הטבלאות חלות רק על ה-backend האופציונלי של PostgreSQL. OI-23 ו-OI-24 הוחלפו. | [§10.7](sCure_SRS.html#s-10-7) |
 | שמירה | לא הוגדרה. | §10.2 מגדיר לכל סוג נתונים: מקום, זמן כתיבה, זמן שמירה והשפעה של הפסקת חשמל. | [§10.2](sCure_SRS.html#s-10-2) |
 | Reflash | לא הוגדר. | Reflash מוחק את כל הנתונים ביחידה ([OI-67](sCure_SRS.html#oi-67)). | [§10.5](sCure_SRS.html#s-10-5) |
 
@@ -160,10 +160,10 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 | נושא | לפני (1.0) | עכשיו (2.0) | SRS |
 |---|---|---|---|
-| Damper, מאווררים, BOFA | מסך בלבד ([OI-25](sCure_SRS.html#oi-25)). | הבקרים מפעילים את החומרה. [OI-25](sCure_SRS.html#oi-25) נסגר. חוסרים במשוב הם [OI-50](sCure_SRS.html#oi-50) ו-OI-51. | [§11.3](sCure_SRS.html#s-11-3) |
-| בדיקות מאוורר ו-LED | מדומות ([OI-26](sCure_SRS.html#oi-26)). | בדיקות אמיתיות. בדיקת ה-LED מדליקה את הפאנלים ומודדת את עליית הטמפרטורה. [OI-26](sCure_SRS.html#oi-26) נסגר. | [§11.3](sCure_SRS.html#s-11-3) |
-| Nitrogen Mode | מינימום 6 bar. המסך הציג ערך קבוע "2.0 bar" ([OI-27](sCure_SRS.html#oi-27)). | לחץ חי. מינימום 1 bar ([OI-53](sCure_SRS.html#oi-53)). | [§11.3](sCure_SRS.html#s-11-3) |
-| תאריך ושעה | Apply לא שינה את השעון ([OI-28](sCure_SRS.html#oi-28)). | Apply משנה את שעון המערכת. Auto Sync ואזור הזמן הם [OI-54](sCure_SRS.html#oi-54). | [§11.3](sCure_SRS.html#s-11-3) |
+| Damper, מאווררים, BOFA | מסך בלבד (OI-25). | הבקרים מפעילים את החומרה. OI-25 נסגר. חוסרים במשוב הם [OI-50](sCure_SRS.html#oi-50) ו-OI-51. | [§11.3](sCure_SRS.html#s-11-3) |
+| בדיקות מאוורר ו-LED | מדומות (OI-26). | בדיקות אמיתיות. בדיקת ה-LED מדליקה את הפאנלים ומודדת את עליית הטמפרטורה. OI-26 נסגר. | [§11.3](sCure_SRS.html#s-11-3) |
+| Nitrogen Mode | מינימום 6 bar. המסך הציג ערך קבוע "2.0 bar" (OI-27). | לחץ חי. מינימום 1 bar ([OI-53](sCure_SRS.html#oi-53)). | [§11.3](sCure_SRS.html#s-11-3) |
+| תאריך ושעה | Apply לא שינה את השעון (OI-28). | Apply משנה את שעון המערכת. Auto Sync ואזור הזמן הם [OI-54](sCure_SRS.html#oi-54). | [§11.3](sCure_SRS.html#s-11-3) |
 | Lead On Time | שדה עם אזהרה W/1053. | הוסר. הקושחה מציגה שעות פעולה של רכיבים ([OI-56](sCure_SRS.html#oi-56)). | [§11.3](sCure_SRS.html#s-11-3) |
 | Developer Mode | לא הוגדר. | עשר נגיעות ו-PIN של ארבע ספרות. ה-PIN זהה בכל היחידות ([OI-57](sCure_SRS.html#oi-57)). | [§11.5](sCure_SRS.html#s-11-5) |
 | NFC | מתג הפעלה וכיבוי. | המתג נעול כשאין קורא NFC. הפעלה בלי קורא נותנת 9052. | [§11.3](sCure_SRS.html#s-11-3) |
@@ -171,7 +171,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 ### 4.9 Open Issues בגרסה 2.0
 
 - 41 Open Issues חדשים: [OI-29](sCure_SRS.html#oi-29) עד [OI-69](sCure_SRS.html#oi-69).
-- 19 פריטים מגרסה 1.0 נסגרו, הוחלפו או הפכו ללא רלוונטיים. אלה [OI-1](sCure_SRS.html#oi-1), 6, 7, 9, 11, 13, 16 עד 28. [OI-18](sCure_SRS.html#oi-18) ו-OI-20 "נפתרו ברובם". [OI-28](sCure_SRS.html#oi-28) "נפתר בחלקו". OI אחרים מחזיקים את החלקים שנשארו.
+- 19 פריטים מגרסה 1.0 נסגרו, הוחלפו או הפכו ללא רלוונטיים. אלה OI-1, 6, 7, 9, 11, 13, 16 עד 28. OI-18 ו-OI-20 "נפתרו ברובם". OI-28 "נפתר בחלקו". OI אחרים מחזיקים את החלקים שנשארו.
 - 4 פריטים נשארו פתוחים מגרסה 1.0: [OI-8](sCure_SRS.html#oi-8), [OI-10](sCure_SRS.html#oi-10), [OI-12](sCure_SRS.html#oi-12), [OI-15](sCure_SRS.html#oi-15).
 
 ## 5 גרסה 2.1 (2026-11-03, sCure CS 1.0.141)
@@ -182,7 +182,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 |---|---|---|---|
 | גיבוי SN | אין גיבוי. | ל-SN יש עותק שני על כרטיס נשלף. הקודים 3001 ו-4003 בשימוש בפעם הראשונה. | [§3.3.6](sCure_SRS.html#s-3-3-6) |
 | Boot self-test | שש בדיקות. | שבע בדיקות. הבדיקה החדשה היא חיישן לחץ ה-N2, עם המתנה של עד 20 s. | [§3.3.1](sCure_SRS.html#s-3-3-1) |
-| [OI-6](sCure_SRS.html#oi-6) | לא רלוונטי. | נפתח מחדש ונפתר, כי הגיבוי חזר. | [OI-6](sCure_SRS.html#oi-6) |
+| OI-6 | לא רלוונטי. | נפתח מחדש ונפתר, כי הגיבוי חזר. | OI-6 |
 
 ### 5.2 Home
 
@@ -228,8 +228,8 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 ### 5.7 Open Issues בגרסה 2.1
 
-- 5 חדשים: [OI-70](sCure_SRS.html#oi-70) (מתכונים זמניים), [OI-71](sCure_SRS.html#oi-71) (תרשימי Home ישנים), [OI-72](sCure_SRS.html#oi-72) (BOFA לא נמדד), [OI-73](sCure_SRS.html#oi-73) (ספי UV), [OI-74](sCure_SRS.html#oi-74) (אין אמצעי נשלף ב-Origin image).
-- נסגרו או הוחלפו: [OI-64](sCure_SRS.html#oi-64) (נפתר ב-1.0.110), [OI-35](sCure_SRS.html#oi-35) (הוחלף ב-OI-70), [OI-6](sCure_SRS.html#oi-6) (נפתח מחדש ונפתר).
+- 5 חדשים: [OI-70](sCure_SRS.html#oi-70) (מתכונים זמניים), [OI-71](sCure_SRS.html#oi-71) (תרשימי Home ישנים), [OI-72](sCure_SRS.html#oi-72) (BOFA לא נמדד), [OI-73](sCure_SRS.html#oi-73) (ספי UV), OI-74 (אין אמצעי נשלף ב-Origin image).
+- נסגרו או הוחלפו: [OI-64](sCure_SRS.html#oi-64) (נפתר ב-1.0.110), OI-35 (הוחלף ב-OI-70), OI-6 (נפתח מחדש ונפתר).
 - נפתרו בחלקם: [OI-53](sCure_SRS.html#oi-53) (חלון הלחץ), [OI-43](sCure_SRS.html#oi-43) (בדיקת קו החנקן), [OI-31](sCure_SRS.html#oi-31) סעיף (b) עבור ה-SN.
 
 ## 6 גרסה 2.2, חלק ראשון (2026-11-13, storage stick, sCure CS 1.0.184)
@@ -238,14 +238,14 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 | תחום ב-SRS | לפני (2.1) | עכשיו (2.2, חלק ראשון) | SRS |
 |---|---|---|---|
-| Setup | גיבוי ה-SN היה על כרטיס ב-`/mnt/ssd2/scure`. הנתיב הזה אינו קיים ב-Origin image ([OI-74](sCure_SRS.html#oi-74)). | גיבוי ה-SN נמצא על USB storage stick. ב-stick יש קובץ זיהוי `scure-storage.json`. | [§3.5.1](sCure_SRS.html#s-3-5-1) |
+| Setup | גיבוי ה-SN היה על כרטיס ב-`/mnt/ssd2/scure`. הנתיב הזה אינו קיים ב-Origin image (OI-74). | גיבוי ה-SN נמצא על USB storage stick. ב-stick יש קובץ זיהוי `scure-storage.json`. | [§3.5.1](sCure_SRS.html#s-3-5-1) |
 | Setup | לא רלוונטי. | היחידה הראשונה שכותבת ל-stick חדש קושרת אותו ל-SN שלה. | [§3.5.1](sCure_SRS.html#s-3-5-1) |
 | Setup | יחידה עם SN לא השתמשה בגיבוי. | יחידה עם SN לעולם אינה לוקחת SN מ-stick. | [§3.3.6](sCure_SRS.html#s-3-3-6) |
 | נתונים | רק ל-SN היה גיבוי. | ה-stick שומר גם את חומרי המשתמש, את מוני הרכיבים ואת 25 דוחות ה-cure החדשים ביותר. | [§3.5.1](sCure_SRS.html#s-3-5-1) |
 | נתונים | לא רלוונטי. | תיקיית הנתונים נשארת העותק הראשי. קובץ חוזר מה-stick רק אם הוא אינו בתיקיית הנתונים. | [§3.5.1](sCure_SRS.html#s-3-5-1) |
 | שגיאות | 84 קודים. | 85 קודים. קוד חדש 4004: ה-stick שייך ליחידה אחרת. היחידה אינה קוראת ואינה כותבת ל-stick הזה. | [§9.11.2](sCure_SRS.html#s-9-11-2) |
 | Settings | לא רלוונטי. | ייבוא CSV וייצוא אינם מציגים את ה-storage stick. | [§11.3](sCure_SRS.html#s-11-3) |
-| Open Issues | [OI-74](sCure_SRS.html#oi-74) פתוח. | [OI-74](sCure_SRS.html#oi-74) נסגר. [OI-67](sCure_SRS.html#oi-67) ו-OI-31 נפתרו בחלקם. | [OI-74](sCure_SRS.html#oi-74) |
+| Open Issues | OI-74 פתוח. | OI-74 נסגר. [OI-67](sCure_SRS.html#oi-67) ו-OI-31 נפתרו בחלקם. | OI-74 |
 
 ## 7 גרסה 2.2, חלק שני (2026-11-17, sCure CS 1.0.229)
 
@@ -310,7 +310,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 ### 7.7 Open Issues בגרסה 2.2
 
 - 10 חדשים: [OI-75](sCure_SRS.html#oi-75) עד [OI-84](sCure_SRS.html#oi-84).
-- נסגר: [OI-38](sCure_SRS.html#oi-38) (יחידת משך ההדפסה, 1.0.148).
+- נסגר: OI-38 (יחידת משך ההדפסה, 1.0.148).
 - התקלה העיקרית נפתרה: [OI-54](sCure_SRS.html#oi-54) (זמן רשת, 1.0.142 ו-1.0.144). סעיפים (a) עד (c) נשארים פתוחים.
 - נפתח מחדש: [OI-64](sCure_SRS.html#oi-64). [OI-84](sCure_SRS.html#oi-84) ממשיך אותו.
 
@@ -342,7 +342,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | Settings | כתובת ה-HUB הוקלדה במקלדת המלאה, אפשר עם פורט. | כתובת ה-HUB מוזנת במקלדת מספרים (ספרות ונקודות); OK רק לכתובת IPv4 שלמה; ה-HUB נקרא בפורט 80 (1.0.233). | [§11.3](sCure_SRS.html#s-11-3) |
 | Setup | לא רלוונטי. | בסימולטור יש דיסקונקי שאפשר לחבר ולנתק, כדי לראות את Err 4005 (1.0.233, רק בסימולטור). | [§3.5.1](sCure_SRS.html#s-3-5-1) |
 | Settings | הדרך היחידה לחזור ל-Setup הייתה Unlink, שפתוח לכולם ומנקה רק את הארגון. | ב-Developer Mode יש איפוס למפעל לשימוש הייצור: מוחק היסטוריה, דוחות, התראות ומונים, מנקה ארגון ושם, מחזיר כל הגדרה לברירת מחדל ושומר את ה-SN; המסך עולה מחדש ב-Setup (1.0.234). | [§11.5](sCure_SRS.html#req-factory-reset) |
-| Open Issues | 57 פתוחים. | 57 פתוחים. [OI-85](sCure_SRS.html#oi-85) (locale) נפתח ונסגר בגרסה הזו לפי החלטות הבעלים. | [OI-85](sCure_SRS.html#oi-85) |
+| Open Issues | 57 פתוחים. | 57 פתוחים. OI-85 (locale) נפתח ונסגר בגרסה הזו לפי החלטות הבעלים. | OI-85 |
 
 לא בגרסה 2.3: תיקון ה-watchdog של קושחה 1.0.230. ה-SRS עדיין מציג את [OI-84](sCure_SRS.html#oi-84) כפתוח.
 
