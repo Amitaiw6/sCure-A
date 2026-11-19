@@ -10,7 +10,7 @@ This document gives the changes to the sCure Box Software Requirements Specifica
 
 The readers are the software, QA and systems teams. For each revision, the document tells what changed in the requirements, area by area. It does not give a software change log.
 
-The sources are the SRS file `docs/sCure_SRS.html` and its git history. Other sources are `sCureBox-CS/CHANGE_SUMMARY.md` and `sCureBox-CS/config/versions.json`. When the sources do not show a fact clearly, this document says "not recorded".
+The sources are the SRS file `docs/sCure_SRS.html` and its git history. Other sources are `sCureBox-CS/CHANGE_SUMMARY.md` and `sCureBox-CS/config/versions.json`.
 
 ## 2 Revisions
 

@@ -12,7 +12,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 הקוראים הם צוותי התוכנה, ה-QA וההנדסה. לכל גרסה, המסמך אומר מה השתנה בדרישות, לפי תחום. המסמך אינו יומן שינויים של התוכנה.
 
-המקורות הם קובץ ה-SRS `docs/sCure_SRS.html` והיסטוריית ה-git שלו. מקורות נוספים הם `sCureBox-CS/CHANGE_SUMMARY.md` ו-`sCureBox-CS/config/versions.json`. כאשר המקורות אינם מראים עובדה בבירור, המסמך כותב "לא מתועד".
+המקורות הם קובץ ה-SRS `docs/sCure_SRS.html` והיסטוריית ה-git שלו. מקורות נוספים הם `sCureBox-CS/CHANGE_SUMMARY.md` ו-`sCureBox-CS/config/versions.json`.
 
 ## 2 גרסאות
 
