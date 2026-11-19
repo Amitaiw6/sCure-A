@@ -24,7 +24,7 @@ The sources are the SRS file `docs/sCure_SRS.html` and its git history. Other so
 | 2.2 (first part) | 2026-11-13 | sCure CS 1.0.184, for the storage stick only | The backup medium is a USB storage stick. New code 4004. | [Revision table](sCure_SRS.html#revisions) |
 | 2.2 (second part) | 2026-11-17 | sCure CS 1.0.229 | Organization HUB, UI languages, damper calibration, LED test changes, sensor severity changes, ten new Open Issues. | [Revision table](sCure_SRS.html#revisions) |
 | 2.2 (edit) | 2026-11-17 | sCure CS 1.0.229 | [OI-64](sCure_SRS.html#oi-64) is open again. New [OI-84](sCure_SRS.html#oi-84): a real watchdog trip does not give Err 9017. | [Revision table](sCure_SRS.html#revisions) |
-| 2.3 (draft) | 2026-11-18 | sCure CS 1.0.233 | Storage stick missing gives the warning Err 4005, which blocks nothing. New §11.8 UI languages and locale. New [OI-85](sCure_SRS.html#oi-85). | [Revision table](sCure_SRS.html#revisions) |
+| 2.3 (draft) | 2026-11-18 | sCure CS 1.0.234 | Storage stick missing gives the warning Err 4005, which blocks nothing. New §11.8 UI languages and locale. New [OI-85](sCure_SRS.html#oi-85). | [Revision table](sCure_SRS.html#revisions) |
 
 Notes:
 
@@ -325,7 +325,7 @@ Revision 2.1 closed [OI-64](sCure_SRS.html#oi-64). It said that a watchdog trip 
 
 Planned fix, not yet in the SRS: firmware 1.0.230 (WatchdogTripMonitor) is in work. It is not in revision 2.2, and it is not installed on a unit.
 
-## 9 Revision 2.3, draft (2026-11-18, sCure CS 1.0.233)
+## 9 Revision 2.3, draft (2026-11-18, sCure CS 1.0.234)
 
 | SRS area | Before (2.2) | Now (2.3 draft) | SRS |
 |---|---|---|---|
@@ -339,6 +339,7 @@ Planned fix, not yet in the SRS: firmware 1.0.230 (WatchdogTripMonitor) is in wo
 | Settings | No clock choice; 24-hour times. | New switch "24-hour clock"; off = 12-hour times (2:05 PM). The language decides until it is changed (1.0.232). | [§11.3](sCure_SRS.html#s-11-3) |
 | Settings | The HUB address was typed on the full keyboard, optionally with a port. | The HUB address is entered on a number pad (digits and dots); OK only for a whole IPv4 address; the HUB is read on port 80 (1.0.233). | [§11.3](sCure_SRS.html#s-11-3) |
 | Setup | Not applicable. | The hardware simulator has a storage stick to plug in and pull out, to show Err 4005 (1.0.233, simulator only). | [§3.5.1](sCure_SRS.html#s-3-5-1) |
+| Settings | The only way back to Setup was Unlink, open to everyone; it cleared only the organization. | Developer Mode has a factory reset for production: it deletes the history, reports, alerts and counters, clears the organization and the name, resets every setting and keeps the SN; the screen restarts at Setup (1.0.234). | [§11.5](sCure_SRS.html#req-factory-reset) |
 | Open Issues | 57 open. | 57 open. [OI-85](sCure_SRS.html#oi-85) (locale) was opened and closed in this revision by the owner's decisions. | [OI-85](sCure_SRS.html#oi-85) |
 
 Not in revision 2.3: the watchdog fix of firmware 1.0.230. The SRS still gives [OI-84](sCure_SRS.html#oi-84) as open.

@@ -26,7 +26,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | 2.2 (חלק ראשון) | 2026-11-13 | sCure CS 1.0.184, רק לנושא ה-storage stick | אמצעי הגיבוי הוא USB storage stick. קוד חדש 4004. | [טבלת גרסאות](sCure_SRS.html#revisions) |
 | 2.2 (חלק שני) | 2026-11-17 | sCure CS 1.0.229 | Organization HUB, שפות ממשק, כיול damper, שינויים בבדיקת LED, שינויי רמת חומרה של חיישנים, עשרה Open Issues חדשים. | [טבלת גרסאות](sCure_SRS.html#revisions) |
 | 2.2 (עריכה) | 2026-11-17 | sCure CS 1.0.229 | [OI-64](sCure_SRS.html#oi-64) נפתח מחדש. [OI-84](sCure_SRS.html#oi-84) חדש: trip אמיתי של ה-watchdog אינו נותן Err 9017. | [טבלת גרסאות](sCure_SRS.html#revisions) |
-| 2.3 (טיוטה) | 2026-11-18 | sCure CS 1.0.233 | דיסקונקי חסר נותן את האזהרה Err 4005, שלא חוסמת שום דבר. סעיף חדש §11.8: שפות ו-locale. [OI-85](sCure_SRS.html#oi-85) חדש. | [טבלת גרסאות](sCure_SRS.html#revisions) |
+| 2.3 (טיוטה) | 2026-11-18 | sCure CS 1.0.234 | דיסקונקי חסר נותן את האזהרה Err 4005, שלא חוסמת שום דבר. סעיף חדש §11.8: שפות ו-locale. [OI-85](sCure_SRS.html#oi-85) חדש. | [טבלת גרסאות](sCure_SRS.html#revisions) |
 
 הערות:
 
@@ -327,7 +327,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 
 תיקון מתוכנן, עדיין לא ב-SRS: קושחה 1.0.230 (WatchdogTripMonitor) בבנייה. היא אינה בגרסה 2.2. היא אינה מותקנת על אף יחידה.
 
-## 9 גרסה 2.3, טיוטה (2026-11-18, sCure CS 1.0.233)
+## 9 גרסה 2.3, טיוטה (2026-11-18, sCure CS 1.0.234)
 
 | תחום ב-SRS | לפני (2.2) | עכשיו (טיוטת 2.3) | SRS |
 |---|---|---|---|
@@ -341,6 +341,7 @@ English version: [SRS_CHANGE_SUMMARY.md](SRS_CHANGE_SUMMARY.md)
 | Settings | אין בחירת שעון; שעות בפורמט 24 שעות. | מתג חדש "שעון 24 שעות"; כבוי = 12 שעות (2:05 PM). עד שמשנים אותו השפה קובעת (1.0.232). | [§11.3](sCure_SRS.html#s-11-3) |
 | Settings | כתובת ה-HUB הוקלדה במקלדת המלאה, אפשר עם פורט. | כתובת ה-HUB מוזנת במקלדת מספרים (ספרות ונקודות); OK רק לכתובת IPv4 שלמה; ה-HUB נקרא בפורט 80 (1.0.233). | [§11.3](sCure_SRS.html#s-11-3) |
 | Setup | לא רלוונטי. | בסימולטור יש דיסקונקי שאפשר לחבר ולנתק, כדי לראות את Err 4005 (1.0.233, רק בסימולטור). | [§3.5.1](sCure_SRS.html#s-3-5-1) |
+| Settings | הדרך היחידה לחזור ל-Setup הייתה Unlink, שפתוח לכולם ומנקה רק את הארגון. | ב-Developer Mode יש איפוס למפעל לשימוש הייצור: מוחק היסטוריה, דוחות, התראות ומונים, מנקה ארגון ושם, מחזיר כל הגדרה לברירת מחדל ושומר את ה-SN; המסך עולה מחדש ב-Setup (1.0.234). | [§11.5](sCure_SRS.html#req-factory-reset) |
 | Open Issues | 57 פתוחים. | 57 פתוחים. [OI-85](sCure_SRS.html#oi-85) (locale) נפתח ונסגר בגרסה הזו לפי החלטות הבעלים. | [OI-85](sCure_SRS.html#oi-85) |
 
 לא בגרסה 2.3: תיקון ה-watchdog של קושחה 1.0.230. ה-SRS עדיין מציג את [OI-84](sCure_SRS.html#oi-84) כפתוח.
